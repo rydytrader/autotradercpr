@@ -805,11 +805,12 @@
             }
 
             // Pane 1: Risk Band — per-leg SL triggers + per-leg open/closed state.
+            // When the surviving leg's SL has been moved to cost (after the other leg's SL
+            // fired and the per-instance setting is on), append a small amber MOVED TO COST
+            // badge so the operator can see the SL is now at break-even.
             var ceTrig = Number(d.ceSlTrigger || 0), peTrig = Number(d.peSlTrigger || 0);
-            document.getElementById('paneSlTrigger').textContent =
-                ceTrig > 0 ? ceTrig.toFixed(2) : '—';
-            document.getElementById('panePeSlTrigger').textContent =
-                peTrig > 0 ? peTrig.toFixed(2) : '—';
+            renderSlTriggerCell('paneSlTrigger',   ceTrig, !!d.ceSlMovedToCost);
+            renderSlTriggerCell('panePeSlTrigger', peTrig, !!d.peSlMovedToCost);
             var legStateEl = document.getElementById('paneLegState');
             if (legStateEl) {
                 // Same 3-state logic as the QTY chip on each leg card:
@@ -1504,6 +1505,29 @@
             return { value: '~' + atm, projected: true };
         }
         return { value: '—', projected: true };
+    }
+    // Paint a Risk Band SL Trigger cell. When the SL was moved to cost (because the OTHER
+    // leg's SL already fired and the per-instance setting was on) we keep the trigger price
+    // in its usual red but append a small amber "MOVED TO COST" pill so the operator can
+    // see at a glance that the SL has been pulled down to the entry premium.
+    function renderSlTriggerCell(elId, trigger, movedToCost) {
+        var el = document.getElementById(elId);
+        if (!el) return;
+        if (!(trigger > 0)) {
+            el.textContent = '—';
+            return;
+        }
+        var trigText = escapeHtml(Number(trigger).toFixed(2));
+        if (movedToCost) {
+            el.innerHTML = trigText
+                + ' <span style="font-family:var(--font-mono);font-size:0.6rem;font-weight:700;'
+                + 'letter-spacing:0.06em;color:var(--accent-amber, #fbbf24);'
+                + 'background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.45);'
+                + 'padding:2px 6px;border-radius:4px;margin-left:8px;vertical-align:middle;">'
+                + 'MOVED TO COST</span>';
+        } else {
+            el.textContent = Number(trigger).toFixed(2);
+        }
     }
     // Paint the leg's STRIKE cell. Pre-entry rows append the projected leg's LTP in muted
     // text so the operator can see where the strikes are currently trading even before

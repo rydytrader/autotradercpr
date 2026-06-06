@@ -131,6 +131,14 @@ public class ShortStraddle implements Strategy {
      *  dashboard's Hero "Last Entry" tile. 0 until first entry, cleared on day rollover. */
     private volatile double lastEntryNifty = 0;
 
+    /** Per-leg "SL moved to cost" markers. Flipped to true when the OTHER leg hits SL and the
+     *  per-instance {@code moveSlToCostOnFirstLegHit} setting is on — from that point the
+     *  surviving leg's SL trigger drops from {@code entry + threshold} down to its entry
+     *  premium itself, locking break-even on that leg. In-memory, reset on day rollover and
+     *  on every new cycle entry (multi-straddle days start each cycle fresh). */
+    private volatile boolean ceSlMovedToCost = false;
+    private volatile boolean peSlMovedToCost = false;
+
     /** True once at least one tick has run today with the scheduler observing the pre-entry
      *  window (state==IDLE, now<entryTime). Reset on every day rollover. Used to detect a
      *  late start: when tick() first runs already past entry time without ever having seen
@@ -387,6 +395,13 @@ public class ShortStraddle implements Strategy {
         orderTypeFld.put("label", "Order Type");
         orderTypeFld.put("options", java.util.List.of("INTRADAY", "OVERNIGHT"));
         s.add(orderTypeFld);
+        // Move-to-cost option. When ON, the moment one leg's SL fires the OTHER leg's SL
+        // trigger collapses from "entry + threshold" down to its entry premium — locking
+        // break-even on the surviving leg. Off by default; opt in per instance.
+        s.add(field("moveSlToCostOnFirstLegHit", "boolean", false,
+            "Move SL to Cost on First Leg SL Hit",
+            "When one leg's SL fires, drop the surviving leg's SL trigger to its entry premium "
+            + "(cost). The remaining leg closes the moment it gives back its premium."));
         // Per-day enable + SL %. Ordered by DTE (4 → 3 → 2 → 1 → 0). Defaults: every day on
         // at 50 %, matching the previous single-SL behaviour.
         for (String[] dk : WEEK_DAYS) {
@@ -414,6 +429,8 @@ public class ShortStraddle implements Strategy {
         v.put("squareOffTime", riskSettings.getStrategyString(instanceId, "squareOffTime", "15:15"));
         v.put("lotsPerLeg",    riskSettings.getStrategyInt(instanceId,    "lotsPerLeg",    1));
         v.put("orderType",     riskSettings.getStrategyString(instanceId, "orderType",     "INTRADAY"));
+        v.put("moveSlToCostOnFirstLegHit",
+            riskSettings.getStrategyBool(instanceId, "moveSlToCostOnFirstLegHit", false));
         for (String[] dk : WEEK_DAYS) {
             String day = dk[0];
             v.put("day." + day + ".enabled",     riskSettings.getStrategyBool(instanceId,   "day." + day + ".enabled",     true));
@@ -445,6 +462,10 @@ public class ShortStraddle implements Strategy {
         if (values.containsKey("entryTime"))     riskSettings.setStrategySetting(instanceId, "entryTime",     String.valueOf(values.get("entryTime")));
         if (values.containsKey("squareOffTime")) riskSettings.setStrategySetting(instanceId, "squareOffTime", String.valueOf(values.get("squareOffTime")));
         if (values.containsKey("lotsPerLeg"))    riskSettings.setStrategySetting(instanceId, "lotsPerLeg",    asInt(values.get("lotsPerLeg"), 1));
+        if (values.containsKey("moveSlToCostOnFirstLegHit")) {
+            riskSettings.setStrategySetting(instanceId, "moveSlToCostOnFirstLegHit",
+                Boolean.parseBoolean(String.valueOf(values.get("moveSlToCostOnFirstLegHit"))));
+        }
         if (values.containsKey("orderType")) {
             String ot = String.valueOf(values.get("orderType")).trim().toUpperCase();
             if (!"INTRADAY".equals(ot) && !"OVERNIGHT".equals(ot)) ot = "INTRADAY";
@@ -519,6 +540,38 @@ public class ShortStraddle implements Strategy {
         Double pct = todayLegSlPct();
         if (pct != null && pct > 0) return entryPremium * (1.0 + pct / 100.0);
         return 0;
+    }
+
+    /** Per-leg trigger price taking the "moved to cost" override into account. When the
+     *  surviving leg has been flagged after the other leg's SL fired (and the setting is
+     *  on), the trigger collapses to the entry premium itself — i.e. close the moment the
+     *  leg gives back its remaining premium and goes flat instead of waiting for the full
+     *  SL distance. */
+    private double effectiveLegTrigger(boolean isCe) {
+        boolean moved = isCe ? ceSlMovedToCost : peSlMovedToCost;
+        double entry  = isCe ? ceEntryPremium  : peEntryPremium;
+        if (moved && entry > 0) return entry;
+        return computeLegTrigger(entry);
+    }
+
+    /** Called from {@link #checkLegSlTriggers} right after one leg's SL fires while the other
+     *  is still open. When the per-instance {@code moveSlToCostOnFirstLegHit} setting is on,
+     *  flips the surviving leg's "moved to cost" flag so its SL trigger drops to its entry
+     *  premium. No-op if the setting is off, the flag is already set, or the entry premium
+     *  isn't known yet (defensive — should always be set by the time SL fires). */
+    private void maybeMoveSurvivorToCost(boolean survivorIsCe, String triggerLeg) {
+        if (!riskSettings.getStrategyBool(instanceId, "moveSlToCostOnFirstLegHit", false)) return;
+        double entry = survivorIsCe ? ceEntryPremium : peEntryPremium;
+        if (entry <= 0) return;
+        boolean already = survivorIsCe ? ceSlMovedToCost : peSlMovedToCost;
+        if (already) return;
+        if (survivorIsCe) ceSlMovedToCost = true; else peSlMovedToCost = true;
+        String which = survivorIsCe ? "CE" : "PE";
+        String msg = String.format("%s SL moved to COST (entry %.2f) after %s SL hit — leg now closes on any retrace to entry.",
+            which, entry, triggerLeg);
+        log.info("[short-straddle] {}", msg);
+        eventService.log("[INFO] [short-straddle] " + msg);
+        notifyTelegram(msg);
     }
 
     // ── Boot resume — called by StraddleInstanceManager via bootstrap() ───────
@@ -702,6 +755,8 @@ public class ShortStraddle implements Strategy {
         this.ceClosePremium = 0;   this.peClosePremium = 0;
         this.ceLegPnl = 0;         this.peLegPnl = 0;
         this.ceClosedAtMillis = 0; this.peClosedAtMillis = 0;
+        this.ceSlMovedToCost = false;
+        this.peSlMovedToCost = false;
         this.combinedPremiumSamples.clear();
 
         double niftyLtp = marketDataService.getLtp(NIFTY_SYMBOL);
@@ -833,29 +888,35 @@ public class ShortStraddle implements Strategy {
             : (todayPct != null ? String.format("%.0f%%", todayPct) : "—");
         if (isCeOpen() && ceEntryPremium > 0 && !ceSymbol.isEmpty()) {
             double ceLtp = marketDataService.getLtp(ceSymbol);
-            double trigger = computeLegTrigger(ceEntryPremium);
+            double trigger = effectiveLegTrigger(true);
             if (ceLtp > 0 && trigger > 0 && ceLtp >= trigger) {
                 double consumedPts = ceLtp - ceEntryPremium;
+                String thr = ceSlMovedToCost ? "MOVED TO COST" : triggerDesc;
                 String msg = String.format("CE leg SL hit — entry %.2f, live %.2f (+%.2f pts, threshold %s). Closing CE only.",
-                    ceEntryPremium, ceLtp, consumedPts, triggerDesc);
+                    ceEntryPremium, ceLtp, consumedPts, thr);
                 log.info("[short-straddle] {}", msg);
                 eventService.log("[INFO] [short-straddle] " + msg);
                 notifyTelegram(msg);
+                boolean peWasOpen = isPeOpen();
                 closeLeg("CE", "CE_SL_HIT");
+                if (peWasOpen) maybeMoveSurvivorToCost(false, "CE");
                 return;
             }
         }
         if (isPeOpen() && peEntryPremium > 0 && !peSymbol.isEmpty()) {
             double peLtp = marketDataService.getLtp(peSymbol);
-            double trigger = computeLegTrigger(peEntryPremium);
+            double trigger = effectiveLegTrigger(false);
             if (peLtp > 0 && trigger > 0 && peLtp >= trigger) {
                 double consumedPts = peLtp - peEntryPremium;
+                String thr = peSlMovedToCost ? "MOVED TO COST" : triggerDesc;
                 String msg = String.format("PE leg SL hit — entry %.2f, live %.2f (+%.2f pts, threshold %s). Closing PE only.",
-                    peEntryPremium, peLtp, consumedPts, triggerDesc);
+                    peEntryPremium, peLtp, consumedPts, thr);
                 log.info("[short-straddle] {}", msg);
                 eventService.log("[INFO] [short-straddle] " + msg);
                 notifyTelegram(msg);
+                boolean ceWasOpen = isCeOpen();
                 closeLeg("PE", "PE_SL_HIT");
+                if (ceWasOpen) maybeMoveSurvivorToCost(true, "PE");
                 return;
             }
         }
@@ -1198,26 +1259,32 @@ public class ShortStraddle implements Strategy {
         // Day-level Consumed Risk — sum of every closed leg's realised P&L across every
         // straddle today (cumulative across manual restarts). UI gates display on < 0.
         m.put("consumedRiskToday", round2(consumedRiskToday));
-        double ceTrigger = computeLegTrigger(ceEntryPremium);
+        double ceTrigger = effectiveLegTrigger(true);
         if (ceTrigger > 0) {
             m.put("ceSlTrigger", round2(ceTrigger));
-            double consumed = isCeOpen() && ceLtp > 0
-                ? ((ceLtp - ceEntryPremium) / (ceTrigger - ceEntryPremium)) * 100.0 : 0;
+            double denom = ceTrigger - ceEntryPremium;
+            double consumed = isCeOpen() && ceLtp > 0 && Math.abs(denom) > 0.0001
+                ? ((ceLtp - ceEntryPremium) / denom) * 100.0 : 0;
             m.put("ceSlConsumedPct", round2(consumed));
         } else {
             m.put("ceSlTrigger", 0.0);
             m.put("ceSlConsumedPct", 0.0);
         }
-        double peTrigger = computeLegTrigger(peEntryPremium);
+        double peTrigger = effectiveLegTrigger(false);
         if (peTrigger > 0) {
             m.put("peSlTrigger", round2(peTrigger));
-            double consumed = isPeOpen() && peLtp > 0
-                ? ((peLtp - peEntryPremium) / (peTrigger - peEntryPremium)) * 100.0 : 0;
+            double denom = peTrigger - peEntryPremium;
+            double consumed = isPeOpen() && peLtp > 0 && Math.abs(denom) > 0.0001
+                ? ((peLtp - peEntryPremium) / denom) * 100.0 : 0;
             m.put("peSlConsumedPct", round2(consumed));
         } else {
             m.put("peSlTrigger", 0.0);
             m.put("peSlConsumedPct", 0.0);
         }
+        // Surface the "moved to cost" markers so the UI can render a badge next to the
+        // CE/PE SL Trigger rows on the Risk Band card.
+        m.put("ceSlMovedToCost", ceSlMovedToCost);
+        m.put("peSlMovedToCost", peSlMovedToCost);
 
         java.util.Map<String, Double> charges = computeChargesBreakdown();
         m.put("charges", charges);
@@ -1359,6 +1426,8 @@ public class ShortStraddle implements Strategy {
         this.combinedPremiumSamples.clear();
         this.lastAtmSelection = null;
         this.observedPreEntryWindow = false;
+        this.ceSlMovedToCost = false;
+        this.peSlMovedToCost = false;
         transitionTo(LifecycleState.IDLE);
     }
 
