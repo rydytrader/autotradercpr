@@ -43,7 +43,11 @@ public class MarketRegimeService {
 
     private static final String NIFTY            = "NSE:NIFTY50-INDEX";
     private static final int    LOOKBACK_RETURNS = 100;
-    private static final int[]  RS_CHUNK_SIZES   = {10, 20, 25, 50};
+    // Chunk sizes for the R/S regression. Dropped n=10 (versus the classical 10/20/25/50)
+    // because the smallest chunk computes its std-dev from only 10 returns, biasing the
+    // rescaled-range upward and lifting H by ~0.03–0.05 on quiet tapes. Keeping 20/25/50
+    // gives three well-spaced regression points with much smaller small-sample noise.
+    private static final int[]  RS_CHUNK_SIZES   = {20, 25, 50};
     private static final int    ATR_SHORT_N      = 5;
     private static final int    ATR_LONG_N       = 20;
     private static final int    CANDLES_TO_FETCH = 150;  // slack for holidays/weekends + ATR warmup
