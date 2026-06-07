@@ -72,6 +72,20 @@ public class LiveFyersClient implements FyersClient {
         return patch(BASE + "/orders/sync", orderJson, authHeader);
     }
 
+    @Override
+    public JsonNode getHistoricalCandles(String symbol, String resolution, String fromDate, String toDate, String authHeader) throws Exception {
+        // Fyers v3 historical API — date_format=1 lets us pass ISO yyyy-MM-dd strings
+        // directly; cont_flag=1 is the standard "include continuous data" value.
+        String url = "https://api-t1.fyers.in/data/history?"
+            + "symbol=" + java.net.URLEncoder.encode(symbol, java.nio.charset.StandardCharsets.UTF_8)
+            + "&resolution=" + java.net.URLEncoder.encode(resolution, java.nio.charset.StandardCharsets.UTF_8)
+            + "&date_format=1"
+            + "&range_from=" + fromDate
+            + "&range_to=" + toDate
+            + "&cont_flag=1";
+        return get(url, authHeader);
+    }
+
     // ── HTTP HELPERS ──────────────────────────────────────────────────────────
     private static final int CONNECT_TIMEOUT = 10_000; // 10 seconds
     private static final int READ_TIMEOUT    = 10_000; // 10 seconds

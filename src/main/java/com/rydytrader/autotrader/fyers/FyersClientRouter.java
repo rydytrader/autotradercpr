@@ -26,4 +26,7 @@ public class FyersClientRouter implements FyersClient {
     @Override public JsonNode getQuotes(String symbols, String auth) throws Exception { return live.getQuotes(symbols, auth); }
     @Override public JsonNode getProfile(String auth) throws Exception { return live.getProfile(auth); }
     @Override public JsonNode modifyOrder(String orderJson, String auth) throws Exception { return live.modifyOrder(orderJson, auth); }
+    @Override public JsonNode getHistoricalCandles(String symbol, String resolution, String fromDate, String toDate, String auth) throws Exception {
+        return live.getHistoricalCandles(symbol, resolution, fromDate, toDate, auth);
+    }
 }

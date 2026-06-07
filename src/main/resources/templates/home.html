@@ -183,7 +183,14 @@
     <div class="section-card fade-in" style="margin-bottom:20px;">
         <div class="section-header">
             <div class="section-title"><div class="section-title-dot"></div> Overview</div>
-            <span class="section-badge" id="ahSessionCount" style="margin-left:auto;">— sessions</span>
+            <!-- NIFTY playbook recommendation — combined Hurst-exponent + ATR-ratio
+                 indicator computed once per day after the 15:30 IST close. Green pill =
+                 MEAN-REV (use wide SL like 100 %); amber pill = TREND (use tight SL like
+                 30 %). Tooltip carries the raw H / ATR breakdown. -->
+            <span class="section-badge" id="ahRegimePill"
+                  style="margin-left:auto; cursor:help; color:var(--text-muted);"
+                  title="NIFTY playbook indicator — loading…">— NIFTY PLAY</span>
+            <span class="section-badge" id="ahSessionCount" style="margin-left:10px;">— sessions</span>
         </div>
         <div style="padding:20px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px;">
             <div>
@@ -762,6 +769,60 @@
         if (!todayInScope()) return;
         loadSummary(false);
     }, 5000);
+
+    // ── NIFTY Playbook pill ──────────────────────────────────────────────
+    // Polls /api/market-regime every 30 s and repaints the pill in the Overview
+    // section-header. Pill text = the combined regime (MEAN-REV / TREND);
+    // tooltip carries the underlying axis breakdown + raw H / ATR ratio.
+    function fmtRegimeAsOf(ms) {
+        if (!ms) return '—';
+        try {
+            return new Date(Number(ms)).toLocaleString('en-IN', {
+                timeZone: 'Asia/Kolkata', hour12: false,
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit'
+            });
+        } catch (e) { return '—'; }
+    }
+    function renderRegimePill(d) {
+        var el = document.getElementById('ahRegimePill'); if (!el) return;
+        var r = (d && d.marketRegime) || 'UNKNOWN';
+        var label, colour, recommend;
+        if (r === 'MEAN-REV') {
+            label = 'MEAN-REV · NIFTY PLAY'; colour = 'var(--accent-green)';
+            recommend = 'wide SL (≈100%)';
+        } else if (r === 'TREND') {
+            label = 'TREND · NIFTY PLAY';    colour = 'var(--accent-amber, #fbbf24)';
+            recommend = 'tight SL (≈30%)';
+        } else {
+            label = '— NIFTY PLAY';          colour = 'var(--text-muted)';
+            recommend = 'pending first compute';
+        }
+        el.textContent = label;
+        el.style.color = colour;
+        // Tooltip — multi-line breakdown so the operator can see WHY the
+        // combined recommendation came out the way it did.
+        var hAx = (d && d.hurstAxis) || '—';
+        var aAx = (d && d.atrAxis)   || '—';
+        var H   = (d && typeof d.hurstExponent === 'number') ? d.hurstExponent.toFixed(4) : '—';
+        var aS  = (d && typeof d.atrShort === 'number') ? d.atrShort.toFixed(2) : '—';
+        var aL  = (d && typeof d.atrLong  === 'number') ? d.atrLong.toFixed(2)  : '—';
+        var aR  = (d && typeof d.atrRatio === 'number') ? d.atrRatio.toFixed(2) : '—';
+        var when = (d && d.asOfMillis) ? fmtRegimeAsOf(d.asOfMillis) : '—';
+        el.title =
+            'NIFTY Playbook — ' + r + '  (recommend ' + recommend + ')\n' +
+            'Structure: '  + hAx + ' (H = ' + H + ')\n' +
+            'Volatility: ' + aAx + ' (ATR 5/20 = ' + aS + ' / ' + aL + ' = ' + aR + '×)\n' +
+            '100-day lookback · refreshed ' + when + ' IST';
+    }
+    function loadRegime() {
+        fetch('/api/market-regime', { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(renderRegimePill)
+            .catch(function() { /* leave the pill as-is; transient errors are fine */ });
+    }
+    loadRegime();
+    setInterval(loadRegime, 30000);
 </script>
 </body>
 </html>
