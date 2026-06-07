@@ -824,6 +824,13 @@
             'NIFTY Regime — ' + r + '  (' + recommend + ')\n' +
             'Structure: '  + hAx + ' (H = ' + H + ')\n' +
             'Volatility: ' + aAx + ' (ATR 5/20 = ' + aS + ' / ' + aL + ' = ' + aR + '×)\n' +
+            '\n' +
+            'Regime legend:\n' +
+            '  RANGE-BOUND — H<0.48, ATR<1.15  → wide SL ~100%, full size\n' +
+            '  TREND       — H>0.55, ATR<1.15  → tight SL ~25%, full size\n' +
+            '  RANDOM      — middle band         → 40% SL, halve size\n' +
+            '  NO TRADE    — ATR ≥ 1.30          → skip · vol shock\n' +
+            '\n' +
             '100-day lookback · refreshed ' + when + ' IST';
     }
     function loadRegime() {
