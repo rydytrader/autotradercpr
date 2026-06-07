@@ -42,15 +42,17 @@ public class MarketRegimeService {
     private static final Logger log = LoggerFactory.getLogger(MarketRegimeService.class);
 
     private static final String NIFTY            = "NSE:NIFTY50-INDEX";
-    private static final int    LOOKBACK_RETURNS = 100;
-    // Chunk sizes for the R/S regression. Dropped n=10 (versus the classical 10/20/25/50)
-    // because the smallest chunk computes its std-dev from only 10 returns, biasing the
-    // rescaled-range upward and lifting H by ~0.03–0.05 on quiet tapes. Keeping 20/25/50
-    // gives three well-spaced regression points with much smaller small-sample noise.
-    private static final int[]  RS_CHUNK_SIZES   = {20, 25, 50};
+    // 45 daily returns ≈ 2 calendar months. Short window keeps the indicator responsive to
+    // regime shifts (a 5-month lookback would lag a real shift by half a year). Trade-off:
+    // the small N forces smaller R/S chunk sizes, which carry some upward bias on H. The
+    // tightened thresholds below (0.48 / 0.52 instead of 0.45 / 0.55) compensate.
+    private static final int    LOOKBACK_RETURNS = 45;
+    // Chunk sizes for R/S regression on 45 returns. Spaced over ~2.5× in log-n for a
+    // well-conditioned regression: 5, 3, 2 non-overlapping chunks respectively.
+    private static final int[]  RS_CHUNK_SIZES   = {9, 15, 22};
     private static final int    ATR_SHORT_N      = 5;
     private static final int    ATR_LONG_N       = 20;
-    private static final int    CANDLES_TO_FETCH = 150;  // slack for holidays/weekends + ATR warmup
+    private static final int    CANDLES_TO_FETCH = 90;   // 45 returns + ATR(20) warmup + holiday slack
     private static final ZoneId IST              = ZoneId.of("Asia/Kolkata");
 
     // ── Cached snapshot ──────────────────────────────────────────────────────
@@ -59,8 +61,8 @@ public class MarketRegimeService {
     private volatile double atrShort   = 0;
     private volatile double atrLong    = 0;
     private volatile double atrRatio   = Double.NaN;
-    private volatile String atrLabel   = "UNKNOWN";  // COMPRESSED / NORMAL / SHOCK
-    private volatile String regime     = "UNKNOWN";  // MEAN-REV / TREND — exposed
+    private volatile String atrLabel   = "UNKNOWN";  // NORMAL / ELEVATED / SHOCK
+    private volatile String regime     = "UNKNOWN";  // RANGE_BOUND / TREND / RANDOM_WALK / NO_TRADE
     private volatile long   asOfMillis = 0;
 
     private final FyersClientRouter fyersClient;
@@ -245,8 +247,8 @@ public class MarketRegimeService {
 
     private static String classifyHurst(double H) {
         if (Double.isNaN(H)) return "UNKNOWN";
-        if (H < 0.45) return "MEAN_REVERTING";
-        if (H > 0.55) return "TRENDING";
+        if (H < 0.48) return "MEAN_REVERTING";
+        if (H > 0.52) return "TRENDING";
         return "RANDOM";
     }
 
@@ -277,21 +279,31 @@ public class MarketRegimeService {
 
     private static String classifyAtr(double ratio) {
         if (Double.isNaN(ratio) || ratio <= 0) return "UNKNOWN";
-        if (ratio < 0.7) return "COMPRESSED";
-        if (ratio > 1.5) return "SHOCK";
+        if (ratio >= 1.30) return "SHOCK";
+        if (ratio >= 1.15) return "ELEVATED";
         return "NORMAL";
     }
 
-    // ── 3×3 combine ─────────────────────────────────────────────────────────
+    // ── Regime lookup ───────────────────────────────────────────────────────
 
-    /** Maps (Hurst axis, ATR axis) → playbook recommendation. See the plan's 3×3 table:
-     *  vol SHOCK always pushes us to TREND; structural TRENDING + non-compressed vol also
-     *  pushes to TREND; everything else recommends MEAN-REV. */
+    /** Maps (Hurst axis, ATR axis) → one of four operating regimes:
+     *  <ul>
+     *    <li>{@code NO_TRADE} — ATR ratio ≥ 1.30 (vol shock); skip the day.</li>
+     *    <li>{@code RANDOM_WALK} — ATR ratio in [1.15, 1.30) (elevated vol falls back to
+     *        random-walk profile regardless of structure) OR ATR &lt; 1.15 and H in the
+     *        random-walk band [0.48, 0.52]. Half size + 40 % SL.</li>
+     *    <li>{@code RANGE_BOUND} — ATR &lt; 1.15 and H &lt; 0.48. Full size + 100 % SL.</li>
+     *    <li>{@code TREND} — ATR &lt; 1.15 and H &gt; 0.52. Full size + 25 % SL.</li>
+     *  </ul>
+     */
     static String combine(String hAxis, String aAxis) {
         if ("UNKNOWN".equals(hAxis) || "UNKNOWN".equals(aAxis)) return "UNKNOWN";
-        if ("SHOCK".equals(aAxis)) return "TREND";
-        if ("TRENDING".equals(hAxis) && !"COMPRESSED".equals(aAxis)) return "TREND";
-        return "MEAN-REV";
+        if ("SHOCK".equals(aAxis))     return "NO_TRADE";
+        if ("ELEVATED".equals(aAxis))  return "RANDOM_WALK";
+        // ATR NORMAL — branch on Hurst.
+        if ("MEAN_REVERTING".equals(hAxis)) return "RANGE_BOUND";
+        if ("TRENDING".equals(hAxis))       return "TREND";
+        return "RANDOM_WALK";
     }
 
     // ── Internal types + helpers ────────────────────────────────────────────

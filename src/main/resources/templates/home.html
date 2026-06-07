@@ -788,20 +788,31 @@
         var el = document.getElementById('ahRegimePill'); if (!el) return;
         var r = (d && d.marketRegime) || 'UNKNOWN';
         var label, colour, recommend;
-        if (r === 'MEAN-REV') {
-            label = 'MEAN-REV · NIFTY PLAY'; colour = 'var(--accent-green)';
-            recommend = 'wide SL (≈100%)';
+        // Four regimes from the 2-axis framework:
+        //   RANGE_BOUND  → wide SL (≈100%), full size  → green
+        //   TREND        → tight SL (≈25%),  full size  → amber
+        //   RANDOM_WALK  → 40 % SL,         half size  → cyan
+        //   NO_TRADE     → vol-shock day,   skip       → red
+        if (r === 'RANGE_BOUND') {
+            label = 'RANGE-BOUND · NIFTY'; colour = 'var(--accent-green)';
+            recommend = 'wide SL (≈100%), full size';
         } else if (r === 'TREND') {
-            label = 'TREND · NIFTY PLAY';    colour = 'var(--accent-amber, #fbbf24)';
-            recommend = 'tight SL (≈30%)';
+            label = 'TREND · NIFTY';       colour = 'var(--accent-amber, #fbbf24)';
+            recommend = 'tight SL (≈25%), full size';
+        } else if (r === 'RANDOM_WALK') {
+            label = 'RANDOM · NIFTY';      colour = 'var(--accent-cyan, #22d3ee)';
+            recommend = '40 % SL, halve size';
+        } else if (r === 'NO_TRADE') {
+            label = 'NO TRADE · NIFTY';    colour = 'var(--accent-red, #f87171)';
+            recommend = 'skip — vol shock';
         } else {
-            label = '— NIFTY PLAY';          colour = 'var(--text-muted)';
+            label = '— NIFTY';             colour = 'var(--text-muted)';
             recommend = 'pending first compute';
         }
         el.textContent = label;
         el.style.color = colour;
-        // Tooltip — multi-line breakdown so the operator can see WHY the
-        // combined recommendation came out the way it did.
+        // Tooltip — multi-line breakdown so the operator can see WHY the regime
+        // came out the way it did.
         var hAx = (d && d.hurstAxis) || '—';
         var aAx = (d && d.atrAxis)   || '—';
         var H   = (d && typeof d.hurstExponent === 'number') ? d.hurstExponent.toFixed(4) : '—';
@@ -810,10 +821,10 @@
         var aR  = (d && typeof d.atrRatio === 'number') ? d.atrRatio.toFixed(2) : '—';
         var when = (d && d.asOfMillis) ? fmtRegimeAsOf(d.asOfMillis) : '—';
         el.title =
-            'NIFTY Playbook — ' + r + '  (recommend ' + recommend + ')\n' +
+            'NIFTY Regime — ' + r + '  (' + recommend + ')\n' +
             'Structure: '  + hAx + ' (H = ' + H + ')\n' +
             'Volatility: ' + aAx + ' (ATR 5/20 = ' + aS + ' / ' + aL + ' = ' + aR + '×)\n' +
-            '100-day lookback · refreshed ' + when + ' IST';
+            '45-day lookback · refreshed ' + when + ' IST';
     }
     function loadRegime() {
         fetch('/api/market-regime', { credentials: 'same-origin' })
