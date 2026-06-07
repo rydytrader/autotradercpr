@@ -42,17 +42,16 @@ public class MarketRegimeService {
     private static final Logger log = LoggerFactory.getLogger(MarketRegimeService.class);
 
     private static final String NIFTY            = "NSE:NIFTY50-INDEX";
-    // 45 daily returns ≈ 2 calendar months. Short window keeps the indicator responsive to
-    // regime shifts (a 5-month lookback would lag a real shift by half a year). Trade-off:
-    // the small N forces smaller R/S chunk sizes, which carry some upward bias on H. The
-    // tightened thresholds below (0.48 / 0.52 instead of 0.45 / 0.55) compensate.
-    private static final int    LOOKBACK_RETURNS = 45;
-    // Chunk sizes for R/S regression on 45 returns. Spaced over ~2.5× in log-n for a
-    // well-conditioned regression: 5, 3, 2 non-overlapping chunks respectively.
-    private static final int[]  RS_CHUNK_SIZES   = {9, 15, 22};
+    // 100 daily returns ≈ 5 calendar months. Reverted from 45 because the smaller window
+    // forced n=9 chunks whose noisy std-dev biased H upward by ~0.05, flipping sideways
+    // tapes to TREND. With 100 returns and the larger 20/25/50 chunks, the small-sample
+    // bias is small enough that the framework's tighter 0.48 / 0.52 thresholds remain
+    // workable. Trade-off accepted: a real regime shift takes ~5 months to fully reflect.
+    private static final int    LOOKBACK_RETURNS = 100;
+    private static final int[]  RS_CHUNK_SIZES   = {20, 25, 50};
     private static final int    ATR_SHORT_N      = 5;
     private static final int    ATR_LONG_N       = 20;
-    private static final int    CANDLES_TO_FETCH = 90;   // 45 returns + ATR(20) warmup + holiday slack
+    private static final int    CANDLES_TO_FETCH = 150;  // 100 returns + ATR(20) warmup + holiday slack
     private static final ZoneId IST              = ZoneId.of("Asia/Kolkata");
 
     // ── Cached snapshot ──────────────────────────────────────────────────────
