@@ -74,6 +74,12 @@ public class ShortStraddleStateStore {
         /** Day-level Consumed Risk — sum of every closed leg's realised P&L across every
          *  straddle today. Dashboard displays only when negative. */
         public double  consumedRiskToday;
+        /** Per-leg "SL moved to cost" flags — true once the OTHER leg's SL fired AND the
+         *  per-instance {@code moveSlToCostOnFirstLegHit} setting was on. Persisted so a
+         *  mid-day restart preserves the tighter break-even trigger on the surviving leg
+         *  instead of silently reverting to the wider entry × (1 + slPct/100) trigger. */
+        public boolean ceSlMovedToCost;
+        public boolean peSlMovedToCost;
         public String  currentWeeklyExpiry;
         /** Cycle events ring (ENTRY / CE_SL / PE_SL / SQUAREOFF) — {time, event, nifty, ce, pe, pnl}. */
         public java.util.List<java.util.Map<String, Object>> recentEvents;

@@ -566,6 +566,11 @@ public class ShortStraddle implements Strategy {
         boolean already = survivorIsCe ? ceSlMovedToCost : peSlMovedToCost;
         if (already) return;
         if (survivorIsCe) ceSlMovedToCost = true; else peSlMovedToCost = true;
+        // Persist immediately — closeLeg() above wrote state BEFORE the flag flipped, so we
+        // need another save here. Otherwise a mid-day restart between this line and the
+        // next state-mutating event would revert the survivor's trigger to the wider
+        // entry × (1 + slPct/100) value and defeat the break-even guarantee.
+        persist();
         String which = survivorIsCe ? "CE" : "PE";
         String msg = String.format("%s SL moved to COST (entry %.2f) after %s SL hit — leg now closes on any retrace to entry.",
             which, entry, triggerLeg);
@@ -637,6 +642,8 @@ public class ShortStraddle implements Strategy {
             this.cycleStartOrderCount    = p.cycleStartOrderCount;
             this.cycleStartSlHits        = p.cycleStartSlHits;
             this.consumedRiskToday       = p.consumedRiskToday;
+            this.ceSlMovedToCost = p.ceSlMovedToCost;
+            this.peSlMovedToCost = p.peSlMovedToCost;
             this.currentWeeklyExpiry = p.currentWeeklyExpiry != null ? p.currentWeeklyExpiry : "";
             if (p.combinedPremiumSamples != null) {
                 this.combinedPremiumSamples.clear();
@@ -1809,6 +1816,8 @@ public class ShortStraddle implements Strategy {
         s.cycleStartOrderCount    = this.cycleStartOrderCount;
         s.cycleStartSlHits        = this.cycleStartSlHits;
         s.consumedRiskToday       = this.consumedRiskToday;
+        s.ceSlMovedToCost = this.ceSlMovedToCost;
+        s.peSlMovedToCost = this.peSlMovedToCost;
         s.currentWeeklyExpiry = this.currentWeeklyExpiry;
         synchronized (combinedPremiumSamples) {
             s.combinedPremiumSamples = new java.util.ArrayList<>(combinedPremiumSamples);
