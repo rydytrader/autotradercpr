@@ -1504,9 +1504,8 @@
         return { value: '—', projected: true };
     }
     // Paint a Risk Band SL Trigger cell. When the SL was moved to cost (because the OTHER
-    // leg's SL already fired and the per-instance setting was on) we keep the trigger price
-    // in its usual red but append a small amber "MOVED TO COST" pill so the operator can
-    // see at a glance that the SL has been pulled down to the entry premium.
+    // leg's SL already fired and the per-instance setting was on) we prepend a small amber
+    // "MOVED TO COST" pill BEFORE the trigger price so the marker reads first.
     function renderSlTriggerCell(elId, trigger, movedToCost) {
         var el = document.getElementById(elId);
         if (!el) return;
@@ -1516,12 +1515,13 @@
         }
         var trigText = escapeHtml(Number(trigger).toFixed(2));
         if (movedToCost) {
-            el.innerHTML = trigText
-                + ' <span style="font-family:var(--font-mono);font-size:0.6rem;font-weight:700;'
+            el.innerHTML =
+                '<span style="font-family:var(--font-mono);font-size:0.6rem;font-weight:700;'
                 + 'letter-spacing:0.06em;color:var(--accent-amber, #fbbf24);'
                 + 'background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.45);'
-                + 'padding:2px 6px;border-radius:4px;margin-left:8px;vertical-align:middle;">'
-                + 'MOVED TO COST</span>';
+                + 'padding:2px 6px;border-radius:4px;margin-right:8px;vertical-align:middle;">'
+                + 'MOVED TO COST</span>'
+                + trigText;
         } else {
             el.textContent = Number(trigger).toFixed(2);
         }
