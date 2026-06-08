@@ -1515,9 +1515,14 @@
         }
         var trigText = escapeHtml(Number(trigger).toFixed(2));
         if (movedToCost) {
+            // display:inline-block + line-height:1.2 lets the pill render its own padding +
+            // border above/below without being squashed by the parent .stat-value's
+            // line-height:1. Without inline-block the pill paints into the same 1-em line
+            // box as the trigger price and visually disappears behind it.
             el.innerHTML =
-                '<span style="font-family:var(--font-mono);font-size:0.6rem;font-weight:700;'
-                + 'letter-spacing:0.06em;color:var(--accent-amber, #fbbf24);'
+                '<span style="display:inline-block;line-height:1.2;font-family:var(--font-mono);'
+                + 'font-size:0.6rem;font-weight:700;letter-spacing:0.06em;'
+                + 'color:var(--accent-amber, #fbbf24);'
                 + 'background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.45);'
                 + 'padding:2px 6px;border-radius:4px;margin-right:8px;vertical-align:middle;">'
                 + 'MOVED TO COST</span>'
