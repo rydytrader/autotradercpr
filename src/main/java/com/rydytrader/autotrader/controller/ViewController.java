@@ -38,7 +38,6 @@ public class ViewController {
     private final AppUserRepository userRepo;
     private final PasswordEncoder  passwordEncoder;
     private final StrategyRegistry  strategyRegistry;
-    private final com.rydytrader.autotrader.service.MarketRegimeService marketRegimeService;
 
     public ViewController(TokenStore tokenStore,
                            PollingService pollingService,
@@ -48,8 +47,7 @@ public class ViewController {
                            OrderEventService orderEventService,
                            AppUserRepository userRepo,
                            PasswordEncoder passwordEncoder,
-                           StrategyRegistry strategyRegistry,
-                           com.rydytrader.autotrader.service.MarketRegimeService marketRegimeService) {
+                           StrategyRegistry strategyRegistry) {
         this.tokenStore        = tokenStore;
         this.pollingService    = pollingService;
         this.loginService      = loginService;
@@ -59,7 +57,6 @@ public class ViewController {
         this.userRepo          = userRepo;
         this.passwordEncoder   = passwordEncoder;
         this.strategyRegistry  = strategyRegistry;
-        this.marketRegimeService = marketRegimeService;
     }
 
     /** Build the sidebar nav entries from the registry. Used by every page that renders a
@@ -119,12 +116,6 @@ public class ViewController {
                     pollingService.startPositionSync();
                     marketDataService.start();
                     orderEventService.start();
-                    // First-time + cold-restart compute of the NIFTY playbook indicator.
-                    // The @PostConstruct boot attempt is a no-op when no token is loaded
-                    // yet (TokenStore is in-memory only). Now that a fresh token is set,
-                    // kick off a compute so the analytics-page pill shows a real value
-                    // without waiting for the 16:05 IST cron.
-                    marketRegimeService.refresh();
                 } catch (Exception e) {
                     log.error("Error starting services after Fyers login: {}", e.getMessage());
                 }
