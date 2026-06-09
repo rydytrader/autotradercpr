@@ -261,10 +261,22 @@ public class AnalyticsService {
         };
         boolean allStrategies = strategyId == null || strategyId.isBlank() || "all".equalsIgnoreCase(strategyId);
 
+        // Build the set of CURRENTLY-enabled strategy ids — analytics ignores trades from any
+        // instance that's been disabled (or soft-deleted, which removes it from the registry).
+        // The set is rebuilt on every analytics call so flipping the enable toggle takes effect
+        // without a restart.
+        java.util.Set<String> enabledIds = new java.util.HashSet<>();
+        if (strategyRegistry != null) {
+            for (Strategy s : strategyRegistry.all()) {
+                if (s.isEnabled()) enabledIds.add(s.id());
+            }
+        }
+
         List<Trade> out = new ArrayList<>();
         // Persisted rows
         for (StrategyTradeEntity e : tradeRepo.findAllByOrderByClosedAtMillisAsc()) {
             if (!allStrategies && !strategyId.equals(e.getStrategyId())) continue;
+            if (!enabledIds.contains(e.getStrategyId())) continue;
             LocalDate d;
             try { d = LocalDate.parse(e.getSessionDate()); }
             catch (Exception ignored) { continue; }
@@ -315,6 +327,7 @@ public class AnalyticsService {
         }
         for (Strategy strat : strategyRegistry.all()) {
             if (!allStrategies && !strat.id().equals(strategyId)) continue;
+            if (!strat.isEnabled()) continue;   // analytics hides disabled instances
             try {
                 // 1. Today's already-closed events from the strategy's recent-events ring.
                 double addedTodayNet     = 0;

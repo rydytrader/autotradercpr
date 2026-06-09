@@ -561,11 +561,12 @@
         return { from: pickedYear + '-01-01', to: pickedYear + '-12-31' };
     }
 
-    // Inject one pill per registered strategy.
+    // Inject one pill per ENABLED strategy. Disabled instances are hidden from analytics —
+    // their persisted trades are also filtered out server-side by AnalyticsService.
     fetch('/api/strategies').then(function(r) { return r.json(); }).then(function(arr) {
         if (!Array.isArray(arr)) return;
         var host = document.getElementById('strategyPills');
-        arr.forEach(function(s) {
+        arr.filter(function(s) { return s && s.enabled !== false; }).forEach(function(s) {
             var b = document.createElement('button');
             b.className = 'scope-pill';
             b.setAttribute('data-strategy', s.id);
