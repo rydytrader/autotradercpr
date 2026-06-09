@@ -45,6 +45,7 @@ public class StrategyController {
             m.put("enabled", s.isEnabled());
             m.put("currentState", s.currentState());
             m.put("navIcon", s.navIcon());
+            m.put("type", s.strategyType());
             out.add(m);
         }
         return out;

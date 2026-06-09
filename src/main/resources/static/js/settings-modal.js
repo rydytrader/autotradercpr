@@ -393,24 +393,27 @@
     }
 
     // ── Sidebar live refresh ─────────────────────────────────────────────────
-    // After any straddle CRUD op, re-fetch /api/strategies and rebuild the strategy chips in
-    // the left sidebar so the operator doesn't have to refresh the page. If `deletedId` is
-    // provided and the current page is that strategy's dashboard, redirect to /home so they
-    // don't end up on an orphaned page.
+    // After any straddle/strangle CRUD op, re-fetch /api/strategies and rebuild the strategy
+    // chips in the left sidebar — preserving the HOME button + MAIN label above the strategy
+    // groups, and re-rendering both STRADDLES and STRANGLES sections with their headers.
     function refreshSidebar(deletedId) {
         fetch('/api/strategies')
             .then(function(r) { return r.json(); })
             .then(function(arr) {
                 var aside = document.querySelector('.strategy-nav-aside');
                 if (!aside) return;
-                // First <div> child of the aside is the HOME-to-strategies divider. Everything
-                // after it is the strategy chip stack — wipe + rebuild.
-                var firstDiv = aside.querySelector('div');
-                if (!firstDiv) return;
-                while (firstDiv.nextSibling) aside.removeChild(firstDiv.nextSibling);
-                // Sidebar shows only enabled instances. Disabled ones live in the Straddles tab.
+                // Anchor on the HOME nav link so we preserve everything above it (MAIN label
+                // + HOME button). Wipe everything AFTER the HOME button, then rebuild the
+                // grouped strategy sections.
+                var homeLink = aside.querySelector('[data-nav-key="home"]');
+                if (!homeLink) return;
+                while (homeLink.nextSibling) aside.removeChild(homeLink.nextSibling);
+
                 var list = (Array.isArray(arr) ? arr : []).filter(function(s) { return s && s.enabled !== false; });
+                var straddles = list.filter(function(s) { return s.type === 'STRADDLE' || !s.type; });
+                var strangles = list.filter(function(s) { return s.type === 'STRANGLE'; });
                 var pathnow = window.location.pathname;
+
                 var chipStyle = 'display:flex;align-items:center;justify-content:center;'
                     + 'width:72px;height:40px;border-radius:8px;text-decoration:none;'
                     + 'font-family:var(--font-mono);font-weight:700;font-size:0.86rem;'
@@ -418,25 +421,43 @@
                     + 'background:transparent;cursor:pointer;letter-spacing:0.06em;'
                     + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 6px;';
                 var dividerStyle = 'width:64px;height:1px;background:var(--border);margin:4px 0;';
-                list.forEach(function(s, idx) {
-                    var a = document.createElement('a');
-                    a.href = '/strategies/' + s.id;
-                    a.className = 'nav-icon';
-                    a.title = s.displayName || s.id;
-                    a.setAttribute('data-nav-key', s.id);
-                    a.textContent = s.navIcon || s.shortCode || s.id;
-                    a.style.cssText = chipStyle;
-                    if (pathnow === ('/strategies/' + s.id)) a.classList.add('active');
-                    aside.appendChild(a);
-                    if (idx < list.length - 1) {
-                        var d = document.createElement('div');
-                        d.style.cssText = dividerStyle;
-                        aside.appendChild(d);
-                    }
-                });
-                // If the operator just deleted the strategy they're currently viewing, send
-                // them to the analytics home so they don't end up polling /api/strategies/X
-                // for a 404'd id.
+                var labelStyle = 'font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;'
+                    + 'color:var(--text-muted);text-transform:uppercase;text-align:center;'
+                    + 'width:72px;margin:6px 0 2px;';
+
+                function appendDivider() {
+                    var d = document.createElement('div');
+                    d.style.cssText = dividerStyle;
+                    aside.appendChild(d);
+                }
+                function appendLabel(text, topMargin) {
+                    var l = document.createElement('div');
+                    l.style.cssText = labelStyle.replace('margin:6px 0 2px;', 'margin:' + topMargin + ' 0 2px;');
+                    l.textContent = text;
+                    aside.appendChild(l);
+                }
+                function appendChips(group) {
+                    group.forEach(function(s, idx) {
+                        var a = document.createElement('a');
+                        a.href = '/strategies/' + s.id;
+                        a.className = 'nav-icon';
+                        a.title = s.displayName || s.id;
+                        a.setAttribute('data-nav-key', s.id);
+                        a.textContent = s.navIcon || s.shortCode || s.id;
+                        a.style.cssText = chipStyle;
+                        if (pathnow === ('/strategies/' + s.id)) a.classList.add('active');
+                        aside.appendChild(a);
+                        if (idx < group.length - 1) appendDivider();
+                    });
+                }
+
+                // Divider between HOME and the first strategy group (matches the static template).
+                appendDivider();
+                appendLabel('STRADDLES', '6px');
+                appendChips(straddles);
+                appendLabel('STRANGLES', '10px');
+                appendChips(strangles);
+
                 if (deletedId && pathnow === ('/strategies/' + deletedId)) {
                     window.location.href = '/home';
                 }
