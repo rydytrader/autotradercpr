@@ -102,6 +102,74 @@ public class BalancedAtmSelector {
         );
     }
 
+    /** Result of {@link #resolveStrikeSymbols(long, long)} — Fyers CE/PE symbols and current
+     *  LTPs at the requested strikes. Strangle entry uses this to look up the OTM legs once
+     *  the ATM has been chosen by {@link #select(double)}. */
+    public record StrikeSymbols(
+        long   callStrike,
+        long   putStrike,
+        String ceSymbol,
+        String peSymbol,
+        double ceLtp,
+        double peLtp,
+        long   resolvedCallStrike,   // == callStrike when found; nearest available when not
+        long   resolvedPutStrike     // == putStrike  when found; nearest available when not
+    ) {}
+
+    /** Fetch the option chain once and look up CE+PE symbols at the requested call/put
+     *  strikes — used by ShortStrangle for its OTM legs. When the exact requested strike
+     *  is not present in the chain (typical for far-OTM in thin sessions), falls back to
+     *  the nearest available strike on the relevant side; {@link StrikeSymbols#resolvedCallStrike}
+     *  and {@link StrikeSymbols#resolvedPutStrike} carry the actual strike used. Returns
+     *  {@code null} if the chain can't be fetched. */
+    public StrikeSymbols resolveStrikeSymbols(long callStrike, long putStrike) {
+        NavigableMap<Long, ChainRow> chain = fetchChain();
+        if (chain == null || chain.isEmpty()) return null;
+
+        long resolvedCall = nearestStrikeWithLeg(chain, callStrike, true);
+        long resolvedPut  = nearestStrikeWithLeg(chain, putStrike,  false);
+        if (resolvedCall <= 0 || resolvedPut <= 0) {
+            log.warn("[atm-selector] Could not resolve strike symbols: requested call={} put={}, "
+                + "resolved call={} put={}", callStrike, putStrike, resolvedCall, resolvedPut);
+            return null;
+        }
+        ChainRow callRow = chain.get(resolvedCall);
+        ChainRow putRow  = chain.get(resolvedPut);
+        return new StrikeSymbols(
+            callStrike, putStrike,
+            callRow.ceSym, putRow.peSym,
+            callRow.ce,    putRow.pe,
+            resolvedCall,  resolvedPut
+        );
+    }
+
+    /** Closest strike to {@code requested} that has a non-empty symbol on the requested
+     *  leg side. Scans outward in both directions through the chain map. */
+    private long nearestStrikeWithLeg(NavigableMap<Long, ChainRow> chain, long requested, boolean isCall) {
+        if (chain.containsKey(requested)) {
+            ChainRow row = chain.get(requested);
+            String sym = isCall ? row.ceSym : row.peSym;
+            if (sym != null && !sym.isEmpty()) return requested;
+        }
+        // Walk outward in both directions, choosing the nearer side that has a quoted symbol.
+        Long above = chain.higherKey(requested);
+        Long below = chain.lowerKey(requested);
+        while (above != null || below != null) {
+            long candidate;
+            if (above == null) { candidate = below; below = chain.lowerKey(below); }
+            else if (below == null) { candidate = above; above = chain.higherKey(above); }
+            else if ((above - requested) <= (requested - below)) {
+                candidate = above; above = chain.higherKey(above);
+            } else {
+                candidate = below; below = chain.lowerKey(below);
+            }
+            ChainRow row = chain.get(candidate);
+            String sym = isCall ? row.ceSym : row.peSym;
+            if (sym != null && !sym.isEmpty()) return candidate;
+        }
+        return 0;
+    }
+
     // ── Internal ──────────────────────────────────────────────────────────────
 
     private static class ChainRow {

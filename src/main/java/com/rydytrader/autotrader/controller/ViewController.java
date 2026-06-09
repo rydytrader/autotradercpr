@@ -76,6 +76,7 @@ public class ViewController {
             e.put("shortCode", s.shortCode());
             e.put("navIcon", s.shortCode());
             e.put("href", "/strategies/" + s.id());
+            e.put("type", s.strategyType());
             nav.add(e);
         }
         return nav;
@@ -248,8 +249,12 @@ public class ViewController {
         model.addAttribute("strategyDisplayName", s != null ? s.displayName() : id);
         model.addAttribute("strategyDescription", s != null ? s.description() : "");
         model.addAttribute("strategyShortCode",   s != null ? s.shortCode() : "");
+        model.addAttribute("strategyType",        s != null ? s.strategyType() : "STRADDLE");
         model.addAttribute("sidebarStrategies",   sidebarStrategies());
-        return "short-straddle";
+        // Pick the per-instance template based on strategy type. Strangle gets its own
+        // template ({@code short-strangle.html}); everything else falls back to the
+        // straddle template.
+        return s != null && "STRANGLE".equals(s.strategyType()) ? "short-strangle" : "short-straddle";
     }
 
     @GetMapping("/calendar")

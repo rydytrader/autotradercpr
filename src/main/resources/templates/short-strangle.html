@@ -128,8 +128,9 @@
         <div>
             <div style="display:flex; align-items:center; gap:14px;">
                 <div class="page-title" th:text="${strategyDisplayName}">Dashboard</div>
-                <button id="straddleInstanceSettingsBtn"
-                        title="Edit this straddle's trading settings (entry time, lots, SL%, squareoff)"
+                <span id="strangleOffsetBadge" style="display:none;background:rgba(125,211,252,0.10);border:1px solid rgba(125,211,252,0.30);color:var(--accent-cyan);font-family:var(--font-mono);font-size:0.72rem;font-weight:700;letter-spacing:0.04em;padding:4px 10px;border-radius:4px;">ATM ±100</span>
+                <button id="strangleInstanceSettingsBtn"
+                        title="Edit this strangle's trading settings (entry time, lots, SL%, squareoff)"
                         onclick="StrategySettings.openFor(document.documentElement.getAttribute('data-strategy-id'))"
                         style="background:rgba(125,211,252,0.10); border:1px solid rgba(125,211,252,0.30); color:var(--accent-cyan); font-family:var(--font-mono); font-size:0.74rem; font-weight:700; letter-spacing:0.06em; padding:6px 12px; border-radius:6px; cursor:pointer;">⚙ Settings</button>
             </div>
@@ -188,14 +189,14 @@
                     <span id="heroVixChange" style="font-family:var(--font-mono); font-size:0.7rem; color:var(--text-muted);"></span>
                 </div>
                 <div style="display:flex;gap:8px;">
-                    <button id="straddleCloseBtn" onclick="closeStraddle()" title="Square off both legs at market and end today's session." style="
+                    <button id="strangleCloseBtn" onclick="closeStrangle()" title="Square off both legs at market and end today's session." style="
                         background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.25);
                         color:var(--accent-red, #f87171);padding:6px 14px;border-radius:6px;
                         font-family:var(--font-mono);font-size:0.72rem;font-weight:700;
                         cursor:pointer;letter-spacing:0.04em;">✕ SQUAREOFF STRADDLE</button>
-                    <button id="straddleResetBtn" class="reset-btn" onclick="resetStraddle()" title="Force the in-memory state back to IDLE. Use after a rejection has been fixed and the bot needs to re-arm without a restart." style="letter-spacing:0.04em;">↻ RESET TO IDLE</button>
-                    <button id="straddleNewBtn" onclick="newStraddle()" disabled
-                            title="Manually enter another straddle today at the current ATM (only after the prior cycle has closed and during market hours)."
+                    <button id="strangleResetBtn" class="reset-btn" onclick="resetStrangle()" title="Force the in-memory state back to IDLE. Use after a rejection has been fixed and the bot needs to re-arm without a restart." style="letter-spacing:0.04em;">↻ RESET TO IDLE</button>
+                    <button id="strangleNewBtn" onclick="newStrangle()" disabled
+                            title="Manually enter another strangle today at the current ATM (only after the prior cycle has closed and during market hours)."
                             style="background:rgba(52,211,153,0.10);border:1px solid rgba(52,211,153,0.40);
                                    color:var(--accent-green);padding:6px 14px;border-radius:6px;
                                    font-family:var(--font-mono);font-size:0.72rem;font-weight:700;
@@ -374,7 +375,7 @@
                 <!-- Pause Trading toggle. When ON the scheduler skips its IDLE→entry transition
                      and + NEW STRADDLE is disabled; open positions continue to be managed. -->
                 <label id="pauseTradingToggle" style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.66rem;letter-spacing:0.06em;color:var(--text-muted);text-transform:uppercase;cursor:pointer;user-select:none;"
-                       title="Pause auto-entry. Open positions keep running; no new straddle fires while this is on.">
+                       title="Pause auto-entry. Open positions keep running; no new strangle fires while this is on.">
                     <span id="pauseTradingLabel">Pause Trading</span>
                     <span style="position:relative;display:inline-block;width:34px;height:18px;">
                         <input type="checkbox" id="pauseTradingInput" style="opacity:0;width:0;height:0;">
@@ -407,8 +408,8 @@
             <span class="section-badge" style="font-size:0.6rem; margin-left:auto;">1-min close per leg • dashed = SL trigger / entry baseline</span>
         </div>
         <div style="padding:0; height:400px; display:flex; gap:0;">
-            <div style="flex:1; min-width:0; padding:8px 12px;"><canvas id="straddleChartCe"></canvas></div>
-            <div style="flex:1; min-width:0; padding:8px 12px;"><canvas id="straddleChartPe"></canvas></div>
+            <div style="flex:1; min-width:0; padding:8px 12px;"><canvas id="strangleChartCe"></canvas></div>
+            <div style="flex:1; min-width:0; padding:8px 12px;"><canvas id="strangleChartPe"></canvas></div>
         </div>
     </div>
 
@@ -650,8 +651,8 @@
     }
 
     // Strategy ID for this dashboard page — drives all /api/strategies/{id}/* URLs below.
-    // Falls back to "short-straddle" if the data attribute is somehow missing.
-    var STRATEGY_ID = document.documentElement.getAttribute('data-strategy-id') || 'short-straddle';
+    // Falls back to "short-strangle" if the data attribute is somehow missing.
+    var STRATEGY_ID = document.documentElement.getAttribute('data-strategy-id') || 'short-strangle';
 
     // ── Strategy-shape chrome ────────────────────────────────────────────────
     // Sets the labels for the leg-sl strategy (the only strategy now).
@@ -684,8 +685,16 @@
         fetch('/api/strategies/' + STRATEGY_ID + '/dashboard').then(r => r.json()).then(d => {
             if (!d) return;
             lastDashboardData = d;
-            var SHAPE = 'short-straddle';
+            var SHAPE = 'short-strangle';
             applyShapeChrome(SHAPE, d);
+            // ATM ±N badge — visible once dashboard payload carries the strangle offsets.
+            var offsetBadge = document.getElementById('strangleOffsetBadge');
+            if (offsetBadge && d.callOtmOffset != null && d.putOtmOffset != null) {
+                var co = Number(d.callOtmOffset) || 0;
+                var po = Number(d.putOtmOffset)  || 0;
+                offsetBadge.textContent = (co === po) ? ('ATM ±' + co) : ('ATM +' + co + ' / −' + po);
+                offsetBadge.style.display = '';
+            }
             // Hero — true net = realised + open MTM − charges
             var ch = d.charges || {};
             var chTotal = Number(ch.total || 0);
@@ -726,18 +735,18 @@
             if ((d.combinedMtm || 0) > 0.5) openMtm.classList.add('pnl-positive');
             else if ((d.combinedMtm || 0) < -0.5) openMtm.classList.add('pnl-negative');
 
-            // Hero "Active Risk" tile — worst-case loss if the currently running straddle's SL fires.
+            // Hero "Active Risk" tile — worst-case loss if the currently running strangle's SL fires.
             // Tooltip carries the per-leg or combined consumed-% detail.
             var riskCell = document.getElementById('heroRiskCell');
             var riskEl   = document.getElementById('heroRisk');
             if (riskCell && riskEl) {
-                var maxLoss = Number(d.maxLossPerStraddle || 0);
+                var maxLoss = Number(d.maxLossPerStrangle || 0);
                 if (maxLoss > 0) {
                     riskEl.textContent = '-' + fmtRs(maxLoss);
                     riskEl.className = 'stat-value pnl-negative';
                     var ceC = Number(d.ceSlConsumedPct || 0);
                     var peC = Number(d.peSlConsumedPct || 0);
-                    riskEl.title = 'Worst-case loss for this straddle if both per-leg SLs fire. '
+                    riskEl.title = 'Worst-case loss for this strangle if both per-leg SLs fire. '
                         + 'Currently used: CE ' + ceC.toFixed(1) + '%, PE ' + peC.toFixed(1) + '% of the SL budget.';
                 } else {
                     riskEl.textContent = '—';
@@ -753,14 +762,14 @@
             // "what loss have I already locked in vs what's still on the table".
             var consumedEl = document.getElementById('heroConsumedRisk');
             if (consumedEl) {
-                // Prefer day-level consumedRiskToday (aggregates across multi-straddle days);
+                // Prefer day-level consumedRiskToday (aggregates across multi-strangle days);
                 // fall back to closedLegsPnl for older API responses during transition.
                 var closed = Number(d.consumedRiskToday != null ? d.consumedRiskToday : (d.closedLegsPnl || 0));
                 if (closed < -0.01) {
                     consumedEl.textContent = fmtRs(closed);
                     consumedEl.className = 'stat-value pnl-negative';
                     consumedEl.style.color = '';
-                    consumedEl.title = 'Realised LOSS from every leg closed today (aggregated across multi-straddle days). A closed leg in profit is not "consumed risk".';
+                    consumedEl.title = 'Realised LOSS from every leg closed today (aggregated across multi-strangle days). A closed leg in profit is not "consumed risk".';
                 } else {
                     consumedEl.textContent = '—';
                     consumedEl.className = 'stat-value';
@@ -773,7 +782,7 @@
 
             // Refresh the + NEW STRADDLE button enable / disable + tooltip based on the
             // server's gate logic, mirrored client-side.
-            refreshNewStraddleButton();
+            refreshNewStrangleButton();
             refreshSquareoffButton();
             refreshPauseToggle(d);
 
@@ -859,7 +868,7 @@
             var ceQtyEl = document.getElementById('paneCeQty');
             // qty > 0  → leg is open, show the number
             // qty = 0 but ceEntryPremium > 0  → leg was entered today and is now closed → "0"
-            // both = 0 → pre-entry, no straddle → "—"
+            // both = 0 → pre-entry, no strangle → "—"
             if (ceQtyEl) ceQtyEl.textContent = 'QTY · '
                 + (d.ceQty > 0 ? d.ceQty : (d.ceEntryPremium > 0 ? '0' : '—'));
             var ceStrikeEl = document.getElementById('paneCeStrike');
@@ -1240,14 +1249,14 @@
         });
     }
     /** Render the per-leg side-by-side Leg Premium charts. */
-    function renderStraddleChart() {
-        if (!lastDashboardData) { setTimeout(renderStraddleChart, 1000); return; }
+    function renderStrangleChart() {
+        if (!lastDashboardData) { setTimeout(renderStrangleChart, 1000); return; }
         renderLegSplitCharts(lastDashboardData);
     }
 
     function renderLegSplitCharts(d) {
-        if (!ceChart) ceChart = initLegChart('straddleChartCe', 'rgba(52,211,153,');   // green CE
-        if (!peChart) peChart = initLegChart('straddleChartPe', 'rgba(248,113,113,');  // red PE
+        if (!ceChart) ceChart = initLegChart('strangleChartCe', 'rgba(52,211,153,');   // green CE
+        if (!peChart) peChart = initLegChart('strangleChartPe', 'rgba(248,113,113,');  // red PE
         var samples = d.combinedPremiumSamples || [];
         var labels = samples.map(function(s) { return s.t; });
         var ceData = samples.map(function(s) { return s.ce != null ? s.ce : null; });
@@ -1289,9 +1298,9 @@
         peChart.options.scales.y.min = 0;
         peChart.update('none');
     }
-    setTimeout(renderStraddleChart, 1500);
+    setTimeout(renderStrangleChart, 1500);
     // Re-render every 5s alongside the dashboard poll
-    setInterval(renderStraddleChart, 5000);
+    setInterval(renderStrangleChart, 5000);
 
     // ── Market Clock (same logic as the previous Positions page) ────────────
     var NSE_HOLIDAYS = {}; // {date: name}
@@ -1358,19 +1367,19 @@
             var dh = Math.floor(diff / 60), dm = diff % 60;
             renderSubLine(subEl,
                 'Pre-market in ' + (dh > 0 ? dh + 'h ' : '') + dm + 'm',
-                'var(--accent-yellow)', straddleCountdownInfo(now));
+                'var(--accent-yellow)', strangleCountdownInfo(now));
         } else if (mins < marketOpen) {
             clockEl.textContent = now.toLocaleTimeString('en-IN', {hour12:false});
             renderSubLine(subEl,
                 'Pre-Market (' + (marketOpen - mins) + 'm to open)',
-                'var(--accent-yellow)', straddleCountdownInfo(now));
+                'var(--accent-yellow)', strangleCountdownInfo(now));
         } else if (mins < marketClose) {
             var remaining = marketClose - mins;
             var rh = Math.floor(remaining / 60), rm = remaining % 60;
             clockEl.textContent = now.toLocaleTimeString('en-IN', {hour12:false});
             renderSubLine(subEl,
                 'Market Open (' + rh + 'h ' + rm + 'm left)',
-                'var(--accent-green)', straddleCountdownInfo(now));
+                'var(--accent-green)', strangleCountdownInfo(now));
         } else {
             clockEl.textContent = now.toLocaleTimeString('en-IN', {hour12:false});
             subEl.textContent = 'Market Closed — ' + nextTradingDay(now);
@@ -1378,16 +1387,16 @@
         }
     }
 
-    /** Compute the straddle countdown segment to append to the market-clock sub-line.
+    /** Compute the strangle countdown segment to append to the market-clock sub-line.
      *  Returns { text, paused }:
      *    paused = true       → "Entry Paused" (rendered red by caller)
      *    Before entryTime    → "Entry in HH:MM:SS"
      *    Open + before sqoff → "Squareoff in HH:MM:SS"
      *    Otherwise           → "" (segment hidden).
-     *  The paused indicator overrides the entry countdown only — once the straddle is
+     *  The paused indicator overrides the entry countdown only — once the strangle is
      *  open, "Squareoff in …" still shows so the operator can see the timed-squareoff
      *  ETA even while pause is on. */
-    function straddleCountdownInfo(now) {
+    function strangleCountdownInfo(now) {
         var d = lastDashboardData;
         var empty = { text: '', paused: false };
         if (!d) return empty;
@@ -1464,7 +1473,7 @@
 
     /** Inverse-color variant of renderChangeBadge. Used on the Risk Band's Live Combined badge
      *  where a positive change (combined premium higher than entry) is BAD for our short
-     *  straddle — so render red. A negative change (premium dropped) is GOOD — render green. */
+     *  strangle — so render red. A negative change (premium dropped) is GOOD — render green. */
     function renderInverseChangeBadge(elId, ch, chp) {
         var el = document.getElementById(elId);
         if (!el) return;
@@ -1482,7 +1491,7 @@
     }
 
     /** For leg cards, the change badge represents the move from ENTRY price, not from the day's
-     *  prev close. This is what matters for the open short straddle — how far has each option
+     *  prev close. This is what matters for the open short strangle — how far has each option
      *  moved since the bot sold it? Returns the move and its percentage of the entry premium.
      *  Falls back to whatever the backend supplied only if we don't have entry + LTP yet. */
     function legChangeOrEntryFallback(ch, chp, entryPremium, currentLtp) {
@@ -1498,7 +1507,7 @@
     //   A) ...YYMDD<strike>CE|PE  (e.g. NIFTY2660223850CE → strike 23850) — current format
     //   B) ...YYMDD[CP]<strike>   (e.g. NIFTY25527C24350 → strike 24350) — older format
     // Resolves the strike to show on each leg card. Once the strategy has placed the
-    // straddle, the Fyers option symbol encodes the strike — we parse it out. Pre-entry
+    // strangle, the Fyers option symbol encodes the strike — we parse it out. Pre-entry
     // we surface the balanced-ATM projection from the server (uses premium-balance +
     // synthetic-futures methods) instead of a naïve spot/50 round.
     function strikeForLeg(fyersSymbol, niftyLtp, projectedAtm) {
@@ -1582,11 +1591,11 @@
     }
     setInterval(function() { if (holidaysLoaded) updateMarketClock(); }, 1000);
 
-    // ── Squareoff Straddle (close both legs) ────────────────────────────────
-    function closeStraddle() {
+    // ── Squareoff Strangle (close both legs) ────────────────────────────────
+    function closeStrangle() {
         var openStates = ['OPEN_BOTH','OPEN_CE_ONLY','OPEN_PE_ONLY'];
         if (!lastDashboardData || openStates.indexOf(lastDashboardData.state) < 0) {
-            if (window.showToast) showToast('No active straddle to squareoff', 'info');
+            if (window.showToast) showToast('No active strangle to squareoff', 'info');
             return;
         }
         var d = lastDashboardData;
@@ -1596,11 +1605,11 @@
                 + '\nPE: ' + (d.peSymbol || '—')
                 + '\n\nAfter this, state transitions to DONE_FOR_DAY and no more entries fire today.'
                 + ' The combined open MTM (' + fmtRs(d.combinedMtm || 0) + ') becomes realised P&L.',
-            onConfirm: doCloseStraddle
+            onConfirm: doCloseStrangle
         });
     }
-    function doCloseStraddle() {
-        var btn = document.getElementById('straddleCloseBtn');
+    function doCloseStrangle() {
+        var btn = document.getElementById('strangleCloseBtn');
         if (btn) { btn.disabled = true; btn.textContent = '✕ Closing…'; }
         fetch('/api/strategies/' + STRATEGY_ID + '/close', {
             method: 'POST',
@@ -1688,18 +1697,18 @@
     }
 
     // ── Reset to IDLE ────────────────────────────────────────────────────────
-    function resetStraddle() {
+    function resetStrangle() {
         showConfirm({
             title: 'Reset state to IDLE?',
             body: 'Clears any stale DONE_FOR_DAY from an earlier rejection.'
                 + ' Next scheduler tick re-evaluates the entry time.'
                 + '\n\nDoes NOT close existing legs at the broker —'
                 + ' use Square Off on the Positions page for that.',
-            onConfirm: doResetStraddle
+            onConfirm: doResetStrangle
         });
     }
-    function doResetStraddle() {
-        var btn = document.getElementById('straddleResetBtn');
+    function doResetStrangle() {
+        var btn = document.getElementById('strangleResetBtn');
         if (btn) { btn.disabled = true; btn.textContent = '↻ Resetting…'; }
         fetch('/api/strategies/' + STRATEGY_ID + '/reset', {
             method: 'POST',
@@ -1718,7 +1727,7 @@
     }
 
     // ── + NEW STRADDLE (manual same-day restart) ────────────────────────────
-    // Client-side mirror of the server gates in ShortStraddle.restartFromDoneForDay.
+    // Client-side mirror of the server gates in ShortStrangle.restartFromDoneForDay.
     // Server is authoritative — this is purely a UX accelerator so the button dims and
     // the tooltip names the block before the operator clicks. A 409 from the server is
     // still surfaced as a toast.
@@ -1733,7 +1742,7 @@
         var mins = now.getHours() * 60 + now.getMinutes();
         return mins >= (9 * 60 + 15) && mins < (15 * 60 + 30);
     }
-    function newStraddleBlockReason(d) {
+    function newStrangleBlockReason(d) {
         if (!d)                                 return 'Waiting for dashboard data';
         if (d.state !== 'DONE_FOR_DAY')         return 'Only available when state is DONE_FOR_DAY';
         if (!isMarketOpenNow())                 return 'Market is closed';
@@ -1804,7 +1813,7 @@
                 });
             };
             var titleOn  = 'Pause trading for today?';
-            var bodyOn   = 'Today\'s straddle will not be entered automatically at the scheduled '
+            var bodyOn   = 'Today\'s strangle will not be entered automatically at the scheduled '
                          + 'time, and the + NEW STRADDLE button will be turned off.\n\n'
                          + 'Any open positions keep running normally — stop loss, target and '
                          + 'timed squareoff still work.';
@@ -1816,10 +1825,10 @@
             var nowMins   = new Date().getHours() * 60 + new Date().getMinutes();
             var entryMins = hmToMins(d.entryTime);
             var bodyOff   = (entryMins > 0 && nowMins >= entryMins)
-                ? ('Today\'s scheduled entry time has already passed, so the straddle will '
+                ? ('Today\'s scheduled entry time has already passed, so the strangle will '
                    + 'NOT fire automatically. Use + NEW STRADDLE to enter at the current ATM '
                    + 'whenever you\'re ready.')
-                : ('Today\'s straddle will be entered automatically at the scheduled time, '
+                : ('Today\'s strangle will be entered automatically at the scheduled time, '
                    + 'and + NEW STRADDLE will be available again.');
             if (typeof window.showConfirm === 'function') {
                 window.showConfirm({
@@ -1836,20 +1845,20 @@
         });
     })();
 
-    function refreshNewStraddleButton() {
-        var btn = document.getElementById('straddleNewBtn');
+    function refreshNewStrangleButton() {
+        var btn = document.getElementById('strangleNewBtn');
         if (!btn) return;
-        var reason = newStraddleBlockReason(lastDashboardData);
+        var reason = newStrangleBlockReason(lastDashboardData);
         var enabled = reason === '';
         btn.disabled = !enabled;
         btn.style.opacity = enabled ? '1' : '0.35';
         btn.style.cursor  = enabled ? 'pointer' : 'not-allowed';
         btn.title = enabled
-            ? 'Manually enter another straddle today at the current ATM.'
+            ? 'Manually enter another strangle today at the current ATM.'
             : reason;
     }
     function refreshSquareoffButton() {
-        var btn = document.getElementById('straddleCloseBtn');
+        var btn = document.getElementById('strangleCloseBtn');
         if (!btn) return;
         var d = lastDashboardData || {};
         var openStates = ['OPEN_BOTH','OPEN_CE_ONLY','OPEN_PE_ONLY'];
@@ -1861,9 +1870,9 @@
             ? 'Square off both legs at market and end today\'s session.'
             : 'No open legs to square off.';
     }
-    function newStraddle() {
+    function newStrangle() {
         var d = lastDashboardData || {};
-        var reason = newStraddleBlockReason(d);
+        var reason = newStrangleBlockReason(d);
         if (reason) {
             if (window.showToast) showToast(reason, 'info');
             return;
@@ -1873,10 +1882,10 @@
         // both candidate strikes and the diagnostic so the operator decides proceed vs skip.
         fetch('/api/strategies/' + STRATEGY_ID + '/atm-preview', { credentials: 'same-origin' })
             .then(function(r) { return r.json(); })
-            .then(function(p) { showNewStraddleConfirm(p || {}); })
-            .catch(function() { showNewStraddleConfirm({}); });
+            .then(function(p) { showNewStrangleConfirm(p || {}); })
+            .catch(function() { showNewStrangleConfirm({}); });
     }
-    function showNewStraddleConfirm(preview) {
+    function showNewStrangleConfirm(preview) {
         var d = lastDashboardData || {};
         var spot = d.niftyLtp || d.niftyDisplayLtp || 0;
         var fallbackAtm = spot > 0 ? Math.round(spot / 50) * 50 : '—';
@@ -1885,20 +1894,20 @@
         var ceLtp  = hasPreview ? preview.ceLtp     : null;
         var peLtp  = hasPreview ? preview.peLtp     : null;
         var gap    = hasPreview ? preview.premiumGap : null;
-        var body = 'A second straddle for today will be opened at ATM ~' + chosen + '.'
+        var body = 'A second strangle for today will be opened at ATM ~' + chosen + '.'
              + (hasPreview && ceLtp != null && peLtp != null
                  ? '\n  CE LTP: ' + ceLtp.toFixed(2) + '   PE LTP: ' + peLtp.toFixed(2)
                    + '   gap: ' + (gap != null ? gap.toFixed(2) : '—')
                  : '')
              + '\n\nUses today\'s leg-SL config and qty exactly like the scheduler would.';
         showConfirm({
-            title:     'Enter a NEW straddle now?',
+            title:     'Enter a NEW strangle now?',
             body:      body,
-            onConfirm: doNewStraddle
+            onConfirm: doNewStrangle
         });
     }
-    function doNewStraddle() {
-        var btn = document.getElementById('straddleNewBtn');
+    function doNewStrangle() {
+        var btn = document.getElementById('strangleNewBtn');
         var originalText = btn ? btn.textContent : '';
         if (btn) { btn.disabled = true; btn.textContent = '+ Entering…'; }
         fetch('/api/strategies/' + STRATEGY_ID + '/restart', {
@@ -1908,7 +1917,7 @@
           .then(function(resp) {
               if (window.showToast) {
                   var ok = resp.body.success === true;
-                  showToast(resp.body.message || (ok ? 'New straddle entered' : 'Restart blocked'),
+                  showToast(resp.body.message || (ok ? 'New strangle entered' : 'Restart blocked'),
                       ok ? 'success' : (resp.ok ? 'info' : 'error'));
               }
           })
@@ -1922,7 +1931,7 @@
     }
     // Recheck the button every second too, since the market-open / squareoff-time gates
     // change on a wall-clock boundary, not on a dashboard refresh.
-    setInterval(refreshNewStraddleButton, 1000);
+    setInterval(refreshNewStrangleButton, 1000);
 </script>
 
 </body>

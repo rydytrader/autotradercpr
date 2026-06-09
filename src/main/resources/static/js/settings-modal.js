@@ -1,7 +1,7 @@
 /**
  * Settings modal — opened from the gear icon in the navbar.
  *
- * Tabs: STRADDLES (CRUD for short-straddle instances) · PORTFOLIO RISK · CHARGES · USERS.
+ * Tabs: STRADDLES · STRANGLES (CRUD for instances) · PORTFOLIO RISK · CHARGES · USERS.
  * Per-instance trading settings (entry time, lots, SL%) no longer live here — they're
  * opened from each instance's dashboard page via the ⚙ Settings button.
  */
@@ -10,6 +10,7 @@
     var activeTab = null;
     var strategiesList = [];     // [{id, displayName, shortCode, navIcon, currentState}]
     var straddles      = [];     // [{id, name, description, shortCode, navIcon, enabled, currentState}]
+    var strangles      = [];     // [{id, name, description, shortCode, navIcon, enabled, currentState}]
 
     function ensureBuilt() {
         if (modalEl) return modalEl;
@@ -41,6 +42,25 @@
                       '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">' +
                         '<button class="sm-btn-secondary" onclick="SettingsModal.cancelStraddleForm()">Cancel</button>' +
                         '<button class="sm-btn-primary" onclick="SettingsModal.saveStraddle()">Save</button>' +
+                      '</div>' +
+                    '</div>' +
+                  '</div>' +
+                  // Strangles tab — CRUD for short-strangle instances
+                  '<div class="sm-pane" data-pane="strangles" style="display:none;">' +
+                    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
+                      '<div class="sm-hint" style="margin:0;">Each row is an independent short strangle with its own settings, state, sidebar entry and dashboard. Pick OTM offsets in the per-instance ⚙ Settings.</div>' +
+                      '<button class="sm-btn-primary" onclick="SettingsModal.showStrangleForm()">+ Add Strangle</button>' +
+                    '</div>' +
+                    '<div id="sm-strangles-list" style="font-family:var(--font-mono);font-size:0.78rem;">Loading…</div>' +
+                    '<div id="sm-strangle-form" style="display:none;margin-top:18px;padding:14px;border:1px solid var(--border);border-radius:8px;background:var(--bg-primary);">' +
+                      '<div style="font-family:var(--font-mono);font-size:0.84rem;font-weight:700;margin-bottom:10px;color:var(--text-primary);" id="sm-strangle-form-title">Add Strangle</div>' +
+                      '<input type="hidden" id="sm-strangle-id">' +
+                      '<div class="sm-field"><label>Name</label><input type="text" id="sm-strangle-name" maxlength="80" placeholder="e.g. 9:20 ±100"></div>' +
+                      '<div class="sm-field"><label>Description</label><input type="text" id="sm-strangle-description" maxlength="240" placeholder="e.g. ATM ±100 strangle, 50% leg SL"></div>' +
+                      '<div class="sm-field"><label>Short Code <span style="font-size:0.66rem;color:var(--text-muted);">(used as sidebar label — must be unique, ≤24 chars)</span></label><input type="text" id="sm-strangle-shortCode" maxlength="24" placeholder="e.g. STG1"></div>' +
+                      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">' +
+                        '<button class="sm-btn-secondary" onclick="SettingsModal.cancelStrangleForm()">Cancel</button>' +
+                        '<button class="sm-btn-primary" onclick="SettingsModal.saveStrangle()">Save</button>' +
                       '</div>' +
                     '</div>' +
                   '</div>' +
@@ -127,6 +147,7 @@
         if (!strip) return;
         var html = '';
         html += '<button class="sm-tab" data-tab="straddles">STRADDLES</button>';
+        html += '<button class="sm-tab" data-tab="strangles">STRANGLES</button>';
         html += '<button class="sm-tab" data-tab="portfolio-risk">PORTFOLIO RISK</button>';
         html += '<button class="sm-tab" data-tab="charges">CHARGES</button>';
         html += '<button class="sm-tab" data-tab="users">USERS</button>';
@@ -146,6 +167,9 @@
         if (tab === 'straddles') {
             var sp = modalEl.querySelector('[data-pane="straddles"]'); if (sp) sp.style.display = '';
             loadStraddles();
+        } else if (tab === 'strangles') {
+            var stp = modalEl.querySelector('[data-pane="strangles"]'); if (stp) stp.style.display = '';
+            loadStrangles();
         } else if (tab === 'portfolio-risk') {
             var pp = modalEl.querySelector('[data-pane="portfolio-risk"]'); if (pp) pp.style.display = '';
             loadPortfolioRiskValues();
@@ -162,6 +186,7 @@
         if (activeTab === 'portfolio-risk') return savePortfolioRiskTab();
         if (activeTab === 'charges')        return saveChargesTab();
         if (activeTab === 'straddles')      { showBanner('Use the row buttons (✎ ✕ enable/disable) — no batch save.', 'info'); return; }
+        if (activeTab === 'strangles')      { showBanner('Use the row buttons (✎ ✕ enable/disable) — no batch save.', 'info'); return; }
         if (activeTab === 'users')          { showBanner('Use the row buttons to manage users.', 'info'); return; }
         showBanner('No save action for this tab.', 'info');
     }
@@ -264,6 +289,105 @@
                 }
                 showBanner('✓ Straddle ' + (enable ? 'enabled' : 'disabled'), 'success');
                 loadStraddles();
+                refreshSidebar();
+            }).catch(function(err) { showBanner('✗ Toggle failed: ' + (err.message || err), 'error'); });
+    }
+
+    // ── Strangles CRUD ───────────────────────────────────────────────────────
+    function loadStrangles() {
+        var list = document.getElementById('sm-strangles-list');
+        if (!list) return;
+        list.textContent = 'Loading…';
+        fetch('/api/strangles').then(function(r) { return r.json(); }).then(function(arr) {
+            strangles = Array.isArray(arr) ? arr : [];
+            renderStranglesList();
+        }).catch(function() { list.textContent = 'Failed to load strangles.'; });
+    }
+
+    function renderStranglesList() {
+        var list = document.getElementById('sm-strangles-list');
+        if (!list) return;
+        if (!strangles || strangles.length === 0) {
+            list.innerHTML = '<div style="color:var(--text-muted);font-style:italic;padding:14px 0;">No strangles yet. Click + Add Strangle to create your first one.</div>';
+            return;
+        }
+        list.innerHTML = strangles.map(function(s) {
+            var enabled = s.enabled === true;
+            var name = escapeHtml(s.name || s.shortCode || s.id);
+            var desc = escapeHtml(s.description || '');
+            var sc   = escapeHtml(s.shortCode || '');
+            var state = escapeHtml(s.currentState || '—');
+            var rowJson = JSON.stringify(s).replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+            var stripStyle = enabled
+                ? 'border-left:4px solid var(--accent-green);padding-left:9px;'
+                : 'border-left:4px solid var(--accent-red, #f87171);padding-left:9px;';
+            return '<div class="sm-user-row" style="' + stripStyle + '">' +
+                '<div style="flex:1;">' +
+                    '<div style="color:var(--text-primary);">' + sc + ' · ' + name + '</div>' +
+                    (desc ? '<div style="color:var(--text-muted);font-size:0.7rem;margin-top:2px;">' + desc + '</div>' : '') +
+                    '<div style="color:var(--text-muted);font-size:0.66rem;margin-top:2px;">state ' + state + ' · ' + (enabled ? 'ENABLED' : 'DISABLED') + '</div>' +
+                '</div>' +
+                '<div>' +
+                    '<button onclick="SettingsModal.toggleStrangle(\'' + escapeHtml(s.id) + '\', ' + (!enabled) + ')">' + (enabled ? 'Disable' : 'Enable') + '</button>' +
+                    '<button onclick="SettingsModal.editStrangleForm(' + rowJson + ')">Edit</button>' +
+                '</div>' +
+            '</div>';
+        }).join('');
+    }
+
+    function showStrangleForm(s) {
+        document.getElementById('sm-strangle-form').style.display = '';
+        document.getElementById('sm-strangle-form-title').textContent = s ? 'Edit Strangle' : 'Add Strangle';
+        document.getElementById('sm-strangle-id').value          = s ? s.id : '';
+        document.getElementById('sm-strangle-name').value        = s ? (s.name || '') : '';
+        document.getElementById('sm-strangle-description').value = s ? (s.description || '') : '';
+        document.getElementById('sm-strangle-shortCode').value   = s ? (s.shortCode || '') : '';
+    }
+
+    function cancelStrangleForm() {
+        document.getElementById('sm-strangle-form').style.display = 'none';
+    }
+
+    function saveStrangle() {
+        var id = document.getElementById('sm-strangle-id').value;
+        var body = {
+            name:        document.getElementById('sm-strangle-name').value.trim(),
+            description: document.getElementById('sm-strangle-description').value.trim(),
+            shortCode:   document.getElementById('sm-strangle-shortCode').value.trim()
+        };
+        if (!body.name)      { showBanner('✗ Name is required', 'error'); return; }
+        if (!body.shortCode) { showBanner('✗ Short code is required', 'error'); return; }
+        var url    = id ? ('/api/strangles/' + encodeURIComponent(id)) : '/api/strangles';
+        var method = id ? 'PUT' : 'POST';
+        fetch(url, {
+            method: method,
+            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders()),
+            body: JSON.stringify(body)
+        }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, body: d }; }); })
+          .then(function(res) {
+            if (!res.ok) { showBanner('✗ ' + ((res.body && res.body.error) || 'Save failed'), 'error'); return; }
+            showBanner('✓ Strangle ' + (id ? 'updated' : 'created'), 'success');
+            cancelStrangleForm();
+            loadStrangles();
+            refreshSidebar();
+        }).catch(function(err) { showBanner('✗ Save failed: ' + (err.message || err), 'error'); });
+    }
+
+    function toggleStrangle(id, enable) {
+        var url = '/api/strangles/' + encodeURIComponent(id) + (enable ? '/enable' : '/disable');
+        fetch(url, { method: 'POST', headers: csrfHeaders() })
+            .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, status: r.status, body: d }; }); })
+            .then(function(res) {
+                if (!res.ok) {
+                    var msg = (res.body && res.body.error) || 'Toggle failed';
+                    if (res.status === 409 && res.body && res.body.currentState) {
+                        msg += ' (state=' + res.body.currentState + ')';
+                    }
+                    showBanner('✗ ' + msg, 'error');
+                    return;
+                }
+                showBanner('✓ Strangle ' + (enable ? 'enabled' : 'disabled'), 'success');
+                loadStrangles();
                 refreshSidebar();
             }).catch(function(err) { showBanner('✗ Toggle failed: ' + (err.message || err), 'error'); });
     }
@@ -435,6 +559,7 @@
         } else {
             // Re-open: refresh values for the active tab.
             if (activeTab === 'straddles')           loadStraddles();
+            else if (activeTab === 'strangles')      loadStrangles();
             else if (activeTab === 'portfolio-risk') loadPortfolioRiskValues();
             else if (activeTab === 'charges')        loadChargesValues();
             else                                     switchTab('straddles');
@@ -542,6 +667,11 @@
         editStraddleForm: function(s) { showStraddleForm(s); },
         cancelStraddleForm: cancelStraddleForm,
         saveStraddle: saveStraddle,
-        toggleStraddle: toggleStraddle
+        toggleStraddle: toggleStraddle,
+        showStrangleForm: function() { showStrangleForm(); },
+        editStrangleForm: function(s) { showStrangleForm(s); },
+        cancelStrangleForm: cancelStrangleForm,
+        saveStrangle: saveStrangle,
+        toggleStrangle: toggleStrangle
     };
 })();

@@ -108,7 +108,7 @@
     <div style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;
                 color:var(--text-muted);text-transform:uppercase;text-align:center;
                 width:72px;margin:6px 0 2px;">STRADDLES</div>
-    <th:block th:each="strat,iter : ${sidebarStrategies}">
+    <th:block th:each="strat,iter : ${sidebarStrategies}" th:if="${strat.type == 'STRADDLE'}">
         <a th:href="@{${strat.href}}"
            th:title="${strat.displayName}"
            th:attr="data-nav-key=${strat.id}"
@@ -119,6 +119,24 @@
                   font-size:0.86rem;color:var(--text-secondary);border:1px solid transparent;
                   background:transparent;cursor:pointer;letter-spacing:0.06em;white-space:nowrap;
                   overflow:hidden;text-overflow:ellipsis;padding:0 6px;">C</a>
+        <div th:unless="${iter.last}"
+             style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
+    </th:block>
+    <div style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
+    <div style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;
+                color:var(--text-muted);text-transform:uppercase;text-align:center;
+                width:72px;margin:6px 0 2px;">STRANGLES</div>
+    <th:block th:each="strat,iter : ${sidebarStrategies}" th:if="${strat.type == 'STRANGLE'}">
+        <a th:href="@{${strat.href}}"
+           th:title="${strat.displayName}"
+           th:attr="data-nav-key=${strat.id}"
+           class="nav-icon"
+           th:text="${strat.navIcon}"
+           style="display:flex;align-items:center;justify-content:center;width:72px;height:40px;
+                  border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
+                  font-size:0.86rem;color:var(--text-secondary);border:1px solid transparent;
+                  background:transparent;cursor:pointer;letter-spacing:0.06em;white-space:nowrap;
+                  overflow:hidden;text-overflow:ellipsis;padding:0 6px;">G</a>
         <div th:unless="${iter.last}"
              style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
     </th:block>
