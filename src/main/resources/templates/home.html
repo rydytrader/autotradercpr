@@ -94,10 +94,11 @@
               font-size:0.78rem;letter-spacing:0.10em;color:var(--text-secondary);
               border:1px solid transparent;background:transparent;cursor:pointer;">HOME</a>
     <div style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
-    <div style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;
+    <div th:if="${not #lists.isEmpty(sidebarStraddles)}"
+         style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;
                 color:var(--text-muted);text-transform:uppercase;text-align:center;
                 width:72px;margin:6px 0 2px;">STRADDLES</div>
-    <th:block th:each="strat,iter : ${sidebarStrategies}" th:if="${strat.type == 'STRADDLE'}">
+    <th:block th:each="strat,iter : ${sidebarStraddles}">
         <a th:href="@{${strat.href}}"
            th:title="${strat.displayName}"
            th:attr="data-nav-key=${strat.id}"
@@ -111,10 +112,11 @@
         <div th:unless="${iter.last}"
              style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
     </th:block>
-    <div style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;
+    <div th:if="${not #lists.isEmpty(sidebarStrangles)}"
+         style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;
                 color:var(--text-muted);text-transform:uppercase;text-align:center;
                 width:72px;margin:10px 0 2px;">STRANGLES</div>
-    <th:block th:each="strat,iter : ${sidebarStrategies}" th:if="${strat.type == 'STRANGLE'}">
+    <th:block th:each="strat,iter : ${sidebarStrangles}">
         <a th:href="@{${strat.href}}"
            th:title="${strat.displayName}"
            th:attr="data-nav-key=${strat.id}"

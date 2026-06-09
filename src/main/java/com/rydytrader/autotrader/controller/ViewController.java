@@ -228,8 +228,24 @@ public class ViewController {
      *  client-side selectors. Per-strategy operational dashboards live at {@code /strategies/{id}}. */
     @GetMapping("/home")
     public String home(Model model) {
-        model.addAttribute("sidebarStrategies", sidebarStrategies());
+        addSidebarModel(model);
         return "home";
+    }
+
+    /** Push the sidebar lists into the model. The full list stays under {@code sidebarStrategies}
+     *  for backwards compat with any third-party templates; the per-type lists drive the
+     *  STRADDLES/STRANGLES section headers (hidden when the matching list is empty). */
+    private void addSidebarModel(Model model) {
+        List<Map<String, Object>> all = sidebarStrategies();
+        List<Map<String, Object>> straddles = new ArrayList<>();
+        List<Map<String, Object>> strangles = new ArrayList<>();
+        for (Map<String, Object> e : all) {
+            Object t = e.get("type");
+            if ("STRANGLE".equals(t)) strangles.add(e); else straddles.add(e);
+        }
+        model.addAttribute("sidebarStrategies", all);
+        model.addAttribute("sidebarStraddles", straddles);
+        model.addAttribute("sidebarStrangles", strangles);
     }
 
     /** Per-strategy operational dashboard. Same template (short-straddle.html) for every
@@ -250,7 +266,7 @@ public class ViewController {
         model.addAttribute("strategyDescription", s != null ? s.description() : "");
         model.addAttribute("strategyShortCode",   s != null ? s.shortCode() : "");
         model.addAttribute("strategyType",        s != null ? s.strategyType() : "STRADDLE");
-        model.addAttribute("sidebarStrategies",   sidebarStrategies());
+        addSidebarModel(model);
         // Pick the per-instance template based on strategy type. Strangle gets its own
         // template ({@code short-strangle.html}); everything else falls back to the
         // straddle template.
@@ -259,7 +275,7 @@ public class ViewController {
 
     @GetMapping("/calendar")
     public String calendar(Model model) {
-        model.addAttribute("sidebarStrategies", sidebarStrategies());
+        addSidebarModel(model);
         return "calendar";
     }
 }

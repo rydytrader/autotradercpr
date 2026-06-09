@@ -453,10 +453,14 @@
 
                 // Divider between HOME and the first strategy group (matches the static template).
                 appendDivider();
-                appendLabel('STRADDLES', '6px');
-                appendChips(straddles);
-                appendLabel('STRANGLES', '10px');
-                appendChips(strangles);
+                if (straddles.length > 0) {
+                    appendLabel('STRADDLES', '6px');
+                    appendChips(straddles);
+                }
+                if (strangles.length > 0) {
+                    appendLabel('STRANGLES', '10px');
+                    appendChips(strangles);
+                }
 
                 if (deletedId && pathnow === ('/strategies/' + deletedId)) {
                     window.location.href = '/home';
