@@ -143,11 +143,13 @@ public class BalancedAtmSelector {
         );
     }
 
-    /** Walk the chain and pick: CE strike at-or-above {@code atmStrike} whose CE LTP is closest
-     *  to {@code targetPremium}; PE strike at-or-below {@code atmStrike} whose PE LTP is closest
-     *  to {@code targetPremium}. Strikes with unquoted (zero) LTP or empty symbol are skipped.
-     *  Returns {@code null} when the chain can't be fetched or no quoted strike exists on a
-     *  side. Used by ShortStrangle's premium-driven strike selection. */
+    /** Walk the chain and pick: CE strike STRICTLY ABOVE {@code atmStrike} whose CE LTP is
+     *  closest to {@code targetPremium}; PE strike STRICTLY BELOW {@code atmStrike} whose PE
+     *  LTP is closest to {@code targetPremium}. The strict inequality guarantees both legs are
+     *  OTM — the ATM strike itself is excluded so the trade is always a true strangle, never
+     *  collapsing to a straddle when the target premium happens to sit near the ATM premium.
+     *  Strikes with unquoted (zero) LTP or empty symbol are skipped. Returns {@code null} when
+     *  the chain can't be fetched or no quoted OTM strike exists on a side. */
     public StrikeSymbols resolveStrikeSymbolsByPremium(long atmStrike, double targetPremium) {
         if (targetPremium <= 0) return null;
         NavigableMap<Long, ChainRow> chain = fetchChain();
@@ -161,13 +163,13 @@ public class BalancedAtmSelector {
         for (java.util.Map.Entry<Long, ChainRow> e : chain.entrySet()) {
             long strike = e.getKey();
             ChainRow row = e.getValue();
-            // CE side — strike at-or-above ATM, real LTP, real symbol.
-            if (strike >= atmStrike && row.ce > 0 && row.ceSym != null && !row.ceSym.isEmpty()) {
+            // CE side — strike STRICTLY above ATM (OTM call), real LTP, real symbol.
+            if (strike > atmStrike && row.ce > 0 && row.ceSym != null && !row.ceSym.isEmpty()) {
                 double diff = Math.abs(row.ce - targetPremium);
                 if (diff < bestCallDiff) { bestCallDiff = diff; bestCallStrike = strike; }
             }
-            // PE side — strike at-or-below ATM, real LTP, real symbol.
-            if (strike <= atmStrike && row.pe > 0 && row.peSym != null && !row.peSym.isEmpty()) {
+            // PE side — strike STRICTLY below ATM (OTM put), real LTP, real symbol.
+            if (strike < atmStrike && row.pe > 0 && row.peSym != null && !row.peSym.isEmpty()) {
                 double diff = Math.abs(row.pe - targetPremium);
                 if (diff < bestPutDiff) { bestPutDiff = diff; bestPutStrike = strike; }
             }
