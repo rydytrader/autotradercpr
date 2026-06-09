@@ -129,7 +129,6 @@
         var dayHtml = '';
         if (dteOrder.length > 0) {
             dayHtml += '<div class="ss-section-title">Days to Expiry · enable + per-leg SL</div>';
-            dayHtml += '<div class="ss-hint">Per-DTE toggle and SL %. Lookup follows the actual weekly expiry — a "0 DTE" rule fires on whichever calendar day expiry lands on (Tuesday by default, or any other weekday if NSE shifts it for a holiday).</div>';
             dayHtml += '<div class="ss-day-grid">';
             dayHtml += '<div class="ss-day-header"><span>DTE</span><span>Enable</span><span>SL %</span><span>SL Points</span></div>';
             dteOrder.forEach(function(n) {

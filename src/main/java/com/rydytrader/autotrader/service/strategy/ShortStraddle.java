@@ -382,8 +382,7 @@ public class ShortStraddle implements Strategy {
         // trading config only (entry time, lots, per-day SL %, squareoff).
         s.add(field("entryTime",     "time",    "09:20", "Entry Time (HH:mm IST)", null));
         s.add(field("squareOffTime", "time",    "15:15", "Squareoff Time (HH:mm IST)", null));
-        s.add(field("lotsPerLeg",    "int",      1,      "Lots per Leg",
-            "Qty = lots × NIFTY lot size (65)."));
+        s.add(field("lotsPerLeg",    "int",      1,      "Lots per Leg", null));
         // Dropdown — INTRADAY (Fyers MIS) or OVERNIGHT (Fyers MARGIN / NRML).
         java.util.Map<String, Object> orderTypeFld = new java.util.LinkedHashMap<>();
         orderTypeFld.put("key", "orderType");
@@ -394,24 +393,17 @@ public class ShortStraddle implements Strategy {
         s.add(orderTypeFld);
         // Move-to-cost option. When ON, the moment one leg's SL fires the OTHER leg's SL
         // trigger collapses from "entry + threshold" down to its entry premium — locking
-        // break-even on the surviving leg. Off by default; opt in per instance. Marked wide
-        // so the long hint text spans both columns of the settings form instead of wrapping.
-        java.util.Map<String, Object> moveToCostFld = field("moveSlToCostOnFirstLegHit", "boolean", false,
-            "Move SL to Cost on First Leg SL Hit",
-            "When one leg's SL fires, drop the surviving leg's SL trigger to its entry premium "
-            + "(cost). The remaining leg closes the moment it gives back its premium.");
-        moveToCostFld.put("wide", true);
-        s.add(moveToCostFld);
+        // break-even on the surviving leg. Off by default; opt in per instance.
+        s.add(field("moveSlToCostOnFirstLegHit", "boolean", false,
+            "Move SL to Cost on First Leg SL Hit", null));
         // Per-DTE enable + SL %. Rows ordered 4 → 3 → 2 → 1 → 0 so the layout reads top-down
         // away-from-expiry → expiry-day. Defaults: every level on at 50 %, matching the
         // previous single-SL behaviour. Keys live under {@code dte.<N>.*} so the lookup
         // follows the actual expiry instead of the weekday.
         for (String n : DTE_LEVELS) {
-            s.add(field("dte." + n + ".enabled",  "boolean", true, n + " DTE — Enable",
-                "Enter straddle when today is " + n + " day(s) to weekly expiry. Disabled rows are skipped."));
-            s.add(field("dte." + n + ".legSlPct",    "percent", 50, n + " DTE — SL %", null));
-            s.add(field("dte." + n + ".legSlPoints", "double",  0,  n + " DTE — SL Points",
-                "Direct premium points added to entry. Takes precedence over SL % when > 0."));
+            s.add(field("dte." + n + ".enabled",     "boolean", true, n + " DTE — Enable",     null));
+            s.add(field("dte." + n + ".legSlPct",    "percent", 50,   n + " DTE — SL %",       null));
+            s.add(field("dte." + n + ".legSlPoints", "double",  0,    n + " DTE — SL Points",  null));
         }
         return s;
     }
