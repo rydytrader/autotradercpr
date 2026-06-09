@@ -73,6 +73,15 @@ public class SchemaMigration implements ApplicationRunner {
             }
         }
 
+        // Drop the legacy unique constraint on short_code. Operators may want to reuse the
+        // same short code across multiple instances (e.g. two 9:20 straddles for A/B testing
+        // different settings). The constraint was created by Hibernate on earlier boots when
+        // the @UniqueConstraint annotation was still present; removing the annotation alone
+        // doesn't drop the existing index. H2 supports IF EXISTS so the statement is safe on
+        // brand-new installs that never had the constraint.
+        try { jdbc.execute("ALTER TABLE strategy_instances DROP CONSTRAINT IF EXISTS uk_strategy_instance_short_code"); }
+        catch (Exception e) { log.debug("[SchemaMigration] drop unique constraint skipped — {}", e.getMessage()); }
+
         // Backfill the discriminator on any row Hibernate just inserted a NULL into when it
         // auto-added the strategy_type column to the renamed strategy_instances table.
         try {

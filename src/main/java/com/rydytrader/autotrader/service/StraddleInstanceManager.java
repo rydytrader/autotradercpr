@@ -171,9 +171,6 @@ public class StraddleInstanceManager implements ApplicationRunner {
     public synchronized ShortStraddle create(String name, String description, String shortCode) {
         validateName(name);
         validateShortCode(shortCode);
-        if (repo.findByShortCode(shortCode.trim()).isPresent()) {
-            throw new IllegalArgumentException("Short code already in use: " + shortCode);
-        }
         StrategyInstanceEntity row = new StrategyInstanceEntity();
         row.setName(name.trim());
         row.setDescription(description == null ? "" : description.trim());
@@ -204,14 +201,7 @@ public class StraddleInstanceManager implements ApplicationRunner {
         if (newName != null && !newName.isBlank()) row.setName(newName.trim());
         if (newDescription != null)               row.setDescription(newDescription.trim());
         if (newShortCode != null && !newShortCode.isBlank()) {
-            String trimmed = newShortCode.trim();
-            if (!trimmed.equals(row.getShortCode())) {
-                Optional<StrategyInstanceEntity> clash = repo.findByShortCode(trimmed);
-                if (clash.isPresent() && !clash.get().getId().equals(row.getId())) {
-                    throw new IllegalArgumentException("Short code already in use: " + newShortCode);
-                }
-                row.setShortCode(trimmed);
-            }
+            row.setShortCode(newShortCode.trim());
         }
         row.setUpdatedAtMillis(System.currentTimeMillis());
         row = repo.save(row);

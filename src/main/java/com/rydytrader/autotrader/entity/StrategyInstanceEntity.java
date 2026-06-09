@@ -17,9 +17,7 @@ import jakarta.persistence.*;
  * are preserved; the instance is hidden from the registry until manually restored.
  */
 @Entity
-@Table(name = "strategy_instances",
-       uniqueConstraints = @UniqueConstraint(name = "uk_strategy_instance_short_code",
-                                             columnNames = "short_code"))
+@Table(name = "strategy_instances")
 public class StrategyInstanceEntity {
 
     @Id

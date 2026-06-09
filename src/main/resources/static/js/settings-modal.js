@@ -38,7 +38,7 @@
                       '<input type="hidden" id="sm-straddle-id">' +
                       '<div class="sm-field"><label>Name</label><input type="text" id="sm-straddle-name" maxlength="80" placeholder="e.g. 9:20 Default"></div>' +
                       '<div class="sm-field"><label>Description</label><input type="text" id="sm-straddle-description" maxlength="240" placeholder="e.g. standard 1-lot, 50% leg SL"></div>' +
-                      '<div class="sm-field"><label>Short Code <span style="font-size:0.66rem;color:var(--text-muted);">(used as sidebar label — must be unique, ≤24 chars)</span></label><input type="text" id="sm-straddle-shortCode" maxlength="24" placeholder="e.g. 9:20"></div>' +
+                      '<div class="sm-field"><label>Short Code <span style="font-size:0.66rem;color:var(--text-muted);">(used as sidebar label — ≤24 chars)</span></label><input type="text" id="sm-straddle-shortCode" maxlength="24" placeholder="e.g. 9:20"></div>' +
                       '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">' +
                         '<button class="sm-btn-secondary" onclick="SettingsModal.cancelStraddleForm()">Cancel</button>' +
                         '<button class="sm-btn-primary" onclick="SettingsModal.saveStraddle()">Save</button>' +
@@ -57,7 +57,7 @@
                       '<input type="hidden" id="sm-strangle-id">' +
                       '<div class="sm-field"><label>Name</label><input type="text" id="sm-strangle-name" maxlength="80" placeholder="e.g. 9:20 ±100"></div>' +
                       '<div class="sm-field"><label>Description</label><input type="text" id="sm-strangle-description" maxlength="240" placeholder="e.g. ATM ±100 strangle, 50% leg SL"></div>' +
-                      '<div class="sm-field"><label>Short Code <span style="font-size:0.66rem;color:var(--text-muted);">(used as sidebar label — must be unique, ≤24 chars)</span></label><input type="text" id="sm-strangle-shortCode" maxlength="24" placeholder="e.g. STG1"></div>' +
+                      '<div class="sm-field"><label>Short Code <span style="font-size:0.66rem;color:var(--text-muted);">(used as sidebar label — ≤24 chars)</span></label><input type="text" id="sm-strangle-shortCode" maxlength="24" placeholder="e.g. STG1"></div>' +
                       '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">' +
                         '<button class="sm-btn-secondary" onclick="SettingsModal.cancelStrangleForm()">Cancel</button>' +
                         '<button class="sm-btn-primary" onclick="SettingsModal.saveStrangle()">Save</button>' +
