@@ -3,7 +3,7 @@ package com.rydytrader.autotrader.service.strategy;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.dto.OrderDTO;
-import com.rydytrader.autotrader.entity.StraddleInstanceEntity;
+import com.rydytrader.autotrader.entity.StrategyInstanceEntity;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
 import com.rydytrader.autotrader.service.EventService;
 import com.rydytrader.autotrader.service.MarketDataService;
@@ -75,8 +75,8 @@ public class ShortStraddle implements Strategy {
     private final OrderService orderService;
     private final MarketHolidayService marketHolidayService;
     private final TelegramService telegramService;
-    private final com.rydytrader.autotrader.repository.StraddleSessionRepository sessionRepo;
-    private final com.rydytrader.autotrader.repository.StraddleTradeRepository tradeRepo;
+    private final com.rydytrader.autotrader.repository.StrategySessionRepository sessionRepo;
+    private final com.rydytrader.autotrader.repository.StrategyTradeRepository tradeRepo;
     private final OrderEventService orderEventService;
     private final BalancedAtmSelector atmSelector;
 
@@ -176,7 +176,7 @@ public class ShortStraddle implements Strategy {
     private volatile long                              cachedAtmPreviewMs = 0;
     private static final long ATM_PREVIEW_TTL_MS = 30_000L;
 
-    public ShortStraddle(StraddleInstanceEntity entity,
+    public ShortStraddle(StrategyInstanceEntity entity,
                          RiskSettingsStore riskSettings,
                          ShortStraddleStateStore stateStore,
                          EventService eventService,
@@ -187,8 +187,8 @@ public class ShortStraddle implements Strategy {
                          OrderService orderService,
                          MarketHolidayService marketHolidayService,
                          TelegramService telegramService,
-                         com.rydytrader.autotrader.repository.StraddleSessionRepository sessionRepo,
-                         com.rydytrader.autotrader.repository.StraddleTradeRepository tradeRepo,
+                         com.rydytrader.autotrader.repository.StrategySessionRepository sessionRepo,
+                         com.rydytrader.autotrader.repository.StrategyTradeRepository tradeRepo,
                          OrderEventService orderEventService,
                          BalancedAtmSelector atmSelector) {
         this.instanceId = entity.strategyId();
@@ -280,7 +280,7 @@ public class ShortStraddle implements Strategy {
     }
 
     /** Refresh display fields when the operator renames the instance via the Straddles tab. */
-    public void syncFromEntity(StraddleInstanceEntity entity) {
+    public void syncFromEntity(StrategyInstanceEntity entity) {
         this.displayName = entity.getName();
         this.description = entity.getDescription();
         this.shortCode   = entity.getShortCode();
@@ -1465,9 +1465,9 @@ public class ShortStraddle implements Strategy {
         double charges = chargesBreakdown.get("total");
         double gross   = realisedPnlToday;
         double net     = gross - charges;
-        com.rydytrader.autotrader.entity.StraddleSessionEntity row =
+        com.rydytrader.autotrader.entity.StrategySessionEntity row =
             sessionRepo.findByStrategyIdAndSessionDate(instanceId, date)
-                       .orElseGet(com.rydytrader.autotrader.entity.StraddleSessionEntity::new);
+                       .orElseGet(com.rydytrader.autotrader.entity.StrategySessionEntity::new);
         row.setStrategyId(instanceId);
         row.setSessionDate(date);
         row.setEntries(ceEntryPremium > 0 || peEntryPremium > 0 || realisedPnlToday != 0 ? 1 : 0);
@@ -1747,8 +1747,8 @@ public class ShortStraddle implements Strategy {
         if (Math.abs(cycleGross) < 0.01 && cycleSellT < 0.01) return;
         try {
             double charges = computeCycleCharges(cycleSellT, cycleBuyT, cycleOrders);
-            com.rydytrader.autotrader.entity.StraddleTradeEntity t =
-                new com.rydytrader.autotrader.entity.StraddleTradeEntity();
+            com.rydytrader.autotrader.entity.StrategyTradeEntity t =
+                new com.rydytrader.autotrader.entity.StrategyTradeEntity();
             t.setStrategyId(instanceId);
             t.setSessionDate(dayKey != null && !dayKey.isEmpty() ? dayKey : LocalDate.now(IST).toString());
             t.setClosedAtMillis(System.currentTimeMillis());

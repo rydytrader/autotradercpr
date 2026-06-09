@@ -4,19 +4,18 @@ import jakarta.persistence.*;
 
 /**
  * One row per trading-day per-strategy session. Persisted on day rollover for historical
- * analytics. After the multi-strategy refactor, the row is uniquely identified by
- * {@code (strategyId, sessionDate)} — one row per strategy per date.
+ * analytics. Holds rows for both short straddle AND short strangle instances — they're
+ * differentiated by {@code strategyId} (e.g. {@code inst-7}) on each row.
  *
- * <p>The unique constraint on {@code sessionDate} alone is still in place in the existing
- * schema (only one strategy was writing rows before). It will be replaced with a composite
- * unique on {@code (strategyId, sessionDate)} when the second strategy starts writing rows
- * (Phase 5 of the multi-strategy plan).
+ * <p>Uniquely identified by {@code (strategyId, sessionDate)} — one row per strategy per
+ * date. Table was previously named {@code straddle_sessions}; renamed to {@code strategy_sessions}
+ * via {@code SchemaMigration} so the name matches what it actually holds.
  */
 @Entity
-@Table(name = "straddle_sessions",
+@Table(name = "strategy_sessions",
        uniqueConstraints = @UniqueConstraint(name = "uk_strategy_session_date",
                                               columnNames = {"strategy_id", "session_date"}))
-public class StraddleSessionEntity {
+public class StrategySessionEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -72,7 +71,7 @@ public class StraddleSessionEntity {
     @Column(nullable = false)
     private long createdAt;
 
-    public StraddleSessionEntity() {}
+    public StrategySessionEntity() {}
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }

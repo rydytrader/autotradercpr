@@ -1,9 +1,9 @@
 package com.rydytrader.autotrader.controller;
 
-import com.rydytrader.autotrader.entity.StraddleSessionEntity;
-import com.rydytrader.autotrader.entity.StraddleTradeEntity;
-import com.rydytrader.autotrader.repository.StraddleSessionRepository;
-import com.rydytrader.autotrader.repository.StraddleTradeRepository;
+import com.rydytrader.autotrader.entity.StrategySessionEntity;
+import com.rydytrader.autotrader.entity.StrategyTradeEntity;
+import com.rydytrader.autotrader.repository.StrategySessionRepository;
+import com.rydytrader.autotrader.repository.StrategyTradeRepository;
 import com.rydytrader.autotrader.service.strategy.Strategy;
 import com.rydytrader.autotrader.service.strategy.StrategyRegistry;
 import org.springframework.http.ResponseEntity;
@@ -24,12 +24,12 @@ import java.util.Map;
 @RestController
 public class StrategyHistoryController {
 
-    private final StraddleSessionRepository repo;
-    private final StraddleTradeRepository tradeRepo;
+    private final StrategySessionRepository repo;
+    private final StrategyTradeRepository tradeRepo;
     private final StrategyRegistry registry;
 
-    public StrategyHistoryController(StraddleSessionRepository repo,
-                                     StraddleTradeRepository tradeRepo,
+    public StrategyHistoryController(StrategySessionRepository repo,
+                                     StrategyTradeRepository tradeRepo,
                                      StrategyRegistry registry) {
         this.repo = repo;
         this.tradeRepo = tradeRepo;
@@ -39,11 +39,11 @@ public class StrategyHistoryController {
     @GetMapping("/api/strategies/{id}/history")
     public ResponseEntity<Map<String, Object>> list(@PathVariable String id) {
         if (registry.get(id) == null) return ResponseEntity.notFound().build();
-        List<StraddleSessionEntity> rows = repo.findByStrategyIdOrderBySessionDateDesc(id);
+        List<StrategySessionEntity> rows = repo.findByStrategyIdOrderBySessionDateDesc(id);
         List<Map<String, Object>> sessions = new ArrayList<>();
         double totalGross = 0, totalCharges = 0, totalNet = 0;
         int totalRolls = 0;
-        for (StraddleSessionEntity s : rows) {
+        for (StrategySessionEntity s : rows) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("date",            s.getSessionDate());
             m.put("entries",         s.getEntries());
@@ -83,10 +83,10 @@ public class StrategyHistoryController {
                                                              @RequestParam String date) {
         Strategy s = registry.get(id);
         if (s == null) return ResponseEntity.notFound().build();
-        List<StraddleTradeEntity> rows =
+        List<StrategyTradeEntity> rows =
             tradeRepo.findByStrategyIdAndSessionDateOrderByClosedAtMillisAsc(id, date);
         List<Map<String, Object>> trades = new ArrayList<>();
-        for (StraddleTradeEntity t : rows) {
+        for (StrategyTradeEntity t : rows) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("id",             t.getId());
             m.put("strategyId",     t.getStrategyId());

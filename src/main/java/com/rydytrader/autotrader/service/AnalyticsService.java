@@ -1,7 +1,7 @@
 package com.rydytrader.autotrader.service;
 
-import com.rydytrader.autotrader.entity.StraddleTradeEntity;
-import com.rydytrader.autotrader.repository.StraddleTradeRepository;
+import com.rydytrader.autotrader.entity.StrategyTradeEntity;
+import com.rydytrader.autotrader.repository.StrategyTradeRepository;
 import com.rydytrader.autotrader.service.strategy.Strategy;
 import com.rydytrader.autotrader.service.strategy.StrategyRegistry;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
@@ -48,12 +48,12 @@ public class AnalyticsService {
     private static final Logger log = LoggerFactory.getLogger(AnalyticsService.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
-    private final StraddleTradeRepository tradeRepo;
+    private final StrategyTradeRepository tradeRepo;
     private final RiskSettingsStore riskSettings;
     private final StrategyRegistry strategyRegistry;
     private final org.springframework.beans.factory.ObjectProvider<com.rydytrader.autotrader.service.ManualTerminalService> manualTerminalProvider;
 
-    public AnalyticsService(StraddleTradeRepository tradeRepo,
+    public AnalyticsService(StrategyTradeRepository tradeRepo,
                             RiskSettingsStore riskSettings,
                             StrategyRegistry strategyRegistry,
                             org.springframework.beans.factory.ObjectProvider<com.rydytrader.autotrader.service.ManualTerminalService> manualTerminalProvider) {
@@ -263,7 +263,7 @@ public class AnalyticsService {
 
         List<Trade> out = new ArrayList<>();
         // Persisted rows
-        for (StraddleTradeEntity e : tradeRepo.findAllByOrderByClosedAtMillisAsc()) {
+        for (StrategyTradeEntity e : tradeRepo.findAllByOrderByClosedAtMillisAsc()) {
             if (!allStrategies && !strategyId.equals(e.getStrategyId())) continue;
             LocalDate d;
             try { d = LocalDate.parse(e.getSessionDate()); }

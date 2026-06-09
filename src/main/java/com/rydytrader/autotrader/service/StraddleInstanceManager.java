@@ -1,11 +1,11 @@
 package com.rydytrader.autotrader.service;
 
 import com.rydytrader.autotrader.config.FyersProperties;
-import com.rydytrader.autotrader.entity.StraddleInstanceEntity;
+import com.rydytrader.autotrader.entity.StrategyInstanceEntity;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
-import com.rydytrader.autotrader.repository.StraddleInstanceRepository;
-import com.rydytrader.autotrader.repository.StraddleSessionRepository;
-import com.rydytrader.autotrader.repository.StraddleTradeRepository;
+import com.rydytrader.autotrader.repository.StrategyInstanceRepository;
+import com.rydytrader.autotrader.repository.StrategySessionRepository;
+import com.rydytrader.autotrader.repository.StrategyTradeRepository;
 import com.rydytrader.autotrader.service.strategy.BalancedAtmSelector;
 import com.rydytrader.autotrader.service.strategy.ShortStraddle;
 import com.rydytrader.autotrader.service.strategy.Strategy;
@@ -29,7 +29,7 @@ import java.util.Optional;
 
 /**
  * Owns the runtime collection of {@link ShortStraddle} instances. Each row of
- * {@link StraddleInstanceEntity} (where {@code active = true}) materialises into one
+ * {@link StrategyInstanceEntity} (where {@code active = true}) materialises into one
  * {@link ShortStraddle} stored under the entity's {@code strategyId()} (e.g.
  * {@code "inst-7"}) in an in-memory {@link LinkedHashMap}.
  *
@@ -45,7 +45,7 @@ public class StraddleInstanceManager {
 
     private static final Logger log = LoggerFactory.getLogger(StraddleInstanceManager.class);
 
-    private final StraddleInstanceRepository repo;
+    private final StrategyInstanceRepository repo;
     private final RiskSettingsStore riskSettings;
     private final ShortStraddleStateStore stateStore;
     private final EventService eventService;
@@ -56,14 +56,14 @@ public class StraddleInstanceManager {
     private final ObjectProvider<OrderService> orderServiceProvider;
     private final ObjectProvider<MarketHolidayService> marketHolidayServiceProvider;
     private final ObjectProvider<TelegramService> telegramServiceProvider;
-    private final ObjectProvider<StraddleSessionRepository> sessionRepoProvider;
-    private final ObjectProvider<StraddleTradeRepository> tradeRepoProvider;
+    private final ObjectProvider<StrategySessionRepository> sessionRepoProvider;
+    private final ObjectProvider<StrategyTradeRepository> tradeRepoProvider;
     private final ObjectProvider<OrderEventService> orderEventServiceProvider;
     private final BalancedAtmSelector atmSelector;
 
     private final Map<String, ShortStraddle> instances = Collections.synchronizedMap(new LinkedHashMap<>());
 
-    public StraddleInstanceManager(StraddleInstanceRepository repo,
+    public StraddleInstanceManager(StrategyInstanceRepository repo,
                                     RiskSettingsStore riskSettings,
                                     ShortStraddleStateStore stateStore,
                                     EventService eventService,
@@ -74,8 +74,8 @@ public class StraddleInstanceManager {
                                     @Lazy ObjectProvider<OrderService> orderServiceProvider,
                                     @Lazy ObjectProvider<MarketHolidayService> marketHolidayServiceProvider,
                                     @Lazy ObjectProvider<TelegramService> telegramServiceProvider,
-                                    @Lazy ObjectProvider<StraddleSessionRepository> sessionRepoProvider,
-                                    @Lazy ObjectProvider<StraddleTradeRepository> tradeRepoProvider,
+                                    @Lazy ObjectProvider<StrategySessionRepository> sessionRepoProvider,
+                                    @Lazy ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
                                     @Lazy ObjectProvider<OrderEventService> orderEventServiceProvider,
                                     BalancedAtmSelector atmSelector) {
         this.repo = repo;
@@ -97,8 +97,12 @@ public class StraddleInstanceManager {
 
     @PostConstruct
     public void boot() {
-        List<StraddleInstanceEntity> rows = repo.findAllByActiveTrueOrderByIdAsc();
-        for (StraddleInstanceEntity row : rows) {
+        // Discriminator filter — this manager owns only the STRADDLE-typed rows. The
+        // SchemaMigration component runs before this boot fires (see @Order(0)) so any
+        // legacy rows that pre-date the discriminator column have already been backfilled
+        // to type='STRADDLE'.
+        List<StrategyInstanceEntity> rows = repo.findAllByActiveTrueAndTypeOrderByIdAsc("STRADDLE");
+        for (StrategyInstanceEntity row : rows) {
             try {
                 ShortStraddle s = construct(row);
                 s.bootstrap();
@@ -110,7 +114,7 @@ public class StraddleInstanceManager {
         log.info("[InstanceManager] Loaded {} short-straddle instance(s)", instances.size());
     }
 
-    private ShortStraddle construct(StraddleInstanceEntity row) {
+    private ShortStraddle construct(StrategyInstanceEntity row) {
         return new ShortStraddle(
             row,
             riskSettings,
@@ -150,7 +154,7 @@ public class StraddleInstanceManager {
         return instanceId == null ? null : instances.get(instanceId);
     }
 
-    public Optional<StraddleInstanceEntity> findEntity(String instanceId) {
+    public Optional<StrategyInstanceEntity> findEntity(String instanceId) {
         if (instanceId == null || !instanceId.startsWith("inst-")) return Optional.empty();
         try { return repo.findById(Long.parseLong(instanceId.substring(5))); }
         catch (NumberFormatException e) { return Optional.empty(); }
@@ -164,10 +168,11 @@ public class StraddleInstanceManager {
         if (repo.findByShortCode(shortCode.trim()).isPresent()) {
             throw new IllegalArgumentException("Short code already in use: " + shortCode);
         }
-        StraddleInstanceEntity row = new StraddleInstanceEntity();
+        StrategyInstanceEntity row = new StrategyInstanceEntity();
         row.setName(name.trim());
         row.setDescription(description == null ? "" : description.trim());
         row.setShortCode(shortCode.trim());
+        row.setType("STRADDLE");
         row.setEnabled(true);
         row.setActive(true);
         long now = System.currentTimeMillis();
@@ -188,14 +193,14 @@ public class StraddleInstanceManager {
 
     /** Rename / re-describe an existing instance. Idempotent on the same values. */
     public synchronized ShortStraddle rename(String instanceId, String newName, String newDescription, String newShortCode) {
-        StraddleInstanceEntity row = findEntity(instanceId)
+        StrategyInstanceEntity row = findEntity(instanceId)
             .orElseThrow(() -> new IllegalArgumentException("Unknown instance: " + instanceId));
         if (newName != null && !newName.isBlank()) row.setName(newName.trim());
         if (newDescription != null)               row.setDescription(newDescription.trim());
         if (newShortCode != null && !newShortCode.isBlank()) {
             String trimmed = newShortCode.trim();
             if (!trimmed.equals(row.getShortCode())) {
-                Optional<StraddleInstanceEntity> clash = repo.findByShortCode(trimmed);
+                Optional<StrategyInstanceEntity> clash = repo.findByShortCode(trimmed);
                 if (clash.isPresent() && !clash.get().getId().equals(row.getId())) {
                     throw new IllegalArgumentException("Short code already in use: " + newShortCode);
                 }
@@ -228,7 +233,7 @@ public class StraddleInstanceManager {
     /** Soft-delete: mark the entity {@code active = false}, save, evict from the in-memory map.
      *  Sessions / trades / settings rows / state JSON are all preserved. */
     public synchronized void softDelete(String instanceId) {
-        StraddleInstanceEntity row = findEntity(instanceId)
+        StrategyInstanceEntity row = findEntity(instanceId)
             .orElseThrow(() -> new IllegalArgumentException("Unknown instance: " + instanceId));
         ShortStraddle s = instances.get(instanceId);
         if (s != null) {

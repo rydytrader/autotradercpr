@@ -130,4 +130,22 @@ public interface Strategy {
      *  per-day Charges + Gross numbers for today match what the strategy's dashboard shows.
      *  Default 0 — strategies without positions today report no charges. */
     default double liveChargesToday() { return 0; }
+
+    /** Strategy type discriminator — {@code "STRADDLE"} (default) or {@code "STRANGLE"}.
+     *  Surfaced on {@code getStatus()} payloads and the sidebar so the UI can group
+     *  instances and pick the right per-instance dashboard template. */
+    default String strategyType() { return "STRADDLE"; }
+
+    /** Scheduler entry point — invoked every 5 s by the unified scheduler. Each concrete
+     *  strategy decides whether the IDLE → entry transition / SL check / squareoff / day
+     *  rollover apply this tick. Default empty so trivial Strategy impls (e.g. observers)
+     *  don't need to override. */
+    default void tick() {}
+
+    /** Fast-path SL check — invoked every 500 ms by the unified scheduler. Trims SL-trigger
+     *  detection latency from ~5 s (the regular tick cadence) to ~500 ms. Default empty. */
+    default void fastSlCheck() {}
+
+    /** 1-minute sampling for the dashboard combined-premium chart. Default empty. */
+    default void sampleCombinedPremium() {}
 }

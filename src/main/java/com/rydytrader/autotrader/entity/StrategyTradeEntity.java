@@ -3,20 +3,24 @@ package com.rydytrader.autotrader.entity;
 import jakarta.persistence.*;
 
 /**
- * One row per individual short-straddle cycle (entry → close). Granularity of the Analytics
- * Home page — wins / losses / streaks / edge / costs are all computed at this level.
+ * One row per individual options-strategy cycle (entry → close). Holds rows for both short
+ * straddle AND short strangle instances — they're differentiated by {@code strategyId} on
+ * each row. Granularity of the Analytics Home page — wins / losses / streaks / edge / costs
+ * are all computed at this level.
  *
- * <p>The {@code leg-sl} strategy writes one row per day when the straddle reaches DONE_FOR_DAY
- * (last leg closed or timed squareoff). The straddle's legs may close at different times; the
- * row's {@code closedAtMillis} reflects the last-leg close.
+ * <p>One row written per cycle when the last leg closes (timed squareoff, SL, or manual).
+ * The strategy's legs may close at different times; {@code closedAtMillis} reflects the
+ * last-leg close.
  *
- * <p>Charges are computed per cycle so per-straddle net P&L is exact, not allocated.
+ * <p>Charges are computed per cycle so per-cycle net P&L is exact, not allocated. Table
+ * was previously named {@code straddle_trades}; renamed to {@code strategy_trades} via
+ * {@code SchemaMigration} so the name matches what it actually holds.
  */
 @Entity
-@Table(name = "straddle_trades",
-       indexes = @Index(name = "idx_straddle_trades_strat_date",
+@Table(name = "strategy_trades",
+       indexes = @Index(name = "idx_strategy_trades_strat_date",
                         columnList = "strategy_id, session_date"))
-public class StraddleTradeEntity {
+public class StrategyTradeEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -29,7 +33,7 @@ public class StraddleTradeEntity {
     @Column(name = "session_date", nullable = false, length = 10)
     private String sessionDate;
 
-    /** Epoch millis at the moment the straddle finished closing. */
+    /** Epoch millis at the moment the cycle finished closing. */
     @Column(name = "closed_at_millis", nullable = false)
     private long closedAtMillis;
 
@@ -37,7 +41,7 @@ public class StraddleTradeEntity {
     @Column
     private int qty;
 
-    /** Sum of CE + PE leg P&L for this straddle. (ceEntry − ceClose) × qty + (peEntry − peClose) × qty. */
+    /** Sum of CE + PE leg P&L for this cycle. (ceEntry − ceClose) × qty + (peEntry − peClose) × qty. */
     @Column(name = "gross_pnl")
     private double grossPnl;
 
@@ -50,12 +54,12 @@ public class StraddleTradeEntity {
     @Column(name = "net_pnl")
     private double netPnl;
 
-    /** Why the straddle ended: SL_HIT, TARGET_HIT, TIMED_SQUAREOFF, MAX_LOSS_HIT, MANUAL,
-     *  STALE_DAY_RESET, CE_SL_HIT (leg-sl), PE_SL_HIT (leg-sl), etc. */
+    /** Why the cycle ended: SL_HIT, TARGET_HIT, TIMED_SQUAREOFF, MAX_LOSS_HIT, MANUAL,
+     *  STALE_DAY_RESET, CE_SL_HIT, PE_SL_HIT, etc. */
     @Column(name = "close_reason", length = 40)
     private String closeReason;
 
-    /** Number of per-leg SL hits during this straddle (0, 1 or 2). 0 = both legs ran to the
+    /** Number of per-leg SL hits during this cycle (0, 1 or 2). 0 = both legs ran to the
      *  timed squareoff or manual close without breaching SL. 1 = exactly one leg got stopped
      *  (the other was carried to squareoff). 2 = both legs got SL'd. Used by the Analytics
      *  page to surface the day-mix histogram. Nullable so rows written before the column
@@ -63,7 +67,7 @@ public class StraddleTradeEntity {
     @Column(name = "sl_hit_count")
     private Integer slHitCount;
 
-    public StraddleTradeEntity() {}
+    public StrategyTradeEntity() {}
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }

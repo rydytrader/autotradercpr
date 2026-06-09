@@ -1,6 +1,6 @@
 package com.rydytrader.autotrader.controller;
 
-import com.rydytrader.autotrader.entity.StraddleInstanceEntity;
+import com.rydytrader.autotrader.entity.StrategyInstanceEntity;
 import com.rydytrader.autotrader.service.StraddleInstanceManager;
 import com.rydytrader.autotrader.service.strategy.ShortStraddle;
 import org.springframework.http.HttpStatus;
@@ -126,7 +126,7 @@ public class StraddleInstanceController {
         m.put("currentState", s.currentState());
         // enabled = riskSettings.getStrategyBool — read via the entity to avoid races; instance
         // settings are saved through the strategy interface POST, which is the same data flow.
-        StraddleInstanceEntity row = manager.findEntity(s.id()).orElse(null);
+        StrategyInstanceEntity row = manager.findEntity(s.id()).orElse(null);
         m.put("enabled", row != null && manager.allEnabled().contains(s));
         return m;
     }
