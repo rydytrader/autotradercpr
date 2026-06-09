@@ -17,7 +17,7 @@ import jakarta.persistence.PersistenceContext;
  *
  * <p>Currently handles:
  * <ul>
- *   <li>Backfilling the {@code strategy_id} column on the existing {@code straddle_sessions}
+ *   <li>Backfilling the {@code strategy_id} column on the existing {@code strategy_sessions}
  *       table with {@code combined-sl-roll} for rows written before the column existed.</li>
  *   <li>Dropping the obsolete unique constraint on {@code session_date} (replaced by the
  *       composite unique on {@code (strategy_id, session_date)} declared in the entity).
@@ -39,22 +39,32 @@ public class StrategySessionMigration {
         this.settingRepo = settingRepo;
     }
 
-    /** Runs after the application context is fully refreshed (JPA + Hibernate schema update done).
-     *  The leg-sl → short-straddle rename is split into its own listener method below so a SQL
-     *  failure there (e.g. duplicate-key collision) can't poison this transaction. */
-    @EventListener(ContextRefreshedEvent.class)
-    @Transactional
-    public void runMigrations() {
-        backfillStrategyId();
-        dropOldSessionDateUniqueConstraint();
-        oneShotResetTradeHistory();
-        oneShotWipeForMultiInstance();
-        cleanupSoftDeletedInstances();
-        oneShotFixInst1_20260602();
-        oneShotFixInst1_20260603();
-    }
+    /** Each migration step is its own @EventListener / @Transactional method so a SQL failure
+     *  inside one can't mark the surrounding transaction rollback-only and trigger
+     *  UnexpectedRollbackException on commit. Listener order matters only for steps that
+     *  depend on each other; here they're independent. */
+    @EventListener(ContextRefreshedEvent.class) @Transactional
+    public void txBackfillStrategyId() { backfillStrategyId(); }
 
-    /** Hard-deletes every {@code straddle_instances} row marked {@code active = false} along
+    @EventListener(ContextRefreshedEvent.class) @Transactional
+    public void txDropOldSessionDateUniqueConstraint() { dropOldSessionDateUniqueConstraint(); }
+
+    @EventListener(ContextRefreshedEvent.class) @Transactional
+    public void txOneShotResetTradeHistory() { oneShotResetTradeHistory(); }
+
+    @EventListener(ContextRefreshedEvent.class) @Transactional
+    public void txOneShotWipeForMultiInstance() { oneShotWipeForMultiInstance(); }
+
+    @EventListener(ContextRefreshedEvent.class) @Transactional
+    public void txCleanupSoftDeletedInstances() { cleanupSoftDeletedInstances(); }
+
+    @EventListener(ContextRefreshedEvent.class) @Transactional
+    public void txOneShotFixInst1_20260602() { oneShotFixInst1_20260602(); }
+
+    @EventListener(ContextRefreshedEvent.class) @Transactional
+    public void txOneShotFixInst1_20260603() { oneShotFixInst1_20260603(); }
+
+    /** Hard-deletes every {@code strategy_instances} row marked {@code active = false} along
      *  with its {@code strategies.inst-<id>.*} settings rows and its on-disk state file.
      *  Runs on every boot — idempotent (no soft-deleted rows = no-op). Since the Straddles
      *  tab no longer offers a Delete button, soft-delete is effectively dormant; this keeps
@@ -63,20 +73,23 @@ public class StrategySessionMigration {
         try {
             @SuppressWarnings("unchecked")
             java.util.List<Number> ids = em.createNativeQuery(
-                "SELECT id FROM straddle_instances WHERE active = false").getResultList();
+                "SELECT id FROM strategy_instances WHERE active = false").getResultList();
             if (ids == null || ids.isEmpty()) return;
             for (Number n : ids) {
                 String strategyId = "inst-" + n.longValue();
                 safeUpdate("DELETE FROM settings WHERE setting_key LIKE 'strategies." + strategyId + ".%'");
-                try {
-                    java.io.File f = new java.io.File("../store/data/strategies/short-straddle-" + strategyId + "-state.json");
-                    if (f.exists() && f.delete()) {
-                        log.info("[StrategyMigration] Deleted state file for soft-deleted {}", strategyId);
-                    }
-                } catch (Exception ignored) {}
+                // Both strategy types have their own state-file prefix — try each.
+                for (String prefix : new String[]{"short-straddle-", "short-strangle-"}) {
+                    try {
+                        java.io.File f = new java.io.File("../store/data/strategies/" + prefix + strategyId + "-state.json");
+                        if (f.exists() && f.delete()) {
+                            log.info("[StrategyMigration] Deleted state file for soft-deleted {}", strategyId);
+                        }
+                    } catch (Exception ignored) {}
+                }
             }
-            int rows = safeUpdate("DELETE FROM straddle_instances WHERE active = false");
-            log.info("[StrategyMigration] Hard-deleted {} soft-deleted straddle instance(s) + their settings/state files", rows);
+            int rows = safeUpdate("DELETE FROM strategy_instances WHERE active = false");
+            log.info("[StrategyMigration] Hard-deleted {} soft-deleted strategy instance(s) + their settings/state files", rows);
         } catch (Exception e) {
             log.warn("[StrategyMigration] Soft-delete cleanup skipped: {}", e.getMessage());
         }
@@ -100,9 +113,9 @@ public class StrategySessionMigration {
     private void renameLegSlToShortStraddle() {
         try {
             int sessions = safeUpdate(
-                "UPDATE straddle_sessions SET strategy_id = 'short-straddle' WHERE strategy_id = 'leg-sl'");
+                "UPDATE strategy_sessions SET strategy_id = 'short-straddle' WHERE strategy_id = 'leg-sl'");
             int trades   = safeUpdate(
-                "UPDATE straddle_trades   SET strategy_id = 'short-straddle' WHERE strategy_id = 'leg-sl'");
+                "UPDATE strategy_trades   SET strategy_id = 'short-straddle' WHERE strategy_id = 'leg-sl'");
             // Pre-clean: drop any legacy leg-sl key that already has a short-straddle counterpart.
             int deleted = safeUpdate(
                 "DELETE FROM settings WHERE setting_key LIKE 'strategies.leg-sl.%' " +
@@ -141,8 +154,8 @@ public class StrategySessionMigration {
         try {
             if (settingRepo.findBySettingKey(flagKey).isPresent()) return;
 
-            int trades   = safeDelete("DELETE FROM straddle_trades");
-            int sessions = safeDelete("DELETE FROM straddle_sessions");
+            int trades   = safeDelete("DELETE FROM strategy_trades");
+            int sessions = safeDelete("DELETE FROM strategy_sessions");
             int settings = safeDelete(
                 "DELETE FROM settings WHERE setting_key LIKE 'strategies.short-straddle.%' " +
                 "OR setting_key LIKE 'strategies.leg-sl.%'");
@@ -166,8 +179,8 @@ public class StrategySessionMigration {
         try {
             if (settingRepo.findBySettingKey(flagKey).isPresent()) return;
 
-            int trades     = safeDelete("DELETE FROM straddle_trades");
-            int sessions   = safeDelete("DELETE FROM straddle_sessions");
+            int trades     = safeDelete("DELETE FROM strategy_trades");
+            int sessions   = safeDelete("DELETE FROM strategy_sessions");
             int stateFiles = wipeStrategyStateFiles();
 
             settingRepo.save(new SettingEntity(flagKey, String.valueOf(System.currentTimeMillis())));
@@ -207,7 +220,7 @@ public class StrategySessionMigration {
     private void backfillStrategyId() {
         try {
             int rows = em.createNativeQuery(
-                "UPDATE straddle_sessions SET strategy_id = 'combined-sl-roll' " +
+                "UPDATE strategy_sessions SET strategy_id = 'combined-sl-roll' " +
                 "WHERE strategy_id IS NULL OR strategy_id = ''"
             ).executeUpdate();
             if (rows > 0) {
@@ -224,7 +237,7 @@ public class StrategySessionMigration {
      *  row got persisted with the 3:18 LTPs instead of the real fills (CE leg hit SL at
      *  104.60, PE leg closed at 2.35; both legs were 130 qty, entries 54.60 / 67.05).
      *  Recomputes gross / charges / net from the corrected fills and updates both the
-     *  {@code straddle_trades} and {@code straddle_sessions} rows. Gated by the
+     *  {@code strategy_trades} and {@code strategy_sessions} rows. Gated by the
      *  {@code trade.fix.inst-1.2026-06-02.done} flag so it runs exactly once. */
     private void oneShotFixInst1_20260602() {
         String flagKey = "trade.fix.inst-1.2026-06-02.done";
@@ -258,14 +271,14 @@ public class StrategySessionMigration {
             double net   = round2(gross - charges);
 
             int tradeRows = safeUpdate(String.format(java.util.Locale.US,
-                "UPDATE straddle_trades " +
+                "UPDATE strategy_trades " +
                 "SET gross_pnl = %s, charges = %s, net_pnl = %s, " +
                 "    close_reason = 'CE_SL_HIT', sl_hit_count = 1, qty = %d " +
                 "WHERE strategy_id = '%s' AND session_date = '%s'",
                 gross, charges, net, qty, strategyId, sessionDate));
 
             int sessionRows = safeUpdate(String.format(java.util.Locale.US,
-                "UPDATE straddle_sessions " +
+                "UPDATE strategy_sessions " +
                 "SET premium_collected = %s, premium_paid_back = %s, " +
                 "    gross_pnl = %s, charges = %s, net_pnl = %s " +
                 "WHERE strategy_id = '%s' AND session_date = '%s'",
@@ -320,14 +333,14 @@ public class StrategySessionMigration {
             double net   = round2(gross - charges);
 
             int tradeRows = safeUpdate(String.format(java.util.Locale.US,
-                "UPDATE straddle_trades " +
+                "UPDATE strategy_trades " +
                 "SET gross_pnl = %s, charges = %s, net_pnl = %s, " +
                 "    close_reason = 'PORTFOLIO_MAX_LOSS_HIT', sl_hit_count = 2, qty = %d " +
                 "WHERE strategy_id = '%s' AND session_date = '%s'",
                 gross, charges, net, qty, strategyId, sessionDate));
 
             int sessionRows = safeUpdate(String.format(java.util.Locale.US,
-                "UPDATE straddle_sessions " +
+                "UPDATE strategy_sessions " +
                 "SET premium_collected = %s, premium_paid_back = %s, " +
                 "    gross_pnl = %s, charges = %s, net_pnl = %s " +
                 "WHERE strategy_id = '%s' AND session_date = '%s'",
@@ -356,7 +369,7 @@ public class StrategySessionMigration {
         return Math.round(v * 100.0) / 100.0;
     }
 
-    /** Find and drop any UNIQUE constraint on {@code straddle_sessions(session_date)} that covers
+    /** Find and drop any UNIQUE constraint on {@code strategy_sessions(session_date)} that covers
      *  ONLY that column. The composite constraint added by the entity ({@code strategy_id +
      *  session_date}) is left alone since it spans 2 columns and won't match this query. */
     @SuppressWarnings("unchecked")
@@ -369,7 +382,7 @@ public class StrategySessionMigration {
                 "JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu " +
                 "  ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME " +
                 " AND tc.TABLE_NAME = kcu.TABLE_NAME " +
-                "WHERE UPPER(tc.TABLE_NAME) = 'STRADDLE_SESSIONS' " +
+                "WHERE UPPER(tc.TABLE_NAME) = 'STRATEGY_SESSIONS' " +
                 "  AND tc.CONSTRAINT_TYPE = 'UNIQUE' " +
                 "  AND UPPER(kcu.COLUMN_NAME) = 'SESSION_DATE' " +
                 "GROUP BY tc.CONSTRAINT_NAME"
@@ -380,8 +393,8 @@ public class StrategySessionMigration {
                 // Only drop SINGLE-COLUMN unique constraints (the legacy one). The composite
                 // (strategy_id + session_date) constraint will have 2 columns — leave it alone.
                 if (colCount == 1) {
-                    em.createNativeQuery("ALTER TABLE straddle_sessions DROP CONSTRAINT IF EXISTS " + name).executeUpdate();
-                    log.info("[StrategyMigration] Dropped obsolete single-column UNIQUE constraint {} on straddle_sessions(session_date)", name);
+                    em.createNativeQuery("ALTER TABLE strategy_sessions DROP CONSTRAINT IF EXISTS " + name).executeUpdate();
+                    log.info("[StrategyMigration] Dropped obsolete single-column UNIQUE constraint {} on strategy_sessions(session_date)", name);
                 }
             }
         } catch (Exception e) {
