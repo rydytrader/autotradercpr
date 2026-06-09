@@ -129,7 +129,7 @@
         <div>
             <div style="display:flex; align-items:center; gap:14px;">
                 <div class="page-title" th:text="${strategyDisplayName}">Dashboard</div>
-                <span id="strangleOffsetBadge" style="display:none;background:rgba(125,211,252,0.10);border:1px solid rgba(125,211,252,0.30);color:var(--accent-cyan);font-family:var(--font-mono);font-size:0.72rem;font-weight:700;letter-spacing:0.04em;padding:4px 10px;border-radius:4px;">ATM ±100</span>
+                <span id="strangleOffsetBadge" style="display:none;background:rgba(125,211,252,0.10);border:1px solid rgba(125,211,252,0.30);color:var(--accent-cyan);font-family:var(--font-mono);font-size:0.72rem;font-weight:700;letter-spacing:0.04em;padding:4px 10px;border-radius:4px;">PREM ≈ ₹100</span>
                 <button id="strangleInstanceSettingsBtn"
                         title="Edit this strangle's trading settings (entry time, lots, SL%, squareoff)"
                         onclick="StrategySettings.openFor(document.documentElement.getAttribute('data-strategy-id'))"
@@ -688,12 +688,11 @@
             lastDashboardData = d;
             var SHAPE = 'short-strangle';
             applyShapeChrome(SHAPE, d);
-            // ATM ±N badge — visible once dashboard payload carries the strangle offsets.
+            // Target-premium badge — shows the per-leg premium target this instance is hunting for.
             var offsetBadge = document.getElementById('strangleOffsetBadge');
-            if (offsetBadge && d.callOtmOffset != null && d.putOtmOffset != null) {
-                var co = Number(d.callOtmOffset) || 0;
-                var po = Number(d.putOtmOffset)  || 0;
-                offsetBadge.textContent = (co === po) ? ('ATM ±' + co) : ('ATM +' + co + ' / −' + po);
+            if (offsetBadge && d.targetPremium != null) {
+                var tp = Number(d.targetPremium) || 0;
+                offsetBadge.textContent = 'PREM ≈ ₹' + tp.toFixed(tp >= 10 ? 0 : 2);
                 offsetBadge.style.display = '';
             }
             // Hero — true net = realised + open MTM − charges

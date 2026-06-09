@@ -391,24 +391,12 @@ public class ShortStrangle implements Strategy {
         orderTypeFld.put("label", "Order Type");
         orderTypeFld.put("options", java.util.List.of("INTRADAY", "OVERNIGHT"));
         s.add(orderTypeFld);
-        // Strangle wing widths — call side is sold N points ABOVE ATM, put side N points BELOW.
-        // Default 100 / 100 (i.e. ATM + 100 call and ATM − 100 put). Choices: 100, 200, 300,
-        // 400, 500. Read by performEntryNow() to compute call/put strikes from the
-        // synthetic-futures ATM.
-        java.util.Map<String, Object> callOffFld = new java.util.LinkedHashMap<>();
-        callOffFld.put("key", "callOtmOffset");
-        callOffFld.put("type", "select");
-        callOffFld.put("default", "100");
-        callOffFld.put("label", "Call OTM Offset (ATM + N)");
-        callOffFld.put("options", java.util.List.of("100", "200", "300", "400", "500"));
-        s.add(callOffFld);
-        java.util.Map<String, Object> putOffFld = new java.util.LinkedHashMap<>();
-        putOffFld.put("key", "putOtmOffset");
-        putOffFld.put("type", "select");
-        putOffFld.put("default", "100");
-        putOffFld.put("label", "Put OTM Offset (ATM − N)");
-        putOffFld.put("options", java.util.List.of("100", "200", "300", "400", "500"));
-        s.add(putOffFld);
+        // Target premium per leg in rupees. performEntryNow() walks the option chain and picks
+        // the CE strike (at-or-above ATM) and PE strike (at-or-below ATM) whose LTPs are
+        // CLOSEST to this target. Free-form positive number — default 100.
+        s.add(field("targetPremium", "double", 100,
+            "Target Premium per Leg (₹)",
+            "Each leg's strike is the one whose LTP is closest to this premium."));
         // Move-to-cost option. When ON, the moment one leg's SL fires the OTHER leg's SL
         // trigger collapses from "entry + threshold" down to its entry premium — locking
         // break-even on the surviving leg. Off by default; opt in per instance.
@@ -433,22 +421,6 @@ public class ShortStrangle implements Strategy {
         return f;
     }
 
-    /** Clamp an OTM-offset submission to the allowed discrete choices {100, 200, 300, 400, 500}.
-     *  Falls back to "100" on any non-numeric or out-of-range value so a corrupt POST never
-     *  results in the bot trading an unintended strike. */
-    private static String clampOtmOffset(Object raw) {
-        try {
-            int v = Integer.parseInt(String.valueOf(raw).trim());
-            if (v >= 500) return "500";
-            if (v >= 400) return "400";
-            if (v >= 300) return "300";
-            if (v >= 200) return "200";
-            return "100";
-        } catch (NumberFormatException e) {
-            return "100";
-        }
-    }
-
     @Override
     public String strategyType() { return "STRANGLE"; }
 
@@ -459,8 +431,7 @@ public class ShortStrangle implements Strategy {
         v.put("squareOffTime", riskSettings.getStrategyString(instanceId, "squareOffTime", "15:15"));
         v.put("lotsPerLeg",    riskSettings.getStrategyInt(instanceId,    "lotsPerLeg",    1));
         v.put("orderType",     riskSettings.getStrategyString(instanceId, "orderType",     "INTRADAY"));
-        v.put("callOtmOffset", riskSettings.getStrategyString(instanceId, "callOtmOffset", "100"));
-        v.put("putOtmOffset",  riskSettings.getStrategyString(instanceId, "putOtmOffset",  "100"));
+        v.put("targetPremium", riskSettings.getStrategyDouble(instanceId, "targetPremium", 100));
         v.put("moveSlToCostOnFirstLegHit",
             riskSettings.getStrategyBool(instanceId, "moveSlToCostOnFirstLegHit", false));
         for (String n : DTE_LEVELS) {
@@ -493,8 +464,12 @@ public class ShortStrangle implements Strategy {
         if (values.containsKey("entryTime"))     riskSettings.setStrategySetting(instanceId, "entryTime",     String.valueOf(values.get("entryTime")));
         if (values.containsKey("squareOffTime")) riskSettings.setStrategySetting(instanceId, "squareOffTime", String.valueOf(values.get("squareOffTime")));
         if (values.containsKey("lotsPerLeg"))    riskSettings.setStrategySetting(instanceId, "lotsPerLeg",    asInt(values.get("lotsPerLeg"), 1));
-        if (values.containsKey("callOtmOffset")) riskSettings.setStrategySetting(instanceId, "callOtmOffset", clampOtmOffset(values.get("callOtmOffset")));
-        if (values.containsKey("putOtmOffset"))  riskSettings.setStrategySetting(instanceId, "putOtmOffset",  clampOtmOffset(values.get("putOtmOffset")));
+        if (values.containsKey("targetPremium")) {
+            double tp = asDouble(values.get("targetPremium"), 100);
+            if (tp < 1) tp = 1;          // sanity floor — premium of zero would resolve nothing
+            if (tp > 10_000) tp = 10_000;
+            riskSettings.setStrategySetting(instanceId, "targetPremium", tp);
+        }
         if (values.containsKey("moveSlToCostOnFirstLegHit")) {
             riskSettings.setStrategySetting(instanceId, "moveSlToCostOnFirstLegHit",
                 Boolean.parseBoolean(String.valueOf(values.get("moveSlToCostOnFirstLegHit"))));
@@ -844,30 +819,23 @@ public class ShortStrangle implements Strategy {
             return;
         }
         long atmStrike = sel.chosenAtm();
-        // Strangle wing widths — per-instance OTM offsets from settings. Default 100/100
-        // (i.e. ATM+100 call / ATM−100 put). Choices: 100, 200, 300, 400, 500.
-        int callOff = Integer.parseInt(
-            riskSettings.getStrategyString(instanceId, "callOtmOffset", "100"));
-        int putOff  = Integer.parseInt(
-            riskSettings.getStrategyString(instanceId, "putOtmOffset",  "100"));
-        long callStrike = atmStrike + callOff;
-        long putStrike  = atmStrike - putOff;
+        // Premium-driven strike selection: pick the CE strike (at or above ATM) and the PE
+        // strike (at or below ATM) whose LTPs are closest to this instance's targetPremium.
+        double targetPremium = riskSettings.getStrategyDouble(instanceId, "targetPremium", 100);
         BalancedAtmSelector.StrikeSymbols strikes =
-            atmSelector.resolveStrikeSymbols(callStrike, putStrike);
+            atmSelector.resolveStrikeSymbolsByPremium(atmStrike, targetPremium);
         if (strikes == null) {
-            log.warn("[short-strangle] Failed to resolve strangle wings (ATM={}, call={}, put={}) — aborting day",
-                atmStrike, callStrike, putStrike);
-            eventService.log("[ERROR] [short-strangle] entry aborted — could not resolve OTM symbols");
+            log.warn("[short-strangle] Failed to resolve strangle wings by premium (ATM={}, target=₹{}) — aborting day",
+                atmStrike, targetPremium);
+            eventService.log("[ERROR] [short-strangle] entry aborted — premium-based strike resolution failed");
             transitionTo(LifecycleState.DONE_FOR_DAY);
             return;
         }
-        if (strikes.resolvedCallStrike() != callStrike || strikes.resolvedPutStrike() != putStrike) {
-            // Fell back to nearest available strikes (typical for far-OTM in thin sessions).
-            // Trade still places, just at slightly different distance from ATM.
-            eventService.log("[WARNING] [short-strangle] requested call=" + callStrike
-                + " / put=" + putStrike + " not in chain — falling back to call="
-                + strikes.resolvedCallStrike() + " / put=" + strikes.resolvedPutStrike());
-        }
+        long callStrike = strikes.resolvedCallStrike();
+        long putStrike  = strikes.resolvedPutStrike();
+        eventService.log(String.format(java.util.Locale.US,
+            "[INFO] [short-strangle] premium-based pick: ATM=%d target=₹%.2f → call=%d (LTP ₹%.2f) / put=%d (LTP ₹%.2f)",
+            atmStrike, targetPremium, callStrike, strikes.ceLtp(), putStrike, strikes.peLtp()));
         String resolvedCe = strikes.ceSymbol();
         String resolvedPe = strikes.peSymbol();
         if (resolvedCe == null || resolvedCe.isEmpty() || resolvedPe == null || resolvedPe.isEmpty()) {
@@ -1225,8 +1193,7 @@ public class ShortStrangle implements Strategy {
         java.util.Map<String, Object> m = getStatus();
         m.put("dashboardShape",  "short-straddle");  // reuse straddle dashboard JS — same shape
         m.put("strategyType",    "STRANGLE");
-        m.put("callOtmOffset",   Integer.parseInt(riskSettings.getStrategyString(instanceId, "callOtmOffset", "100")));
-        m.put("putOtmOffset",    Integer.parseInt(riskSettings.getStrategyString(instanceId, "putOtmOffset",  "100")));
+        m.put("targetPremium",   riskSettings.getStrategyDouble(instanceId, "targetPremium", 100));
         m.put("weeklyExpiry",    currentWeeklyExpiry);
         m.put("daysToExpiry",    tradingDaysToExpiry(currentWeeklyExpiry));
         synchronized (combinedPremiumSamples) {

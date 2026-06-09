@@ -143,6 +143,50 @@ public class BalancedAtmSelector {
         );
     }
 
+    /** Walk the chain and pick: CE strike at-or-above {@code atmStrike} whose CE LTP is closest
+     *  to {@code targetPremium}; PE strike at-or-below {@code atmStrike} whose PE LTP is closest
+     *  to {@code targetPremium}. Strikes with unquoted (zero) LTP or empty symbol are skipped.
+     *  Returns {@code null} when the chain can't be fetched or no quoted strike exists on a
+     *  side. Used by ShortStrangle's premium-driven strike selection. */
+    public StrikeSymbols resolveStrikeSymbolsByPremium(long atmStrike, double targetPremium) {
+        if (targetPremium <= 0) return null;
+        NavigableMap<Long, ChainRow> chain = fetchChain();
+        if (chain == null || chain.isEmpty()) return null;
+
+        long bestCallStrike = 0;
+        double bestCallDiff = Double.MAX_VALUE;
+        long bestPutStrike = 0;
+        double bestPutDiff = Double.MAX_VALUE;
+
+        for (java.util.Map.Entry<Long, ChainRow> e : chain.entrySet()) {
+            long strike = e.getKey();
+            ChainRow row = e.getValue();
+            // CE side — strike at-or-above ATM, real LTP, real symbol.
+            if (strike >= atmStrike && row.ce > 0 && row.ceSym != null && !row.ceSym.isEmpty()) {
+                double diff = Math.abs(row.ce - targetPremium);
+                if (diff < bestCallDiff) { bestCallDiff = diff; bestCallStrike = strike; }
+            }
+            // PE side — strike at-or-below ATM, real LTP, real symbol.
+            if (strike <= atmStrike && row.pe > 0 && row.peSym != null && !row.peSym.isEmpty()) {
+                double diff = Math.abs(row.pe - targetPremium);
+                if (diff < bestPutDiff) { bestPutDiff = diff; bestPutStrike = strike; }
+            }
+        }
+        if (bestCallStrike <= 0 || bestPutStrike <= 0) {
+            log.warn("[atm-selector] premium-based resolution failed: target={} atm={} bestCallStrike={} bestPutStrike={}",
+                targetPremium, atmStrike, bestCallStrike, bestPutStrike);
+            return null;
+        }
+        ChainRow callRow = chain.get(bestCallStrike);
+        ChainRow putRow  = chain.get(bestPutStrike);
+        return new StrikeSymbols(
+            bestCallStrike, bestPutStrike,
+            callRow.ceSym,  putRow.peSym,
+            callRow.ce,     putRow.pe,
+            bestCallStrike, bestPutStrike
+        );
+    }
+
     /** Closest strike to {@code requested} that has a non-empty symbol on the requested
      *  leg side. Scans outward in both directions through the chain map. */
     private long nearestStrikeWithLeg(NavigableMap<Long, ChainRow> chain, long requested, boolean isCall) {
