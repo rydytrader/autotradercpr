@@ -397,6 +397,12 @@ public class ShortStrangle implements Strategy {
         s.add(field("targetPremium", "double", 100,
             "Target Premium per Leg (₹)",
             "Each leg's strike is the one whose LTP is closest to this premium."));
+        // Min-premium tolerance — skip the day when either leg's best-available LTP falls
+        // below targetPremium × this ratio. Keeps the bot out of low-IV sessions where the
+        // best OTM premium is much smaller than what makes the SL/charges worth it.
+        s.add(field("minPremiumTolerance", "double", 0.7,
+            "Min Premium Tolerance (× Target)",
+            "Skip entry if either leg's available premium is below target × this ratio. 0 disables."));
         // Move-to-cost option. When ON, the moment one leg's SL fires the OTHER leg's SL
         // trigger collapses from "entry + threshold" down to its entry premium — locking
         // break-even on the surviving leg. Off by default; opt in per instance.
@@ -431,7 +437,8 @@ public class ShortStrangle implements Strategy {
         v.put("squareOffTime", riskSettings.getStrategyString(instanceId, "squareOffTime", "15:15"));
         v.put("lotsPerLeg",    riskSettings.getStrategyInt(instanceId,    "lotsPerLeg",    1));
         v.put("orderType",     riskSettings.getStrategyString(instanceId, "orderType",     "INTRADAY"));
-        v.put("targetPremium", riskSettings.getStrategyDouble(instanceId, "targetPremium", 100));
+        v.put("targetPremium",        riskSettings.getStrategyDouble(instanceId, "targetPremium",        100));
+        v.put("minPremiumTolerance",  riskSettings.getStrategyDouble(instanceId, "minPremiumTolerance",  0.7));
         v.put("moveSlToCostOnFirstLegHit",
             riskSettings.getStrategyBool(instanceId, "moveSlToCostOnFirstLegHit", false));
         for (String n : DTE_LEVELS) {
@@ -469,6 +476,12 @@ public class ShortStrangle implements Strategy {
             if (tp < 1) tp = 1;          // sanity floor — premium of zero would resolve nothing
             if (tp > 10_000) tp = 10_000;
             riskSettings.setStrategySetting(instanceId, "targetPremium", tp);
+        }
+        if (values.containsKey("minPremiumTolerance")) {
+            double mt = asDouble(values.get("minPremiumTolerance"), 0.7);
+            if (mt < 0) mt = 0;          // 0 disables the gate
+            if (mt > 1) mt = 1;          // > target means we'd always skip — clamp to 100%
+            riskSettings.setStrategySetting(instanceId, "minPremiumTolerance", mt);
         }
         if (values.containsKey("moveSlToCostOnFirstLegHit")) {
             riskSettings.setStrategySetting(instanceId, "moveSlToCostOnFirstLegHit",
@@ -836,6 +849,21 @@ public class ShortStrangle implements Strategy {
         eventService.log(String.format(java.util.Locale.US,
             "[INFO] [short-strangle] premium-based pick: ATM=%d target=₹%.2f → call=%d (LTP ₹%.2f) / put=%d (LTP ₹%.2f)",
             atmStrike, targetPremium, callStrike, strikes.ceLtp(), putStrike, strikes.peLtp()));
+        // Min-premium tolerance gate — when either leg's resolved LTP is too far below the
+        // operator's target (low-IV session, OTM premiums too thin), skip the day rather than
+        // forcing a trade where SL + charges will likely outweigh the income.
+        double tolerance = riskSettings.getStrategyDouble(instanceId, "minPremiumTolerance", 0.7);
+        if (tolerance > 0) {
+            double floor = targetPremium * tolerance;
+            if (strikes.ceLtp() < floor || strikes.peLtp() < floor) {
+                eventService.log(String.format(java.util.Locale.US,
+                    "[WARNING] [short-strangle] entry skipped — best OTM premium below tolerance floor "
+                  + "(target=₹%.2f × %.2f = ₹%.2f; ce=₹%.2f pe=₹%.2f)",
+                    targetPremium, tolerance, floor, strikes.ceLtp(), strikes.peLtp()));
+                transitionTo(LifecycleState.DONE_FOR_DAY);
+                return;
+            }
+        }
         String resolvedCe = strikes.ceSymbol();
         String resolvedPe = strikes.peSymbol();
         if (resolvedCe == null || resolvedCe.isEmpty() || resolvedPe == null || resolvedPe.isEmpty()) {
@@ -1193,7 +1221,8 @@ public class ShortStrangle implements Strategy {
         java.util.Map<String, Object> m = getStatus();
         m.put("dashboardShape",  "short-straddle");  // reuse straddle dashboard JS — same shape
         m.put("strategyType",    "STRANGLE");
-        m.put("targetPremium",   riskSettings.getStrategyDouble(instanceId, "targetPremium", 100));
+        m.put("targetPremium",        riskSettings.getStrategyDouble(instanceId, "targetPremium",        100));
+        m.put("minPremiumTolerance",  riskSettings.getStrategyDouble(instanceId, "minPremiumTolerance",  0.7));
         m.put("weeklyExpiry",    currentWeeklyExpiry);
         m.put("daysToExpiry",    tradingDaysToExpiry(currentWeeklyExpiry));
         synchronized (combinedPremiumSamples) {
