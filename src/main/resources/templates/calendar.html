@@ -111,7 +111,7 @@
                 width:72px;margin:6px 0 2px;">STRADDLES</div>
     <th:block th:each="strat,iter : ${sidebarStraddles}">
         <a th:href="@{${strat.href}}"
-           th:title="${strat.displayName}"
+           th:title="${#strings.isEmpty(strat.description) ? strat.displayName : strat.displayName + ' — ' + strat.description}"
            th:attr="data-nav-key=${strat.id}"
            class="nav-icon"
            th:text="${strat.navIcon}"
@@ -129,7 +129,7 @@
                 width:72px;margin:10px 0 2px;">STRANGLES</div>
     <th:block th:each="strat,iter : ${sidebarStrangles}">
         <a th:href="@{${strat.href}}"
-           th:title="${strat.displayName}"
+           th:title="${#strings.isEmpty(strat.description) ? strat.displayName : strat.displayName + ' — ' + strat.description}"
            th:attr="data-nav-key=${strat.id}"
            class="nav-icon"
            th:text="${strat.navIcon}"

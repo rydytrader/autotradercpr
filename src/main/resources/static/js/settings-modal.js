@@ -441,7 +441,8 @@
                         var a = document.createElement('a');
                         a.href = '/strategies/' + s.id;
                         a.className = 'nav-icon';
-                        a.title = s.displayName || s.id;
+                        var label = s.displayName || s.id;
+                        a.title = s.description ? (label + ' — ' + s.description) : label;
                         a.setAttribute('data-nav-key', s.id);
                         a.textContent = s.navIcon || s.shortCode || s.id;
                         a.style.cssText = chipStyle;

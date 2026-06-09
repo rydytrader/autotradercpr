@@ -73,6 +73,7 @@ public class ViewController {
             Map<String, Object> e = new LinkedHashMap<>();
             e.put("id", s.id());
             e.put("displayName", s.displayName());
+            e.put("description", s.description());
             e.put("shortCode", s.shortCode());
             e.put("navIcon", s.shortCode());
             e.put("href", "/strategies/" + s.id());
