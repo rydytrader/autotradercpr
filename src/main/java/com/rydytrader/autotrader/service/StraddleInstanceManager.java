@@ -12,11 +12,13 @@ import com.rydytrader.autotrader.service.strategy.Strategy;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import com.rydytrader.autotrader.store.TokenStore;
 import com.rydytrader.autotrader.store.strategy.ShortStraddleStateStore;
-import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -41,7 +43,8 @@ import java.util.Optional;
  * Sessions, trades, settings rows, state JSON file are preserved.
  */
 @Service
-public class StraddleInstanceManager {
+@Order(10)
+public class StraddleInstanceManager implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(StraddleInstanceManager.class);
 
@@ -95,12 +98,15 @@ public class StraddleInstanceManager {
         this.atmSelector = atmSelector;
     }
 
-    @PostConstruct
+    @Override
+    public void run(ApplicationArguments args) { boot(); }
+
     public void boot() {
-        // Discriminator filter — this manager owns only the STRADDLE-typed rows. The
-        // SchemaMigration component runs before this boot fires (see @Order(0)) so any
-        // legacy rows that pre-date the discriminator column have already been backfilled
-        // to type='STRADDLE'.
+        // Discriminator filter — this manager owns only the STRADDLE-typed rows. ApplicationRunner
+        // @Order(10) runs after SchemaMigration @Order(0) so the legacy straddle_* tables have
+        // already been renamed and the strategy_type column has been backfilled to 'STRADDLE' on
+        // any legacy rows. (Cannot use @PostConstruct here: that would fire during context refresh,
+        // BEFORE SchemaMigration's ApplicationRunner — querying empty Hibernate-shells.)
         List<StrategyInstanceEntity> rows = repo.findAllByActiveTrueAndTypeOrderByIdAsc("STRADDLE");
         for (StrategyInstanceEntity row : rows) {
             try {

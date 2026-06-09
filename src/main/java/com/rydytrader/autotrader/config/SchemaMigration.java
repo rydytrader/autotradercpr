@@ -37,12 +37,42 @@ public class SchemaMigration implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        if (tableExists("straddle_instances") && !tableExists("strategy_instances")) {
+        boolean legacyExists = tableExists("straddle_instances");
+        boolean newExists    = tableExists("strategy_instances");
+
+        // CASE A: legacy tables present, no new tables yet — clean rename.
+        if (legacyExists && !newExists) {
             log.info("[SchemaMigration] renaming legacy straddle_* tables → strategy_*");
             jdbc.execute("ALTER TABLE straddle_instances RENAME TO strategy_instances");
-            jdbc.execute("ALTER TABLE straddle_sessions  RENAME TO strategy_sessions");
-            jdbc.execute("ALTER TABLE straddle_trades    RENAME TO strategy_trades");
+            if (tableExists("straddle_sessions"))
+                jdbc.execute("ALTER TABLE straddle_sessions RENAME TO strategy_sessions");
+            if (tableExists("straddle_trades"))
+                jdbc.execute("ALTER TABLE straddle_trades RENAME TO strategy_trades");
+            // Hibernate already finished DDL before this runner — add the new column ourselves.
+            jdbc.execute("ALTER TABLE strategy_instances ADD COLUMN IF NOT EXISTS strategy_type VARCHAR(20)");
         }
+        // CASE B: BOTH sets of tables exist. Hibernate auto-DDL created empty strategy_* during
+        // context refresh while the legacy straddle_* still holds the operator's data. We need
+        // to swap them — drop the empty Hibernate-created ones and rename the legacy ones in.
+        else if (legacyExists && newExists) {
+            Integer newCount = countRows("strategy_instances");
+            Integer legacyCount = countRows("straddle_instances");
+            if (newCount != null && newCount == 0 && legacyCount != null && legacyCount > 0) {
+                log.info("[SchemaMigration] swapping {} legacy rows from straddle_* into the "
+                    + "Hibernate-created (empty) strategy_* shell", legacyCount);
+                jdbc.execute("DROP TABLE IF EXISTS strategy_trades");
+                jdbc.execute("DROP TABLE IF EXISTS strategy_sessions");
+                jdbc.execute("DROP TABLE strategy_instances");
+                jdbc.execute("ALTER TABLE straddle_instances RENAME TO strategy_instances");
+                if (tableExists("straddle_sessions"))
+                    jdbc.execute("ALTER TABLE straddle_sessions RENAME TO strategy_sessions");
+                if (tableExists("straddle_trades"))
+                    jdbc.execute("ALTER TABLE straddle_trades RENAME TO strategy_trades");
+                // Re-add the new column (the freshly renamed table doesn't have it yet).
+                jdbc.execute("ALTER TABLE strategy_instances ADD COLUMN IF NOT EXISTS strategy_type VARCHAR(20)");
+            }
+        }
+
         // Backfill the discriminator on any row Hibernate just inserted a NULL into when it
         // auto-added the strategy_type column to the renamed strategy_instances table.
         try {
@@ -57,6 +87,12 @@ public class SchemaMigration implements ApplicationRunner {
             // the column already in place.
             log.debug("[SchemaMigration] skip backfill — {}", e.getMessage());
         }
+    }
+
+    private Integer countRows(String table) {
+        try {
+            return jdbc.queryForObject("SELECT COUNT(*) FROM " + table, Integer.class);
+        } catch (Exception e) { return null; }
     }
 
     private boolean tableExists(String name) {
