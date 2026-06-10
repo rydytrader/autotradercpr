@@ -407,7 +407,8 @@ public class ShortStrangle implements Strategy {
         // trigger collapses from "entry + threshold" down to its entry premium — locking
         // break-even on the surviving leg. Off by default; opt in per instance.
         s.add(field("moveSlToCostOnFirstLegHit", "boolean", false,
-            "Move SL to Cost on First Leg SL Hit", null));
+            "Move SL to Cost on First Leg SL Hit",
+            "When one leg's SL fires, drops the surviving leg's SL trigger from entry + threshold down to its entry premium — locking break-even on the surviving leg."));
         // Per-DTE enable + SL %. Rows ordered 4 → 3 → 2 → 1 → 0 so the layout reads top-down
         // away-from-expiry → expiry-day. Defaults: every level on at 50 %, matching the
         // previous single-SL behaviour. Keys live under {@code dte.<N>.*} so the lookup
