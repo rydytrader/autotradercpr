@@ -816,6 +816,10 @@
             '<div class="stat-label" style="margin-bottom:8px;">Straddles</div>' +
             '<div style="color:var(--text-muted);">Loading…</div>' +
         '</div>' +
+        '<div id="calDayStrangles" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">' +
+            '<div class="stat-label" style="margin-bottom:8px;">Strangles</div>' +
+            '<div style="color:var(--text-muted);">Loading…</div>' +
+        '</div>' +
         '<div id="calDayAdjustments" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">' +
             '<div class="stat-label" style="margin-bottom:8px;">Adjustments</div>' +
             '<div style="color:var(--text-muted);">Loading…</div>' +
@@ -884,70 +888,91 @@
 
         // Fan out per-instance trade fetches for this date — every cycle ends up here so a
         // multi-restart day shows one row per cycle. Order by closedAtMillis after merge.
+        // Partition the merged list by strategy TYPE (STRADDLE vs STRANGLE) and render each
+        // group into its own section. The type comes from /api/strategies (the type field on
+        // each entry); fall back to STRADDLE if it's missing (older /api/strategies responses).
         fetch('/api/strategies').then(r => r.json()).then(list => {
             list = Array.isArray(list) ? list : [];
+            const typeById = {};
+            list.forEach(s => { if (s && s.id) typeById[s.id] = (s.type || 'STRADDLE'); });
             return Promise.all(list.map(s =>
                 fetch('/api/strategies/' + encodeURIComponent(s.id) + '/trades?date=' + encodeURIComponent(dateStr))
                     .then(r => r.json()).catch(() => ({ trades: [] }))
-            ));
-        }).then(perInstance => {
+            )).then(perInstance => ({ perInstance: perInstance || [], typeById }));
+        }).then(({ perInstance, typeById }) => {
             const all = [];
-            (perInstance || []).forEach(r => (r && r.trades || []).forEach(t => all.push(t)));
+            perInstance.forEach(r => (r && r.trades || []).forEach(t => all.push(t)));
             all.sort((a, b) => (a.closedAtMillis || 0) - (b.closedAtMillis || 0));
-            const wrap = document.getElementById('calDayStraddles');
-            if (!wrap) return;
-            if (all.length === 0) {
-                wrap.innerHTML =
-                    '<div class="stat-label" style="margin-bottom:8px;">Straddles</div>' +
-                    '<div style="color:var(--text-muted);">No persisted straddle rows for this date.</div>';
-                return;
-            }
-            const fmtTime = ms => {
-                if (!ms) return '—';
-                const d = new Date(Number(ms));
-                return d.toTimeString().slice(0, 5);
-            };
-            let rows = '';
-            all.forEach((t, i) => {
-                const n  = Number(t.netPnl || 0);
-                const cls= n > 0 ? 'pnl-positive' : (n < 0 ? 'pnl-negative' : '');
-                rows +=
-                    '<tr style="border-top:1px solid rgba(128,128,128,0.10);">' +
-                        '<td style="padding:8px 10px;color:var(--text-muted);">#' + (i + 1) + '</td>' +
-                        '<td style="padding:8px 10px;color:var(--text-primary);">' + (t.shortCode || t.strategyId || '—') + '</td>' +
-                        '<td style="padding:8px 10px;">' + fmtTime(t.closedAtMillis) + '</td>' +
-                        '<td style="padding:8px 10px;color:var(--text-muted);">' + (t.closeReason || '—') + '</td>' +
-                        '<td style="padding:8px 10px;text-align:right;color:var(--text-muted);">' + (t.qty || 0) + '</td>' +
-                        '<td style="padding:8px 10px;text-align:right;">' + fmtMoneyFull(t.grossPnl) + '</td>' +
-                        '<td style="padding:8px 10px;text-align:right;color:var(--text-muted);">' + fmtMoneyFull(t.charges) + '</td>' +
-                        '<td style="padding:8px 10px;text-align:right;" class="' + cls + '">' + fmtMoneyFull(t.netPnl) + '</td>' +
-                        '<td style="padding:8px 10px;text-align:center;color:' + (t.slHitCount > 0 ? 'var(--accent-red, #f87171)' : 'var(--text-muted)') + ';">' + (t.slHitCount || 0) + '</td>' +
-                    '</tr>';
-            });
-            wrap.innerHTML =
-                '<div class="stat-label" style="margin-bottom:8px;">Straddles · ' + all.length + ' cycle' + (all.length === 1 ? '' : 's') + '</div>' +
-                '<div style="overflow-x:auto;max-width:100%;">' +
-                '<table style="width:100%;min-width:760px;border-collapse:collapse;font-family:var(--font-mono);font-size:0.74rem;table-layout:auto;white-space:nowrap;">' +
-                    '<thead><tr style="color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;">' +
-                        '<th style="padding:6px 10px;text-align:left;">#</th>' +
-                        '<th style="padding:6px 10px;text-align:left;">STRADDLE</th>' +
-                        '<th style="padding:6px 10px;text-align:left;">CLOSED</th>' +
-                        '<th style="padding:6px 10px;text-align:left;">REASON</th>' +
-                        '<th style="padding:6px 10px;text-align:right;">QTY</th>' +
-                        '<th style="padding:6px 10px;text-align:right;">GROSS</th>' +
-                        '<th style="padding:6px 10px;text-align:right;">CHARGES</th>' +
-                        '<th style="padding:6px 10px;text-align:right;">NET</th>' +
-                        '<th style="padding:6px 10px;text-align:center;">SL</th>' +
-                    '</tr></thead><tbody>' + rows + '</tbody>' +
-                '</table>' +
-                '</div>';
+
+            const straddleRows = all.filter(t => (typeById[t.strategyId] || 'STRADDLE') === 'STRADDLE');
+            const strangleRows = all.filter(t => (typeById[t.strategyId] || 'STRADDLE') === 'STRANGLE');
+
+            renderStrategyTradeSection(
+                document.getElementById('calDayStraddles'),
+                straddleRows, 'Straddle', 'Straddles');
+            renderStrategyTradeSection(
+                document.getElementById('calDayStrangles'),
+                strangleRows, 'Strangle', 'Strangles');
         }).catch(() => {
-            const wrap = document.getElementById('calDayStraddles');
-            if (wrap) wrap.innerHTML =
-                '<div class="stat-label" style="margin-bottom:8px;">Straddles</div>' +
-                '<div style="color:var(--accent-red, #f87171);">Failed to load straddle list.</div>';
+            ['calDayStraddles', 'calDayStrangles'].forEach(id => {
+                const wrap = document.getElementById(id);
+                if (wrap) wrap.innerHTML =
+                    '<div class="stat-label" style="margin-bottom:8px;">' + (id === 'calDayStraddles' ? 'Straddles' : 'Strangles') + '</div>' +
+                    '<div style="color:var(--accent-red, #f87171);">Failed to load strategy list.</div>';
+            });
         });
     };
+
+    // Render one strategy-type section into its container. {@code singularLabel} is the
+    // per-row column header (e.g. STRADDLE / STRANGLE) and {@code pluralLabel} the section title.
+    function renderStrategyTradeSection(wrap, rows, singularLabel, pluralLabel) {
+        if (!wrap) return;
+        if (!rows || rows.length === 0) {
+            wrap.innerHTML =
+                '<div class="stat-label" style="margin-bottom:8px;">' + pluralLabel + '</div>' +
+                '<div style="color:var(--text-muted);">No persisted ' + singularLabel.toLowerCase() + ' rows for this date.</div>';
+            return;
+        }
+        const fmtTime = ms => {
+            if (!ms) return '—';
+            const d = new Date(Number(ms));
+            return d.toTimeString().slice(0, 5);
+        };
+        let body = '';
+        rows.forEach((t, i) => {
+            const n   = Number(t.netPnl || 0);
+            const cls = n > 0 ? 'pnl-positive' : (n < 0 ? 'pnl-negative' : '');
+            body +=
+                '<tr style="border-top:1px solid rgba(128,128,128,0.10);">' +
+                    '<td style="padding:8px 10px;color:var(--text-muted);">#' + (i + 1) + '</td>' +
+                    '<td style="padding:8px 10px;color:var(--text-primary);">' + (t.shortCode || t.strategyId || '—') + '</td>' +
+                    '<td style="padding:8px 10px;">' + fmtTime(t.closedAtMillis) + '</td>' +
+                    '<td style="padding:8px 10px;color:var(--text-muted);">' + (t.closeReason || '—') + '</td>' +
+                    '<td style="padding:8px 10px;text-align:right;color:var(--text-muted);">' + (t.qty || 0) + '</td>' +
+                    '<td style="padding:8px 10px;text-align:right;">' + fmtMoneyFull(t.grossPnl) + '</td>' +
+                    '<td style="padding:8px 10px;text-align:right;color:var(--text-muted);">' + fmtMoneyFull(t.charges) + '</td>' +
+                    '<td style="padding:8px 10px;text-align:right;" class="' + cls + '">' + fmtMoneyFull(t.netPnl) + '</td>' +
+                    '<td style="padding:8px 10px;text-align:center;color:' + (t.slHitCount > 0 ? 'var(--accent-red, #f87171)' : 'var(--text-muted)') + ';">' + (t.slHitCount || 0) + '</td>' +
+                '</tr>';
+        });
+        wrap.innerHTML =
+            '<div class="stat-label" style="margin-bottom:8px;">' + pluralLabel + ' · ' + rows.length + ' cycle' + (rows.length === 1 ? '' : 's') + '</div>' +
+            '<div style="overflow-x:auto;max-width:100%;">' +
+            '<table style="width:100%;min-width:760px;border-collapse:collapse;font-family:var(--font-mono);font-size:0.74rem;table-layout:auto;white-space:nowrap;">' +
+                '<thead><tr style="color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;">' +
+                    '<th style="padding:6px 10px;text-align:left;">#</th>' +
+                    '<th style="padding:6px 10px;text-align:left;">' + singularLabel.toUpperCase() + '</th>' +
+                    '<th style="padding:6px 10px;text-align:left;">CLOSED</th>' +
+                    '<th style="padding:6px 10px;text-align:left;">REASON</th>' +
+                    '<th style="padding:6px 10px;text-align:right;">QTY</th>' +
+                    '<th style="padding:6px 10px;text-align:right;">GROSS</th>' +
+                    '<th style="padding:6px 10px;text-align:right;">CHARGES</th>' +
+                    '<th style="padding:6px 10px;text-align:right;">NET</th>' +
+                    '<th style="padding:6px 10px;text-align:center;">SL</th>' +
+                '</tr></thead><tbody>' + body + '</tbody>' +
+            '</table>' +
+            '</div>';
+    }
     window.closeDayModal = function() {
         document.getElementById('calDayModal').style.display = 'none';
     };
