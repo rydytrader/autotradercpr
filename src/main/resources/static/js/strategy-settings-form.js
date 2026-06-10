@@ -17,9 +17,10 @@
             '<div id="ssOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;">' +
               '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;width:740px;max-width:94vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,0.3);">' +
                 '<div style="display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid var(--border);">' +
-                  '<div style="font-family:var(--font-mono);font-size:0.92rem;font-weight:700;color:var(--text-primary);" id="ssTitle">⚙ Straddle Settings</div>' +
+                  '<div style="font-family:var(--font-mono);font-size:0.92rem;font-weight:700;color:var(--text-primary);" id="ssTitle">⚙ Settings</div>' +
                   '<button onclick="StrategySettings.close()" style="background:transparent;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;line-height:1;padding:0 4px;">&times;</button>' +
                 '</div>' +
+                '<div id="ssTabstrip" style="display:flex;border-bottom:1px solid var(--border);padding:0 24px;"></div>' +
                 '<div style="flex:1;overflow-y:auto;padding:20px 24px;" id="ssBody"></div>' +
                 '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:16px 24px;border-top:1px solid var(--border);">' +
                   '<div id="ssBanner" style="font-family:var(--font-mono);font-size:0.78rem;flex:1;"></div>' +
@@ -53,7 +54,12 @@
             '.ss-day-header { font-size:0.66rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em; }' +
             '.ss-day-name { color:var(--text-primary); }' +
             '.ss-day-row input[type=checkbox] { width:18px;height:18px;justify-self:start;margin:0; }' +
-            '.ss-day-row input[type=number] { width:100%;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.78rem;outline:none;text-align:right; }';
+            '.ss-day-row input[type=number] { width:100%;padding:6px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-primary);color:var(--text-primary);font-family:var(--font-mono);font-size:0.78rem;outline:none;text-align:right; }' +
+            '.ss-tab { background:transparent;border:none;color:var(--text-secondary);padding:12px 18px;font-family:var(--font-mono);font-size:0.74rem;font-weight:600;letter-spacing:0.06em;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap; }' +
+            '.ss-tab.active { color:var(--text-primary);border-bottom-color:var(--accent-cyan); }' +
+            '.ss-tab:hover { color:var(--text-primary); }' +
+            '.ss-pane { display:none; }' +
+            '.ss-pane.active { display:block; }';
         document.head.appendChild(style);
         return overlayEl;
     }
@@ -108,34 +114,43 @@
     }
 
     function renderFields(schema) {
-        // Split into regular fields and DTE-row fields. DTE rows use a horizontal grid
-        // (one row per DTE level with enable + SL % side-by-side) instead of stacked.
-        // Regular fields are laid out in a 2-column grid so the first four (Entry Time,
-        // Squareoff Time, Lots per Leg, Order Type) sit as 2 × 2 instead of 4 stacked rows.
-        var regularInner = '';
-        var dteMap = {};   // { N: { enabled: schemaEntry, legSlPct: schemaEntry, legSlPoints: schemaEntry } }
-        var dteOrder = []; // insertion order (matches backend's 4 → 0 schema emit order)
+        // Two-tab layout: Basic (entry/order placement) and Risk (per-leg SL / move-to-cost
+        // / per-DTE rows). Field's tab attribute decides bucket; missing tab falls back to
+        // basic so older schemas keep rendering. DTE rows always live under Risk.
+        var basicFields = [];
+        var riskFields  = [];
+        var dteMap = {};
+        var dteOrder = [];
         schema.forEach(function(f) {
             var m = /^dte\.(\d)\.(enabled|legSlPct|legSlPoints)$/.exec(f.key);
             if (m) {
                 var n = m[1];
                 if (!dteMap[n]) { dteMap[n] = {}; dteOrder.push(n); }
                 dteMap[n][m[2]] = f;
-            } else {
-                regularInner += renderFieldHtml(f);
+                return;
             }
+            if (f.tab === 'risk') riskFields.push(f);
+            else                  basicFields.push(f);
         });
-        var regularHtml = regularInner ? ('<div class="ss-regular-grid">' + regularInner + '</div>') : '';
-        var dayHtml = '';
+
+        function gridOf(fields) {
+            if (!fields.length) return '';
+            return '<div class="ss-regular-grid">' + fields.map(renderFieldHtml).join('') + '</div>';
+        }
+
+        var basicHtml = gridOf(basicFields)
+            || '<div style="color:var(--text-muted);font-style:italic;padding:14px 0;">No basic settings.</div>';
+
+        var riskHtml = gridOf(riskFields);
         if (dteOrder.length > 0) {
-            dayHtml += '<div class="ss-section-title">Days to Expiry · enable + per-leg SL</div>';
-            dayHtml += '<div class="ss-day-grid">';
-            dayHtml += '<div class="ss-day-header"><span>DTE</span><span>Enable</span><span>SL %</span><span>SL Points</span></div>';
+            riskHtml += '<div class="ss-section-title">Days to Expiry · enable + per-leg SL</div>';
+            riskHtml += '<div class="ss-day-grid">';
+            riskHtml += '<div class="ss-day-header"><span>DTE</span><span>Enable</span><span>SL %</span><span>SL Points</span></div>';
             dteOrder.forEach(function(n) {
                 var pair = dteMap[n];
                 var enF = pair.enabled, slF = pair.legSlPct, ptF = pair.legSlPoints;
                 if (!enF || !slF) return;
-                dayHtml +=
+                riskHtml +=
                     '<div class="ss-day-row">' +
                         '<span class="ss-day-name">' + escapeHtml(n) + ' DTE</span>' +
                         '<input type="checkbox" id="ss-' + escapeHtml(enF.key) + '">' +
@@ -145,9 +160,31 @@
                             : '<span style="color:var(--text-muted);">—</span>') +
                     '</div>';
             });
-            dayHtml += '</div>';
+            riskHtml += '</div>';
         }
-        document.getElementById('ssBody').innerHTML = regularHtml + dayHtml;
+        if (!riskHtml) riskHtml = '<div style="color:var(--text-muted);font-style:italic;padding:14px 0;">No risk settings.</div>';
+
+        // Tab strip — buttons wire up in switchTab below.
+        var strip = document.getElementById('ssTabstrip');
+        strip.innerHTML =
+            '<button class="ss-tab active" data-tab="basic">BASIC</button>' +
+            '<button class="ss-tab" data-tab="risk">RISK</button>';
+        strip.querySelectorAll('.ss-tab').forEach(function(b) {
+            b.addEventListener('click', function() { switchTab(b.getAttribute('data-tab')); });
+        });
+        document.getElementById('ssBody').innerHTML =
+            '<div class="ss-pane active" data-pane="basic">' + basicHtml + '</div>' +
+            '<div class="ss-pane"        data-pane="risk">'  + riskHtml  + '</div>';
+    }
+
+    function switchTab(tab) {
+        var strip = document.getElementById('ssTabstrip');
+        strip.querySelectorAll('.ss-tab').forEach(function(b) {
+            b.classList.toggle('active', b.getAttribute('data-tab') === tab);
+        });
+        document.getElementById('ssBody').querySelectorAll('.ss-pane').forEach(function(p) {
+            p.classList.toggle('active', p.getAttribute('data-pane') === tab);
+        });
     }
 
     function loadValues(strategyId, schema) {

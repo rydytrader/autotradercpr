@@ -417,6 +417,14 @@ public class ShortStrangle implements Strategy {
             s.add(field("dte." + n + ".legSlPct",    "percent", 50,   n + " DTE — SL %",       null));
             s.add(field("dte." + n + ".legSlPoints", "double",  0,    n + " DTE — SL Points",  null));
         }
+        // Bucket each field into a UI tab. Anything related to per-leg SL or move-to-cost is
+        // "risk"; everything else (entry time, squareoff time, lots, order type, target
+        // premium, premium tolerance) is "basic".
+        for (java.util.Map<String, Object> f : s) {
+            String k = String.valueOf(f.get("key"));
+            boolean risk = "moveSlToCostOnFirstLegHit".equals(k) || k.startsWith("dte.");
+            f.put("tab", risk ? "risk" : "basic");
+        }
         return s;
     }
 
