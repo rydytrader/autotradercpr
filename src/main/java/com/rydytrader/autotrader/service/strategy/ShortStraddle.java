@@ -412,6 +412,8 @@ public class ShortStraddle implements Strategy {
             String k = String.valueOf(f.get("key"));
             boolean risk = "moveSlToCostOnFirstLegHit".equals(k) || k.startsWith("dte.");
             f.put("tab", risk ? "risk" : "basic");
+            // Long-hint fields span both grid columns so the hint stays on one line.
+            if ("moveSlToCostOnFirstLegHit".equals(k)) f.put("wide", true);
         }
         return s;
     }
