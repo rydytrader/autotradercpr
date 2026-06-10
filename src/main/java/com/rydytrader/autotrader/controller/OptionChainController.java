@@ -88,6 +88,13 @@ public class OptionChainController {
 
         NavigableMap<Long, Leg[]> byStrike = groupByStrike(chain);
 
+        // Greeks: Fyers' chain endpoint doesn't ship greeks for NIFTY options. Compute delta
+        // ourselves via Black-Scholes — invert the LTP to an implied vol, then plug back into
+        // the BSM delta formula. Needs spot + time-to-expiry. Skips silently if we can't
+        // resolve those; the UI shows "—" for the affected rows.
+        double yearsToExpiry = resolveYearsToExpiry(byStrike);
+        if (yearsToExpiry > 0) fillDeltas(byStrike, spot, yearsToExpiry);
+
         // Synthetic-futures ATM (put-call parity): F = atm + (CE − PE) at the spot-ATM
         // strike, rounded to the nearest step. This is the strike the straddle bot will
         // actually trade. We surface it as a *separate* marker — the slice + gold band
@@ -429,6 +436,96 @@ public class OptionChainController {
 
     private static double round4(double v) {
         return Math.round(v * 10000.0) / 10000.0;
+    }
+
+    // ── Black-Scholes delta (computed locally — Fyers doesn't ship greeks) ─────
+
+    /** India 10Y G-sec yield used as the risk-free rate. NIFTY weekly delta is fairly
+     *  insensitive to this in absolute terms — a 1 % rate swing barely moves delta. */
+    private static final double RISK_FREE_RATE = 0.065;
+
+    /** Years to expiry, computed from any quoted symbol in the chain. Returns 0 when no
+     *  symbol parses cleanly. Uses a 365-day calendar (NIFTY's convention). */
+    private double resolveYearsToExpiry(NavigableMap<Long, Leg[]> byStrike) {
+        for (Leg[] pair : byStrike.values()) {
+            for (Leg l : pair) {
+                if (l == null || l.symbol == null || l.symbol.isEmpty()) continue;
+                String exp = parseExpiryFromSymbol(l.symbol);
+                if (exp.isEmpty()) continue;
+                try {
+                    LocalDate expDate = LocalDate.parse(exp);
+                    LocalDate today   = LocalDate.now();
+                    long days = java.time.temporal.ChronoUnit.DAYS.between(today, expDate);
+                    if (days <= 0) days = 1;   // intraday on expiry day — keep T > 0 so BSM is well-defined
+                    return days / 365.0;
+                } catch (Exception ignored) {}
+            }
+        }
+        return 0;
+    }
+
+    /** Fill {@code leg.delta} on every quoted leg in the chain by inverting LTP → implied
+     *  vol via bisection, then plugging that IV into the BSM delta formula. Legs with no
+     *  quote (ltp = 0) are skipped — they stay {@code null} and render "—". */
+    private static void fillDeltas(NavigableMap<Long, Leg[]> byStrike, double spot, double tYears) {
+        for (Map.Entry<Long, Leg[]> e : byStrike.entrySet()) {
+            long strike = e.getKey();
+            Leg[] pair = e.getValue();
+            if (pair == null) continue;
+            if (pair[0] != null && pair[0].ltp > 0) {
+                double iv = impliedVol(spot, strike, tYears, RISK_FREE_RATE, pair[0].ltp, true);
+                if (iv > 0) pair[0].delta = bsmDelta(spot, strike, tYears, RISK_FREE_RATE, iv, true);
+            }
+            if (pair[1] != null && pair[1].ltp > 0) {
+                double iv = impliedVol(spot, strike, tYears, RISK_FREE_RATE, pair[1].ltp, false);
+                if (iv > 0) pair[1].delta = bsmDelta(spot, strike, tYears, RISK_FREE_RATE, iv, false);
+            }
+        }
+    }
+
+    /** Standard normal CDF via the Abramowitz-Stegun approximation (~1e-7 error). */
+    private static double normCdf(double x) {
+        double a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741,
+               a4 = -1.453152027, a5 = 1.061405429, p = 0.3275911;
+        int sign = x < 0 ? -1 : 1;
+        double ax = Math.abs(x) / Math.sqrt(2);
+        double t = 1.0 / (1.0 + p * ax);
+        double y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-ax * ax);
+        return 0.5 * (1.0 + sign * y);
+    }
+
+    private static double bsmDelta(double S, double K, double T, double r, double sigma, boolean isCall) {
+        if (S <= 0 || K <= 0 || T <= 0 || sigma <= 0) {
+            return isCall ? (S > K ? 1.0 : 0.0) : (S < K ? -1.0 : 0.0);
+        }
+        double d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
+        return isCall ? normCdf(d1) : normCdf(d1) - 1.0;
+    }
+
+    private static double bsmPrice(double S, double K, double T, double r, double sigma, boolean isCall) {
+        if (S <= 0 || K <= 0 || T <= 0 || sigma <= 0) {
+            return Math.max(0, isCall ? S - K : K - S);
+        }
+        double d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
+        double d2 = d1 - sigma * Math.sqrt(T);
+        return isCall ? S * normCdf(d1) - K * Math.exp(-r * T) * normCdf(d2)
+                      : K * Math.exp(-r * T) * normCdf(-d2) - S * normCdf(-d1);
+    }
+
+    /** Bisection on volatility — 50 iterations gets us well inside 1e-4 precision. Returns
+     *  0 when the market price sits outside the intrinsic / no-arbitrage band. */
+    private static double impliedVol(double S, double K, double T, double r, double marketPrice, boolean isCall) {
+        if (T <= 0 || marketPrice <= 0) return 0;
+        double intrinsic = Math.max(0, isCall ? S - K * Math.exp(-r * T) : K * Math.exp(-r * T) - S);
+        if (marketPrice <= intrinsic) return 0;   // deep ITM, BSM would price below market
+        double lo = 0.001, hi = 5.0;
+        for (int i = 0; i < 50; i++) {
+            double mid = (lo + hi) / 2;
+            double price = bsmPrice(S, K, T, r, mid, isCall);
+            if (price > marketPrice) hi = mid; else lo = mid;
+            if (hi - lo < 1e-4) break;
+        }
+        return (lo + hi) / 2;
     }
 
     /** Best-effort delta extraction from a Fyers chain row. Fyers' v3 option chain reports
