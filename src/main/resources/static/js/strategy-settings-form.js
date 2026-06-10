@@ -47,7 +47,7 @@
             '.ss-field select { width:100%;padding:8px 24px 8px 12px;border-radius:6px;border:1px solid var(--border);background-color:var(--bg-card);color:var(--text-primary);font-family:var(--font-mono);font-size:0.82rem;outline:none;cursor:pointer;appearance:none;-webkit-appearance:none;background-image:linear-gradient(45deg, transparent 50%, var(--text-muted) 50%), linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);background-position:calc(100% - 12px) 50%, calc(100% - 7px) 50%;background-size:5px 5px, 5px 5px;background-repeat:no-repeat; }' +
             '.ss-field select option { background-color:var(--bg-card);color:var(--text-primary); }' +
             '.ss-field input[type=checkbox] { width:auto; }' +
-            '.ss-hint { color:var(--text-muted);font-size:0.7rem;margin-top:4px; }' +
+            '.ss-hint { color:var(--text-muted);font-size:0.7rem;margin-top:4px;line-height:1.45; }' +
             '.ss-section-title { font-family:var(--font-mono);font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-secondary);margin:18px 0 6px; }' +
             '.ss-day-grid { display:flex;flex-direction:column;font-family:var(--font-mono);font-size:0.78rem;margin-top:10px; }' +
             '.ss-day-header, .ss-day-row { display:grid;grid-template-columns:1fr 80px 90px 100px;gap:12px;align-items:center;padding:8px 4px;border-bottom:1px solid var(--border); }' +
