@@ -157,9 +157,9 @@
 
         var html = '<table class="oc-table">' +
             '<thead><tr>' +
-              '<th style="text-align:left;">ACT</th><th style="text-align:left;">ΔOI</th><th style="text-align:left;">OI</th><th style="text-align:left;">VOL</th><th style="text-align:left;">CHG%</th><th style="text-align:center;">LTP</th>' +
+              '<th style="text-align:left;">ACT</th><th style="text-align:left;">ΔOI</th><th style="text-align:left;">OI</th><th style="text-align:left;">VOL</th><th style="text-align:left;">CHG%</th><th style="text-align:center;">LTP</th><th style="text-align:center;">DELTA</th>' +
               '<th class="oc-strike-h">STRIKE</th>' +
-              '<th style="text-align:center;">LTP</th><th style="text-align:right;">CHG%</th><th style="text-align:right;">VOL</th><th style="text-align:right;">OI</th><th style="text-align:right;">ΔOI</th><th style="text-align:right;">ACT</th>' +
+              '<th style="text-align:center;">DELTA</th><th style="text-align:center;">LTP</th><th style="text-align:right;">CHG%</th><th style="text-align:right;">VOL</th><th style="text-align:right;">OI</th><th style="text-align:right;">ΔOI</th><th style="text-align:right;">ACT</th>' +
             '</tr></thead><tbody>';
 
         // Render high strikes first (resistance up top, support down — matches a price chart).
@@ -210,7 +210,9 @@
               '<td class="' + ceSideCls + '" style="text-align:left;">' + fmtVol(ce.volume) + '</td>' +
               '<td class="' + ceSideCls + '" style="text-align:left;">' + fmtChg(ce.chgPct) + '</td>' +
               '<td class="' + ceSideCls + '" style="text-align:center;">' + fmtPrice(ce.ltp) + '</td>' +
+              '<td class="' + ceSideCls + '" style="text-align:center;">' + fmtDelta(ce.delta) + '</td>' +
               '<td class="oc-strike">' + strikeCellHtml + '</td>' +
+              '<td class="' + peSideCls + '" style="text-align:center;">' + fmtDelta(pe.delta) + '</td>' +
               '<td class="' + peSideCls + '" style="text-align:center;">' + fmtPrice(pe.ltp) + '</td>' +
               '<td class="' + peSideCls + '" style="text-align:right;">' + fmtChg(pe.chgPct) + '</td>' +
               '<td class="' + peSideCls + '" style="text-align:right;">' + fmtVol(pe.volume) + '</td>' +
@@ -224,6 +226,13 @@
     }
 
     // ── Formatters ─────────────────────────────────────────────────────────────
+    function fmtDelta(v) {
+        // Render to 2 decimals. CE delta is positive, PE delta negative; the sign carries
+        // information so we don't strip it. "—" when Fyers didn't supply greeks.
+        var n = numeric(v);
+        if (n == null) return '<span class="oc-muted">—</span>';
+        return n.toFixed(2);
+    }
     function fmtPrice(v) {
         var n = numeric(v);
         if (n == null) return '<span class="oc-muted">—</span>';

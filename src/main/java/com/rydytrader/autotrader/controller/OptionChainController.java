@@ -181,6 +181,7 @@ public class OptionChainController {
             leg.oi       = longField(row, "oi");
             leg.oiChange = longField(row, "oich", "oichange", "oi_change", "change_oi");
             leg.activity = classifyActivity(leg.chgPct, leg.oiChange);
+            leg.delta    = extractDelta(row);
             if ("CE".equalsIgnoreCase(optType)) pair[0] = leg;
             else if ("PE".equalsIgnoreCase(optType)) pair[1] = leg;
         }
@@ -208,9 +209,10 @@ public class OptionChainController {
     private Map<String, Object> legToMap(Leg leg) {
         Map<String, Object> m = new LinkedHashMap<>();
         if (leg == null) {
-            m.put("ltp", null); m.put("chgPct", null); m.put("volume", 0L); m.put("oi", 0L); m.put("oiChange", 0L); m.put("activity", ""); m.put("symbol", "");
+            m.put("ltp", null); m.put("delta", null); m.put("chgPct", null); m.put("volume", 0L); m.put("oi", 0L); m.put("oiChange", 0L); m.put("activity", ""); m.put("symbol", "");
         } else {
             m.put("ltp",      leg.ltp > 0 ? round2(leg.ltp) : null);
+            m.put("delta",    leg.delta == null ? null : round4(leg.delta));
             m.put("chgPct",   leg.ltp > 0 ? round2(leg.chgPct) : null);
             m.put("volume",   leg.volume);
             m.put("oi",       leg.oi);
@@ -425,6 +427,36 @@ public class OptionChainController {
         return Math.round(v * 100.0) / 100.0;
     }
 
+    private static double round4(double v) {
+        return Math.round(v * 10000.0) / 10000.0;
+    }
+
+    /** Best-effort delta extraction from a Fyers chain row. Fyers' v3 option chain reports
+     *  greeks in several shapes across symbols / versions:
+     *  <ul>
+     *    <li>Inline keys: {@code delta} / {@code option_delta} / {@code optdelta}</li>
+     *    <li>Nested objects: {@code option_greeks.delta} / {@code greeks.delta}</li>
+     *  </ul>
+     *  Returns {@code null} when no candidate is present, so the UI shows "—". */
+    private static Double extractDelta(JsonNode row) {
+        for (String k : new String[]{"delta", "option_delta", "optdelta"}) {
+            if (row.has(k) && !row.get(k).isNull()) {
+                double v = row.get(k).asDouble(Double.NaN);
+                if (!Double.isNaN(v)) return v;
+            }
+        }
+        for (String k : new String[]{"option_greeks", "greeks", "optionGreeks"}) {
+            if (row.has(k) && row.get(k).isObject()) {
+                JsonNode g = row.get(k);
+                if (g.has("delta") && !g.get("delta").isNull()) {
+                    double v = g.get("delta").asDouble(Double.NaN);
+                    if (!Double.isNaN(v)) return v;
+                }
+            }
+        }
+        return null;
+    }
+
     private static class Leg {
         String symbol = "";
         double ltp;
@@ -433,5 +465,6 @@ public class OptionChainController {
         long   oi;
         long   oiChange;
         String activity = "";
+        Double delta;   // nullable — null when Fyers doesn't include greeks for this row
     }
 }
