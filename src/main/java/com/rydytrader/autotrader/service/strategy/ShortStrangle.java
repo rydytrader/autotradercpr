@@ -1334,8 +1334,12 @@ public class ShortStrangle implements Strategy {
             m.put("projectedAtmCeLtp",             round2(preCeLtp));
             m.put("projectedAtmPeLtp",             round2(prePeLtp));
             m.put("projectedAtmGap",               round2(Math.abs(preCeLtp - prePeLtp)));
-            m.put("projectedAtmCeUnavailable",     !ceAvailable);
-            m.put("projectedAtmPeUnavailable",     !peAvailable);
+            // "Unavailable" (→ NA on the leg card) is a PRE-ENTRY signal only — it tells the
+            // operator no strike currently sits close enough to the target premium. Once the
+            // bot has entered, the real ceSymbol / peSymbol carry the actual strike to the UI
+            // and we must NOT override that with NA.
+            m.put("projectedAtmCeUnavailable",     preEntry && !ceAvailable);
+            m.put("projectedAtmPeUnavailable",     preEntry && !peAvailable);
         }
 
         double ceLtp = (!ceSymbol.isEmpty()) ? marketDataService.getLtp(ceSymbol) : 0;
