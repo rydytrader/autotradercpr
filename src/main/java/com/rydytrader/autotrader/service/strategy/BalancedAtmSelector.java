@@ -4,10 +4,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
 import com.rydytrader.autotrader.store.TokenStore;
+import com.rydytrader.autotrader.util.BlackScholes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
 
@@ -187,6 +191,113 @@ public class BalancedAtmSelector {
             callRow.ce,     putRow.pe,
             bestCallStrike, bestPutStrike
         );
+    }
+
+    /** Walk the chain and pick the OTM CE+PE strikes whose BSM-implied deltas sit closest
+     *  to {@code targetDelta} (a positive decimal — e.g. 0.20 for "20 delta"). Same strict
+     *  OTM rule as {@link #resolveStrikeSymbolsByPremium}: CE side searches strikes ABOVE
+     *  {@code atmStrike}, PE side BELOW. Returns {@code null} when the chain or expiry can't
+     *  be resolved, or no quoted strike yields a positive implied vol on a side.
+     *
+     *  <p>Inverts each leg's LTP → IV via {@link BlackScholes#impliedVol} then plugs that IV
+     *  back into {@link BlackScholes#delta}. {@code spot} drives the BSM input — caller
+     *  passes the live NIFTY LTP (not the rounded ATM) so deltas are calibrated to the
+     *  actual underlying. */
+    public StrikeSymbols resolveStrikeSymbolsByDelta(long atmStrike, double spot, double targetDelta) {
+        if (targetDelta <= 0 || targetDelta >= 1 || spot <= 0) return null;
+        NavigableMap<Long, ChainRow> chain = fetchChain();
+        if (chain == null || chain.isEmpty()) return null;
+
+        double tYears = yearsToExpiryFromChain(chain);
+        if (tYears <= 0) {
+            log.warn("[atm-selector] delta-based resolution: could not resolve T from chain symbols");
+            return null;
+        }
+        double r = BlackScholes.DEFAULT_RISK_FREE_RATE;
+
+        long bestCallStrike = 0;
+        double bestCallDiff = Double.MAX_VALUE;
+        long bestPutStrike  = 0;
+        double bestPutDiff  = Double.MAX_VALUE;
+
+        for (Map.Entry<Long, ChainRow> e : chain.entrySet()) {
+            long strike = e.getKey();
+            ChainRow row = e.getValue();
+            // CE side — strikes STRICTLY above ATM, real symbol + LTP, IV resolves.
+            if (strike > atmStrike && row.ce > 0 && row.ceSym != null && !row.ceSym.isEmpty()) {
+                double iv = BlackScholes.impliedVol(spot, strike, tYears, r, row.ce, true);
+                if (iv > 0) {
+                    double d = BlackScholes.delta(spot, strike, tYears, r, iv, true);
+                    double diff = Math.abs(d - targetDelta);
+                    if (diff < bestCallDiff) { bestCallDiff = diff; bestCallStrike = strike; }
+                }
+            }
+            // PE side — strikes STRICTLY below ATM. PE delta is negative; compare |delta + target|.
+            if (strike < atmStrike && row.pe > 0 && row.peSym != null && !row.peSym.isEmpty()) {
+                double iv = BlackScholes.impliedVol(spot, strike, tYears, r, row.pe, false);
+                if (iv > 0) {
+                    double d = BlackScholes.delta(spot, strike, tYears, r, iv, false);
+                    double diff = Math.abs(d + targetDelta);   // matches |d − (−target)|
+                    if (diff < bestPutDiff) { bestPutDiff = diff; bestPutStrike = strike; }
+                }
+            }
+        }
+        if (bestCallStrike <= 0 || bestPutStrike <= 0) {
+            log.warn("[atm-selector] delta-based resolution failed: target={} atm={} bestCallStrike={} bestPutStrike={}",
+                targetDelta, atmStrike, bestCallStrike, bestPutStrike);
+            return null;
+        }
+        ChainRow callRow = chain.get(bestCallStrike);
+        ChainRow putRow  = chain.get(bestPutStrike);
+        return new StrikeSymbols(
+            bestCallStrike, bestPutStrike,
+            callRow.ceSym,  putRow.peSym,
+            callRow.ce,     putRow.pe,
+            bestCallStrike, bestPutStrike
+        );
+    }
+
+    /** Years to expiry, derived from the first parseable symbol in the chain. Falls back
+     *  to 0 (caller treats as unresolvable). 365-day calendar — NIFTY's convention. */
+    private static double yearsToExpiryFromChain(NavigableMap<Long, ChainRow> chain) {
+        for (ChainRow row : chain.values()) {
+            for (String sym : new String[]{row.ceSym, row.peSym}) {
+                if (sym == null || sym.isEmpty()) continue;
+                String exp = parseExpiryFromSymbol(sym);
+                if (exp.isEmpty()) continue;
+                try {
+                    LocalDate expDate = LocalDate.parse(exp);
+                    long days = ChronoUnit.DAYS.between(LocalDate.now(), expDate);
+                    if (days <= 0) days = 1;   // keep T > 0 on expiry day so BSM stays well-defined
+                    return days / 365.0;
+                } catch (Exception ignored) {}
+            }
+        }
+        return 0;
+    }
+
+    /** Mirror of {@code OptionChainController.parseExpiryFromSymbol} — kept local so the
+     *  selector doesn't reach across packages for an 18-line helper. */
+    private static String parseExpiryFromSymbol(String fyersSymbol) {
+        if (fyersSymbol == null) return "";
+        try {
+            int hash = fyersSymbol.indexOf("NIFTY");
+            if (hash < 0) return "";
+            String tail = fyersSymbol.substring(hash + 5);
+            if (tail.length() < 5) return "";
+            int yr = Integer.parseInt(tail.substring(0, 2));
+            char monthCh = tail.charAt(2);
+            int month;
+            if (monthCh >= '1' && monthCh <= '9') month = monthCh - '0';
+            else if (monthCh == 'O') month = 10;
+            else if (monthCh == 'N') month = 11;
+            else if (monthCh == 'D') month = 12;
+            else return "";
+            int day = Integer.parseInt(tail.substring(3, 5));
+            return LocalDate.of(2000 + yr, month, day).toString();
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     /** Closest strike to {@code requested} that has a non-empty symbol on the requested

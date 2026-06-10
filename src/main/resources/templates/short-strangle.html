@@ -133,7 +133,7 @@
                         title="Edit this strangle's trading settings (entry time, lots, SL%, squareoff)"
                         onclick="StrategySettings.openFor(document.documentElement.getAttribute('data-strategy-id'))"
                         style="background:rgba(125,211,252,0.10); border:1px solid rgba(125,211,252,0.30); color:var(--accent-cyan); font-family:var(--font-mono); font-size:0.74rem; font-weight:700; letter-spacing:0.06em; padding:6px 12px; border-radius:6px; cursor:pointer;">⚙ Settings</button>
-                <span id="strangleOffsetBadge" style="display:none;background:rgba(251,191,36,0.10);border:1px solid rgba(251,191,36,0.35);color:var(--accent-amber, #fbbf24);font-family:var(--font-mono);font-size:0.62rem;font-weight:700;letter-spacing:0.04em;padding:2px 7px;border-radius:3px;">PREM ≈ ₹100</span>
+                <span id="strangleOffsetBadge" style="display:none;background:rgba(251,191,36,0.10);border:1px solid rgba(251,191,36,0.35);color:var(--accent-amber, #fbbf24);font-family:var(--font-mono);font-size:0.62rem;font-weight:700;letter-spacing:0.04em;padding:2px 7px;border-radius:3px;">Δ ≈ 0.20</span>
             </div>
             <div class="page-subtitle" th:text="${strategyDescription}">Today's Trading Overview</div>
         </div>
@@ -688,11 +688,11 @@
             lastDashboardData = d;
             var SHAPE = 'short-strangle';
             applyShapeChrome(SHAPE, d);
-            // Target-premium badge — shows the per-leg premium target this instance is hunting for.
+            // Target-delta badge — shows the per-leg delta target this instance is hunting for.
             var offsetBadge = document.getElementById('strangleOffsetBadge');
-            if (offsetBadge && d.targetPremium != null) {
-                var tp = Number(d.targetPremium) || 0;
-                offsetBadge.textContent = 'PREM ≈ ₹' + tp.toFixed(tp >= 10 ? 0 : 2);
+            if (offsetBadge && d.targetDelta != null) {
+                var td = Number(d.targetDelta) || 0;
+                offsetBadge.textContent = 'Δ ≈ ' + (td / 100).toFixed(2);
                 offsetBadge.style.display = '';
             }
             // Hero — true net = realised + open MTM − charges

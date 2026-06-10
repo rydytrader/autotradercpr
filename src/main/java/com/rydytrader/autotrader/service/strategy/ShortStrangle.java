@@ -178,11 +178,12 @@ public class ShortStrangle implements Strategy {
     private volatile long                              cachedAtmPreviewMs = 0;
     private final    AtomicBoolean                     atmRefreshInFlight = new AtomicBoolean(false);
     private static final long ATM_PREVIEW_TTL_MS = 30_000L;
-    // Cached premium-driven OTM strike pick — re-resolved alongside the ATM preview and
-    // tagged with the targetPremium it was computed for, so a target change instantly
-    // invalidates the cache. Null when no quoted OTM strike is currently available.
+    // Cached delta-driven OTM strike pick — re-resolved alongside the ATM preview and
+    // tagged with the targetDelta + spot it was computed for so the cache invalidates the
+    // moment either changes. Null when no quoted OTM strike is currently available.
     private volatile BalancedAtmSelector.StrikeSymbols cachedOtmPreview = null;
     private volatile double                            cachedOtmPreviewTarget = 0;
+    private volatile double                            cachedOtmPreviewSpot   = 0;
     private volatile long                              cachedOtmPreviewAtm = 0;
     private volatile long                              cachedOtmPreviewMs = 0;
     private final    AtomicBoolean                     otmRefreshInFlight = new AtomicBoolean(false);
@@ -402,18 +403,13 @@ public class ShortStrangle implements Strategy {
         orderTypeFld.put("label", "Order Type");
         orderTypeFld.put("options", java.util.List.of("INTRADAY", "OVERNIGHT"));
         s.add(orderTypeFld);
-        // Target premium per leg in rupees. performEntryNow() walks the option chain and picks
-        // the CE strike (at-or-above ATM) and PE strike (at-or-below ATM) whose LTPs are
-        // CLOSEST to this target. Free-form positive number — default 100.
-        s.add(field("targetPremium", "double", 100,
-            "Target Premium per Leg (₹)",
-            "Each leg's strike is the one whose LTP is closest to this premium."));
-        // Min-premium tolerance — skip the day when either leg's best-available LTP falls
-        // below targetPremium × this ratio. Keeps the bot out of low-IV sessions where the
-        // best OTM premium is much smaller than what makes the SL/charges worth it.
-        s.add(field("minPremiumTolerance", "double", 0.7,
-            "Min Premium Tolerance (× Target)",
-            "Skip entry if either leg's available premium is below target × this ratio. 0 disables."));
+        // Target delta per leg (percent points — 20 means 0.20 delta). performEntryNow()
+        // walks the chain, inverts each leg's LTP into an implied vol via Black-Scholes,
+        // then picks the OTM strike whose BSM delta sits closest to ±target/100. Range
+        // 1-50; default 20 — the standard short-strangle preset.
+        s.add(field("targetDelta", "int", 20,
+            "Target Delta per Leg (×100)",
+            "Each leg's strike is the OTM one whose BSM-implied delta is closest to ±this/100. 20 = 0.20 delta."));
         // Move-to-cost option. When ON, the moment one leg's SL fires the OTHER leg's SL
         // trigger collapses from "entry + threshold" down to its entry premium — locking
         // break-even on the surviving leg. Off by default; opt in per instance.
@@ -459,8 +455,7 @@ public class ShortStrangle implements Strategy {
         v.put("squareOffTime", riskSettings.getStrategyString(instanceId, "squareOffTime", "15:15"));
         v.put("lotsPerLeg",    riskSettings.getStrategyInt(instanceId,    "lotsPerLeg",    1));
         v.put("orderType",     riskSettings.getStrategyString(instanceId, "orderType",     "INTRADAY"));
-        v.put("targetPremium",        riskSettings.getStrategyDouble(instanceId, "targetPremium",        100));
-        v.put("minPremiumTolerance",  riskSettings.getStrategyDouble(instanceId, "minPremiumTolerance",  0.7));
+        v.put("targetDelta", riskSettings.getStrategyInt(instanceId, "targetDelta", 20));
         v.put("moveSlToCostOnFirstLegHit",
             riskSettings.getStrategyBool(instanceId, "moveSlToCostOnFirstLegHit", false));
         for (String n : DTE_LEVELS) {
@@ -493,17 +488,11 @@ public class ShortStrangle implements Strategy {
         if (values.containsKey("entryTime"))     riskSettings.setStrategySetting(instanceId, "entryTime",     String.valueOf(values.get("entryTime")));
         if (values.containsKey("squareOffTime")) riskSettings.setStrategySetting(instanceId, "squareOffTime", String.valueOf(values.get("squareOffTime")));
         if (values.containsKey("lotsPerLeg"))    riskSettings.setStrategySetting(instanceId, "lotsPerLeg",    asInt(values.get("lotsPerLeg"), 1));
-        if (values.containsKey("targetPremium")) {
-            double tp = asDouble(values.get("targetPremium"), 100);
-            if (tp < 1) tp = 1;          // sanity floor — premium of zero would resolve nothing
-            if (tp > 10_000) tp = 10_000;
-            riskSettings.setStrategySetting(instanceId, "targetPremium", tp);
-        }
-        if (values.containsKey("minPremiumTolerance")) {
-            double mt = asDouble(values.get("minPremiumTolerance"), 0.7);
-            if (mt < 0) mt = 0;          // 0 disables the gate
-            if (mt > 1) mt = 1;          // > target means we'd always skip — clamp to 100%
-            riskSettings.setStrategySetting(instanceId, "minPremiumTolerance", mt);
+        if (values.containsKey("targetDelta")) {
+            int td = asInt(values.get("targetDelta"), 20);
+            if (td < 1)  td = 1;     // 0 would resolve nothing (no delta is exactly zero)
+            if (td > 50) td = 50;    // 50 = ATM; > 50 would request ITM, defeats the strangle
+            riskSettings.setStrategySetting(instanceId, "targetDelta", td);
         }
         if (values.containsKey("moveSlToCostOnFirstLegHit")) {
             riskSettings.setStrategySetting(instanceId, "moveSlToCostOnFirstLegHit",
@@ -854,38 +843,24 @@ public class ShortStrangle implements Strategy {
             return;
         }
         long atmStrike = sel.chosenAtm();
-        // Premium-driven strike selection: pick the CE strike (at or above ATM) and the PE
-        // strike (at or below ATM) whose LTPs are closest to this instance's targetPremium.
-        double targetPremium = riskSettings.getStrategyDouble(instanceId, "targetPremium", 100);
+        // Delta-driven strike selection: pick the OTM CE strike whose BSM delta is closest
+        // to +target/100 and the OTM PE strike whose delta is closest to −target/100.
+        int    targetDelta100 = riskSettings.getStrategyInt(instanceId, "targetDelta", 20);
+        double targetDelta    = targetDelta100 / 100.0;
         BalancedAtmSelector.StrikeSymbols strikes =
-            atmSelector.resolveStrikeSymbolsByPremium(atmStrike, targetPremium);
+            atmSelector.resolveStrikeSymbolsByDelta(atmStrike, niftyLtp, targetDelta);
         if (strikes == null) {
-            log.warn("[short-strangle] Failed to resolve strangle wings by premium (ATM={}, target=₹{}) — aborting day",
-                atmStrike, targetPremium);
-            eventService.log("[ERROR] [short-strangle] entry aborted — premium-based strike resolution failed");
+            log.warn("[short-strangle] Failed to resolve strangle wings by delta (ATM={}, target={}) — aborting day",
+                atmStrike, targetDelta);
+            eventService.log("[ERROR] [short-strangle] entry aborted — delta-based strike resolution failed");
             transitionTo(LifecycleState.DONE_FOR_DAY);
             return;
         }
         long callStrike = strikes.resolvedCallStrike();
         long putStrike  = strikes.resolvedPutStrike();
         eventService.log(String.format(java.util.Locale.US,
-            "[INFO] [short-strangle] premium-based pick: ATM=%d target=₹%.2f → call=%d (LTP ₹%.2f) / put=%d (LTP ₹%.2f)",
-            atmStrike, targetPremium, callStrike, strikes.ceLtp(), putStrike, strikes.peLtp()));
-        // Min-premium tolerance gate — when either leg's resolved LTP is too far below the
-        // operator's target (low-IV session, OTM premiums too thin), skip the day rather than
-        // forcing a trade where SL + charges will likely outweigh the income.
-        double tolerance = riskSettings.getStrategyDouble(instanceId, "minPremiumTolerance", 0.7);
-        if (tolerance > 0) {
-            double floor = targetPremium * tolerance;
-            if (strikes.ceLtp() < floor || strikes.peLtp() < floor) {
-                eventService.log(String.format(java.util.Locale.US,
-                    "[WARNING] [short-strangle] entry skipped — best OTM premium below tolerance floor "
-                  + "(target=₹%.2f × %.2f = ₹%.2f; ce=₹%.2f pe=₹%.2f)",
-                    targetPremium, tolerance, floor, strikes.ceLtp(), strikes.peLtp()));
-                transitionTo(LifecycleState.DONE_FOR_DAY);
-                return;
-            }
-        }
+            "[INFO] [short-strangle] delta-based pick: ATM=%d target=%.2f → call=%d (LTP ₹%.2f) / put=%d (LTP ₹%.2f)",
+            atmStrike, targetDelta, callStrike, strikes.ceLtp(), putStrike, strikes.peLtp()));
         String resolvedCe = strikes.ceSymbol();
         String resolvedPe = strikes.peSymbol();
         if (resolvedCe == null || resolvedCe.isEmpty() || resolvedPe == null || resolvedPe.isEmpty()) {
@@ -1248,24 +1223,27 @@ public class ShortStrangle implements Strategy {
      *  actually trade given the current chain. Same TTL as the ATM preview, plus the cache
      *  invalidates if either the chosen ATM or the target premium changed since last call.
      *  Returns {@code null} when no quoted OTM strike is currently available on either side. */
-    public BalancedAtmSelector.StrikeSymbols getOtmPreview(long atmStrike, double targetPremium) {
+    public BalancedAtmSelector.StrikeSymbols getOtmPreview(long atmStrike, double spot, double targetDelta) {
         long now = System.currentTimeMillis();
         boolean fresh = cachedOtmPreview != null
-            && cachedOtmPreviewTarget == targetPremium
+            && cachedOtmPreviewTarget == targetDelta
             && cachedOtmPreviewAtm    == atmStrike
+            && cachedOtmPreviewSpot   == spot
             && (now - cachedOtmPreviewMs) < ATM_PREVIEW_TTL_MS;
         if (fresh) return cachedOtmPreview;
         // Non-blocking refresh — same rationale as getAtmPreview above.
-        final long capturedAtm = atmStrike;
-        final double capturedTarget = targetPremium;
+        final long   capturedAtm    = atmStrike;
+        final double capturedSpot   = spot;
+        final double capturedTarget = targetDelta;
         if (otmRefreshInFlight.compareAndSet(false, true)) {
             CompletableFuture.runAsync(() -> {
                 try {
                     BalancedAtmSelector.StrikeSymbols pick =
-                        atmSelector.resolveStrikeSymbolsByPremium(capturedAtm, capturedTarget);
+                        atmSelector.resolveStrikeSymbolsByDelta(capturedAtm, capturedSpot, capturedTarget);
                     cachedOtmPreview       = pick;
                     cachedOtmPreviewTarget = capturedTarget;
                     cachedOtmPreviewAtm    = capturedAtm;
+                    cachedOtmPreviewSpot   = capturedSpot;
                     cachedOtmPreviewMs     = System.currentTimeMillis();
                 } catch (Exception e) {
                     log.warn("[short-strangle] async OTM refresh failed: {}", e.getMessage());
@@ -1274,8 +1252,8 @@ public class ShortStrangle implements Strategy {
                 }
             });
         }
-        // Return whatever was cached — may be from a stale ATM / target, may be null on
-        // first ever call. The next poll picks up the freshly-resolved value.
+        // Return whatever was cached — may be from a stale ATM / target / spot, may be null
+        // on first ever call. The next poll picks up the freshly-resolved value.
         return cachedOtmPreview;
     }
 
@@ -1289,8 +1267,7 @@ public class ShortStrangle implements Strategy {
         java.util.Map<String, Object> m = getStatus();
         m.put("dashboardShape",  "short-straddle");  // reuse straddle dashboard JS — same shape
         m.put("strategyType",    "STRANGLE");
-        m.put("targetPremium",        riskSettings.getStrategyDouble(instanceId, "targetPremium",        100));
-        m.put("minPremiumTolerance",  riskSettings.getStrategyDouble(instanceId, "minPremiumTolerance",  0.7));
+        m.put("targetDelta", riskSettings.getStrategyInt(instanceId, "targetDelta", 20));
         m.put("weeklyExpiry",    currentWeeklyExpiry);
         m.put("daysToExpiry",    tradingDaysToExpiry(currentWeeklyExpiry));
         synchronized (combinedPremiumSamples) {
@@ -1328,21 +1305,19 @@ public class ShortStrangle implements Strategy {
             atmInfo = lastAtmSelection;
         }
         if (atmInfo != null) {
-            // For STRANGLE, the leg cards must show the OTM strikes the bot will actually
-            // trade — NOT the synthetic-futures ATM. Resolve the OTM pair from the target
-            // premium (cached the same 30 s as the ATM preview to keep chain fetches cheap).
-            // When no strike sits close enough to the target — best-available LTP below the
-            // tolerance floor, or the resolver finds no quoted OTM at all — surface an
-            // "unavailable" flag and let the dashboard show "NA" on that leg card.
-            double targetPremium = riskSettings.getStrategyDouble(instanceId, "targetPremium",       100);
-            double tolerance     = riskSettings.getStrategyDouble(instanceId, "minPremiumTolerance", 0.7);
-            double floor         = tolerance > 0 ? targetPremium * tolerance : 0;
+            // For STRANGLE, the leg cards show the OTM strikes the bot would actually trade —
+            // resolved by BSM-implied DELTA (not premium). Cached the same 30 s as the ATM
+            // preview to keep chain fetches cheap. When BSM can't price a side (chain stale,
+            // no quoted OTM with a valid IV), surface an "unavailable" flag so the dashboard
+            // shows "NA" on that leg card pre-entry.
+            int    targetDelta100 = riskSettings.getStrategyInt(instanceId, "targetDelta", 20);
+            double targetDelta    = targetDelta100 / 100.0;
 
             BalancedAtmSelector.StrikeSymbols otm = preEntry
-                ? getOtmPreview(atmInfo.chosenAtm(), targetPremium)
+                ? getOtmPreview(atmInfo.chosenAtm(), niftyLtp, targetDelta)
                 : null;
-            boolean ceAvailable = otm != null && otm.ceLtp() >= floor;
-            boolean peAvailable = otm != null && otm.peLtp() >= floor;
+            boolean ceAvailable = otm != null && otm.ceSymbol() != null && !otm.ceSymbol().isEmpty();
+            boolean peAvailable = otm != null && otm.peSymbol() != null && !otm.peSymbol().isEmpty();
 
             String preCeSym = ceAvailable ? otm.ceSymbol() : "";
             String prePeSym = peAvailable ? otm.peSymbol() : "";
