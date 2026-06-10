@@ -194,14 +194,14 @@
                         background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.25);
                         color:var(--accent-red, #f87171);padding:6px 14px;border-radius:6px;
                         font-family:var(--font-mono);font-size:0.72rem;font-weight:700;
-                        cursor:pointer;letter-spacing:0.04em;">✕ SQUAREOFF STRADDLE</button>
+                        cursor:pointer;letter-spacing:0.04em;">✕ SQUAREOFF STRANGLE</button>
                     <button id="strangleResetBtn" class="reset-btn" onclick="resetStrangle()" title="Force the in-memory state back to IDLE. Use after a rejection has been fixed and the bot needs to re-arm without a restart." style="letter-spacing:0.04em;">↻ RESET TO IDLE</button>
                     <button id="strangleNewBtn" onclick="newStrangle()" disabled
                             title="Manually enter another strangle today at the current ATM (only after the prior cycle has closed and during market hours)."
                             style="background:rgba(52,211,153,0.10);border:1px solid rgba(52,211,153,0.40);
                                    color:var(--accent-green);padding:6px 14px;border-radius:6px;
                                    font-family:var(--font-mono);font-size:0.72rem;font-weight:700;
-                                   cursor:pointer;letter-spacing:0.04em;">+ NEW STRADDLE</button>
+                                   cursor:pointer;letter-spacing:0.04em;">+ NEW STRANGLE</button>
                 </div>
             </div>
         </div>
@@ -374,7 +374,7 @@
             <div class="section-header">
                 <div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> Today</div>
                 <!-- Pause Trading toggle. When ON the scheduler skips its IDLE→entry transition
-                     and + NEW STRADDLE is disabled; open positions continue to be managed. -->
+                     and + NEW STRANGLE is disabled; open positions continue to be managed. -->
                 <label id="pauseTradingToggle" style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.66rem;letter-spacing:0.06em;color:var(--text-muted);text-transform:uppercase;cursor:pointer;user-select:none;"
                        title="Pause auto-entry. Open positions keep running; no new strangle fires while this is on.">
                     <span id="pauseTradingLabel">Pause Trading</span>
@@ -780,7 +780,7 @@
                 }
             }
 
-            // Refresh the + NEW STRADDLE button enable / disable + tooltip based on the
+            // Refresh the + NEW STRANGLE button enable / disable + tooltip based on the
             // server's gate logic, mirrored client-side.
             refreshNewStrangleButton();
             refreshSquareoffButton();
@@ -1632,7 +1632,7 @@
             if (window.showToast) showToast(d.message || 'Squareoff submitted', d.success ? 'success' : 'error');
         }).catch(err => { if (window.showToast) showToast('Squareoff failed: ' + (err.message || err), 'error'); })
           .finally(() => {
-            if (btn) { btn.disabled = false; btn.textContent = '✕ SQUAREOFF STRADDLE'; }
+            if (btn) { btn.disabled = false; btn.textContent = '✕ SQUAREOFF STRANGLE'; }
             loadDashboard();
           });
     }
@@ -1740,7 +1740,7 @@
           });
     }
 
-    // ── + NEW STRADDLE (manual same-day restart) ────────────────────────────
+    // ── + NEW STRANGLE (manual same-day restart) ────────────────────────────
     // Client-side mirror of the server gates in ShortStrangle.restartFromDoneForDay.
     // Server is authoritative — this is purely a UX accelerator so the button dims and
     // the tooltip names the block before the operator clicks. A 409 from the server is
@@ -1828,22 +1828,22 @@
             };
             var titleOn  = 'Pause trading for today?';
             var bodyOn   = 'Today\'s strangle will not be entered automatically at the scheduled '
-                         + 'time, and the + NEW STRADDLE button will be turned off.\n\n'
+                         + 'time, and the + NEW STRANGLE button will be turned off.\n\n'
                          + 'Any open positions keep running normally — stop loss, target and '
                          + 'timed squareoff still work.';
             var titleOff = 'Resume trading?';
             // Branch on whether the scheduled entry time has already passed today —
-            // post-entry-time resume requires a manual + NEW STRADDLE click since the
+            // post-entry-time resume requires a manual + NEW STRANGLE click since the
             // 9:20 setup is stale and the bot won't auto-fire mid-day.
             var d = lastDashboardData || {};
             var nowMins   = new Date().getHours() * 60 + new Date().getMinutes();
             var entryMins = hmToMins(d.entryTime);
             var bodyOff   = (entryMins > 0 && nowMins >= entryMins)
                 ? ('Today\'s scheduled entry time has already passed, so the strangle will '
-                   + 'NOT fire automatically. Use + NEW STRADDLE to enter at the current ATM '
+                   + 'NOT fire automatically. Use + NEW STRANGLE to enter at the current ATM '
                    + 'whenever you\'re ready.')
                 : ('Today\'s strangle will be entered automatically at the scheduled time, '
-                   + 'and + NEW STRADDLE will be available again.');
+                   + 'and + NEW STRANGLE will be available again.');
             if (typeof window.showConfirm === 'function') {
                 window.showConfirm({
                     title:    nowPaused ? titleOn  : titleOff,
@@ -1939,7 +1939,7 @@
               if (window.showToast) showToast('Restart failed: ' + (err.message || err), 'error');
           })
           .finally(function() {
-              if (btn) { btn.textContent = originalText || '+ NEW STRADDLE'; }
+              if (btn) { btn.textContent = originalText || '+ NEW STRANGLE'; }
               loadDashboard();
           });
     }
