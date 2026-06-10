@@ -16,6 +16,9 @@ import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -385,8 +388,14 @@ public class ManualTerminalService {
             open.add(row);
         }
 
+        // Options Terminal is a per-trading-day view — recent trades, realised P&L and
+        // running charges only count rows whose close happened today (IST). Any earlier
+        // rows live in the store for the analytics layer but don't pollute the terminal
+        // modal after a day rollover.
+        long todayStartMs = startOfTodayMillisIst();
         List<Map<String, Object>> recent = new ArrayList<>();
         for (ManualClosedTrade t : store.recentSnapshot()) {
+            if (t.closeMillis < todayStartMs) continue;
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("orderId",    t.orderId);
             row.put("symbol",     t.symbol);
@@ -402,10 +411,13 @@ public class ManualTerminalService {
         }
 
         // Net P&L surfaced in the modal header and the minimized pill — live MTM on open
-        // positions + realised P&L on closed trades − all-in charges across both.
+        // positions + TODAY'S realised P&L − today's running charges. Older days are
+        // excluded so the terminal reads as a fresh slate each session.
         double realisedPnl = 0;
-        for (ManualClosedTrade t : store.recentSnapshot()) realisedPnl += t.pnl;
-        double charges = computeRunningCharges();
+        for (ManualClosedTrade t : store.recentSnapshot()) {
+            if (t.closeMillis >= todayStartMs) realisedPnl += t.pnl;
+        }
+        double charges = computeRunningCharges(todayStartMs);
         double netPnl  = totalMtm + realisedPnl - charges;
 
         Map<String, Object> out = new LinkedHashMap<>();
@@ -428,7 +440,7 @@ public class ManualTerminalService {
      *  exit). Brokerage flat per order from {@link RiskSettingsStore}, statutory rates
      *  match {@code ShortStraddle.computeChargesBreakdown}. Used by the modal header /
      *  pill to show running Net P&L net of charges. */
-    private double computeRunningCharges() {
+    private double computeRunningCharges(long todayStartMs) {
         double brokerPer = riskSettings.getBrokeragePerOrder();
         double sellT = 0, buyT = 0;
         int    orders = 0;
@@ -439,10 +451,11 @@ public class ManualTerminalService {
             orders++;
         }
         for (ManualClosedTrade t : store.recentSnapshot()) {
+            // Only today's closed trades belong in the running-charges sum so the modal
+            // header doesn't carry yesterday's charges forward.
+            if (t.closeMillis < todayStartMs) continue;
             double openT  = t.openPrice  * t.qty;
             double closeT = t.closePrice * t.qty;
-            // Opening leg's side determines whether it adds to sell or buy turnover; the close
-            // leg is always the opposite side.
             if ("SELL".equalsIgnoreCase(t.side)) { sellT += openT;  buyT  += closeT; }
             else                                  { buyT  += openT;  sellT += closeT; }
             orders += 2;
@@ -485,6 +498,13 @@ public class ManualTerminalService {
      *  card and equity-curve points. */
     public Collection<ManualClosedTrade> recentTrades() {
         return store.recentSnapshot();
+    }
+
+    /** Epoch millis at midnight IST today. Used by the terminal dashboard to scope its
+     *  recent trades / realised P&L / running charges to the current trading day only. */
+    private static long startOfTodayMillisIst() {
+        ZoneId ist = ZoneId.of("Asia/Kolkata");
+        return ZonedDateTime.of(LocalDate.now(ist).atStartOfDay(), ist).toInstant().toEpochMilli();
     }
 
     private static double round2(double v) {
