@@ -177,6 +177,7 @@ public class ShortStrangle implements Strategy {
     private volatile BalancedAtmSelector.AtmSelection cachedAtmPreview = null;
     private volatile long                              cachedAtmPreviewMs = 0;
     private final    AtomicBoolean                     atmRefreshInFlight = new AtomicBoolean(false);
+    private final    AtomicBoolean                     expiryRefreshInFlight = new AtomicBoolean(false);
     private static final long ATM_PREVIEW_TTL_MS = 30_000L;
     // Cached delta-driven OTM strike pick — re-resolved alongside the ATM preview and
     // tagged with the targetDelta + spot it was computed for so the cache invalidates the
@@ -1636,22 +1637,33 @@ public class ShortStrangle implements Strategy {
         }
     }
 
+    /** Non-blocking: kicks off the Fyers chain fetch on a background thread when the cached
+     *  weekly expiry is empty. The very first dashboard poll on each cold page load used to
+     *  wait ~1-2 s for Fyers before any payload (including positions) could return. Gated by
+     *  {@link #expiryRefreshInFlight}. The next 5 s poll picks up the freshly-resolved value. */
     private void tryResolveWeeklyExpiry() {
-        try {
-            String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
-            if (auth == null || auth.endsWith(":") || auth.endsWith(":null")) return;
-            JsonNode root = fyersClient.getOptionChain(NIFTY_SYMBOL, 4, auth);
-            if (root == null) return;
-            JsonNode data = root.has("data") ? root.get("data") : null;
-            JsonNode chain = data != null && data.has("optionsChain") ? data.get("optionsChain")
-                : (root.has("optionsChain") ? root.get("optionsChain") : null);
-            if (chain == null || !chain.isArray()) return;
-            for (JsonNode row : chain) {
-                String sym = row.has("symbol") ? row.get("symbol").asText() : "";
-                String exp = parseExpiryFromSymbol(sym);
-                if (!exp.isEmpty()) { this.currentWeeklyExpiry = exp; return; }
+        if (!expiryRefreshInFlight.compareAndSet(false, true)) return;
+        CompletableFuture.runAsync(() -> {
+            try {
+                String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
+                if (auth == null || auth.endsWith(":") || auth.endsWith(":null")) return;
+                JsonNode root = fyersClient.getOptionChain(NIFTY_SYMBOL, 4, auth);
+                if (root == null) return;
+                JsonNode data = root.has("data") ? root.get("data") : null;
+                JsonNode chain = data != null && data.has("optionsChain") ? data.get("optionsChain")
+                    : (root.has("optionsChain") ? root.get("optionsChain") : null);
+                if (chain == null || !chain.isArray()) return;
+                for (JsonNode row : chain) {
+                    String sym = row.has("symbol") ? row.get("symbol").asText() : "";
+                    String exp = parseExpiryFromSymbol(sym);
+                    if (!exp.isEmpty()) { this.currentWeeklyExpiry = exp; return; }
+                }
+            } catch (Exception e) {
+                log.warn("[short-strangle] async expiry refresh failed: {}", e.getMessage());
+            } finally {
+                expiryRefreshInFlight.set(false);
             }
-        } catch (Exception ignored) {}
+        });
     }
 
     private int tradingDaysToExpiry(String expiryIso) {
