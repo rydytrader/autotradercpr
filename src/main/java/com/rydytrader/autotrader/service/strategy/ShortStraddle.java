@@ -20,6 +20,8 @@ import org.slf4j.LoggerFactory;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Short ATM straddle on NIFTY weekly options with PER-LEG SL and no rolls. Instances of this
@@ -174,6 +176,7 @@ public class ShortStraddle implements Strategy {
      *  ATM without re-fetching the option chain on every poll. */
     private volatile BalancedAtmSelector.AtmSelection cachedAtmPreview = null;
     private volatile long                              cachedAtmPreviewMs = 0;
+    private final    AtomicBoolean                     atmRefreshInFlight = new AtomicBoolean(false);
     private static final long ATM_PREVIEW_TTL_MS = 30_000L;
 
     public ShortStraddle(StrategyInstanceEntity entity,
@@ -1142,22 +1145,31 @@ public class ShortStraddle implements Strategy {
         return b;
     }
 
-    /** Pre-entry preview of the balanced ATM selection, cached for {@link #ATM_PREVIEW_TTL_MS}
-     *  to avoid hammering the option chain on every dashboard poll. Returns the cached
-     *  selection when still warm and the strategy isn't currently holding open legs (no
-     *  point recomputing — the legs are already on the chosen strike). Returns {@code null}
-     *  when no NIFTY LTP is available yet. */
+    /** Pre-entry preview of the balanced ATM selection, cached for {@link #ATM_PREVIEW_TTL_MS}.
+     *  NON-BLOCKING — returns the currently-cached value (possibly null on cold start) and
+     *  triggers an async chain fetch when the cache is stale. The next dashboard poll picks
+     *  up the freshly-cached value. Without this the first page load on each instance waited
+     *  ~1-2 s for Fyers' option chain endpoint, freezing the entire dashboard payload —
+     *  including the live positions table — behind the chain fetch. */
     public BalancedAtmSelector.AtmSelection getAtmPreview() {
         long now = System.currentTimeMillis();
-        if (cachedAtmPreview != null && (now - cachedAtmPreviewMs) < ATM_PREVIEW_TTL_MS) {
-            return cachedAtmPreview;
-        }
-        double niftyLtp = marketDataService != null ? marketDataService.getLtp(NIFTY_SYMBOL) : 0;
-        if (niftyLtp <= 0) return cachedAtmPreview;
-        BalancedAtmSelector.AtmSelection fresh = atmSelector.select(niftyLtp);
-        if (fresh != null) {
-            cachedAtmPreview   = fresh;
-            cachedAtmPreviewMs = now;
+        boolean fresh = cachedAtmPreview != null && (now - cachedAtmPreviewMs) < ATM_PREVIEW_TTL_MS;
+        if (!fresh && atmRefreshInFlight.compareAndSet(false, true)) {
+            CompletableFuture.runAsync(() -> {
+                try {
+                    double niftyLtp = marketDataService != null ? marketDataService.getLtp(NIFTY_SYMBOL) : 0;
+                    if (niftyLtp <= 0) return;
+                    BalancedAtmSelector.AtmSelection picked = atmSelector.select(niftyLtp);
+                    if (picked != null) {
+                        cachedAtmPreview   = picked;
+                        cachedAtmPreviewMs = System.currentTimeMillis();
+                    }
+                } catch (Exception e) {
+                    log.warn("[short-straddle] async ATM refresh failed: {}", e.getMessage());
+                } finally {
+                    atmRefreshInFlight.set(false);
+                }
+            });
         }
         return cachedAtmPreview;
     }

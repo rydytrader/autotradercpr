@@ -20,6 +20,8 @@ import org.slf4j.LoggerFactory;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Short ATM straddle on NIFTY weekly options with PER-LEG SL and no rolls. Instances of this
@@ -174,6 +176,7 @@ public class ShortStrangle implements Strategy {
      *  ATM without re-fetching the option chain on every poll. */
     private volatile BalancedAtmSelector.AtmSelection cachedAtmPreview = null;
     private volatile long                              cachedAtmPreviewMs = 0;
+    private final    AtomicBoolean                     atmRefreshInFlight = new AtomicBoolean(false);
     private static final long ATM_PREVIEW_TTL_MS = 30_000L;
     // Cached premium-driven OTM strike pick — re-resolved alongside the ATM preview and
     // tagged with the targetPremium it was computed for, so a target change instantly
@@ -182,6 +185,7 @@ public class ShortStrangle implements Strategy {
     private volatile double                            cachedOtmPreviewTarget = 0;
     private volatile long                              cachedOtmPreviewAtm = 0;
     private volatile long                              cachedOtmPreviewMs = 0;
+    private final    AtomicBoolean                     otmRefreshInFlight = new AtomicBoolean(false);
 
     public ShortStrangle(StrategyInstanceEntity entity,
                          RiskSettingsStore riskSettings,
@@ -1216,15 +1220,26 @@ public class ShortStrangle implements Strategy {
      *  when no NIFTY LTP is available yet. */
     public BalancedAtmSelector.AtmSelection getAtmPreview() {
         long now = System.currentTimeMillis();
-        if (cachedAtmPreview != null && (now - cachedAtmPreviewMs) < ATM_PREVIEW_TTL_MS) {
-            return cachedAtmPreview;
-        }
-        double niftyLtp = marketDataService != null ? marketDataService.getLtp(NIFTY_SYMBOL) : 0;
-        if (niftyLtp <= 0) return cachedAtmPreview;
-        BalancedAtmSelector.AtmSelection fresh = atmSelector.select(niftyLtp);
-        if (fresh != null) {
-            cachedAtmPreview   = fresh;
-            cachedAtmPreviewMs = now;
+        boolean fresh = cachedAtmPreview != null && (now - cachedAtmPreviewMs) < ATM_PREVIEW_TTL_MS;
+        if (!fresh && atmRefreshInFlight.compareAndSet(false, true)) {
+            // Non-blocking — return the currently-cached value (possibly null on cold start)
+            // and fire the chain fetch off-thread. Without this, every cold dashboard load
+            // waited ~1-2s for Fyers, freezing the entire payload (positions included).
+            CompletableFuture.runAsync(() -> {
+                try {
+                    double niftyLtp = marketDataService != null ? marketDataService.getLtp(NIFTY_SYMBOL) : 0;
+                    if (niftyLtp <= 0) return;
+                    BalancedAtmSelector.AtmSelection picked = atmSelector.select(niftyLtp);
+                    if (picked != null) {
+                        cachedAtmPreview   = picked;
+                        cachedAtmPreviewMs = System.currentTimeMillis();
+                    }
+                } catch (Exception e) {
+                    log.warn("[short-strangle] async ATM refresh failed: {}", e.getMessage());
+                } finally {
+                    atmRefreshInFlight.set(false);
+                }
+            });
         }
         return cachedAtmPreview;
     }
@@ -1240,11 +1255,27 @@ public class ShortStrangle implements Strategy {
             && cachedOtmPreviewAtm    == atmStrike
             && (now - cachedOtmPreviewMs) < ATM_PREVIEW_TTL_MS;
         if (fresh) return cachedOtmPreview;
-        BalancedAtmSelector.StrikeSymbols pick = atmSelector.resolveStrikeSymbolsByPremium(atmStrike, targetPremium);
-        cachedOtmPreview       = pick;
-        cachedOtmPreviewTarget = targetPremium;
-        cachedOtmPreviewAtm    = atmStrike;
-        cachedOtmPreviewMs     = now;
+        // Non-blocking refresh — same rationale as getAtmPreview above.
+        final long capturedAtm = atmStrike;
+        final double capturedTarget = targetPremium;
+        if (otmRefreshInFlight.compareAndSet(false, true)) {
+            CompletableFuture.runAsync(() -> {
+                try {
+                    BalancedAtmSelector.StrikeSymbols pick =
+                        atmSelector.resolveStrikeSymbolsByPremium(capturedAtm, capturedTarget);
+                    cachedOtmPreview       = pick;
+                    cachedOtmPreviewTarget = capturedTarget;
+                    cachedOtmPreviewAtm    = capturedAtm;
+                    cachedOtmPreviewMs     = System.currentTimeMillis();
+                } catch (Exception e) {
+                    log.warn("[short-strangle] async OTM refresh failed: {}", e.getMessage());
+                } finally {
+                    otmRefreshInFlight.set(false);
+                }
+            });
+        }
+        // Return whatever was cached — may be from a stale ATM / target, may be null on
+        // first ever call. The next poll picks up the freshly-resolved value.
         return cachedOtmPreview;
     }
 
