@@ -175,6 +175,13 @@ public class ShortStrangle implements Strategy {
     private volatile BalancedAtmSelector.AtmSelection cachedAtmPreview = null;
     private volatile long                              cachedAtmPreviewMs = 0;
     private static final long ATM_PREVIEW_TTL_MS = 30_000L;
+    // Cached premium-driven OTM strike pick — re-resolved alongside the ATM preview and
+    // tagged with the targetPremium it was computed for, so a target change instantly
+    // invalidates the cache. Null when no quoted OTM strike is currently available.
+    private volatile BalancedAtmSelector.StrikeSymbols cachedOtmPreview = null;
+    private volatile double                            cachedOtmPreviewTarget = 0;
+    private volatile long                              cachedOtmPreviewAtm = 0;
+    private volatile long                              cachedOtmPreviewMs = 0;
 
     public ShortStrangle(StrategyInstanceEntity entity,
                          RiskSettingsStore riskSettings,
@@ -1222,6 +1229,25 @@ public class ShortStrangle implements Strategy {
         return cachedAtmPreview;
     }
 
+    /** Pre-entry preview of the premium-driven OTM strike pick — the strikes the bot would
+     *  actually trade given the current chain. Same TTL as the ATM preview, plus the cache
+     *  invalidates if either the chosen ATM or the target premium changed since last call.
+     *  Returns {@code null} when no quoted OTM strike is currently available on either side. */
+    public BalancedAtmSelector.StrikeSymbols getOtmPreview(long atmStrike, double targetPremium) {
+        long now = System.currentTimeMillis();
+        boolean fresh = cachedOtmPreview != null
+            && cachedOtmPreviewTarget == targetPremium
+            && cachedOtmPreviewAtm    == atmStrike
+            && (now - cachedOtmPreviewMs) < ATM_PREVIEW_TTL_MS;
+        if (fresh) return cachedOtmPreview;
+        BalancedAtmSelector.StrikeSymbols pick = atmSelector.resolveStrikeSymbolsByPremium(atmStrike, targetPremium);
+        cachedOtmPreview       = pick;
+        cachedOtmPreviewTarget = targetPremium;
+        cachedOtmPreviewAtm    = atmStrike;
+        cachedOtmPreviewMs     = now;
+        return cachedOtmPreview;
+    }
+
     // ── Dashboard payload (leg-sl shape) ───────────────────────────────────────
     @Override
     public java.util.Map<String, Object> getDashboard() {
@@ -1271,34 +1297,45 @@ public class ShortStrangle implements Strategy {
             atmInfo = lastAtmSelection;
         }
         if (atmInfo != null) {
-            // Pre-entry leg cards show ~24950 + the projected leg's LTP in muted text so
-            // the operator can see where the strikes are currently trading. To get real-
-            // time LTP (not the 30 s option-chain cache), subscribe the projected CE/PE
-            // symbols to MarketDataService once and read live values. The subscription is
-            // idempotent — subscribeAdditional dedupes on its end.
-            String preCeSym = atmInfo.ceSymbolAtChosen();
-            String prePeSym = atmInfo.peSymbolAtChosen();
+            // For STRANGLE, the leg cards must show the OTM strikes the bot will actually
+            // trade — NOT the synthetic-futures ATM. Resolve the OTM pair from the target
+            // premium (cached the same 30 s as the ATM preview to keep chain fetches cheap).
+            // When no strike sits close enough to the target — best-available LTP below the
+            // tolerance floor, or the resolver finds no quoted OTM at all — surface an
+            // "unavailable" flag and let the dashboard show "NA" on that leg card.
+            double targetPremium = riskSettings.getStrategyDouble(instanceId, "targetPremium",       100);
+            double tolerance     = riskSettings.getStrategyDouble(instanceId, "minPremiumTolerance", 0.7);
+            double floor         = tolerance > 0 ? targetPremium * tolerance : 0;
+
+            BalancedAtmSelector.StrikeSymbols otm = preEntry
+                ? getOtmPreview(atmInfo.chosenAtm(), targetPremium)
+                : null;
+            boolean ceAvailable = otm != null && otm.ceLtp() >= floor;
+            boolean peAvailable = otm != null && otm.peLtp() >= floor;
+
+            String preCeSym = ceAvailable ? otm.ceSymbol() : "";
+            String prePeSym = peAvailable ? otm.peSymbol() : "";
             if (preEntry && marketDataService != null
-                    && preCeSym != null && !preCeSym.isEmpty()
-                    && prePeSym != null && !prePeSym.isEmpty()) {
+                    && !preCeSym.isEmpty() && !prePeSym.isEmpty()) {
                 try { marketDataService.subscribeAdditional(java.util.Arrays.asList(preCeSym, prePeSym)); }
                 catch (Exception ignored) {}
             }
-            double preCeLtp = (preCeSym != null && !preCeSym.isEmpty() && marketDataService != null)
+            double preCeLtp = (!preCeSym.isEmpty() && marketDataService != null)
                 ? marketDataService.getLtp(preCeSym) : 0;
-            double prePeLtp = (prePeSym != null && !prePeSym.isEmpty() && marketDataService != null)
+            double prePeLtp = (!prePeSym.isEmpty() && marketDataService != null)
                 ? marketDataService.getLtp(prePeSym) : 0;
-            // Live WS LTP first; fall back to the option-chain snapshot from the selector
-            // until the first tick lands on the freshly-subscribed symbol.
-            if (preCeLtp <= 0) preCeLtp = atmInfo.ceLtpAtChosen();
-            if (prePeLtp <= 0) prePeLtp = atmInfo.peLtpAtChosen();
-            m.put("projectedAtm",      atmInfo.chosenAtm());
-            m.put("projectedAtmSpot",  atmInfo.spotAtm());
-            m.put("projectedAtmCeSym", preCeSym);
-            m.put("projectedAtmPeSym", prePeSym);
-            m.put("projectedAtmCeLtp", round2(preCeLtp));
-            m.put("projectedAtmPeLtp", round2(prePeLtp));
-            m.put("projectedAtmGap",   round2(Math.abs(preCeLtp - prePeLtp)));
+            if (preCeLtp <= 0 && otm != null) preCeLtp = otm.ceLtp();
+            if (prePeLtp <= 0 && otm != null) prePeLtp = otm.peLtp();
+
+            m.put("projectedAtm",                  atmInfo.chosenAtm());
+            m.put("projectedAtmSpot",              atmInfo.spotAtm());
+            m.put("projectedAtmCeSym",             preCeSym);
+            m.put("projectedAtmPeSym",             prePeSym);
+            m.put("projectedAtmCeLtp",             round2(preCeLtp));
+            m.put("projectedAtmPeLtp",             round2(prePeLtp));
+            m.put("projectedAtmGap",               round2(Math.abs(preCeLtp - prePeLtp)));
+            m.put("projectedAtmCeUnavailable",     !ceAvailable);
+            m.put("projectedAtmPeUnavailable",     !peAvailable);
         }
 
         double ceLtp = (!ceSymbol.isEmpty()) ? marketDataService.getLtp(ceSymbol) : 0;

@@ -872,7 +872,8 @@
             if (ceQtyEl) ceQtyEl.textContent = 'QTY · '
                 + (d.ceQty > 0 ? d.ceQty : (d.ceEntryPremium > 0 ? '0' : '—'));
             var ceStrikeEl = document.getElementById('paneCeStrike');
-            var ceStrikeInfo = strikeForLeg(d.ceSymbol, d.niftyLtp, d.projectedAtm);
+            var ceStrikeInfo = strikeForLeg(d.ceSymbol, d.niftyLtp, d.projectedAtm,
+                d.projectedAtmCeSym, d.projectedAtmCeUnavailable);
             renderProjectedStrike(ceStrikeEl, ceStrikeInfo, d.projectedAtmCeLtp);
             ceStrikeEl.title = d.ceSymbol || (ceStrikeInfo.projected && d.projectedAtmCeSym ? d.projectedAtmCeSym : '');
             applyLegClosedChrome('ce', d);
@@ -888,7 +889,8 @@
             if (peQtyEl) peQtyEl.textContent = 'QTY · '
                 + (d.peQty > 0 ? d.peQty : (d.peEntryPremium > 0 ? '0' : '—'));
             var peStrikeEl = document.getElementById('panePeStrike');
-            var peStrikeInfo = strikeForLeg(d.peSymbol, d.niftyLtp, d.projectedAtm);
+            var peStrikeInfo = strikeForLeg(d.peSymbol, d.niftyLtp, d.projectedAtm,
+                d.projectedAtmPeSym, d.projectedAtmPeUnavailable);
             renderProjectedStrike(peStrikeEl, peStrikeInfo, d.projectedAtmPeLtp);
             peStrikeEl.title = d.peSymbol || (peStrikeInfo.projected && d.projectedAtmPeSym ? d.projectedAtmPeSym : '');
             applyLegClosedChrome('pe', d);
@@ -1510,20 +1512,30 @@
     // strangle, the Fyers option symbol encodes the strike — we parse it out. Pre-entry
     // we surface the balanced-ATM projection from the server (uses premium-balance +
     // synthetic-futures methods) instead of a naïve spot/50 round.
-    function strikeForLeg(fyersSymbol, niftyLtp, projectedAtm) {
+    function strikeForLeg(fyersSymbol, niftyLtp, projectedAtm, projectedSym, unavailable) {
+        // Strangle: when the server reported no strike sits close enough to the target
+        // premium (best LTP < target × tolerance, or chain unavailable), show NA.
+        if (unavailable === true) return { value: 'NA', projected: true, unavailable: true };
+
         if (fyersSymbol) {
-            // Format A — 5-char date code + strike + CE/PE
             var mA = fyersSymbol.match(/[0-9OND]{5}(\d{4,6})(?:CE|PE)$/i);
             if (mA) return { value: mA[1], projected: false };
-            // Format B — 5-char date code + C or P + strike (trailing)
             var mB = fyersSymbol.match(/[0-9OND]{5}[CP](\d{4,6})$/i);
             if (mB) return { value: mB[1], projected: false };
         }
-        // Server-projected balanced ATM (preferred — matches what the bot will actually trade).
+        // Pre-entry: prefer the actual OTM strike the bot would trade, parsed from the
+        // projected leg symbol the server resolved by premium.
+        if (projectedSym) {
+            var pA = projectedSym.match(/[0-9OND]{5}(\d{4,6})(?:CE|PE)$/i);
+            if (pA) return { value: '~' + pA[1], projected: true };
+            var pB = projectedSym.match(/[0-9OND]{5}[CP](\d{4,6})$/i);
+            if (pB) return { value: '~' + pB[1], projected: true };
+        }
+        // Fallback: synthetic ATM (used by straddle dashboards and by strangle ones until
+        // the server resolves the OTM pair on the first dashboard fetch).
         if (projectedAtm && projectedAtm > 0) {
             return { value: '~' + projectedAtm, projected: true };
         }
-        // Last-ditch fallback if the server projection isn't available yet.
         if (niftyLtp && niftyLtp > 0) {
             var atm = Math.round(niftyLtp / 50) * 50;
             return { value: '~' + atm, projected: true };
@@ -1564,10 +1576,12 @@
     function renderProjectedStrike(el, strikeInfo, projectedLtp) {
         if (!el) return;
         var base = strikeInfo.value;
-        var color = strikeInfo.projected ? 'var(--text-muted)' : 'var(--text-primary)';
+        var color = strikeInfo.unavailable ? 'var(--accent-amber, #fbbf24)'
+                  : strikeInfo.projected   ? 'var(--text-muted)'
+                  :                          'var(--text-primary)';
         el.style.color = color;
         var ltp = Number(projectedLtp);
-        if (strikeInfo.projected && ltp > 0) {
+        if (!strikeInfo.unavailable && strikeInfo.projected && ltp > 0) {
             el.innerHTML = escapeHtml(base)
                 + ' <span style="color:var(--text-muted);font-weight:400;font-size:0.85em;">· '
                 + ltp.toFixed(2) + '</span>';
