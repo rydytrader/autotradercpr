@@ -129,11 +129,11 @@
         <div>
             <div style="display:flex; align-items:center; gap:14px;">
                 <div class="page-title" th:text="${strategyDisplayName}">Dashboard</div>
-                <span id="strangleOffsetBadge" style="display:none;background:rgba(125,211,252,0.10);border:1px solid rgba(125,211,252,0.30);color:var(--accent-cyan);font-family:var(--font-mono);font-size:0.72rem;font-weight:700;letter-spacing:0.04em;padding:4px 10px;border-radius:4px;">PREM ≈ ₹100</span>
                 <button id="strangleInstanceSettingsBtn"
                         title="Edit this strangle's trading settings (entry time, lots, SL%, squareoff)"
                         onclick="StrategySettings.openFor(document.documentElement.getAttribute('data-strategy-id'))"
                         style="background:rgba(125,211,252,0.10); border:1px solid rgba(125,211,252,0.30); color:var(--accent-cyan); font-family:var(--font-mono); font-size:0.74rem; font-weight:700; letter-spacing:0.06em; padding:6px 12px; border-radius:6px; cursor:pointer;">⚙ Settings</button>
+                <span id="strangleOffsetBadge" style="display:none;background:rgba(251,191,36,0.10);border:1px solid rgba(251,191,36,0.35);color:var(--accent-amber, #fbbf24);font-family:var(--font-mono);font-size:0.62rem;font-weight:700;letter-spacing:0.04em;padding:2px 7px;border-radius:3px;">PREM ≈ ₹100</span>
             </div>
             <div class="page-subtitle" th:text="${strategyDescription}">Today's Trading Overview</div>
         </div>
