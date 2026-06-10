@@ -48,7 +48,7 @@
             '.ss-field select option { background-color:var(--bg-card);color:var(--text-primary); }' +
             '.ss-field input[type=checkbox] { width:auto; }' +
             '.ss-hint { color:var(--text-muted);font-size:0.7rem;margin-top:4px; }' +
-            '.ss-section-title { font-family:var(--font-mono);font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-secondary);margin:22px 0 6px;padding-top:14px;border-top:1px solid var(--border); }' +
+            '.ss-section-title { font-family:var(--font-mono);font-size:0.72rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--text-secondary);margin:18px 0 6px; }' +
             '.ss-day-grid { display:flex;flex-direction:column;font-family:var(--font-mono);font-size:0.78rem;margin-top:10px; }' +
             '.ss-day-header, .ss-day-row { display:grid;grid-template-columns:1fr 80px 90px 100px;gap:12px;align-items:center;padding:8px 4px;border-bottom:1px solid var(--border); }' +
             '.ss-day-header { font-size:0.66rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em; }' +
