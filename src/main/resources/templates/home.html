@@ -202,7 +202,7 @@
     <div class="section-card fade-in" style="margin-bottom:20px;">
         <div class="section-header">
             <div class="section-title"><div class="section-title-dot"></div> Overview</div>
-            <span class="section-badge" id="ahSessionCount" style="margin-left:auto;">— sessions</span>
+            <span class="section-badge" id="ahSessionCount" style="margin-left:auto;">— cycles</span>
         </div>
         <div style="padding:20px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px;">
             <div>
@@ -679,11 +679,12 @@
             var edge = d.edge     || {};
             var eq  = d.equityCurve || { labels: [], values: [] };
 
-            // Header straddle-count badge — shows total individual straddles in scope.
+            // Header cycle-count badge — total closed strategy cycles (straddles + strangles)
+            // in scope. Strategy-neutral wording since the pool now mixes both.
             var scEl = document.getElementById('ahSessionCount');
             if (scEl) {
                 var n = d.straddleCount || 0;
-                scEl.textContent = n + ' straddle' + (n === 1 ? '' : 's');
+                scEl.textContent = n + ' cycle' + (n === 1 ? '' : 's');
             }
 
             // ── HERO STRIP ─────────────────────────────────────────────────
@@ -691,11 +692,11 @@
             var subEl = document.getElementById('ahCapitalSub');
             if (subEl) {
                 var sign = (cap.totalReturn || 0) >= 0 ? '+' : '';
-                var straddleN = d.straddleCount || 0;
+                var cyclesN = d.straddleCount || 0;
                 subEl.textContent = 'Started ' + fmtRs(cap.startingCapital)
                     + ' • ' + sign + fmtRs(cap.totalReturn)
                     + ' (' + fmtPct(cap.totalReturnPct) + ')'
-                    + ' • ' + straddleN + ' straddle' + (straddleN === 1 ? '' : 's');
+                    + ' • ' + cyclesN + ' cycle' + (cyclesN === 1 ? '' : 's');
             }
             setVal('ahTotalReturn',  fmtRs(cap.totalReturn), cap.totalReturn);
             setVal('ahWinRate',      (perf.winRate != null ? perf.winRate.toFixed(1) : '0') + '%',
