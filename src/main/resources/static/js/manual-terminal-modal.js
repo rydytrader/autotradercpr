@@ -655,6 +655,7 @@
         if (!wrap) return;
         var header = '<table style="width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:0.76rem;min-width:820px;">' +
             '<thead><tr style="color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;text-transform:uppercase;">' +
+                '<th style="text-align:left;padding:6px 8px;width:40px;">#</th>' +
                 '<th style="text-align:left;padding:6px 8px;">SYMBOL</th>' +
                 '<th style="text-align:center;padding:6px 8px;">SIDE</th>' +
                 '<th style="text-align:right;padding:6px 8px;">QTY</th>' +
@@ -666,9 +667,9 @@
             '</tr></thead><tbody>';
         var body = '';
         if (rows.length === 0) {
-            body = '<tr><td colspan="8" style="padding:18px 8px;text-align:center;color:var(--text-muted);font-size:0.74rem;">No open manual positions. Use the Buy / Sell buttons above to place an order.</td></tr>';
+            body = '<tr><td colspan="9" style="padding:18px 8px;text-align:center;color:var(--text-muted);font-size:0.74rem;">No open manual positions. Use the Buy / Sell buttons above to place an order.</td></tr>';
         } else {
-            rows.forEach(function(p) {
+            rows.forEach(function(p, idx) {
                 var pnl = Number(p.pnl || 0);
                 var pnlCls = pnl > 0 ? 'color:var(--accent-green, #34d399);' : (pnl < 0 ? 'color:var(--accent-red, #f87171);' : '');
                 var sideCol = p.side === 'BUY' ? 'var(--accent-green, #34d399)' : 'var(--accent-red, #f87171)';
@@ -678,6 +679,7 @@
                     ? ('<span title="Trigger price (entry ' + (p.side === 'SELL' ? '+' : '−') + ' ' + slPts.toFixed(0) + ' pts)">' + slTrigger.toFixed(2) + '</span>')
                     : (slPts > 0 ? ('<span style="color:var(--text-muted);" title="Will compute on fill">+' + slPts.toFixed(0) + ' pts</span>') : '<span style="color:var(--text-muted);">—</span>');
                 body += '<tr style="border-top:1px solid rgba(128,128,128,0.10);">' +
+                    '<td style="padding:8px;color:var(--text-muted);">' + (idx + 1) + '</td>' +
                     '<td style="padding:8px;font-size:0.74rem;">' + escapeHtml(p.symbol) + '</td>' +
                     '<td style="padding:8px;text-align:center;color:' + sideCol + ';font-weight:700;">' + p.side + '</td>' +
                     '<td style="padding:8px;text-align:right;">' + p.qty + '</td>' +
@@ -702,6 +704,7 @@
         if (!wrap) return;
         var header = '<table style="width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:0.72rem;">' +
             '<thead><tr style="color:var(--text-muted);font-size:0.64rem;letter-spacing:0.06em;text-transform:uppercase;">' +
+                '<th style="text-align:left;padding:5px 8px;width:36px;">#</th>' +
                 '<th style="text-align:left;padding:5px 8px;">SYMBOL</th>' +
                 '<th style="text-align:center;padding:5px 8px;">SIDE</th>' +
                 '<th style="text-align:right;padding:5px 8px;">QTY</th>' +
@@ -711,12 +714,13 @@
             '</tr></thead><tbody>';
         var body = '';
         if (rows.length === 0) {
-            body = '<tr><td colspan="6" style="padding:14px 8px;text-align:center;color:var(--text-muted);">No recent trades.</td></tr>';
+            body = '<tr><td colspan="7" style="padding:14px 8px;text-align:center;color:var(--text-muted);">No recent trades.</td></tr>';
         } else {
-            rows.slice(0, 10).forEach(function(t) {
+            rows.slice(0, 10).forEach(function(t, idx) {
                 var pnl = Number(t.pnl || 0);
                 var pnlCls = pnl > 0 ? 'color:var(--accent-green, #34d399);' : (pnl < 0 ? 'color:var(--accent-red, #f87171);' : '');
                 body += '<tr style="border-top:1px solid rgba(128,128,128,0.08);">' +
+                    '<td style="padding:5px 8px;color:var(--text-muted);">' + (idx + 1) + '</td>' +
                     '<td style="padding:5px 8px;">' + escapeHtml(t.symbol) + '</td>' +
                     '<td style="padding:5px 8px;text-align:center;">' + t.side + '</td>' +
                     '<td style="padding:5px 8px;text-align:right;">' + t.qty + '</td>' +
