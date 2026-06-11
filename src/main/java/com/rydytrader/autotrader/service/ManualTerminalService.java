@@ -500,6 +500,25 @@ public class ManualTerminalService {
         return store.recentSnapshot();
     }
 
+    /** Live mark-to-market across every open manual position — sums (LTP − avgPrice) × qty
+     *  for BUY legs and (avgPrice − LTP) × qty for SELL legs. Used by the analytics layer's
+     *  "Today" view so the Include Adjustments checkbox folds in not just closed manual
+     *  trades but also the running MTM of anything still open. Returns 0 when no positions
+     *  are filled or when LTPs aren't available yet. */
+    public double openPositionsLiveMtm() {
+        double total = 0;
+        for (ManualPosition p : store.openSnapshot()) {
+            if (!p.filled || p.avgPrice <= 0) continue;
+            double ltp = 0;
+            try { ltp = marketDataService.getLtp(p.symbol); } catch (Exception ignored) {}
+            if (ltp <= 0) continue;
+            total += "BUY".equalsIgnoreCase(p.side)
+                ? (ltp - p.avgPrice) * p.qty
+                : (p.avgPrice - ltp) * p.qty;
+        }
+        return total;
+    }
+
     /** Epoch millis at midnight IST today. Used by the terminal dashboard to scope its
      *  recent trades / realised P&L / running charges to the current trading day only. */
     private static long startOfTodayMillisIst() {

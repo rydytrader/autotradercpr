@@ -225,16 +225,44 @@ public class AnalyticsService {
             if (rangeTo   != null && d.isAfter(rangeTo))    continue;
             out.add(t);
         }
+        // Today is in scope → also fold in the live MTM of any still-open manual positions
+        // as a synthetic "now" trade. Without this the analytics adjustment totals only
+        // reflect realised closes — open manual positions' MTM was invisible until they were
+        // squared off, which made today's view misleading mid-session.
+        if (windowIncludesToday(cutoff, rangeFrom, rangeTo, today)) {
+            double openMtm = svc.openPositionsLiveMtm();
+            if (Math.abs(openMtm) > 0.01) {
+                com.rydytrader.autotrader.store.manual.ManualClosedTrade synth =
+                    new com.rydytrader.autotrader.store.manual.ManualClosedTrade();
+                synth.orderId     = "manual-open-mtm";
+                synth.symbol      = "OPEN_MTM";
+                synth.side        = "MTM";
+                synth.qty         = 0;
+                synth.openPrice   = 0;
+                synth.closePrice  = 0;
+                synth.pnl         = openMtm;
+                synth.openMillis  = System.currentTimeMillis();
+                synth.closeMillis = System.currentTimeMillis();
+                synth.note        = "live MTM on open manual positions";
+                out.add(synth);
+            }
+        }
         return out;
     }
 
     /** Compact mini-card payload shown after the Costs card on home — always visible
-     *  regardless of the include-adjustments checkbox. */
+     *  regardless of the include-adjustments checkbox. The synthetic "live MTM" row injected
+     *  by {@link #loadAdjustments} for today's open manual positions is folded into
+     *  {@code netPnl} but excluded from {@code count} (it's not a real closed trade). */
     private Map<String, Object> adjustmentSummary(List<com.rydytrader.autotrader.store.manual.ManualClosedTrade> adj) {
         double netPnl = 0;
-        for (com.rydytrader.autotrader.store.manual.ManualClosedTrade t : adj) netPnl += t.pnl;
+        int    count  = 0;
+        for (com.rydytrader.autotrader.store.manual.ManualClosedTrade t : adj) {
+            netPnl += t.pnl;
+            if (!"manual-open-mtm".equals(t.orderId)) count++;
+        }
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("count",   adj.size());
+        m.put("count",   count);
         m.put("netPnl",  round2(netPnl));
         m.put("charges", 0.0); // Per-trade brokerage estimate could be added later — kept 0 for v1.
         return m;
