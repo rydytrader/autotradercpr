@@ -31,6 +31,7 @@ public class SettingsController {
         result.put("tradingStartTime",    riskSettings.getTradingStartTime(effectiveMode));
         result.put("tradingEndTime",      riskSettings.getTradingEndTime(effectiveMode));
         result.put("autoSquareOffTime",   riskSettings.getAutoSquareOffTime(effectiveMode));
+        result.put("manualAutoSquareOffTime", riskSettings.getManualAutoSquareOffTime(effectiveMode));
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
         result.put("maxRiskPerDayPct",    riskSettings.getMaxRiskPerDayPct(effectiveMode));
@@ -66,6 +67,7 @@ public class SettingsController {
             if (body.containsKey("tradingStartTime"))  riskSettings.setTradingStartTime(effectiveMode, body.get("tradingStartTime").toString());
             if (body.containsKey("tradingEndTime"))    riskSettings.setTradingEndTime(effectiveMode, body.get("tradingEndTime").toString());
             if (body.containsKey("autoSquareOffTime")) riskSettings.setAutoSquareOffTime(effectiveMode, body.get("autoSquareOffTime").toString());
+            if (body.containsKey("manualAutoSquareOffTime")) riskSettings.setManualAutoSquareOffTime(effectiveMode, body.get("manualAutoSquareOffTime") == null ? "" : body.get("manualAutoSquareOffTime").toString());
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
             if (body.containsKey("maxRiskPerDayPct"))  riskSettings.setMaxRiskPerDayPct(effectiveMode, Double.parseDouble(body.get("maxRiskPerDayPct").toString()));

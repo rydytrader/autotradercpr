@@ -286,6 +286,48 @@ public class ManualTerminalService {
         }
     }
 
+    /** Tracks the most recent IST date on which the auto-squareoff fired. Gates against
+     *  re-firing within the same trading day if the time setting matches multiple ticks. */
+    private volatile java.time.LocalDate lastAutoSquareOffDate = null;
+
+    /** Adjustment auto-squareoff — every 30 seconds, check whether wall-clock IST has
+     *  reached the operator-configured {@code manualAutoSquareOffTime}. When it has (and
+     *  the gate hasn't already fired today), flatten every open manual position via
+     *  {@link #closeAll}. Empty setting = disabled. */
+    @Scheduled(fixedDelay = 30_000, initialDelay = 30_000)
+    public void autoSquareOffAdjustments() {
+        String hhmm = riskSettings.getManualAutoSquareOffTime();
+        if (hhmm == null || hhmm.isBlank()) return;
+        java.time.LocalTime cutoff;
+        try { cutoff = java.time.LocalTime.parse(hhmm); }
+        catch (Exception e) {
+            log.warn("[ManualTerminal] manualAutoSquareOffTime '{}' is unparseable — skipping", hhmm);
+            return;
+        }
+        java.time.ZoneId ist = java.time.ZoneId.of("Asia/Kolkata");
+        java.time.ZonedDateTime nowIst = java.time.ZonedDateTime.now(ist);
+        java.time.LocalDate today = nowIst.toLocalDate();
+        if (today.equals(lastAutoSquareOffDate)) return;          // already fired today
+        if (nowIst.toLocalTime().isBefore(cutoff))   return;       // not yet time
+        if (!tokenStore.isTokenAvailable())          return;       // logged out — no-op
+
+        int open = store.openSnapshot().size();
+        if (open == 0) {
+            lastAutoSquareOffDate = today;                         // mark fired so we don't reattempt this tick
+            return;
+        }
+        log.info("[ManualTerminal] Auto-squareoff time {} reached — flattening {} open manual position(s)", hhmm, open);
+        eventService.log("[INFO] [manual] auto-squareoff reached " + hhmm + " — closing " + open + " position(s)");
+        try {
+            int closed = closeAll();
+            log.info("[ManualTerminal] Auto-squareoff submitted close orders for {} position(s)", closed);
+        } catch (Exception e) {
+            log.error("[ManualTerminal] Auto-squareoff failed: {}", e.getMessage(), e);
+        } finally {
+            lastAutoSquareOffDate = today;
+        }
+    }
+
     /** Every 30s: any open position with {@code filled=false} older than 30s gets checked
      *  against the live orderbook. If the broker shows it as rejected (status=5) or cancelled
      *  (status=1), archive it. Also catches the "Fyers accepted then rejected" edge case. */

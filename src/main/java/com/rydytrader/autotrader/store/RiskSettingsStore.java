@@ -28,6 +28,10 @@ public class RiskSettingsStore {
         volatile double maxRiskPerDayPct  = 1.0;  // max risk per day as % of totalCapital
         volatile double riskPerTrade      = 1000;  // max ₹ loss per trade if SL hits
         volatile String autoSquareOffTime = "";  // empty = disabled, e.g. "15:15"
+        /** Auto-squareoff time for manual-terminal (adjustment) trades. Independent from the
+         *  strategy {@code autoSquareOffTime} so the operator can flatten manual hedges at a
+         *  different time than the bot's straddles/strangles. Empty = disabled. */
+        volatile String manualAutoSquareOffTime = "";
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
         /** Initial capital used as the baseline for the Analytics Home page (capital growth %,
@@ -377,6 +381,7 @@ public class RiskSettingsStore {
     public double getRiskPerTrade()      { return cfg().riskPerTrade; }
     public double getMaxDailyLoss()      { return cfg().totalCapital * cfg().maxRiskPerDayPct / 100.0; }
     public String getAutoSquareOffTime() { return cfg().autoSquareOffTime; }
+    public String getManualAutoSquareOffTime() { return cfg().manualAutoSquareOffTime; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getStartingCapital()      { return cfg().startingCapital; }
@@ -560,6 +565,7 @@ public class RiskSettingsStore {
     public void setMaxRiskPerDayPct(double v)  { cfg().maxRiskPerDayPct = v; }
     public void setRiskPerTrade(double v)      { cfg().riskPerTrade = v; }
     public void setAutoSquareOffTime(String v) { cfg().autoSquareOffTime = v; }
+    public void setManualAutoSquareOffTime(String v) { cfg().manualAutoSquareOffTime = v == null ? "" : v.trim(); }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setStartingCapital(double v)      { cfg().startingCapital = Math.max(0, v); }
@@ -657,6 +663,7 @@ public class RiskSettingsStore {
     public double getRiskPerTrade(String mode)      { return cfgFor(mode).riskPerTrade; }
     public double getMaxDailyLoss(String mode)      { return cfgFor(mode).totalCapital * cfgFor(mode).maxRiskPerDayPct / 100.0; }
     public String getAutoSquareOffTime(String mode) { return cfgFor(mode).autoSquareOffTime; }
+    public String getManualAutoSquareOffTime(String mode) { return cfgFor(mode).manualAutoSquareOffTime; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
     public double getStartingCapital(String mode)      { return cfgFor(mode).startingCapital; }
@@ -679,6 +686,7 @@ public class RiskSettingsStore {
     public void setMaxRiskPerDayPct(String mode, double v)  { cfgFor(mode).maxRiskPerDayPct = v; }
     public void setRiskPerTrade(String mode, double v)      { cfgFor(mode).riskPerTrade = v; }
     public void setAutoSquareOffTime(String mode, String v) { cfgFor(mode).autoSquareOffTime = v; }
+    public void setManualAutoSquareOffTime(String mode, String v) { cfgFor(mode).manualAutoSquareOffTime = v == null ? "" : v.trim(); }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
     public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
     public void setStartingCapital(String mode, double v)      { cfgFor(mode).startingCapital = Math.max(0, v); }
@@ -711,6 +719,7 @@ public class RiskSettingsStore {
             upsert("maxRiskPerDayPct", String.valueOf(c.maxRiskPerDayPct));
             upsert("riskPerTrade", String.valueOf(c.riskPerTrade));
             upsert("autoSquareOffTime", c.autoSquareOffTime);
+            upsert("manualAutoSquareOffTime", c.manualAutoSquareOffTime);
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("startingCapital",      String.valueOf(c.startingCapital));
@@ -869,6 +878,7 @@ public class RiskSettingsStore {
                     case "maxRiskPerDayPct"  -> c.maxRiskPerDayPct = Double.parseDouble(v);
                     case "riskPerTrade"      -> c.riskPerTrade = Double.parseDouble(v);
                     case "autoSquareOffTime" -> c.autoSquareOffTime = v;
+                    case "manualAutoSquareOffTime" -> c.manualAutoSquareOffTime = v;
                     case "atrMultiplier"     -> c.atrMultiplier = Double.parseDouble(v);
                     // enableSessionMoveLimit / sessionMoveLimit removed — feature deleted.
                     case "enableSessionMoveLimit", "sessionMoveLimit" -> { /* legacy, ignored */ }
