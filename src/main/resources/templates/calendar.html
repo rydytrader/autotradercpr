@@ -142,12 +142,6 @@
             <button class="cal-nav-btn" onclick="navToday()" title="Current period" style="margin-left:8px; width:auto; padding:0 12px; font-size:0.72rem;">TODAY</button>
         </div>
         <div class="cal-view-toggle">
-            <label style="display:flex; align-items:center; gap:6px; margin-right:14px; cursor:pointer; font-family:var(--font-mono); font-size:0.72rem; color:var(--text-secondary);"
-                   title="When ticked, manual-terminal closed trades are folded into each day's cell color and shown in the day-detail modal.">
-                <input type="checkbox" id="calIncludeAdjustments" checked
-                       style="accent-color: var(--accent-cyan, #22d3ee); width:14px; height:14px;">
-                Include adjustments in P&amp;L
-            </label>
             <button class="cal-view-btn active" id="btnMonthView" onclick="setView('month')">MONTH</button>
             <button class="cal-view-btn" id="btnYearView" onclick="setView('year')">YEAR</button>
         </div>
@@ -273,7 +267,6 @@
 <script src="/js/ticker.js?v=4"></script>
 <script src="/js/settings-modal.js?v=9"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
-<script src="/js/manual-terminal-modal.js?v=19"></script>
 <script>
 (function(){
     const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -294,11 +287,7 @@
     // P&L matches the home page exactly. Populated by renderAnalyticsTiles from
     // `/api/analytics/summary?... → byDate`. Day cells use this instead of session.netPnl.
     let analyticsByDate = {};
-    let includeAdjustments = (function() {
-        let stored = null;
-        try { stored = window.localStorage.getItem('calIncludeAdjustments'); } catch (e) {}
-        return stored === null ? true : stored === 'true';
-    })();
+    const includeAdjustments = false;   // Options Terminal removed — always off.
     let NSE_HOLIDAYS = {}; // {date: name}
 
     function fmtMoney(n) {
@@ -343,30 +332,22 @@
         // date×instance in the DB) into one row per date for the calendar. Today's live
         // overlay sums the still-running net P&L across every enabled instance.
         return Promise.all([
-            fetch('/api/strategies').then(r => r.json()).catch(() => []),
             fetch('/api/market-holidays').then(r => r.json()).catch(() => [])
-        ]).then(([strategies, holidays]) => {
+        ]).then(([holidays]) => {
             (holidays || []).forEach(h => NSE_HOLIDAYS[h.date] = h.name || 'Holiday');
-            const list = Array.isArray(strategies) ? strategies : [];
-            if (list.length === 0) {
-                allSessions = [];
-                render();
-                return;
-            }
+            // Camarilla branch — singleton strategy. No /api/strategies, no manual terminal.
+            const list = [{ id: 'camarilla' }];
             const histPromises = list.map(s =>
                 fetch('/api/strategies/' + encodeURIComponent(s.id) + '/history')
                     .then(r => r.json()).catch(() => ({ sessions: [] }))
             );
             const dashPromises = list.map(s =>
-                fetch('/api/strategies/' + encodeURIComponent(s.id) + '/dashboard')
-                    .then(r => r.json()).catch(() => null)
+                Promise.resolve(null)   // per-strategy dashboard route is gone
             );
-            // Adjustments are global (not per-instance); fetched once.
-            const adjPromise = fetch('/api/manual/dashboard')
-                .then(r => r.json()).catch(() => ({ recentTrades: [] }));
+            const adjPromise = Promise.resolve({ recentTrades: [] });
             return Promise.all([Promise.all(histPromises), Promise.all(dashPromises), adjPromise])
                 .then(([histories, dashboards, adjPayload]) => {
-                    allAdjustments = (adjPayload && adjPayload.recentTrades) || [];
+                    allAdjustments = [];
                     // Pre-aggregate adjustments by yyyy-mm-dd so day-cell colouring is O(1).
                     adjustmentByDate = {};
                     allAdjustments.forEach(t => {
@@ -791,75 +772,11 @@
             '<div class="stat-label" style="margin-bottom:8px;">Straddles</div>' +
             '<div style="color:var(--text-muted);">Loading…</div>' +
         '</div>' +
-        '<div id="calDayStrangles" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">' +
-            '<div class="stat-label" style="margin-bottom:8px;">Strangles</div>' +
-            '<div style="color:var(--text-muted);">Loading…</div>' +
-        '</div>' +
-        '<div id="calDayAdjustments" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">' +
-            '<div class="stat-label" style="margin-bottom:8px;">Adjustments</div>' +
-            '<div style="color:var(--text-muted);">Loading…</div>' +
-        '</div>';
+        '<div id="calDayStrangles" style="display:none;"></div>';
 
         document.getElementById('calModalTitle').textContent = 'Session — ' + dateStr;
         document.getElementById('calModalBody').innerHTML = heroHtml;
         document.getElementById('calDayModal').style.display = 'flex';
-
-        // Fetch the per-date manual adjustments and render them in their own sub-table.
-        fetch('/api/manual/trades?date=' + encodeURIComponent(dateStr))
-            .then(r => r.json()).then(payload => {
-                const rows = (payload && payload.trades) || [];
-                const wrap = document.getElementById('calDayAdjustments');
-                if (!wrap) return;
-                if (rows.length === 0) {
-                    wrap.innerHTML =
-                        '<div class="stat-label" style="margin-bottom:8px;">Adjustments</div>' +
-                        '<div style="color:var(--text-muted);">No manual trades on this date.</div>';
-                    return;
-                }
-                const fmtTime = ms => {
-                    if (!ms) return '—';
-                    const d = new Date(Number(ms));
-                    return d.toTimeString().slice(0, 5);
-                };
-                let body = '';
-                rows.forEach((t, i) => {
-                    const n = Number(t.pnl || 0);
-                    const cls = n > 0 ? 'pnl-positive' : (n < 0 ? 'pnl-negative' : '');
-                    const sideCol = t.side === 'BUY' ? 'var(--accent-green, #34d399)' : 'var(--accent-red, #f87171)';
-                    body +=
-                        '<tr style="border-top:1px solid rgba(128,128,128,0.10);">' +
-                            '<td style="padding:8px 10px;color:var(--text-muted);">#' + (i + 1) + '</td>' +
-                            '<td style="padding:8px 10px;color:var(--text-primary);">' + t.symbol + '</td>' +
-                            '<td style="padding:8px 10px;text-align:center;color:' + sideCol + ';font-weight:700;">' + t.side + '</td>' +
-                            '<td style="padding:8px 10px;">' + fmtTime(t.closeMillis) + '</td>' +
-                            '<td style="padding:8px 10px;text-align:right;color:var(--text-muted);">' + (t.qty || 0) + '</td>' +
-                            '<td style="padding:8px 10px;text-align:right;">' + fmtMoneyFull(t.openPrice) + '</td>' +
-                            '<td style="padding:8px 10px;text-align:right;">' + fmtMoneyFull(t.closePrice) + '</td>' +
-                            '<td style="padding:8px 10px;text-align:right;" class="' + cls + '">' + fmtMoneyFull(t.pnl) + '</td>' +
-                        '</tr>';
-                });
-                wrap.innerHTML =
-                    '<div class="stat-label" style="margin-bottom:8px;">Adjustments · ' + rows.length + ' trade' + (rows.length === 1 ? '' : 's') + '</div>' +
-                    '<div style="overflow-x:auto;max-width:100%;">' +
-                    '<table style="width:100%;min-width:680px;border-collapse:collapse;font-family:var(--font-mono);font-size:0.74rem;table-layout:auto;white-space:nowrap;">' +
-                        '<thead><tr style="color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;">' +
-                            '<th style="padding:6px 10px;text-align:left;">#</th>' +
-                            '<th style="padding:6px 10px;text-align:left;">SYMBOL</th>' +
-                            '<th style="padding:6px 10px;text-align:center;">SIDE</th>' +
-                            '<th style="padding:6px 10px;text-align:left;">CLOSED</th>' +
-                            '<th style="padding:6px 10px;text-align:right;">QTY</th>' +
-                            '<th style="padding:6px 10px;text-align:right;">OPEN</th>' +
-                            '<th style="padding:6px 10px;text-align:right;">CLOSE</th>' +
-                            '<th style="padding:6px 10px;text-align:right;">P&L</th>' +
-                        '</tr></thead><tbody>' + body + '</tbody>' +
-                    '</table>' +
-                    '</div>';
-            }).catch(() => {
-                const wrap = document.getElementById('calDayAdjustments');
-                if (wrap) wrap.innerHTML =
-                    '<div class="stat-label" style="margin-bottom:8px;">Adjustments</div>' +
-                    '<div style="color:var(--accent-red, #f87171);">Failed to load adjustment list.</div>';
-            });
 
         // Fetch the day's trades for the singleton Camarilla strategy. Commit B will populate
         // both the "camarilla" id and the strategy itself; until then this returns an empty
@@ -947,12 +864,11 @@
             }
         } catch (e) {}
         // Wire the include-adjustments checkbox.
-        var adjCb = document.getElementById('calIncludeAdjustments');
+        var adjCb = null;   // Options Terminal removed — toggle no longer exists
         if (adjCb) {
             adjCb.checked = includeAdjustments;
             adjCb.addEventListener('change', function() {
-                includeAdjustments = adjCb.checked;
-                try { window.localStorage.setItem('calIncludeAdjustments', includeAdjustments ? 'true' : 'false'); } catch (e) {}
+                try { window.localStorage.setItem('calIncludeAdjustments', 'false'); } catch (e) {}
                 render();
             });
         }

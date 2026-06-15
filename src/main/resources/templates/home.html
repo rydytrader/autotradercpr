@@ -159,16 +159,6 @@
                     <button class="scope-pill active" data-strategy="all">All Strategies</button>
                     <!-- Strategy-specific pills injected at runtime from /api/strategies -->
                 </div>
-                <!-- Include adjustments toggle — sums manual-terminal closed trades into the
-                     money tiles (Total Return / Current Capital / Avg Monthly % / Max Drawdown
-                     / Equity Curve). Strategy-stats tiles stay strategy-pure regardless. State
-                     persists in localStorage. -->
-                <label style="display:flex; align-items:center; gap:6px; margin-left:14px; cursor:pointer; font-family:var(--font-mono); font-size:0.72rem; color:var(--text-secondary);"
-                       title="When ticked, manual-terminal closed trades are folded into Total Return, Current Capital, Avg Monthly % and the equity curve. Win Rate, Profit Factor, R:R, Best/Worst, SL Days, streaks stay strategy-only regardless.">
-                    <input type="checkbox" id="includeAdjustments" checked
-                           style="accent-color: var(--accent-cyan, #22d3ee); width:14px; height:14px;">
-                    Include adjustments in P&amp;L
-                </label>
             </div>
         </div>
     </div>
@@ -308,29 +298,6 @@
             </div>
         </div>
 
-        <!-- Adjustments — manual-terminal closed trades for the selected period. -->
-        <div class="section-card" style="margin-bottom:0;">
-            <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan, #22d3ee);"></div> Adjustments</div>
-            </div>
-            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Count</span>
-                    <span class="stat-value" id="ahAdjCount" style="font-size:1rem;"
-                          title="Number of closed manual-terminal trades in the selected period.">—</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Net P&L</span>
-                    <span class="stat-value" id="ahAdjNetPnl" style="font-size:1rem;"
-                          title="Sum of net P&L across all manual-terminal trades. Always shown — independent of the Include adjustments checkbox.">—</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Charges</span>
-                    <span class="stat-value" id="ahAdjCharges" style="font-size:1rem; color:var(--text-muted);"
-                          title="Manual-terminal charges (broker + statutory). Placeholder 0 in v1 — per-trade brokerage estimate to be added.">—</span>
-                </div>
-            </div>
-        </div>
     </div>
 
     <!-- EQUITY CURVE -->
@@ -358,7 +325,6 @@
 <script src="/js/ticker.js?v=4"></script>
 <script src="/js/settings-modal.js?v=9"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
-<script src="/js/manual-terminal-modal.js?v=19"></script>
 
 <script>
     // Footer year
@@ -406,16 +372,6 @@
     document.addEventListener('DOMContentLoaded', function() {
         var homeIcon = document.querySelector('.nav-icon[data-nav-key="home"]');
         if (homeIcon) homeIcon.classList.add('active');
-        // Wire the include-adjustments checkbox. Restore previous state from localStorage.
-        var adjCb = document.getElementById('includeAdjustments');
-        if (adjCb) {
-            adjCb.checked = currentIncludeAdjustments;
-            adjCb.addEventListener('change', function() {
-                currentIncludeAdjustments = adjCb.checked;
-                try { window.localStorage.setItem('homeIncludeAdjustments', currentIncludeAdjustments ? 'true' : 'false'); } catch (e) {}
-                loadSummary(true);
-            });
-        }
     });
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -435,12 +391,7 @@
     // ── Selectors ────────────────────────────────────────────────────────────
     var currentPeriod   = 'today';
     var currentStrategy = 'all';
-    var currentIncludeAdjustments = (function() {
-        // localStorage so the operator's choice survives a refresh.
-        var stored = null;
-        try { stored = window.localStorage.getItem('homeIncludeAdjustments'); } catch (e) {}
-        return stored === null ? true : stored === 'true';
-    })();
+    var currentIncludeAdjustments = false;   // Options Terminal removed — always off
     var lastEquityRenderMs = 0;
     var EQUITY_REFRESH_MS = 900000; // 15 minutes — the curve doesn't change tick-to-tick
     var pickedYear = '';  // empty = picker not in use
@@ -699,11 +650,6 @@
             setVal('ahLongestWin',  String(st.longestWinStreak || 0));
             setVal('ahLongestLoss', String(st.longestLossStreak || 0), -(st.longestLossStreak || 0));
             // Edge Metrics card removed — operator considered low-signal at current scale.
-            // Adjustments mini-card — always populated, regardless of the include-adjustments toggle.
-            var adj = d.adjustments || { count: 0, netPnl: 0, charges: 0 };
-            setVal('ahAdjCount',   String(adj.count || 0));
-            setVal('ahAdjNetPnl',  fmtRs(adj.netPnl), adj.netPnl);
-            setVal('ahAdjCharges', fmtRs(adj.charges));
             // Costs card
             var charges = Number(st.totalCharges || 0);
             // Backend emits perf.straddles (count of rows in the trade pool — one per cycle

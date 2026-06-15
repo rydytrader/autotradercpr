@@ -2,6 +2,44 @@ var THEME_KEY = 'traderedge-theme';
 var THEME_ORDER = ['dark', 'light', 'forest'];
 var THEME_ICONS = { dark: '\uD83C\uDF19', light: '\u2600\uFE0F', forest: '\uD83C\uDF32' };
 
+// \u2500\u2500 Fyers connection banner \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Polls /api/fyers/status every 10 s; when the broker token isn't available,
+// shows a fixed top banner with a "Connect Fyers" button that kicks off the
+// OAuth flow (/fyers/login \u2192 Fyers authcode redirect \u2192 /fyers/callback).
+function ensureFyersBanner() {
+    if (document.getElementById('fyersConnectBanner')) return;
+    var bar = document.createElement('div');
+    bar.id = 'fyersConnectBanner';
+    bar.style.cssText = 'display:none;position:fixed;top:0;left:0;right:0;z-index:1000;'
+        + 'background:rgba(251,191,36,0.18);border-bottom:1px solid rgba(251,191,36,0.55);'
+        + 'color:var(--accent-amber, #fbbf24);font-family:var(--font-mono);font-size:0.78rem;'
+        + 'padding:9px 18px;display:flex;align-items:center;gap:14px;justify-content:center;';
+    bar.innerHTML =
+        '<span>\u26A0 Fyers broker is not connected \u2014 strategy actions are paused.</span>' +
+        '<a href="/fyers/login" style="background:rgba(251,191,36,0.25);border:1px solid rgba(251,191,36,0.55);'
+        + 'color:var(--accent-amber, #fbbf24);text-decoration:none;padding:5px 14px;border-radius:6px;'
+        + 'font-weight:700;letter-spacing:0.06em;">CONNECT FYERS</a>';
+    document.body.appendChild(bar);
+}
+function refreshFyersBanner() {
+    ensureFyersBanner();
+    fetch('/api/fyers/status').then(function(r) { return r.json(); }).then(function(d) {
+        var bar = document.getElementById('fyersConnectBanner');
+        if (!bar) return;
+        var ok = !!(d && d.connected);
+        bar.style.display = ok ? 'none' : 'flex';
+        document.body.style.paddingTop = ok ? '' : (bar.offsetHeight + 'px');
+    }).catch(function() {});
+}
+if (typeof window !== 'undefined') {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', refreshFyersBanner);
+    } else {
+        refreshFyersBanner();
+    }
+    setInterval(refreshFyersBanner, 10000);
+}
+
 function applyTheme(theme) {
     if (THEME_ORDER.indexOf(theme) === -1) theme = 'dark';
     document.documentElement.setAttribute('data-theme', theme);
