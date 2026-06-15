@@ -2,33 +2,47 @@ var THEME_KEY = 'traderedge-theme';
 var THEME_ORDER = ['dark', 'light', 'forest'];
 var THEME_ICONS = { dark: '\uD83C\uDF19', light: '\u2600\uFE0F', forest: '\uD83C\uDF32' };
 
-// \u2500\u2500 Fyers connection banner \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// \u2500\u2500 Fyers "Not Connected" gate \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 // Polls /api/fyers/status every 10 s; when the broker token isn't available,
-// shows a fixed top banner with a "Connect Fyers" button that kicks off the
-// OAuth flow (/fyers/login \u2192 Fyers authcode redirect \u2192 /fyers/callback).
+// shows the same centered "Fyers Broker Not Connected" card the parent branch
+// used \u2014 lightning bolt, headline, cyan "Login to Fyers \u2192" button. Inserted
+// into the main content area so it sits inside the page layout (not over it).
 function ensureFyersBanner() {
-    if (document.getElementById('fyersConnectBanner')) return;
-    var bar = document.createElement('div');
-    bar.id = 'fyersConnectBanner';
-    bar.style.cssText = 'display:none;position:fixed;top:0;left:0;right:0;z-index:1000;'
-        + 'background:rgba(251,191,36,0.18);border-bottom:1px solid rgba(251,191,36,0.55);'
-        + 'color:var(--accent-amber, #fbbf24);font-family:var(--font-mono);font-size:0.78rem;'
-        + 'padding:9px 18px;display:flex;align-items:center;gap:14px;justify-content:center;';
-    bar.innerHTML =
-        '<span>\u26A0 Fyers broker is not connected \u2014 strategy actions are paused.</span>' +
-        '<a href="/fyers/login" style="background:rgba(251,191,36,0.25);border:1px solid rgba(251,191,36,0.55);'
-        + 'color:var(--accent-amber, #fbbf24);text-decoration:none;padding:5px 14px;border-radius:6px;'
-        + 'font-weight:700;letter-spacing:0.06em;">CONNECT FYERS</a>';
-    document.body.appendChild(bar);
+    if (document.getElementById('fyersGate')) return;
+    var gate = document.createElement('div');
+    gate.id = 'fyersGate';
+    gate.style.cssText = 'display:none;margin:20px 24px;';
+    gate.innerHTML =
+        '<div class="section-card" style="margin-bottom:0;">' +
+            '<div style="padding:60px 28px;text-align:center;">' +
+                '<div style="font-size:2.5rem;margin-bottom:16px;opacity:0.3;">\u26A1</div>' +
+                '<div style="font-family:var(--font-mono);font-size:1.1rem;color:var(--text-primary);font-weight:600;margin-bottom:8px;">Fyers Broker Not Connected</div>' +
+                '<div style="font-family:var(--font-mono);font-size:0.82rem;color:var(--text-muted);margin-bottom:24px;">Connect your Fyers account to start trading and view live data.</div>' +
+                '<a href="/fyers/login" style="' +
+                    'display:inline-flex;align-items:center;gap:10px;' +
+                    'background:rgba(99,179,237,0.08);border:1px solid rgba(99,179,237,0.25);' +
+                    'color:var(--accent-blue);padding:14px 32px;border-radius:8px;' +
+                    'font-family:var(--font-mono);font-size:0.9rem;font-weight:700;' +
+                    'letter-spacing:0.06em;text-decoration:none;">' +
+                    'Login to Fyers <span style="font-size:1rem;">\u2192</span>' +
+                '</a>' +
+            '</div>' +
+        '</div>';
+    // Prefer the main content column if the page has one; fall back to body.
+    var host = document.querySelector('.app-main') || document.body;
+    if (host.firstChild) host.insertBefore(gate, host.firstChild);
+    else host.appendChild(gate);
 }
 function refreshFyersBanner() {
     ensureFyersBanner();
-    fetch('/api/fyers/status').then(function(r) { return r.json(); }).then(function(d) {
-        var bar = document.getElementById('fyersConnectBanner');
-        if (!bar) return;
+    fetch('/api/fyers/status').then(function(r) {
+        if (!r.ok || (r.headers.get('content-type') || '').indexOf('json') < 0) return null;
+        return r.json();
+    }).then(function(d) {
+        var gate = document.getElementById('fyersGate');
+        if (!gate) return;
         var ok = !!(d && d.connected);
-        bar.style.display = ok ? 'none' : 'flex';
-        document.body.style.paddingTop = ok ? '' : (bar.offsetHeight + 'px');
+        gate.style.display = ok ? 'none' : 'block';
     }).catch(function() {});
 }
 if (typeof window !== 'undefined') {
