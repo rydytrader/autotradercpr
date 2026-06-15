@@ -19,6 +19,18 @@
                 '</div>' +
                 '<div id="sm-tabstrip" style="display:flex;border-bottom:1px solid var(--border);padding:0 24px;overflow-x:auto;"></div>' +
                 '<div class="sm-body" id="sm-body" style="flex:1;overflow-y:auto;padding:20px 24px;">' +
+                  '<div class="sm-pane" data-pane="camarilla" style="display:none;">' +
+                    '<div class="sm-field"><label>Strategy Enabled</label><input type="checkbox" id="sm-camarillaEnabled"><div class="sm-hint">Master switch — when off, no new entries fire on 5-min candle closes. Open positions keep running until manually flattened.</div></div>' +
+                    '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-camarillaLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 75 NIFTY.</div></div>' +
+                    '<div class="sm-field"><label>Order Type</label><select id="sm-camarillaOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select></div>' +
+                    '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-camarillaSquareOffTime" step="60"><div class="sm-hint">Hard exit if neither target nor SL has triggered.</div></div>' +
+                    '<div class="sm-field"><label>H3 Reversal</label><input type="checkbox" id="sm-camarillaH3RevEnabled"><div class="sm-hint">Sell CE at H3 strike when a 5-min red candle closes below H3 after tagging it.</div></div>' +
+                    '<div class="sm-field"><label>L3 Reversal</label><input type="checkbox" id="sm-camarillaL3RevEnabled"><div class="sm-hint">Sell PE at L3 strike when a 5-min green candle closes above L3 after tagging it.</div></div>' +
+                    '<div class="sm-field"><label>H4 Breakout</label><input type="checkbox" id="sm-camarillaH4BoEnabled"><div class="sm-hint">Sell PE at H4 strike when a 5-min green candle closes above H4.</div></div>' +
+                    '<div class="sm-field"><label>L4 Breakdown</label><input type="checkbox" id="sm-camarillaL4BdEnabled"><div class="sm-hint">Sell CE at L4 strike when a 5-min red candle closes below L4.</div></div>' +
+                    '<div class="sm-field"><label>Max Trades Per Day</label><input type="number" id="sm-camarillaMaxTradesPerDay" step="1" min="0"><div class="sm-hint">0 = unlimited.</div></div>' +
+                    '<div class="sm-field"><label>Pause After N Losses</label><input type="number" id="sm-camarillaPauseAfterNLosses" step="1" min="0"><div class="sm-hint">Stop firing new entries after N consecutive losing trades. 0 = off.</div></div>' +
+                  '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
                     '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline used by the Home analytics page (capital growth %, equity curve, return %). Default ₹10,00,000.</div></div>' +
                     '<div class="sm-field"><label>Portfolio Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Global kill switch trigger. When net day P&L drops below this % of Initial Capital, the strategy is flattened. 0 disables.</div></div>' +
@@ -98,6 +110,7 @@
         var strip = document.getElementById('sm-tabstrip');
         if (!strip) return;
         var html = '';
+        html += '<button class="sm-tab" data-tab="camarilla">CAMARILLA</button>';
         html += '<button class="sm-tab" data-tab="portfolio-risk">PORTFOLIO RISK</button>';
         html += '<button class="sm-tab" data-tab="adjustments">ADJUSTMENTS</button>';
         html += '<button class="sm-tab" data-tab="charges">CHARGES</button>';
@@ -115,7 +128,10 @@
             b.classList.toggle('active', b.getAttribute('data-tab') === tab);
         });
         modalEl.querySelectorAll('.sm-pane').forEach(function(p) { p.style.display = 'none'; });
-        if (tab === 'portfolio-risk') {
+        if (tab === 'camarilla') {
+            var cp = modalEl.querySelector('[data-pane="camarilla"]'); if (cp) cp.style.display = '';
+            loadCamarillaValues();
+        } else if (tab === 'portfolio-risk') {
             var pp = modalEl.querySelector('[data-pane="portfolio-risk"]'); if (pp) pp.style.display = '';
             loadPortfolioRiskValues();
         } else if (tab === 'adjustments') {
@@ -130,11 +146,46 @@
     }
 
     function saveSettings() {
+        if (activeTab === 'camarilla')      return saveCamarillaTab();
         if (activeTab === 'portfolio-risk') return savePortfolioRiskTab();
         if (activeTab === 'adjustments')    return saveAdjustmentsTab();
         if (activeTab === 'charges')        return saveChargesTab();
         if (activeTab === 'users')          { showBanner('Use the row buttons to manage users.', 'info'); return; }
         showBanner('No save action for this tab.', 'info');
+    }
+
+    function loadCamarillaValues() {
+        fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
+            if (!d) return;
+            var g = id => document.getElementById(id);
+            if (g('sm-camarillaEnabled'))           g('sm-camarillaEnabled').checked = !!d.camarillaEnabled;
+            if (g('sm-camarillaLotsPerLeg'))        g('sm-camarillaLotsPerLeg').value = d.camarillaLotsPerLeg != null ? d.camarillaLotsPerLeg : 1;
+            if (g('sm-camarillaOrderType'))         g('sm-camarillaOrderType').value = d.camarillaOrderType || 'INTRADAY';
+            if (g('sm-camarillaSquareOffTime'))     g('sm-camarillaSquareOffTime').value = d.camarillaSquareOffTime || '15:15';
+            if (g('sm-camarillaH3RevEnabled'))      g('sm-camarillaH3RevEnabled').checked = !!d.camarillaH3RevEnabled;
+            if (g('sm-camarillaL3RevEnabled'))      g('sm-camarillaL3RevEnabled').checked = !!d.camarillaL3RevEnabled;
+            if (g('sm-camarillaH4BoEnabled'))       g('sm-camarillaH4BoEnabled').checked = !!d.camarillaH4BoEnabled;
+            if (g('sm-camarillaL4BdEnabled'))       g('sm-camarillaL4BdEnabled').checked = !!d.camarillaL4BdEnabled;
+            if (g('sm-camarillaMaxTradesPerDay'))   g('sm-camarillaMaxTradesPerDay').value = d.camarillaMaxTradesPerDay != null ? d.camarillaMaxTradesPerDay : 0;
+            if (g('sm-camarillaPauseAfterNLosses')) g('sm-camarillaPauseAfterNLosses').value = d.camarillaPauseAfterNLosses != null ? d.camarillaPauseAfterNLosses : 2;
+        }).catch(function() {});
+    }
+
+    function saveCamarillaTab() {
+        var g = id => document.getElementById(id);
+        var body = {
+            camarillaEnabled:           !!(g('sm-camarillaEnabled') && g('sm-camarillaEnabled').checked),
+            camarillaLotsPerLeg:        parseInt(g('sm-camarillaLotsPerLeg').value, 10) || 1,
+            camarillaOrderType:         g('sm-camarillaOrderType').value,
+            camarillaSquareOffTime:     (g('sm-camarillaSquareOffTime').value || '').trim(),
+            camarillaH3RevEnabled:      !!(g('sm-camarillaH3RevEnabled') && g('sm-camarillaH3RevEnabled').checked),
+            camarillaL3RevEnabled:      !!(g('sm-camarillaL3RevEnabled') && g('sm-camarillaL3RevEnabled').checked),
+            camarillaH4BoEnabled:       !!(g('sm-camarillaH4BoEnabled') && g('sm-camarillaH4BoEnabled').checked),
+            camarillaL4BdEnabled:       !!(g('sm-camarillaL4BdEnabled') && g('sm-camarillaL4BdEnabled').checked),
+            camarillaMaxTradesPerDay:   parseInt(g('sm-camarillaMaxTradesPerDay').value, 10) || 0,
+            camarillaPauseAfterNLosses: parseInt(g('sm-camarillaPauseAfterNLosses').value, 10) || 0
+        };
+        postSettings('/api/settings/risk', body);
     }
 
     function savePortfolioRiskTab() {
@@ -251,12 +302,13 @@
             buildTabs();
             loadChargesValues();
             modalEl.dataset.tabsBuilt = '1';
-            switchTab('portfolio-risk');
+            switchTab('camarilla');
         } else {
-            if (activeTab === 'portfolio-risk')      loadPortfolioRiskValues();
+            if (activeTab === 'camarilla')           loadCamarillaValues();
+            else if (activeTab === 'portfolio-risk') loadPortfolioRiskValues();
             else if (activeTab === 'adjustments')    loadAdjustmentsValues();
             else if (activeTab === 'charges')        loadChargesValues();
-            else                                     switchTab('portfolio-risk');
+            else                                     switchTab('camarilla');
         }
     }
 

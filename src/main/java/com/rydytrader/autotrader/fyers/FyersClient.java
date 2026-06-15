@@ -40,4 +40,13 @@ public interface FyersClient {
 
     /** PUT /api/v3/orders/sync — modify an existing order */
     JsonNode modifyOrder(String orderJson, String authHeader) throws Exception;
+
+    /** GET /data/history — OHLCV candle history.
+     *  @param symbol       e.g. "NSE:NIFTY50-INDEX"
+     *  @param resolution   "D" for daily, "5"/"15" for minute candles
+     *  @param rangeFromIso yyyy-MM-dd (inclusive)
+     *  @param rangeToIso   yyyy-MM-dd (inclusive)
+     *  Response shape: {s:"ok", candles:[[epochSec, open, high, low, close, volume], ...]} */
+    JsonNode getHistory(String symbol, String resolution, String rangeFromIso,
+                        String rangeToIso, String authHeader) throws Exception;
 }

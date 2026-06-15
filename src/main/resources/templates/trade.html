@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" data-strategy-id="trade">
+<head>
+    <title>TraderEdge — Trade</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/shared.css?v=5">
+    <script>
+        (function() {
+            const t = localStorage.getItem('traderedge-theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', t);
+            document.addEventListener('DOMContentLoaded', function() {
+                const btn = document.getElementById('themeToggle');
+                if (btn) btn.textContent = t === 'light' ? '☀️' : t === 'forest' ? '🌲' : '🌙';
+            });
+        })();
+    </script>
+    <style>
+        .nav-icon:hover { color:var(--text-primary) !important; background:var(--bg-card-hover) !important; border-color:var(--border) !important; }
+        .nav-icon.active { color:var(--accent-cyan) !important; background:rgba(125,211,252,0.12) !important; border-color:rgba(125,211,252,0.35) !important; }
+        .lvl-card { display:flex; flex-direction:column; gap:4px; padding:10px 14px; border:1px solid var(--border); border-radius:8px; background:var(--bg-primary); font-family:var(--font-mono); }
+        .lvl-card .lvl-label { font-size:0.6rem; color:var(--text-muted); letter-spacing:0.10em; text-transform:uppercase; }
+        .lvl-card .lvl-value { font-size:0.96rem; font-weight:700; color:var(--text-primary); }
+        .lvl-h3 .lvl-value, .lvl-h4 .lvl-value, .lvl-h5 .lvl-value { color:var(--accent-red, #f87171); }
+        .lvl-l3 .lvl-value, .lvl-l4 .lvl-value, .lvl-l5 .lvl-value { color:var(--accent-green, #34d399); }
+        .lvl-pp .lvl-value { color:var(--accent-cyan); }
+        .pnl-positive { color:var(--accent-green, #34d399); }
+        .pnl-negative { color:var(--accent-red, #f87171); }
+        .event-row { display:grid; grid-template-columns:80px 80px 1fr; padding:6px 10px; border-bottom:1px solid rgba(128,128,128,0.10); font-family:var(--font-mono); font-size:0.78rem; }
+        .sev-INFO    { color:var(--text-secondary); }
+        .sev-SUCCESS { color:var(--accent-green); }
+        .sev-WARNING { color:var(--accent-amber, #fbbf24); }
+        .sev-ERROR   { color:var(--accent-red, #f87171); }
+    </style>
+</head>
+<body style="margin:0;display:flex;flex-direction:column;min-height:100vh;">
+<nav class="navbar" style="padding:0 16px;">
+    <div class="navbar-inner">
+        <a href="/home" style="display:flex;align-items:center;gap:10px;text-decoration:none;margin-right:18px;">
+            <span style="font-size:1.45rem;line-height:1;">⚡</span>
+            <div style="display:flex;flex-direction:column;line-height:1.1;">
+                <span style="font-family:var(--font-mono);font-weight:700;font-size:1.05rem;letter-spacing:0.08em;color:var(--text-primary);">TRADER<span style="color:var(--accent-cyan);">EDGE</span></span>
+                <span style="display:flex;align-items:center;gap:4px;margin-top:6px;">
+                    <span class="status-dot" id="statusDot" style="width:5px;height:5px;"></span>
+                    <span id="connectionStatus" style="color:var(--text-muted);font-size:0.52rem;letter-spacing:0.04em;">Checking…</span>
+                </span>
+            </div>
+        </a>
+        <div class="ticker-wrap" id="tickerWrap"><div class="ticker-track" id="tickerTrack"></div></div>
+        <div class="nav-right">
+            <button class="theme-toggle" id="calBtn" title="Calendar" onclick="window.location.href='/calendar'" style="font-size:1rem;">▦</button>
+            <button class="theme-toggle" id="settingsBtn" title="Settings" onclick="SettingsModal.open()" style="font-size:1rem;">⚙</button>
+            <button class="theme-toggle" id="chainBtn" title="Options Chain" onclick="OptionChainModal.open()" style="font-size:1rem;">⊞</button>
+            <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
+            <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
+        </div>
+    </div>
+</nav>
+
+<div style="display:flex;flex:1;min-height:0;">
+<aside class="strategy-nav-aside"
+       style="width:96px;flex-shrink:0;background:var(--navbar-bg);backdrop-filter:blur(16px);
+              border-right:1px solid var(--border);
+              display:flex;flex-direction:column;align-items:center;padding:18px 8px 0;gap:10px;">
+    <div style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;
+                color:var(--text-muted);text-transform:uppercase;text-align:center;
+                width:72px;margin:2px 0 4px;">MAIN</div>
+    <a href="/home" class="nav-icon" title="Home" data-nav-key="home"
+       style="display:flex;align-items:center;justify-content:center;width:72px;height:34px;
+              border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
+              font-size:0.78rem;letter-spacing:0.10em;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">HOME</a>
+    <div style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
+    <a href="/trade" class="nav-icon active" title="Trade" data-nav-key="trade"
+       style="display:flex;align-items:center;justify-content:center;width:72px;height:34px;
+              border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
+              font-size:0.78rem;letter-spacing:0.10em;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">TRADE</a>
+    <div style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
+    <a href="/calendar" class="nav-icon" title="Calendar" data-nav-key="calendar"
+       style="display:flex;align-items:center;justify-content:center;width:72px;height:34px;
+              border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
+              font-size:0.78rem;letter-spacing:0.10em;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">CAL</a>
+</aside>
+<div class="app-main" style="flex:1;min-width:0;margin-left:0;width:auto;padding:20px 24px;">
+
+    <div class="page-header" style="margin-bottom:18px;">
+        <div>
+            <div class="page-title">Trade</div>
+            <div class="page-subtitle" id="tradeSubtitle">Camarilla setup monitor</div>
+        </div>
+        <div style="font-family:var(--font-mono);text-align:right;">
+            <div style="font-size:0.62rem;color:var(--text-muted);letter-spacing:0.10em;">NIFTY SPOT</div>
+            <div style="font-size:1.4rem;font-weight:700;color:var(--text-primary);" id="niftySpot">—</div>
+        </div>
+    </div>
+
+    <!-- Levels header -->
+    <div class="section-card fade-in" style="margin-bottom:18px;">
+        <div class="section-header"><div class="section-title"><div class="section-title-dot"></div> Today's Camarilla Levels</div></div>
+        <div style="padding:14px 22px;display:grid;grid-template-columns:repeat(7,1fr);gap:10px;" id="levelsGrid">
+            <div class="lvl-card lvl-h5"><div class="lvl-label">H5</div><div class="lvl-value" id="lvH5">—</div></div>
+            <div class="lvl-card lvl-h4"><div class="lvl-label">H4</div><div class="lvl-value" id="lvH4">—</div></div>
+            <div class="lvl-card lvl-h3"><div class="lvl-label">H3</div><div class="lvl-value" id="lvH3">—</div></div>
+            <div class="lvl-card lvl-pp"><div class="lvl-label">PP</div><div class="lvl-value" id="lvPP">—</div></div>
+            <div class="lvl-card lvl-l3"><div class="lvl-label">L3</div><div class="lvl-value" id="lvL3">—</div></div>
+            <div class="lvl-card lvl-l4"><div class="lvl-label">L4</div><div class="lvl-value" id="lvL4">—</div></div>
+            <div class="lvl-card lvl-l5"><div class="lvl-label">L5</div><div class="lvl-value" id="lvL5">—</div></div>
+        </div>
+        <div style="padding:6px 22px 14px;font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);" id="lvFooter">Loading…</div>
+    </div>
+
+    <!-- Active trade card -->
+    <div class="section-card fade-in" style="margin-bottom:18px;">
+        <div class="section-header">
+            <div class="section-title"><div class="section-title-dot"></div> Active Trade</div>
+            <span class="section-badge" id="tradeStateBadge" style="margin-left:auto;">IDLE</span>
+        </div>
+        <div style="padding:18px 22px;" id="activeTradeBody">
+            <div style="color:var(--text-muted);font-style:italic;">Waiting for setup signal…</div>
+        </div>
+    </div>
+
+    <!-- Today's cycle events -->
+    <div class="section-card fade-in">
+        <div class="section-header">
+            <div class="section-title"><div class="section-title-dot"></div> Today's Events</div>
+            <span class="section-badge" id="cycleCount" style="margin-left:auto;">0 cycles</span>
+        </div>
+        <div style="padding:6px 6px 14px;" id="eventsBody">
+            <div style="color:var(--text-muted);font-style:italic;padding:14px 16px;">No events yet today.</div>
+        </div>
+    </div>
+</div>
+</div>
+
+<script>
+    function fmtRs(v) {
+        var n = Number(v);
+        if (!isFinite(n)) return '—';
+        return '₹' + n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+    }
+    function fmtTime(ms) {
+        if (!ms) return '—';
+        var d = new Date(Number(ms));
+        return d.toTimeString().slice(0, 8);
+    }
+    function escapeHtml(s) {
+        if (s == null) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    function loadLevels() {
+        fetch('/api/camarilla/levels').then(function(r) {
+            if (r.status === 503) return { warming: true };
+            return r.json();
+        }).then(function(d) {
+            if (!d || d.warming) {
+                document.getElementById('lvFooter').textContent = 'Pivots warming up — fetching prior-day OHLC from Fyers…';
+                return;
+            }
+            document.getElementById('lvH5').textContent = d.h5 != null ? d.h5.toFixed(2) : '—';
+            document.getElementById('lvH4').textContent = d.h4 != null ? d.h4.toFixed(2) : '—';
+            document.getElementById('lvH3').textContent = d.h3 != null ? d.h3.toFixed(2) : '—';
+            document.getElementById('lvPP').textContent = d.pp != null ? d.pp.toFixed(2) : '—';
+            document.getElementById('lvL3').textContent = d.l3 != null ? d.l3.toFixed(2) : '—';
+            document.getElementById('lvL4').textContent = d.l4 != null ? d.l4.toFixed(2) : '—';
+            document.getElementById('lvL5').textContent = d.l5 != null ? d.l5.toFixed(2) : '—';
+            document.getElementById('lvFooter').textContent =
+                'Prior day ' + d.priorDate + ': open ' + d.priorClose.toFixed(2)
+                + ' · high ' + d.priorHigh.toFixed(2) + ' · low ' + d.priorLow.toFixed(2);
+        }).catch(function(err) {
+            document.getElementById('lvFooter').textContent = 'Failed to load levels: ' + err;
+        });
+    }
+
+    function loadState() {
+        fetch('/api/camarilla/state').then(function(r) { return r.json(); }).then(function(d) {
+            if (!d) return;
+            // Spot
+            document.getElementById('niftySpot').textContent =
+                d.niftySpot != null ? Number(d.niftySpot).toFixed(2) : '—';
+            // State badge
+            var badge = document.getElementById('tradeStateBadge');
+            badge.textContent = d.lifecycle || 'IDLE';
+            // Active trade card
+            var body = document.getElementById('activeTradeBody');
+            if (d.lifecycle === 'IDLE' || d.lifecycle === 'DONE_FOR_DAY') {
+                body.innerHTML = '<div style="color:var(--text-muted);font-style:italic;">Waiting for setup signal…</div>';
+            } else {
+                var mtm = Number(d.openMtm || 0);
+                var mtmCls = mtm > 0 ? 'pnl-positive' : (mtm < 0 ? 'pnl-negative' : '');
+                var direction = d.targetAbove ? 'spot ≥ ' : 'spot ≤ ';
+                body.innerHTML =
+                    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px 32px;font-family:var(--font-mono);">' +
+                        '<div><div style="font-size:0.62rem;color:var(--text-muted);letter-spacing:0.10em;text-transform:uppercase;">Setup</div>' +
+                            '<div style="font-weight:700;font-size:0.92rem;margin-top:4px;">' + escapeHtml(d.activeSetup || '—') + '</div></div>' +
+                        '<div><div style="font-size:0.62rem;color:var(--text-muted);letter-spacing:0.10em;text-transform:uppercase;">Symbol</div>' +
+                            '<div style="font-weight:700;font-size:0.84rem;margin-top:4px;">' + escapeHtml(d.symbol || '—') + '</div></div>' +
+                        '<div><div style="font-size:0.62rem;color:var(--text-muted);letter-spacing:0.10em;text-transform:uppercase;">Qty</div>' +
+                            '<div style="font-weight:700;font-size:0.92rem;margin-top:4px;">' + (d.qty || 0) + '</div></div>' +
+                        '<div><div style="font-size:0.62rem;color:var(--text-muted);letter-spacing:0.10em;text-transform:uppercase;">Entry</div>' +
+                            '<div style="font-weight:700;font-size:0.92rem;margin-top:4px;">' + (d.entryPrice != null ? Number(d.entryPrice).toFixed(2) : '—') + '</div></div>' +
+                        '<div><div style="font-size:0.62rem;color:var(--text-muted);letter-spacing:0.10em;text-transform:uppercase;">LTP</div>' +
+                            '<div style="font-weight:700;font-size:0.92rem;margin-top:4px;">' + (d.symbolLtp != null ? Number(d.symbolLtp).toFixed(2) : '—') + '</div></div>' +
+                        '<div><div style="font-size:0.62rem;color:var(--text-muted);letter-spacing:0.10em;text-transform:uppercase;">MTM</div>' +
+                            '<div class="' + mtmCls + '" style="font-weight:700;font-size:0.92rem;margin-top:4px;">' + fmtRs(mtm) + '</div></div>' +
+                        '<div><div style="font-size:0.62rem;color:var(--text-muted);letter-spacing:0.10em;text-transform:uppercase;">Target</div>' +
+                            '<div style="font-weight:700;font-size:0.92rem;margin-top:4px;color:var(--accent-cyan);">' + direction + (d.targetSpotLevel != null ? Number(d.targetSpotLevel).toFixed(2) : '—') + '</div></div>' +
+                        '<div><div style="font-size:0.62rem;color:var(--text-muted);letter-spacing:0.10em;text-transform:uppercase;">SL trigger</div>' +
+                            '<div style="font-weight:700;font-size:0.78rem;margin-top:4px;color:var(--accent-amber, #fbbf24);">Candle close ' +
+                                (d.targetAbove ? 'BELOW ' + Number(d.entryCandleLow).toFixed(2) : 'ABOVE ' + Number(d.entryCandleHigh).toFixed(2)) + '</div></div>' +
+                    '</div>' +
+                    '<div style="margin-top:14px;display:flex;gap:10px;">' +
+                        '<button onclick="manualSquareoff()" style="background:rgba(248,113,113,0.10);border:1px solid rgba(248,113,113,0.30);color:var(--accent-red, #f87171);font-family:var(--font-mono);font-size:0.74rem;font-weight:700;letter-spacing:0.06em;padding:6px 14px;border-radius:6px;cursor:pointer;">✕ SQUAREOFF</button>' +
+                    '</div>';
+            }
+            // Cycle events list
+            var eventsHtml = '';
+            var cycles = d.todayClosedTrades || [];
+            var events = d.recentEvents || [];
+            document.getElementById('cycleCount').textContent = cycles.length + (cycles.length === 1 ? ' cycle' : ' cycles');
+            if (cycles.length === 0 && events.length === 0) {
+                eventsHtml = '<div style="color:var(--text-muted);font-style:italic;padding:14px 16px;">No events yet today.</div>';
+            } else {
+                cycles.slice().reverse().forEach(function(c) {
+                    var net = Number(c.netPnl || 0);
+                    var cls = net > 0 ? 'sev-SUCCESS' : (net < 0 ? 'sev-ERROR' : '');
+                    eventsHtml +=
+                        '<div class="event-row">' +
+                            '<div>' + fmtTime(c.closedAtMillis) + '</div>' +
+                            '<div class="' + cls + '">' + escapeHtml(c.closeReason || '') + '</div>' +
+                            '<div>' + escapeHtml(c.setup || '') + ' · ' + escapeHtml(c.symbol || '') +
+                                ' · entry ' + (c.entryPrice != null ? Number(c.entryPrice).toFixed(2) : '—') +
+                                ' → exit ' + (c.exitPrice != null ? Number(c.exitPrice).toFixed(2) : '—') +
+                                ' · net <span class="' + cls + '">' + fmtRs(net) + '</span>' +
+                            '</div>' +
+                        '</div>';
+                });
+                events.forEach(function(e) {
+                    var sev = (e.severity || '').replace(/[\[\]]/g, '');
+                    var cls = 'sev-' + sev;
+                    eventsHtml +=
+                        '<div class="event-row">' +
+                            '<div>' + fmtTime(e.ts) + '</div>' +
+                            '<div class="' + cls + '">' + escapeHtml(sev) + '</div>' +
+                            '<div>' + escapeHtml(e.message || '') + '</div>' +
+                        '</div>';
+                });
+            }
+            document.getElementById('eventsBody').innerHTML = eventsHtml;
+        }).catch(function() {});
+    }
+
+    function manualSquareoff() {
+        if (!confirm('Square off the active Camarilla trade?')) return;
+        fetch('/api/camarilla/squareoff', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders())
+        }).then(function(r) { return r.json(); }).then(function(d) {
+            if (window.showToast) showToast(d && d.ok ? 'Squareoff submitted' : 'Squareoff failed',
+                d && d.ok ? 'success' : 'error');
+            loadState();
+        });
+    }
+
+    loadLevels();
+    loadState();
+    setInterval(loadState, 5000);
+    setInterval(loadLevels, 60_000);
+</script>
+
+<script src="/js/common.js?v=5"></script>
+<script src="/js/ticker.js?v=5"></script>
+<script src="/js/settings-modal.js?v=20"></script>
+<script src="/js/option-chain-modal.js?v=10"></script>
+<script src="/js/manual-terminal-modal.js?v=19"></script>
+</body>
+</html>

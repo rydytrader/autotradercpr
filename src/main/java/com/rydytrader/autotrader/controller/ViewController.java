@@ -201,5 +201,8 @@ public class ViewController {
         return "calendar";
     }
 
-    // /trade route added in Commit B alongside the Camarilla strategy.
+    @GetMapping("/trade")
+    public String trade() {
+        return "trade";
+    }
 }
