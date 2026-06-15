@@ -1,50 +1,44 @@
 package com.rydytrader.autotrader.service;
 
 import com.rydytrader.autotrader.service.strategy.Strategy;
-import com.rydytrader.autotrader.service.strategy.StrategyRegistry;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /**
- * Sole portfolio-wide kill switch — fires when the aggregate live net day P&L across all
- * registered strategies (realised + open MTM − charges, summed) drops below the configured
- * {@code portfolioMaxRiskPct} of {@code startingCapital}.
+ * Portfolio-wide kill switch — fires when the active strategy's live net day P&L drops
+ * below the configured {@code portfolioMaxRiskPct} of {@code startingCapital}.
  *
- * <p>Per-strategy max-daily-loss kill switches were removed: the operator's design intent is
- * that the combined book is what matters — once consumed risk + open MTM across all strategies
- * crosses the portfolio threshold, every strategy is force-closed and parked DONE_FOR_DAY for
- * the rest of the session. Individual strategies can still opt out of the day via the per-day
- * SL config but no longer have their own rupee kill switch.
+ * <p>Since Camarilla is the only strategy, the "portfolio" here is just the singleton's
+ * P&L. Kept as a separate service so the threshold can fire even on strategies we may add
+ * later, and so the manual-terminal book stays independent.
  *
- * <p>Disabled when {@code portfolioMaxRiskPct} is 0. Triggers once per day — after firing, the
- * fire-once flag stays set until day rollover (resolved by re-checking the day key).
+ * <p>Disabled when {@code portfolioMaxRiskPct} is 0. Fires once per day; the fire-once
+ * flag rolls over on a new IST date.
  */
 @Service
 public class PortfolioRiskService {
 
     private static final Logger log = LoggerFactory.getLogger(PortfolioRiskService.class);
 
-    private final StrategyRegistry strategyRegistry;
+    private final ObjectProvider<Strategy> strategyProvider;
     private final RiskSettingsStore riskSettings;
     private final EventService eventService;
 
     @Autowired @Lazy private MarketHolidayService marketHolidayService;
     @Autowired @Lazy private TelegramService telegramService;
 
-    /** ISO date string of the last day we fired the kill switch — prevents repeated trigger
-     *  spam if the operator manually opens a new straddle after a portfolio-kill. Reset by
-     *  comparing against today's date each tick. */
     private volatile String lastFiredDayKey = "";
 
-    public PortfolioRiskService(StrategyRegistry strategyRegistry,
+    public PortfolioRiskService(ObjectProvider<Strategy> strategyProvider,
                                  RiskSettingsStore riskSettings,
                                  EventService eventService) {
-        this.strategyRegistry = strategyRegistry;
+        this.strategyProvider = strategyProvider;
         this.riskSettings = riskSettings;
         this.eventService = eventService;
     }
@@ -52,65 +46,39 @@ public class PortfolioRiskService {
     @Scheduled(fixedDelay = 5000)
     public void tick() {
         if (marketHolidayService != null && !marketHolidayService.isMarketOpen()) return;
-        if (strategyRegistry == null || strategyRegistry.isEmpty()) return;
 
-        double maxLoss = riskSettings.getPortfolioMaxDailyLoss(); // computed from pct × startingCapital
-        if (maxLoss <= 0) return; // disabled
+        Strategy strategy = strategyProvider == null ? null : strategyProvider.getIfAvailable();
+        if (strategy == null || !strategy.isEnabled()) return;
 
-        // Reset the fire-once flag on a new day.
+        double maxLoss = riskSettings.getPortfolioMaxDailyLoss();
+        if (maxLoss <= 0) return;
+
         String today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata")).toString();
         if (!today.equals(lastFiredDayKey)) lastFiredDayKey = "";
+        if (today.equals(lastFiredDayKey)) return;
 
-        if (today.equals(lastFiredDayKey)) return; // already fired today
-
-        // Skip the whole check if every enabled strategy is already DONE_FOR_DAY — the
-        // post-squareoff aggregate loss is just the realised P&L; the kill switch has
-        // nothing to flatten and parking a parked strategy is a no-op warning.
-        boolean anythingStillRunning = false;
-        for (Strategy s : strategyRegistry.all()) {
-            if (!s.isEnabled()) continue;
-            String st = s.currentState();
-            if (st != null && !"DONE_FOR_DAY".equals(st)) { anythingStillRunning = true; break; }
+        double aggregate;
+        try { aggregate = strategy.liveNetPnlToday(); }
+        catch (Exception e) {
+            log.warn("[PortfolioRisk] liveNetPnlToday failed: {}", e.getMessage());
+            return;
         }
-        if (!anythingStillRunning) return;
-
-        double aggregate = 0;
-        for (Strategy s : strategyRegistry.all()) {
-            // Disabled instances aren't trading — their pnl is 0 in steady state, but skip
-            // anyway so a stale state file doesn't pollute the aggregate kill-switch check.
-            if (!s.isEnabled()) continue;
-            try { aggregate += s.liveNetPnlToday(); }
-            catch (Exception e) {
-                log.warn("[PortfolioRisk] {} liveNetPnlToday failed: {}", s.id(), e.getMessage());
-            }
-        }
-
-        if (aggregate >= -maxLoss) return; // still within budget
+        if (aggregate >= -maxLoss) return;
 
         double riskPct = riskSettings.getPortfolioMaxRiskPct();
         String msg = String.format(
-            "PORTFOLIO MAX LOSS HIT — aggregate %.2f < -%.2f (%.2f%% of ₹%.0f starting capital). " +
-            "Flattening every strategy and parking DONE_FOR_DAY.",
+            "PORTFOLIO MAX LOSS HIT — net %.2f < -%.2f (%.2f%% of ₹%.0f starting capital). Flattening.",
             aggregate, maxLoss, riskPct, riskSettings.getStartingCapital());
         log.warn("[PortfolioRisk] {}", msg);
         eventService.log("[WARNING] [portfolio-risk] " + msg);
         try { if (telegramService != null) telegramService.sendMessage("[PortfolioRisk] " + msg); }
         catch (Exception ignored) {}
 
-        for (Strategy s : strategyRegistry.all()) {
-            // Disabled instances aren't running — nothing to flatten and they're already
-            // blocked from firing the next entry, so parking them is a no-op that just
-            // muddies the event log. Skip.
-            if (!s.isEnabled()) continue;
-            try {
-                // parkDoneForDay closes any open position AND transitions to DONE_FOR_DAY
-                // regardless of current state — so a strategy in IDLE / WAITING_TO_ROLL is
-                // also blocked from entering or re-entering later in the session.
-                s.parkDoneForDay("PORTFOLIO_MAX_LOSS_HIT");
-                log.info("[PortfolioRisk] parked {} DONE_FOR_DAY", s.id());
-            } catch (Exception e) {
-                log.error("[PortfolioRisk] parkDoneForDay({}) failed: {}", s.id(), e.getMessage());
-            }
+        try {
+            strategy.forceClose("PORTFOLIO_MAX_LOSS_HIT");
+            log.info("[PortfolioRisk] flattened {}", strategy.id());
+        } catch (Exception e) {
+            log.error("[PortfolioRisk] forceClose({}) failed: {}", strategy.id(), e.getMessage());
         }
         lastFiredDayKey = today;
     }

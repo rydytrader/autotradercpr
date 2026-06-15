@@ -384,11 +384,9 @@ public class OptionChainController {
         return "";
     }
 
-    /** Mirrors {@code ShortStraddle.parseExpiryFromSymbol} — kept local so the controller
-     *  doesn't reach across the strategy package for an 18-line helper. Format example:
-     *  {@code NSE:NIFTY50M28FEB25C24850} → tail {@code 28FEB25...} → not the form used;
-     *  the actual Fyers weekly form is {@code 25604} for 2026-06-04 (YY M-char DD). */
-    static String parseExpiryFromSymbol(String fyersSymbol) {
+    /** Parse the weekly-expiry ISO date out of a Fyers option symbol. Public so other
+     *  controllers (manual terminal, etc.) can share the same parser without duplication. */
+    public static String parseExpiryFromSymbol(String fyersSymbol) {
         if (fyersSymbol == null) return "";
         try {
             int hash = fyersSymbol.indexOf("NIFTY");

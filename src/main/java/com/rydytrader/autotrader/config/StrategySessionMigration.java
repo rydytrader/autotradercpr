@@ -64,6 +64,35 @@ public class StrategySessionMigration {
     @EventListener(ContextRefreshedEvent.class) @Transactional
     public void txOneShotFixInst1_20260603() { oneShotFixInst1_20260603(); }
 
+    @EventListener(ContextRefreshedEvent.class) @Transactional
+    public void txPurgeLegacyInstancesAndSettings() { purgeLegacyInstancesAndSettings(); }
+
+    /** One-shot purge of every {@code strategy_instances} row + its per-instance settings
+     *  rows. Runs once on first boot after the Camarilla cutover (gated by the
+     *  {@code camarilla.cutover.done} flag). The branch deletes Straddle + Strangle code; this
+     *  removes their persisted instance rows so {@code AnalyticsService} doesn't carry them
+     *  forward as orphans. Trade rows + session rows are kept — they're already empty in this
+     *  user's DB (wiped earlier), and even if some history existed it stays in the
+     *  {@code strategy_trades} table for analytics history. */
+    private void purgeLegacyInstancesAndSettings() {
+        String flagKey = "camarilla.cutover.done";
+        try {
+            if (settingRepo.findBySettingKey(flagKey).isPresent()) return;
+
+            int instances = safeUpdate("DELETE FROM strategy_instances");
+            int settings  = safeUpdate(
+                "DELETE FROM settings WHERE setting_key LIKE 'strategies.inst-%'");
+
+            settingRepo.save(new SettingEntity(flagKey, String.valueOf(System.currentTimeMillis())));
+
+            log.warn("[StrategyMigration] camarilla cutover — purged {} legacy strategy_instances " +
+                "row(s) + {} per-instance setting(s). Camarilla is now the only strategy.",
+                instances, settings);
+        } catch (Exception e) {
+            log.warn("[StrategyMigration] camarilla cutover purge skipped: {}", e.getMessage());
+        }
+    }
+
     /** Hard-deletes every {@code strategy_instances} row marked {@code active = false} along
      *  with its {@code strategies.inst-<id>.*} settings rows and its on-disk state file.
      *  Runs on every boot — idempotent (no soft-deleted rows = no-op). Since the Straddles

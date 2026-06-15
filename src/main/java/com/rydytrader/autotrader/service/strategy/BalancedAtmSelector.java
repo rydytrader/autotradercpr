@@ -4,29 +4,25 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
 import com.rydytrader.autotrader.store.TokenStore;
-import com.rydytrader.autotrader.util.BlackScholes;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDate;
-import java.time.temporal.ChronoUnit;
-import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
 
 /**
- * Picks the truly balanced ATM strike for a NIFTY straddle using put-call parity.
+ * Walks the NIFTY weekly option chain to pick strikes for the Camarilla strategy.
  *
- * <p>Naïvely rounding spot to the nearest strike step yields asymmetric premiums when spot
- * sits between strikes — the resulting CE and PE LTPs can be 50+ points apart, which is not
- * a delta-neutral straddle. Put-call parity gives the synthetic forward:
- *
- * <pre>F = K + (CE − PE)  at the spot-ATM strike K</pre>
- *
- * <p>Rounding F to the nearest strike step yields the truly balanced ATM. This single-method
- * selection is robust on liquid weekly NIFTY — parity holds tightly, and using only the
- * spot-ATM quote makes us immune to wide bid-ask on adjacent strikes.
+ * <p>Two entry points:
+ * <ul>
+ *   <li>{@link #select(double)} — synthetic-futures ATM via put-call parity. Kept because it's
+ *       still useful for any future strategy that wants the truly balanced strike (and because
+ *       the chain fetch + parsing is shared with {@link #resolveStrikeAtLevel(double)}).</li>
+ *   <li>{@link #resolveStrikeAtLevel(double)} — Camarilla's workhorse: given an arbitrary price
+ *       level (H3, H4, L3, L4 etc.), returns the nearest tradable strike along with its CE+PE
+ *       symbols and current LTPs.</li>
+ * </ul>
  */
 @Service
 public class BalancedAtmSelector {
@@ -48,8 +44,8 @@ public class BalancedAtmSelector {
     }
 
     /** Outcome of one ATM selection. {@code spotAtm} is the naïve spot/50 baseline — kept
-     *  for transparency on the dashboard so the operator can see how far the parity-based
-     *  pick moved from "obvious". {@code chosenAtm} is what the bot will actually trade. */
+     *  for transparency so callers can see how far the parity-based pick moved from
+     *  "obvious". {@code chosenAtm} is what the bot would trade. */
     public record AtmSelection(
         long    spotAtm,
         long    chosenAtm,
@@ -60,13 +56,20 @@ public class BalancedAtmSelector {
         String  peSymbolAtChosen
     ) {}
 
+    /** Resolved strike + per-leg symbols + per-leg LTPs at a Camarilla level. Returned by
+     *  {@link #resolveStrikeAtLevel(double)}; caller picks which side (CE or PE) to trade. */
+    public record StrikeAtLevel(
+        double  requestedLevel,
+        long    resolvedStrike,
+        String  ceSymbol,
+        String  peSymbol,
+        double  ceLtp,
+        double  peLtp
+    ) {}
+
     /**
-     * Compute the synthetic-futures ATM for the given live NIFTY LTP. {@code niftyLtp} is
-     * passed in (rather than read internally) so callers can hand off a cached snapshot
-     * during preview polls without a re-read.
-     *
-     * <p>Returns {@code null} when the option chain is unavailable (network error, empty
-     * payload, missing spot-ATM row, unquoted ATM strike). Caller treats null as "skip".
+     * Compute the synthetic-futures ATM for the given live NIFTY LTP. Returns {@code null}
+     * when the option chain is unavailable or the spot-ATM strike is unquoted.
      */
     public AtmSelection select(double niftyLtp) {
         if (niftyLtp <= 0) return null;
@@ -82,14 +85,11 @@ public class BalancedAtmSelector {
             return null;
         }
 
-        // Put-call parity:  F = K + (CE − PE)   →   round to strike step.
         double forward = spotAtm + (atmRow.ce - atmRow.pe);
         long   chosen  = Math.round(forward / (double) STRIKE_STEP) * STRIKE_STEP;
 
         ChainRow chosenRow = chain.get(chosen);
         if (chosenRow == null || chosenRow.ce <= 0 || chosenRow.pe <= 0) {
-            // Selector landed on a strike with no quotes — fall back to spot-ATM so we still
-            // have a tradeable pair, but log the anomaly.
             log.warn("[atm-selector] synthetic strike {} unquoted — falling back to spot-ATM {}",
                 chosen, spotAtm);
             chosen = spotAtm; chosenRow = atmRow;
@@ -106,209 +106,31 @@ public class BalancedAtmSelector {
         );
     }
 
-    /** Result of {@link #resolveStrikeSymbols(long, long)} — Fyers CE/PE symbols and current
-     *  LTPs at the requested strikes. Strangle entry uses this to look up the OTM legs once
-     *  the ATM has been chosen by {@link #select(double)}. */
-    public record StrikeSymbols(
-        long   callStrike,
-        long   putStrike,
-        String ceSymbol,
-        String peSymbol,
-        double ceLtp,
-        double peLtp,
-        long   resolvedCallStrike,   // == callStrike when found; nearest available when not
-        long   resolvedPutStrike     // == putStrike  when found; nearest available when not
-    ) {}
-
-    /** Fetch the option chain once and look up CE+PE symbols at the requested call/put
-     *  strikes — used by ShortStrangle for its OTM legs. When the exact requested strike
-     *  is not present in the chain (typical for far-OTM in thin sessions), falls back to
-     *  the nearest available strike on the relevant side; {@link StrikeSymbols#resolvedCallStrike}
-     *  and {@link StrikeSymbols#resolvedPutStrike} carry the actual strike used. Returns
-     *  {@code null} if the chain can't be fetched. */
-    public StrikeSymbols resolveStrikeSymbols(long callStrike, long putStrike) {
+    /**
+     * Pick the strike closest to {@code level} that has BOTH CE and PE quoted, and return its
+     * symbols + LTPs. Used by the Camarilla strategy to translate a pivot level (H3, H4, L3,
+     * L4, ...) into a tradable option pair. Returns {@code null} when the chain is empty or
+     * no quoted strike exists.
+     */
+    public StrikeAtLevel resolveStrikeAtLevel(double level) {
+        if (level <= 0) return null;
         NavigableMap<Long, ChainRow> chain = fetchChain();
         if (chain == null || chain.isEmpty()) return null;
 
-        long resolvedCall = nearestStrikeWithLeg(chain, callStrike, true);
-        long resolvedPut  = nearestStrikeWithLeg(chain, putStrike,  false);
-        if (resolvedCall <= 0 || resolvedPut <= 0) {
-            log.warn("[atm-selector] Could not resolve strike symbols: requested call={} put={}, "
-                + "resolved call={} put={}", callStrike, putStrike, resolvedCall, resolvedPut);
+        long rounded = Math.round(level / (double) STRIKE_STEP) * STRIKE_STEP;
+        long chosen = nearestStrikeWithBothLegs(chain, rounded);
+        if (chosen <= 0) {
+            log.warn("[atm-selector] resolveStrikeAtLevel({}): no quoted strike found", level);
             return null;
         }
-        ChainRow callRow = chain.get(resolvedCall);
-        ChainRow putRow  = chain.get(resolvedPut);
-        return new StrikeSymbols(
-            callStrike, putStrike,
-            callRow.ceSym, putRow.peSym,
-            callRow.ce,    putRow.pe,
-            resolvedCall,  resolvedPut
-        );
+        ChainRow row = chain.get(chosen);
+        return new StrikeAtLevel(level, chosen, row.ceSym, row.peSym, row.ce, row.pe);
     }
 
-    /** Walk the chain and pick: CE strike STRICTLY ABOVE {@code atmStrike} whose CE LTP is
-     *  closest to {@code targetPremium}; PE strike STRICTLY BELOW {@code atmStrike} whose PE
-     *  LTP is closest to {@code targetPremium}. The strict inequality guarantees both legs are
-     *  OTM — the ATM strike itself is excluded so the trade is always a true strangle, never
-     *  collapsing to a straddle when the target premium happens to sit near the ATM premium.
-     *  Strikes with unquoted (zero) LTP or empty symbol are skipped. Returns {@code null} when
-     *  the chain can't be fetched or no quoted OTM strike exists on a side. */
-    public StrikeSymbols resolveStrikeSymbolsByPremium(long atmStrike, double targetPremium) {
-        if (targetPremium <= 0) return null;
-        NavigableMap<Long, ChainRow> chain = fetchChain();
-        if (chain == null || chain.isEmpty()) return null;
-
-        long bestCallStrike = 0;
-        double bestCallDiff = Double.MAX_VALUE;
-        long bestPutStrike = 0;
-        double bestPutDiff = Double.MAX_VALUE;
-
-        for (java.util.Map.Entry<Long, ChainRow> e : chain.entrySet()) {
-            long strike = e.getKey();
-            ChainRow row = e.getValue();
-            // CE side — strike STRICTLY above ATM (OTM call), real LTP, real symbol.
-            if (strike > atmStrike && row.ce > 0 && row.ceSym != null && !row.ceSym.isEmpty()) {
-                double diff = Math.abs(row.ce - targetPremium);
-                if (diff < bestCallDiff) { bestCallDiff = diff; bestCallStrike = strike; }
-            }
-            // PE side — strike STRICTLY below ATM (OTM put), real LTP, real symbol.
-            if (strike < atmStrike && row.pe > 0 && row.peSym != null && !row.peSym.isEmpty()) {
-                double diff = Math.abs(row.pe - targetPremium);
-                if (diff < bestPutDiff) { bestPutDiff = diff; bestPutStrike = strike; }
-            }
-        }
-        if (bestCallStrike <= 0 || bestPutStrike <= 0) {
-            log.warn("[atm-selector] premium-based resolution failed: target={} atm={} bestCallStrike={} bestPutStrike={}",
-                targetPremium, atmStrike, bestCallStrike, bestPutStrike);
-            return null;
-        }
-        ChainRow callRow = chain.get(bestCallStrike);
-        ChainRow putRow  = chain.get(bestPutStrike);
-        return new StrikeSymbols(
-            bestCallStrike, bestPutStrike,
-            callRow.ceSym,  putRow.peSym,
-            callRow.ce,     putRow.pe,
-            bestCallStrike, bestPutStrike
-        );
-    }
-
-    /** Walk the chain and pick the OTM CE+PE strikes whose BSM-implied deltas sit closest
-     *  to {@code targetDelta} (a positive decimal — e.g. 0.20 for "20 delta"). Same strict
-     *  OTM rule as {@link #resolveStrikeSymbolsByPremium}: CE side searches strikes ABOVE
-     *  {@code atmStrike}, PE side BELOW. Returns {@code null} when the chain or expiry can't
-     *  be resolved, or no quoted strike yields a positive implied vol on a side.
-     *
-     *  <p>Inverts each leg's LTP → IV via {@link BlackScholes#impliedVol} then plugs that IV
-     *  back into {@link BlackScholes#delta}. {@code spot} drives the BSM input — caller
-     *  passes the live NIFTY LTP (not the rounded ATM) so deltas are calibrated to the
-     *  actual underlying. */
-    public StrikeSymbols resolveStrikeSymbolsByDelta(long atmStrike, double spot, double targetDelta) {
-        if (targetDelta <= 0 || targetDelta >= 1 || spot <= 0) return null;
-        NavigableMap<Long, ChainRow> chain = fetchChain();
-        if (chain == null || chain.isEmpty()) return null;
-
-        double tYears = yearsToExpiryFromChain(chain);
-        if (tYears <= 0) {
-            log.warn("[atm-selector] delta-based resolution: could not resolve T from chain symbols");
-            return null;
-        }
-        double r = BlackScholes.DEFAULT_RISK_FREE_RATE;
-
-        long bestCallStrike = 0;
-        double bestCallDiff = Double.MAX_VALUE;
-        long bestPutStrike  = 0;
-        double bestPutDiff  = Double.MAX_VALUE;
-
-        for (Map.Entry<Long, ChainRow> e : chain.entrySet()) {
-            long strike = e.getKey();
-            ChainRow row = e.getValue();
-            // CE side — strikes STRICTLY above ATM, real symbol + LTP, IV resolves.
-            if (strike > atmStrike && row.ce > 0 && row.ceSym != null && !row.ceSym.isEmpty()) {
-                double iv = BlackScholes.impliedVol(spot, strike, tYears, r, row.ce, true);
-                if (iv > 0) {
-                    double d = BlackScholes.delta(spot, strike, tYears, r, iv, true);
-                    double diff = Math.abs(d - targetDelta);
-                    if (diff < bestCallDiff) { bestCallDiff = diff; bestCallStrike = strike; }
-                }
-            }
-            // PE side — strikes STRICTLY below ATM. PE delta is negative; compare |delta + target|.
-            if (strike < atmStrike && row.pe > 0 && row.peSym != null && !row.peSym.isEmpty()) {
-                double iv = BlackScholes.impliedVol(spot, strike, tYears, r, row.pe, false);
-                if (iv > 0) {
-                    double d = BlackScholes.delta(spot, strike, tYears, r, iv, false);
-                    double diff = Math.abs(d + targetDelta);   // matches |d − (−target)|
-                    if (diff < bestPutDiff) { bestPutDiff = diff; bestPutStrike = strike; }
-                }
-            }
-        }
-        if (bestCallStrike <= 0 || bestPutStrike <= 0) {
-            log.warn("[atm-selector] delta-based resolution failed: target={} atm={} bestCallStrike={} bestPutStrike={}",
-                targetDelta, atmStrike, bestCallStrike, bestPutStrike);
-            return null;
-        }
-        ChainRow callRow = chain.get(bestCallStrike);
-        ChainRow putRow  = chain.get(bestPutStrike);
-        return new StrikeSymbols(
-            bestCallStrike, bestPutStrike,
-            callRow.ceSym,  putRow.peSym,
-            callRow.ce,     putRow.pe,
-            bestCallStrike, bestPutStrike
-        );
-    }
-
-    /** Years to expiry, derived from the first parseable symbol in the chain. Falls back
-     *  to 0 (caller treats as unresolvable). 365-day calendar — NIFTY's convention. */
-    private static double yearsToExpiryFromChain(NavigableMap<Long, ChainRow> chain) {
-        for (ChainRow row : chain.values()) {
-            for (String sym : new String[]{row.ceSym, row.peSym}) {
-                if (sym == null || sym.isEmpty()) continue;
-                String exp = parseExpiryFromSymbol(sym);
-                if (exp.isEmpty()) continue;
-                try {
-                    LocalDate expDate = LocalDate.parse(exp);
-                    long days = ChronoUnit.DAYS.between(LocalDate.now(), expDate);
-                    if (days <= 0) days = 1;   // keep T > 0 on expiry day so BSM stays well-defined
-                    return days / 365.0;
-                } catch (Exception ignored) {}
-            }
-        }
-        return 0;
-    }
-
-    /** Mirror of {@code OptionChainController.parseExpiryFromSymbol} — kept local so the
-     *  selector doesn't reach across packages for an 18-line helper. */
-    private static String parseExpiryFromSymbol(String fyersSymbol) {
-        if (fyersSymbol == null) return "";
-        try {
-            int hash = fyersSymbol.indexOf("NIFTY");
-            if (hash < 0) return "";
-            String tail = fyersSymbol.substring(hash + 5);
-            if (tail.length() < 5) return "";
-            int yr = Integer.parseInt(tail.substring(0, 2));
-            char monthCh = tail.charAt(2);
-            int month;
-            if (monthCh >= '1' && monthCh <= '9') month = monthCh - '0';
-            else if (monthCh == 'O') month = 10;
-            else if (monthCh == 'N') month = 11;
-            else if (monthCh == 'D') month = 12;
-            else return "";
-            int day = Integer.parseInt(tail.substring(3, 5));
-            return LocalDate.of(2000 + yr, month, day).toString();
-        } catch (Exception e) {
-            return "";
-        }
-    }
-
-    /** Closest strike to {@code requested} that has a non-empty symbol on the requested
-     *  leg side. Scans outward in both directions through the chain map. */
-    private long nearestStrikeWithLeg(NavigableMap<Long, ChainRow> chain, long requested, boolean isCall) {
-        if (chain.containsKey(requested)) {
-            ChainRow row = chain.get(requested);
-            String sym = isCall ? row.ceSym : row.peSym;
-            if (sym != null && !sym.isEmpty()) return requested;
-        }
-        // Walk outward in both directions, choosing the nearer side that has a quoted symbol.
+    /** Walk outward from {@code requested} until we find a strike whose CE AND PE are both
+     *  quoted (non-empty symbol, positive LTP). Returns 0 when none in the chain qualifies. */
+    private long nearestStrikeWithBothLegs(NavigableMap<Long, ChainRow> chain, long requested) {
+        if (chain.containsKey(requested) && isQuoted(chain.get(requested))) return requested;
         Long above = chain.higherKey(requested);
         Long below = chain.lowerKey(requested);
         while (above != null || below != null) {
@@ -320,14 +142,17 @@ public class BalancedAtmSelector {
             } else {
                 candidate = below; below = chain.lowerKey(below);
             }
-            ChainRow row = chain.get(candidate);
-            String sym = isCall ? row.ceSym : row.peSym;
-            if (sym != null && !sym.isEmpty()) return candidate;
+            if (isQuoted(chain.get(candidate))) return candidate;
         }
         return 0;
     }
 
-    // ── Internal ──────────────────────────────────────────────────────────────
+    private static boolean isQuoted(ChainRow row) {
+        if (row == null) return false;
+        return row.ce > 0 && row.pe > 0
+            && row.ceSym != null && !row.ceSym.isEmpty()
+            && row.peSym != null && !row.peSym.isEmpty();
+    }
 
     private static class ChainRow {
         double ce, pe;

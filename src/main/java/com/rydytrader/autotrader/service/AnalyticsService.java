@@ -3,7 +3,6 @@ package com.rydytrader.autotrader.service;
 import com.rydytrader.autotrader.entity.StrategyTradeEntity;
 import com.rydytrader.autotrader.repository.StrategyTradeRepository;
 import com.rydytrader.autotrader.service.strategy.Strategy;
-import com.rydytrader.autotrader.service.strategy.StrategyRegistry;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,17 +49,24 @@ public class AnalyticsService {
 
     private final StrategyTradeRepository tradeRepo;
     private final RiskSettingsStore riskSettings;
-    private final StrategyRegistry strategyRegistry;
+    /** Optional — populated in Commit B once the singleton Camarilla strategy lands.
+     *  In Commit A this provider yields no strategies and the live-today overlay is a no-op. */
+    private final org.springframework.beans.factory.ObjectProvider<Strategy> strategyProvider;
     private final org.springframework.beans.factory.ObjectProvider<com.rydytrader.autotrader.service.ManualTerminalService> manualTerminalProvider;
 
     public AnalyticsService(StrategyTradeRepository tradeRepo,
                             RiskSettingsStore riskSettings,
-                            StrategyRegistry strategyRegistry,
+                            org.springframework.beans.factory.ObjectProvider<Strategy> strategyProvider,
                             org.springframework.beans.factory.ObjectProvider<com.rydytrader.autotrader.service.ManualTerminalService> manualTerminalProvider) {
         this.tradeRepo = tradeRepo;
         this.riskSettings = riskSettings;
-        this.strategyRegistry = strategyRegistry;
+        this.strategyProvider = strategyProvider;
         this.manualTerminalProvider = manualTerminalProvider;
+    }
+
+    /** Returns the single Strategy bean if one is registered, else null. */
+    private Strategy strategy() {
+        return strategyProvider == null ? null : strategyProvider.getIfAvailable();
     }
 
     /** Composite payload — one round-trip serves all four hero tiles, the four detail cards,
@@ -289,22 +295,17 @@ public class AnalyticsService {
         };
         boolean allStrategies = strategyId == null || strategyId.isBlank() || "all".equalsIgnoreCase(strategyId);
 
-        // Build the set of CURRENTLY-enabled strategy ids — analytics ignores trades from any
-        // instance that's been disabled (or soft-deleted, which removes it from the registry).
-        // The set is rebuilt on every analytics call so flipping the enable toggle takes effect
-        // without a restart.
-        java.util.Set<String> enabledIds = new java.util.HashSet<>();
-        if (strategyRegistry != null) {
-            for (Strategy s : strategyRegistry.all()) {
-                if (s.isEnabled()) enabledIds.add(s.id());
-            }
-        }
+        // Singleton strategy now: if the bean exists and is disabled, hide its trades. If the
+        // bean isn't present yet (Commit A intermediate state, before Camarilla lands), keep
+        // every persisted row visible — there's no other source.
+        Strategy strat = strategy();
+        boolean strategyEnabled = strat == null || strat.isEnabled();
 
         List<Trade> out = new ArrayList<>();
         // Persisted rows
         for (StrategyTradeEntity e : tradeRepo.findAllByOrderByClosedAtMillisAsc()) {
             if (!allStrategies && !strategyId.equals(e.getStrategyId())) continue;
-            if (!enabledIds.contains(e.getStrategyId())) continue;
+            if (!strategyEnabled) continue;
             LocalDate d;
             try { d = LocalDate.parse(e.getSessionDate()); }
             catch (Exception ignored) { continue; }
@@ -341,58 +342,51 @@ public class AnalyticsService {
      *  live MTM was then lost). The skip is gone: every strategy is processed and the
      *  OPEN_POSITION_MTM remainder is attributed regardless of persisted history. */
     private void appendLiveTodayTrades(List<Trade> out, String strategyId, LocalDate today) {
-        if (strategyRegistry == null || strategyRegistry.isEmpty()) return;
-        String iso = today.toString();
+        Strategy strat = strategy();
+        if (strat == null || !strat.isEnabled()) return;
         boolean allStrategies = strategyId == null || strategyId.isBlank() || "all".equalsIgnoreCase(strategyId);
-        // Pre-compute today's persisted net + charges per strategy so OPEN_POSITION_MTM only
-        // carries the leftover, never double-counts what's already in straddle_trades.
-        java.util.Map<String, double[]> persistedTodayByStrat = new java.util.HashMap<>();
+        if (!allStrategies && !strat.id().equals(strategyId)) return;
+
+        String iso = today.toString();
+        // Pre-compute today's persisted net + charges so OPEN_POSITION_MTM only carries the
+        // leftover, never double-counts what's already in strategy_trades.
+        double persistedNet = 0, persistedCh = 0;
         for (Trade t : out) {
             if (!iso.equals(t.sessionDate())) continue;
-            double[] sums = persistedTodayByStrat.computeIfAbsent(t.strategyId(), k -> new double[2]);
-            sums[0] += t.netPnl();   // net
-            sums[1] += t.charges();  // charges
+            if (!strat.id().equals(t.strategyId())) continue;
+            persistedNet += t.netPnl();
+            persistedCh  += t.charges();
         }
-        for (Strategy strat : strategyRegistry.all()) {
-            if (!allStrategies && !strat.id().equals(strategyId)) continue;
-            if (!strat.isEnabled()) continue;   // analytics hides disabled instances
-            try {
-                // 1. Today's already-closed events from the strategy's recent-events ring.
-                double addedTodayNet     = 0;
-                double addedTodayCharges = 0;
-                List<Map<String, Object>> live = strat.todayClosedTrades();
-                if (live != null) {
-                    for (Map<String, Object> m : live) {
-                        double gross = asDouble(m.get("grossPnl"));
-                        double ch    = asDouble(m.get("charges"));
-                        double net   = ch != 0 ? gross - ch : gross;
-                        long ts = asLong(m.get("closedAtMillis"));
-                        if (ts == 0) ts = System.currentTimeMillis();
-                        String reason = String.valueOf(m.getOrDefault("closeReason", "OPEN"));
-                        out.add(new Trade(strat.id(), iso, ts, gross, ch, net, reason, 0));
-                        addedTodayNet     += net;
-                        addedTodayCharges += ch;
-                    }
+        try {
+            // 1. Today's already-closed events from the strategy's recent-events ring.
+            double addedTodayNet     = 0;
+            double addedTodayCharges = 0;
+            List<Map<String, Object>> live = strat.todayClosedTrades();
+            if (live != null) {
+                for (Map<String, Object> m : live) {
+                    double gross = asDouble(m.get("grossPnl"));
+                    double ch    = asDouble(m.get("charges"));
+                    double net   = ch != 0 ? gross - ch : gross;
+                    long ts = asLong(m.get("closedAtMillis"));
+                    if (ts == 0) ts = System.currentTimeMillis();
+                    String reason = String.valueOf(m.getOrDefault("closeReason", "OPEN"));
+                    out.add(new Trade(strat.id(), iso, ts, gross, ch, net, reason, 0));
+                    addedTodayNet     += net;
+                    addedTodayCharges += ch;
                 }
-                // 2. Synthetic OPEN_POSITION_MTM row for whatever the strategy's net day P&L
-                //    isn't yet accounted for above OR by today's persisted straddle_trades.
-                //    Carries both the leftover net AND the leftover charges so the per-day
-                //    Charges + Gross numbers in byDate match the strategy's dashboard.
-                double[] persisted    = persistedTodayByStrat.getOrDefault(strat.id(), new double[2]);
-                double persistedNet   = persisted[0];
-                double persistedCh    = persisted[1];
-                double liveNet        = strat.liveNetPnlToday();
-                double liveCharges    = strat.liveChargesToday();
-                double openNet        = liveNet     - persistedNet - addedTodayNet;
-                double openChargesRem = liveCharges - persistedCh  - addedTodayCharges;
-                double openGross      = openNet + openChargesRem;  // net = gross − charges
-                if (Math.abs(openNet) > 0.01 || Math.abs(openChargesRem) > 0.01) {
-                    out.add(new Trade(strat.id(), iso, System.currentTimeMillis(),
-                        openGross, openChargesRem, openNet, OPEN_POSITION_MTM_REASON, 0));
-                }
-            } catch (Exception e) {
-                log.warn("[Analytics] Live today overlay failed for {}: {}", strat.id(), e.getMessage());
             }
+            // 2. Synthetic OPEN_POSITION_MTM row for the leftover live MTM.
+            double liveNet        = strat.liveNetPnlToday();
+            double liveCharges    = strat.liveChargesToday();
+            double openNet        = liveNet     - persistedNet - addedTodayNet;
+            double openChargesRem = liveCharges - persistedCh  - addedTodayCharges;
+            double openGross      = openNet + openChargesRem;
+            if (Math.abs(openNet) > 0.01 || Math.abs(openChargesRem) > 0.01) {
+                out.add(new Trade(strat.id(), iso, System.currentTimeMillis(),
+                    openGross, openChargesRem, openNet, OPEN_POSITION_MTM_REASON, 0));
+            }
+        } catch (Exception e) {
+            log.warn("[Analytics] Live today overlay failed: {}", e.getMessage());
         }
     }
 
@@ -415,16 +409,8 @@ public class AnalyticsService {
     }
 
     private LocalDate currentExpiryStart(LocalDate today) {
-        if (strategyRegistry != null) {
-            for (Strategy s : strategyRegistry.all()) {
-                String exp = s.currentWeeklyExpiry();
-                if (exp == null || exp.isEmpty()) continue;
-                try {
-                    LocalDate expiry = LocalDate.parse(exp);
-                    return expiry.minusDays(7).plusDays(1);
-                } catch (Exception ignored) {}
-            }
-        }
+        // Camarilla doesn't pin to a specific weekly expiry — it trades whatever this week's
+        // weekly is. The "current expiry" period therefore just rolls back 7 days from today.
         return today.minusDays(7);
     }
 

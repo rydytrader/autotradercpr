@@ -5,7 +5,6 @@ import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
 import com.rydytrader.autotrader.service.ManualTerminalService;
 import com.rydytrader.autotrader.service.MarketDataService;
-import com.rydytrader.autotrader.service.strategy.ShortStraddle;
 import com.rydytrader.autotrader.store.TokenStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -98,7 +97,7 @@ public class ManualTerminalController {
                 double ltp = doubleField(row, "ltp", "lp");
                 if ("CE".equalsIgnoreCase(optType)) { pair[0] = sym; ltpPair[0] = ltp; }
                 else if ("PE".equalsIgnoreCase(optType)) { pair[1] = sym; ltpPair[1] = ltp; }
-                String exp = ShortStraddle.parseExpiryFromSymbol(sym);
+                String exp = OptionChainController.parseExpiryFromSymbol(sym);
                 if (!exp.isEmpty()) expirySet.add(exp);
             }
 

@@ -105,42 +105,7 @@
               font-size:0.78rem;letter-spacing:0.10em;color:var(--text-secondary);
               border:1px solid transparent;background:transparent;cursor:pointer;">HOME</a>
     <div style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
-    <div th:if="${not #lists.isEmpty(sidebarStraddles)}"
-         style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;
-                color:var(--text-muted);text-transform:uppercase;text-align:center;
-                width:72px;margin:6px 0 2px;">STRADDLES</div>
-    <th:block th:each="strat,iter : ${sidebarStraddles}">
-        <a th:href="@{${strat.href}}"
-           th:title="${#strings.isEmpty(strat.description) ? strat.displayName : strat.displayName + ' — ' + strat.description}"
-           th:attr="data-nav-key=${strat.id}"
-           class="nav-icon"
-           th:text="${strat.navIcon}"
-           style="display:flex;align-items:center;justify-content:center;width:72px;height:40px;
-                  border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
-                  font-size:0.86rem;color:var(--text-secondary);border:1px solid transparent;
-                  background:transparent;cursor:pointer;letter-spacing:0.06em;white-space:nowrap;
-                  overflow:hidden;text-overflow:ellipsis;padding:0 6px;">C</a>
-        <div th:unless="${iter.last}"
-             style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
-    </th:block>
-    <div th:if="${not #lists.isEmpty(sidebarStrangles)}"
-         style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;
-                color:var(--text-muted);text-transform:uppercase;text-align:center;
-                width:72px;margin:10px 0 2px;">STRANGLES</div>
-    <th:block th:each="strat,iter : ${sidebarStrangles}">
-        <a th:href="@{${strat.href}}"
-           th:title="${#strings.isEmpty(strat.description) ? strat.displayName : strat.displayName + ' — ' + strat.description}"
-           th:attr="data-nav-key=${strat.id}"
-           class="nav-icon"
-           th:text="${strat.navIcon}"
-           style="display:flex;align-items:center;justify-content:center;width:72px;height:40px;
-                  border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
-                  font-size:0.86rem;color:var(--text-secondary);border:1px solid transparent;
-                  background:transparent;cursor:pointer;letter-spacing:0.06em;white-space:nowrap;
-                  overflow:hidden;text-overflow:ellipsis;padding:0 6px;">G</a>
-        <div th:unless="${iter.last}"
-             style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
-    </th:block>
+    <!-- TRADE + CALENDAR nav links land here in Commit B alongside the Camarilla strategy. -->
 </aside>
 <div class="app-main" style="flex:1;min-width:0;margin-left:0;width:auto;">
 <div class="page-wrap">
@@ -886,41 +851,22 @@
                     '<div style="color:var(--accent-red, #f87171);">Failed to load adjustment list.</div>';
             });
 
-        // Fan out per-instance trade fetches for this date — every cycle ends up here so a
-        // multi-restart day shows one row per cycle. Order by closedAtMillis after merge.
-        // Partition the merged list by strategy TYPE (STRADDLE vs STRANGLE) and render each
-        // group into its own section. The type comes from /api/strategies (the type field on
-        // each entry); fall back to STRADDLE if it's missing (older /api/strategies responses).
-        fetch('/api/strategies').then(r => r.json()).then(list => {
-            list = Array.isArray(list) ? list : [];
-            const typeById = {};
-            list.forEach(s => { if (s && s.id) typeById[s.id] = (s.type || 'STRADDLE'); });
-            return Promise.all(list.map(s =>
-                fetch('/api/strategies/' + encodeURIComponent(s.id) + '/trades?date=' + encodeURIComponent(dateStr))
-                    .then(r => r.json()).catch(() => ({ trades: [] }))
-            )).then(perInstance => ({ perInstance: perInstance || [], typeById }));
-        }).then(({ perInstance, typeById }) => {
-            const all = [];
-            perInstance.forEach(r => (r && r.trades || []).forEach(t => all.push(t)));
-            all.sort((a, b) => (a.closedAtMillis || 0) - (b.closedAtMillis || 0));
-
-            const straddleRows = all.filter(t => (typeById[t.strategyId] || 'STRADDLE') === 'STRADDLE');
-            const strangleRows = all.filter(t => (typeById[t.strategyId] || 'STRADDLE') === 'STRANGLE');
-
-            renderStrategyTradeSection(
-                document.getElementById('calDayStraddles'),
-                straddleRows, 'Straddle', 'Straddles');
-            renderStrategyTradeSection(
-                document.getElementById('calDayStrangles'),
-                strangleRows, 'Strangle', 'Strangles');
-        }).catch(() => {
-            ['calDayStraddles', 'calDayStrangles'].forEach(id => {
-                const wrap = document.getElementById(id);
-                if (wrap) wrap.innerHTML =
-                    '<div class="stat-label" style="margin-bottom:8px;">' + (id === 'calDayStraddles' ? 'Straddles' : 'Strangles') + '</div>' +
-                    '<div style="color:var(--accent-red, #f87171);">Failed to load strategy list.</div>';
+        // Fetch the day's trades for the singleton Camarilla strategy. Commit B will populate
+        // both the "camarilla" id and the strategy itself; until then this returns an empty
+        // list and the section just shows the empty-state placeholder.
+        fetch('/api/strategies/camarilla/trades?date=' + encodeURIComponent(dateStr))
+            .then(r => r.ok ? r.json() : { trades: [] })
+            .catch(() => ({ trades: [] }))
+            .then(payload => {
+                const rows = (payload && payload.trades) || [];
+                rows.sort((a, b) => (a.closedAtMillis || 0) - (b.closedAtMillis || 0));
+                renderStrategyTradeSection(
+                    document.getElementById('calDayStraddles'),
+                    rows, 'Camarilla', 'Camarilla');
+                // Strangle section retired — clear it so nothing dangles.
+                const strangleWrap = document.getElementById('calDayStrangles');
+                if (strangleWrap) strangleWrap.innerHTML = '';
             });
-        });
     };
 
     // Render one strategy-type section into its container. {@code singularLabel} is the

@@ -7,8 +7,6 @@ import com.rydytrader.autotrader.service.LoginService;
 import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.OrderEventService;
 import com.rydytrader.autotrader.service.PollingService;
-import com.rydytrader.autotrader.service.strategy.Strategy;
-import com.rydytrader.autotrader.service.strategy.StrategyRegistry;
 import com.rydytrader.autotrader.store.TokenStore;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import jakarta.servlet.http.HttpServletResponse;
@@ -19,9 +17,6 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 @Controller
@@ -36,8 +31,7 @@ public class ViewController {
     private final MarketDataService marketDataService;
     private final OrderEventService orderEventService;
     private final AppUserRepository userRepo;
-    private final PasswordEncoder  passwordEncoder;
-    private final StrategyRegistry  strategyRegistry;
+    private final PasswordEncoder   passwordEncoder;
 
     public ViewController(TokenStore tokenStore,
                            PollingService pollingService,
@@ -46,8 +40,7 @@ public class ViewController {
                            MarketDataService marketDataService,
                            OrderEventService orderEventService,
                            AppUserRepository userRepo,
-                           PasswordEncoder passwordEncoder,
-                           StrategyRegistry strategyRegistry) {
+                           PasswordEncoder passwordEncoder) {
         this.tokenStore        = tokenStore;
         this.pollingService    = pollingService;
         this.loginService      = loginService;
@@ -56,31 +49,6 @@ public class ViewController {
         this.orderEventService = orderEventService;
         this.userRepo          = userRepo;
         this.passwordEncoder   = passwordEncoder;
-        this.strategyRegistry  = strategyRegistry;
-    }
-
-    /** Build the sidebar nav entries from the registry. Used by every page that renders a
-     *  sidebar (dashboard, calendar, analytics home). Each entry has id, displayName, navIcon,
-     *  and href. The "active" entry is decided client-side by matching window.location.pathname.
-     *  {@code navIcon} is the short code so the sidebar chip reads e.g. {@code 9:20} instead of
-     *  the strategy id. */
-    private List<Map<String, Object>> sidebarStrategies() {
-        List<Map<String, Object>> nav = new ArrayList<>();
-        for (Strategy s : strategyRegistry.all()) {
-            // Disabled instances are hidden from the sidebar — they're still listed in the
-            // Straddles tab so the operator can re-enable, view history, etc.
-            if (!s.isEnabled()) continue;
-            Map<String, Object> e = new LinkedHashMap<>();
-            e.put("id", s.id());
-            e.put("displayName", s.displayName());
-            e.put("description", s.description());
-            e.put("shortCode", s.shortCode());
-            e.put("navIcon", s.shortCode());
-            e.put("href", "/strategies/" + s.id());
-            e.put("type", s.strategyType());
-            nav.add(e);
-        }
-        return nav;
     }
 
     // ── ROOT ────────────────────────────────────────────────────────────────
@@ -111,7 +79,6 @@ public class ViewController {
         String token = loginService.generateAccessToken(authCode);
         if (token != null) {
             tokenStore.setAccessToken(token);
-            // Start services in background so redirect happens immediately
             new Thread(() -> {
                 try {
                     pollingService.syncPositionOnce();
@@ -122,8 +89,6 @@ public class ViewController {
                     log.error("Error starting services after Fyers login: {}", e.getMessage());
                 }
             }, "fyers-init").start();
-            // No canonical instance any more — multiple straddles live under /strategies/inst-<n>.
-            // Send the operator to the analytics home to pick from the sidebar.
             return "redirect:/home";
         }
         log.error("Fyers login callback error");
@@ -225,58 +190,16 @@ public class ViewController {
 
     // ── PAGES (all protected by Spring Security — any authenticated user) ──
 
-    /** Analytics Home — capital growth, win rate, equity curve. Period + strategy scope are
-     *  client-side selectors. Per-strategy operational dashboards live at {@code /strategies/{id}}. */
+    /** Analytics Home — capital growth, win rate, equity curve. */
     @GetMapping("/home")
-    public String home(Model model) {
-        addSidebarModel(model);
+    public String home() {
         return "home";
     }
 
-    /** Push the sidebar lists into the model. The full list stays under {@code sidebarStrategies}
-     *  for backwards compat with any third-party templates; the per-type lists drive the
-     *  STRADDLES/STRANGLES section headers (hidden when the matching list is empty). */
-    private void addSidebarModel(Model model) {
-        List<Map<String, Object>> all = sidebarStrategies();
-        List<Map<String, Object>> straddles = new ArrayList<>();
-        List<Map<String, Object>> strangles = new ArrayList<>();
-        for (Map<String, Object> e : all) {
-            Object t = e.get("type");
-            if ("STRANGLE".equals(t)) strangles.add(e); else straddles.add(e);
-        }
-        model.addAttribute("sidebarStrategies", all);
-        model.addAttribute("sidebarStraddles", straddles);
-        model.addAttribute("sidebarStrangles", strangles);
-    }
-
-    /** Per-strategy operational dashboard. Same template (short-straddle.html) for every
-     *  strategy — parameterised by the {@code strategyId} model attribute. Adding a new strategy
-     *  adds a new sidebar icon automatically. */
-    @GetMapping("/strategies/{id}")
-    public String strategyDashboard(@PathVariable String id, Model model) {
-        return renderStrategyDashboard(id, model);
-    }
-
-    private String renderStrategyDashboard(String id, Model model) {
-        Strategy s = strategyRegistry.get(id);
-        if (s == null) {
-            log.warn("Unknown strategy id '{}' — rendering empty dashboard", id);
-        }
-        model.addAttribute("strategyId",          s != null ? s.id() : id);
-        model.addAttribute("strategyDisplayName", s != null ? s.displayName() : id);
-        model.addAttribute("strategyDescription", s != null ? s.description() : "");
-        model.addAttribute("strategyShortCode",   s != null ? s.shortCode() : "");
-        model.addAttribute("strategyType",        s != null ? s.strategyType() : "STRADDLE");
-        addSidebarModel(model);
-        // Pick the per-instance template based on strategy type. Strangle gets its own
-        // template ({@code short-strangle.html}); everything else falls back to the
-        // straddle template.
-        return s != null && "STRANGLE".equals(s.strategyType()) ? "short-strangle" : "short-straddle";
-    }
-
     @GetMapping("/calendar")
-    public String calendar(Model model) {
-        addSidebarModel(model);
+    public String calendar() {
         return "calendar";
     }
+
+    // /trade route added in Commit B alongside the Camarilla strategy.
 }

@@ -94,42 +94,7 @@
               font-size:0.78rem;letter-spacing:0.10em;color:var(--text-secondary);
               border:1px solid transparent;background:transparent;cursor:pointer;">HOME</a>
     <div style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
-    <div th:if="${not #lists.isEmpty(sidebarStraddles)}"
-         style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;
-                color:var(--text-muted);text-transform:uppercase;text-align:center;
-                width:72px;margin:6px 0 2px;">STRADDLES</div>
-    <th:block th:each="strat,iter : ${sidebarStraddles}">
-        <a th:href="@{${strat.href}}"
-           th:title="${#strings.isEmpty(strat.description) ? strat.displayName : strat.displayName + ' — ' + strat.description}"
-           th:attr="data-nav-key=${strat.id}"
-           class="nav-icon"
-           th:text="${strat.navIcon}"
-           style="display:flex;align-items:center;justify-content:center;width:72px;height:40px;
-                  border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
-                  font-size:0.86rem;color:var(--text-secondary);border:1px solid transparent;
-                  background:transparent;cursor:pointer;letter-spacing:0.06em;white-space:nowrap;
-                  overflow:hidden;text-overflow:ellipsis;padding:0 6px;">C</a>
-        <div th:unless="${iter.last}"
-             style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
-    </th:block>
-    <div th:if="${not #lists.isEmpty(sidebarStrangles)}"
-         style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;
-                color:var(--text-muted);text-transform:uppercase;text-align:center;
-                width:72px;margin:10px 0 2px;">STRANGLES</div>
-    <th:block th:each="strat,iter : ${sidebarStrangles}">
-        <a th:href="@{${strat.href}}"
-           th:title="${#strings.isEmpty(strat.description) ? strat.displayName : strat.displayName + ' — ' + strat.description}"
-           th:attr="data-nav-key=${strat.id}"
-           class="nav-icon"
-           th:text="${strat.navIcon}"
-           style="display:flex;align-items:center;justify-content:center;width:72px;height:40px;
-                  border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
-                  font-size:0.86rem;color:var(--text-secondary);border:1px solid transparent;
-                  background:transparent;cursor:pointer;letter-spacing:0.06em;white-space:nowrap;
-                  overflow:hidden;text-overflow:ellipsis;padding:0 6px;">G</a>
-        <div th:unless="${iter.last}"
-             style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
-    </th:block>
+    <!-- TRADE + CALENDAR nav links land here in Commit B alongside the Camarilla strategy. -->
 </aside>
 <div class="app-main" style="flex:1;min-width:0;margin-left:0;width:auto;">
 <div class="page-wrap">
@@ -561,19 +526,9 @@
         return { from: pickedYear + '-01-01', to: pickedYear + '-12-31' };
     }
 
-    // Inject one pill per ENABLED strategy. Disabled instances are hidden from analytics —
-    // their persisted trades are also filtered out server-side by AnalyticsService.
-    fetch('/api/strategies').then(function(r) { return r.json(); }).then(function(arr) {
-        if (!Array.isArray(arr)) return;
-        var host = document.getElementById('strategyPills');
-        arr.filter(function(s) { return s && s.enabled !== false; }).forEach(function(s) {
-            var b = document.createElement('button');
-            b.className = 'scope-pill';
-            b.setAttribute('data-strategy', s.id);
-            b.textContent = (s.displayName || s.id).toUpperCase();
-            host.appendChild(b);
-        });
-    }).catch(function() {});
+    // Strategy-pill injection retired (Commit A) — Camarilla is the only strategy now, so
+    // the scope picker just defaults to "all" and there's nothing to inject. Commit B may
+    // add a single CAMARILLA pill for label parity if needed.
 
     // ── Equity curve chart ───────────────────────────────────────────────────
     var equityChart = null;
