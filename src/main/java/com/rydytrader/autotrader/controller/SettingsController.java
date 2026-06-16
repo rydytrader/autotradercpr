@@ -37,6 +37,7 @@ public class SettingsController {
         result.put("camarillaLotsPerLeg",         riskSettings.getCamarillaLotsPerLeg(effectiveMode));
         result.put("camarillaOrderType",          riskSettings.getCamarillaOrderType(effectiveMode));
         result.put("camarillaTradingStartTime",   riskSettings.getCamarillaTradingStartTime(effectiveMode));
+        result.put("camarillaTradingEndTime",     riskSettings.getCamarillaTradingEndTime(effectiveMode));
         result.put("camarillaSquareOffTime",      riskSettings.getCamarillaSquareOffTime(effectiveMode));
         result.put("camarillaMaxConcurrentPositions", riskSettings.getCamarillaMaxConcurrentPositions(effectiveMode));
         // Money / Risk
@@ -80,6 +81,7 @@ public class SettingsController {
             if (body.containsKey("camarillaLotsPerLeg"))        riskSettings.setCamarillaLotsPerLeg(effectiveMode, Integer.parseInt(body.get("camarillaLotsPerLeg").toString()));
             if (body.containsKey("camarillaOrderType"))         riskSettings.setCamarillaOrderType(effectiveMode, body.get("camarillaOrderType").toString());
             if (body.containsKey("camarillaTradingStartTime"))  riskSettings.setCamarillaTradingStartTime(effectiveMode, body.get("camarillaTradingStartTime").toString());
+            if (body.containsKey("camarillaTradingEndTime"))    riskSettings.setCamarillaTradingEndTime(effectiveMode, body.get("camarillaTradingEndTime").toString());
             if (body.containsKey("camarillaSquareOffTime"))     riskSettings.setCamarillaSquareOffTime(effectiveMode, body.get("camarillaSquareOffTime").toString());
             if (body.containsKey("camarillaMaxConcurrentPositions")) riskSettings.setCamarillaMaxConcurrentPositions(effectiveMode, Integer.parseInt(body.get("camarillaMaxConcurrentPositions").toString()));
             // Money / Risk

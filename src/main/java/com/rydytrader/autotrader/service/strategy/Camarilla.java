@@ -31,10 +31,13 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Camarilla options-selling strategy — monitors ATM CE/PE option price charts (not NIFTY spot).
@@ -66,12 +69,36 @@ public class Camarilla implements Strategy {
      *  confirmation — enough to reject single-tick spikes, fast enough that slippage past the
      *  level stays small. */
     private static final int SL_BREACH_CONFIRM_TICKS = 3;
+    /** NIFTY strike interval — 50 points. */
+    private static final long STRIKE_STEP = 50L;
+    /** Grace window after a 3-min bar close before we resolve the buffer for that bar. All six
+     *  symbols' candles emit inside a single 1-second sample tick at the boundary; 1.5 s gives
+     *  every candidate a chance to land before the tiebreaker runs. */
+    private static final long BAR_PROCESSING_GRACE_MS = 1500L;
+    private static final long THREE_MIN_MS = 3 * 60 * 1000L;
 
     public enum ActiveSetup { H3_REVERSAL, L4_BREAKDOWN }
+
+    /** V2 watchlist role for each monitored option contract. ATM and ITM strikes only check
+     *  L4 breakdown; OTM strikes only check H3 reversal. The role is stored per-symbol in
+     *  {@link State#symbolRole} so re-subscribed positions inherit it across restarts. */
+    public enum WatchRole { ATM_L4, ITM_L4, OTM_H3 }
+
+    /** A buffered entry candidate waiting for end-of-bar tiebreaker selection. */
+    private record EntryCandidate(String symbol, WatchRole role, ActiveSetup setup,
+                                  double targetLevel, double slLevel, Candle candle) {
+        boolean isCe() { return symbol != null && symbol.endsWith("CE"); }
+        boolean isPe() { return symbol != null && symbol.endsWith("PE"); }
+    }
+
+    /** Per-bar candidate buffer. Key = candle.startMillis (the bar's opening tick timestamp).
+     *  Drained by the fast-tick scheduler after {@link #BAR_PROCESSING_GRACE_MS}. */
+    private final Map<Long, List<EntryCandidate>> pendingByBar = new ConcurrentHashMap<>();
 
     private final CamarillaService      camarillaService;
     private final CandleAggregator      candleAggregator;
     private final AtmTracker            atmTracker;
+    private final BalancedAtmSelector   atmSelector;
     private final MarketDataService     marketDataService;
     private final OrderService          orderService;
     private final EventService          eventService;
@@ -86,6 +113,7 @@ public class Camarilla implements Strategy {
     public Camarilla(CamarillaService camarillaService,
                      CandleAggregator candleAggregator,
                      AtmTracker atmTracker,
+                     BalancedAtmSelector atmSelector,
                      MarketDataService marketDataService,
                      OrderService orderService,
                      EventService eventService,
@@ -95,6 +123,7 @@ public class Camarilla implements Strategy {
         this.camarillaService     = camarillaService;
         this.candleAggregator     = candleAggregator;
         this.atmTracker           = atmTracker;
+        this.atmSelector          = atmSelector;
         this.marketDataService    = marketDataService;
         this.orderService         = orderService;
         this.eventService         = eventService;
@@ -208,6 +237,9 @@ public class Camarilla implements Strategy {
 
     @Override
     public void fastSlCheck() {
+        // First: drain any bar-candidate buffers whose grace window has elapsed.
+        drainPendingBars();
+
         // Fast-tick TARGET + SL watcher — fires on the live LTP, not on candle close.
         //   • TARGET: single-tick. As soon as ltp <= targetLevel, close immediately.
         //   • SL:     confirmed over SL_BREACH_CONFIRM_TICKS consecutive polls (~1.5 s) to
@@ -258,31 +290,130 @@ public class Camarilla implements Strategy {
         }
     }
 
-    // ── ATM change handler ──────────────────────────────────────────────────
+    // ── V2 bar-candidate drain + tiebreaker ─────────────────────────────────
+
+    /** Process any bar whose grace window has elapsed. For each bar, group candidates by side
+     *  (CE/PE) and setup, apply the L4 tiebreaker (ATM_L4 preferred over ITM_L4), and fire the
+     *  selected candidate(s). Fired bar entries are removed from the buffer. */
+    private void drainPendingBars() {
+        if (pendingByBar.isEmpty()) return;
+        long now = System.currentTimeMillis();
+        // Iterate via snapshot to allow safe removal.
+        for (Long barStart : new ArrayList<>(pendingByBar.keySet())) {
+            long barCloseDeadline = barStart + THREE_MIN_MS + BAR_PROCESSING_GRACE_MS;
+            if (now < barCloseDeadline) continue;
+            List<EntryCandidate> bar = pendingByBar.remove(barStart);
+            if (bar == null || bar.isEmpty()) continue;
+            processBar(bar);
+        }
+    }
+
+    private void processBar(List<EntryCandidate> bar) {
+        // Group by side × setup. For each (side, setup) combination, pick the winner using the
+        // V2 tiebreaker rule.
+        EntryCandidate ceL4Winner = selectL4Winner(bar, true);   // CE-side L4: prefer ATM over ITM
+        EntryCandidate peL4Winner = selectL4Winner(bar, false);  // PE-side L4: prefer ATM over ITM
+        EntryCandidate ceH3Winner = selectH3Winner(bar, true);   // CE-side H3: only OTM_H3 contributes
+        EntryCandidate peH3Winner = selectH3Winner(bar, false);  // PE-side H3: only OTM_H3 contributes
+
+        // Fire in deterministic order: ATM L4 first (highest-conviction setups), then OTM H3.
+        // canFireNewEntry() inside fire() guards against exceeding the concurrent-positions cap.
+        fireIfPresent(ceL4Winner);
+        fireIfPresent(peL4Winner);
+        fireIfPresent(ceH3Winner);
+        fireIfPresent(peH3Winner);
+    }
+
+    private EntryCandidate selectL4Winner(List<EntryCandidate> bar, boolean ceSide) {
+        EntryCandidate atm = null, itm = null;
+        for (EntryCandidate cand : bar) {
+            if (cand.setup() != ActiveSetup.L4_BREAKDOWN) continue;
+            if (ceSide && !cand.isCe()) continue;
+            if (!ceSide && !cand.isPe()) continue;
+            if (cand.role() == WatchRole.ATM_L4) atm = cand;
+            else if (cand.role() == WatchRole.ITM_L4) itm = cand;
+        }
+        // Tiebreaker: prefer ATM over ITM when both fire on the same side.
+        return atm != null ? atm : itm;
+    }
+
+    private EntryCandidate selectH3Winner(List<EntryCandidate> bar, boolean ceSide) {
+        for (EntryCandidate cand : bar) {
+            if (cand.setup() != ActiveSetup.H3_REVERSAL) continue;
+            if (cand.role() != WatchRole.OTM_H3) continue;
+            if (ceSide && !cand.isCe()) continue;
+            if (!ceSide && !cand.isPe()) continue;
+            return cand;
+        }
+        return null;
+    }
+
+    private void fireIfPresent(EntryCandidate cand) {
+        if (cand == null) return;
+        Object lock = symbolLocks.computeIfAbsent(cand.symbol(), k -> new Object());
+        synchronized (lock) {
+            if (state.openPositions.containsKey(cand.symbol())) return;  // raced — already in trade
+            if (!canFireNewEntry()) return;                              // cap or gate hit
+            fire(cand.symbol(), cand.setup(), cand.targetLevel(), cand.slLevel(), cand.candle());
+        }
+    }
+
+    // ── ATM change handler — V2 watchlist rebalance ─────────────────────────
 
     public synchronized void onAtmChange(AtmTracker.AtmChange ev) {
-        // Subscribe new ATM CE+PE so we start evaluating entries on those charts.
-        if (ev.newCeSym() != null && !ev.newCeSym().isBlank()) {
-            candleAggregator.subscribe(ev.newCeSym(), c -> onCandleClose(ev.newCeSym(), c));
+        long atm = ev.newAtm();
+        if (atm <= 0) return;
+
+        // Resolve the 6-contract V2 watchlist with role assignment:
+        //   ATM strike     → ATM_L4 (both CE and PE only check L4 breakdown)
+        //   ATM − 50 (CE)  → ITM_L4 (CE in-the-money, lower strike)
+        //   ATM + 50 (CE)  → OTM_H3 (CE out-of-the-money, higher strike)
+        //   ATM + 50 (PE)  → ITM_L4 (PE in-the-money, higher strike)
+        //   ATM − 50 (PE)  → OTM_H3 (PE out-of-the-money, lower strike)
+        Map<String, WatchRole> newRoles = new LinkedHashMap<>();
+        BalancedAtmSelector.StrikeAtLevel atmRow  = atmSelector.resolveStrikeAtLevel(atm);
+        BalancedAtmSelector.StrikeAtLevel upRow   = atmSelector.resolveStrikeAtLevel(atm + STRIKE_STEP);
+        BalancedAtmSelector.StrikeAtLevel downRow = atmSelector.resolveStrikeAtLevel(atm - STRIKE_STEP);
+        if (atmRow != null) {
+            if (atmRow.ceSymbol() != null && !atmRow.ceSymbol().isBlank()) newRoles.put(atmRow.ceSymbol(), WatchRole.ATM_L4);
+            if (atmRow.peSymbol() != null && !atmRow.peSymbol().isBlank()) newRoles.put(atmRow.peSymbol(), WatchRole.ATM_L4);
         }
-        if (ev.newPeSym() != null && !ev.newPeSym().isBlank()) {
-            candleAggregator.subscribe(ev.newPeSym(), c -> onCandleClose(ev.newPeSym(), c));
+        if (upRow != null) {
+            // Strike above ATM: CE is OTM, PE is ITM.
+            if (upRow.ceSymbol() != null && !upRow.ceSymbol().isBlank()) newRoles.put(upRow.ceSymbol(), WatchRole.OTM_H3);
+            if (upRow.peSymbol() != null && !upRow.peSymbol().isBlank()) newRoles.put(upRow.peSymbol(), WatchRole.ITM_L4);
         }
-        // Retire old ATM subscriptions IF no open position is parked on them.
-        if (ev.oldCeSym() != null && !ev.oldCeSym().isBlank()
-            && !state.openPositions.containsKey(ev.oldCeSym())) {
-            candleAggregator.unsubscribe(ev.oldCeSym());
+        if (downRow != null) {
+            // Strike below ATM: CE is ITM, PE is OTM.
+            if (downRow.ceSymbol() != null && !downRow.ceSymbol().isBlank()) newRoles.put(downRow.ceSymbol(), WatchRole.ITM_L4);
+            if (downRow.peSymbol() != null && !downRow.peSymbol().isBlank()) newRoles.put(downRow.peSymbol(), WatchRole.OTM_H3);
         }
-        if (ev.oldPeSym() != null && !ev.oldPeSym().isBlank()
-            && !state.openPositions.containsKey(ev.oldPeSym())) {
-            candleAggregator.unsubscribe(ev.oldPeSym());
+        if (newRoles.isEmpty()) {
+            log.warn("[Camarilla] watchlist resolution returned 0 symbols around ATM={}; skipping rebalance", atm);
+            return;
         }
+
+        // Subscribe every new contract — CandleAggregator.subscribe is idempotent per symbol.
+        for (String sym : newRoles.keySet()) {
+            candleAggregator.subscribe(sym, c -> onCandleClose(sym, c));
+        }
+        // Retire any contract from the previous watchlist that's not in the new one AND has no
+        // open position parked on it. Position-bearing symbols stay subscribed so the exit
+        // monitor keeps firing on their candles.
+        Set<String> toRetire = new HashSet<>(state.symbolRole.keySet());
+        toRetire.removeAll(newRoles.keySet());
+        for (String oldSym : toRetire) {
+            if (state.openPositions.containsKey(oldSym)) continue;
+            candleAggregator.unsubscribe(oldSym);
+        }
+        state.symbolRole.clear();
+        state.symbolRole.putAll(newRoles);
+
         // Trigger level warm-up around the new ATM (no-op if already in-flight).
-        camarillaService.warmUpAroundAtm(ev.newAtm());
+        camarillaService.warmUpAroundAtm(atm);
 
         String tag = ev.oldAtm() < 0 ? "boot" : String.valueOf(ev.oldAtm());
-        event("[INFO]", "ATM " + tag + " → " + ev.newAtm()
-            + " (CE=" + ev.newCeSym() + " PE=" + ev.newPeSym() + ")");
+        event("[INFO]", "ATM " + tag + " → " + atm + " — watchlist=" + newRoles.size() + " contracts");
         saveToDisk();
     }
 
@@ -296,42 +427,68 @@ public class Camarilla implements Strategy {
             if (state.doneForDay) return;
 
             // ── Exit check on existing position at this symbol ──
-            // SL and target exits now fire from the fast-tick scheduler (fastSlCheck) — single-
-            // tick target + 3-tick-confirmed SL. The candle-close path is entry-only when a
-            // position is already open: there's nothing for it to do here. Returning early.
+            // SL and target exits fire from the fast-tick scheduler (fastSlCheck) — single-tick
+            // target + 3-tick-confirmed SL. The candle-close path is entry-only when a position
+            // is already open: nothing to do here, return.
             if (state.openPositions.containsKey(symbol)) return;
 
             // ── Entry check at idle on THIS symbol ──
             if (!canFireNewEntry()) return;
             CamarillaLevels lv = camarillaService.getLevels(symbol);
             if (lv == null) {
-                // Warm-up in progress — skip this bar; we'll try again next 5 min.
+                // Warm-up in progress — skip; we'll try again next bar.
                 return;
             }
 
-            // Both setups are always-on and symmetric — break-from-above on the entry bar:
-            //   H3 reversal:  bar touches H3 from above and closes back below.
-            //   L4 breakdown: bar touches L4 from above and closes back below.
-            // The high() requirement protects against firing trivially when today's premium
-            // is structurally below the level (e.g. freshly-shifted strikes with stale yesterday-
-            // anchored levels) — the candle must have actually reached the level on this bar.
-            if (c.isRed() && c.high() >= lv.h3() && c.close() < lv.h3()) {
-                fire(symbol, ActiveSetup.H3_REVERSAL, lv.l3(), lv.h4(), c);
-                return;
+            // V2 setup-by-moneyness routing: each symbol only checks the role-assigned setup.
+            WatchRole role = state.symbolRole.get(symbol);
+            if (role == null) return;  // not in current watchlist; ignore
+
+            EntryCandidate candidate = null;
+            switch (role) {
+                case ATM_L4, ITM_L4 -> {
+                    // L4 breakdown: red bar touches L4 from above and closes back below.
+                    if (c.isRed() && c.high() >= lv.l4() && c.close() < lv.l4()) {
+                        candidate = new EntryCandidate(symbol, role, ActiveSetup.L4_BREAKDOWN,
+                            lv.l5(), lv.l3(), c);
+                    }
+                }
+                case OTM_H3 -> {
+                    // H3 reversion: red bar touches H3 from above and closes back below.
+                    if (c.isRed() && c.high() >= lv.h3() && c.close() < lv.h3()) {
+                        candidate = new EntryCandidate(symbol, role, ActiveSetup.H3_REVERSAL,
+                            lv.l3(), lv.h4(), c);
+                    }
+                }
             }
-            if (c.isRed() && c.high() >= lv.l4() && c.close() < lv.l4()) {
-                fire(symbol, ActiveSetup.L4_BREAKDOWN, lv.l5(), lv.l3(), c);
-            }
+            if (candidate == null) return;
+
+            // Buffer this candidate — the fast scheduler will process the bar's full buffer
+            // after BAR_PROCESSING_GRACE_MS, apply the L4 tiebreaker (prefer ATM over ITM),
+            // and fire the selected candidate(s) per side.
+            pendingByBar
+                .computeIfAbsent(c.startMillis(), k -> new CopyOnWriteArrayList<>())
+                .add(candidate);
         }
     }
 
     private boolean canFireNewEntry() {
+        LocalTime now = ZonedDateTime.now(IST).toLocalTime();
         // Trading-start-time gate: new entries only after this IST clock time.
         String startHhmm = riskSettings.getCamarillaTradingStartTime();
         if (startHhmm != null && !startHhmm.isBlank()) {
             try {
                 LocalTime start = LocalTime.parse(startHhmm);
-                if (ZonedDateTime.now(IST).toLocalTime().isBefore(start)) return false;
+                if (now.isBefore(start)) return false;
+            } catch (Exception ignored) {}
+        }
+        // Trading-end-time gate: no new entries after this IST clock time. Existing positions
+        // keep being managed (target/SL/squareoff continue).
+        String endHhmm = riskSettings.getCamarillaTradingEndTime();
+        if (endHhmm != null && !endHhmm.isBlank()) {
+            try {
+                LocalTime end = LocalTime.parse(endHhmm);
+                if (!now.isBefore(end)) return false;
             } catch (Exception ignored) {}
         }
         int maxConcurrent = riskSettings.getCamarillaMaxConcurrentPositions();
@@ -435,8 +592,8 @@ public class Camarilla implements Strategy {
 
         state.openPositions.remove(symbol);
 
-        // Stop subscribing to this symbol's candles UNLESS it's still the current ATM.
-        if (!symbol.equals(atmTracker.getCurrentCeSym()) && !symbol.equals(atmTracker.getCurrentPeSym())) {
+        // Stop subscribing to this symbol's candles UNLESS it's still in the V2 watchlist.
+        if (!state.symbolRole.containsKey(symbol)) {
             candleAggregator.unsubscribe(symbol);
         }
 
@@ -481,6 +638,9 @@ public class Camarilla implements Strategy {
                 candleAggregator.unsubscribe(sym);
             }
             state.openPositions.clear();
+            // V2: reset the watchlist roles so the new day's first ATM resolution rebuilds them.
+            state.symbolRole.clear();
+            pendingByBar.clear();
             saveToDisk();
         }
     }
@@ -530,8 +690,8 @@ public class Camarilla implements Strategy {
         m.put("tradesToday",       state.tradesToday);
         m.put("consecutiveLosses", state.consecutiveLosses);
         m.put("currentAtm",        atmTracker.getCurrentAtm());
-        m.put("currentAtmCeSym",   atmTracker.getCurrentCeSym());
-        m.put("currentAtmPeSym",   atmTracker.getCurrentPeSym());
+        m.put("watchlistSize",     state.symbolRole.size());
+        m.put("watchlistRoles",    new LinkedHashMap<>(state.symbolRole));
 
         // Open positions list — each row carries its own LTP, MTM, target/SL levels.
         List<Map<String, Object>> rows = new ArrayList<>();
@@ -555,15 +715,11 @@ public class Camarilla implements Strategy {
         }
         m.put("openPositions", rows);
 
-        // Per-symbol levels for monitored symbols (current ATM + any open-position symbols).
+        // Per-symbol levels for the V2 6-contract watchlist + any open-position symbols.
         Map<String, CamarillaLevels> perSymbolLevels = new LinkedHashMap<>();
-        if (!atmTracker.getCurrentCeSym().isEmpty()) {
-            CamarillaLevels lv = camarillaService.getLevels(atmTracker.getCurrentCeSym());
-            if (lv != null) perSymbolLevels.put(atmTracker.getCurrentCeSym(), lv);
-        }
-        if (!atmTracker.getCurrentPeSym().isEmpty()) {
-            CamarillaLevels lv = camarillaService.getLevels(atmTracker.getCurrentPeSym());
-            if (lv != null) perSymbolLevels.put(atmTracker.getCurrentPeSym(), lv);
+        for (String sym : state.symbolRole.keySet()) {
+            CamarillaLevels lv = camarillaService.getLevels(sym);
+            if (lv != null) perSymbolLevels.put(sym, lv);
         }
         for (String sym : state.openPositions.keySet()) {
             if (perSymbolLevels.containsKey(sym)) continue;
@@ -592,6 +748,10 @@ public class Camarilla implements Strategy {
             double spot = marketDataService.getLtp(NIFTY_SYMBOL);
             m.put("niftySpot", round2(spot));
         } catch (Exception ignored) {}
+        try {
+            double vix = marketDataService.getLtp("NSE:INDIAVIX-INDEX");
+            m.put("indiaVix", round2(vix));
+        } catch (Exception ignored) {}
         return m;
     }
 
@@ -606,6 +766,10 @@ public class Camarilla implements Strategy {
         public Map<String, Position> openPositions = new ConcurrentHashMap<>();
         public List<Map<String, Object>> todayClosedTrades = new ArrayList<>();
         public List<Map<String, Object>> recentEvents      = new ArrayList<>();
+
+        // ── V2 watchlist ──────────────────────────────────────────────────────
+        /** Current monitored 6-contract matrix (ATM, ±1 strike, CE+PE) → role mapping. */
+        public Map<String, WatchRole> symbolRole = new ConcurrentHashMap<>();
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

@@ -12,13 +12,22 @@ import java.time.ZonedDateTime;
 import java.util.function.Consumer;
 
 /**
- * Polls NIFTY spot every 5 s during market hours, resolves the spot-based ATM via
- * {@link BalancedAtmSelector} (NIFTY/50 rounded), and emits an event to a registered listener
- * whenever the chosen ATM strike crosses to a different value.
+ * Tracks the spot-based NIFTY ATM with V2 strike-drift discipline.
  *
- * <p>The listener receives an {@link AtmChange} record with the prior ATM, the new ATM,
- * and the corresponding CE/PE symbols on both sides. Listeners are responsible for
- * subscribing/unsubscribing aggregator buckets and updating their own state.
+ * <p>Two scheduled loops:
+ * <ul>
+ *   <li><b>Bootstrap</b> — runs every 30 s until the first valid ATM is resolved
+ *       (typically within seconds of market open). Sets the baseline and fires
+ *       the initial {@link AtmChange} so the strategy can subscribe its 6-contract
+ *       watchlist.</li>
+ *   <li><b>Drift check</b> — runs every 30 minutes during market hours. Computes
+ *       the current ATM and compares to the baseline. Fires an {@link AtmChange}
+ *       only when the new ATM differs from the baseline (i.e., NIFTY drifted past
+ *       a ±1 strike boundary). Strategy re-subscribes around the new ATM.</li>
+ * </ul>
+ *
+ * <p>This matches the V2 spec's "30-Minute Check Loop": stable watchlist for half-
+ * hour windows, no constant churn on minor 50-point oscillations.
  */
 @Service
 public class AtmTracker {
@@ -31,29 +40,42 @@ public class AtmTracker {
     private final BalancedAtmSelector  atmSelector;
 
     private volatile Consumer<AtmChange> listener;
-    private volatile long currentAtm = -1;
-    private volatile String currentCeSym = "";
-    private volatile String currentPeSym = "";
+    private volatile long baselineAtm = -1;
 
     public AtmTracker(MarketDataService marketDataService, BalancedAtmSelector atmSelector) {
         this.marketDataService = marketDataService;
         this.atmSelector       = atmSelector;
     }
 
-    /** Register the single ATM-change listener. The first call's first successful resolution
-     *  fires an {@link AtmChange} with prior fields blank — this signals the listener to
-     *  bootstrap. */
+    /** Register the single ATM-change listener. The first successful resolution
+     *  fires an {@link AtmChange} with {@code oldAtm = -1} — signals the listener
+     *  to bootstrap. */
     public void setListener(Consumer<AtmChange> l) {
         this.listener = l;
     }
 
-    public long getCurrentAtm()        { return currentAtm; }
-    public String getCurrentCeSym()    { return currentCeSym; }
-    public String getCurrentPeSym()    { return currentPeSym; }
+    public long getCurrentAtm() { return baselineAtm; }
 
-    @Scheduled(fixedDelay = 5_000, initialDelay = 8_000)
-    public void tick() {
+    /** Bootstrap loop — fires every 30 s until the first ATM resolution lands.
+     *  After baseline is set, this becomes a no-op. */
+    @Scheduled(fixedDelay = 30_000, initialDelay = 10_000)
+    public void bootstrap() {
+        if (baselineAtm > 0) return;
         if (listener == null) return;
+        tryUpdate();
+    }
+
+    /** Drift check — every 30 minutes during market hours. Fires AtmChange only
+     *  when the resolved ATM has moved past the baseline (the watchlist needs
+     *  rebalancing). */
+    @Scheduled(fixedDelay = 30 * 60_000, initialDelay = 30 * 60_000)
+    public void driftCheck() {
+        if (baselineAtm <= 0) return;        // wait for bootstrap to complete
+        if (listener == null) return;
+        tryUpdate();
+    }
+
+    private void tryUpdate() {
         LocalTime t = ZonedDateTime.now(IST).toLocalTime();
         if (t.isBefore(LocalTime.of(9, 15)) || t.isAfter(LocalTime.of(15, 30))) return;
 
@@ -65,28 +87,22 @@ public class AtmTracker {
         BalancedAtmSelector.AtmSelection sel = atmSelector.select(spot);
         if (sel == null) return;
         long newAtm = sel.chosenAtm();
-        if (newAtm == currentAtm) return;
+        if (newAtm == baselineAtm) return;
 
-        AtmChange ev = new AtmChange(
-            currentAtm, currentCeSym, currentPeSym,
-            newAtm, sel.ceSymbolAtChosen(), sel.peSymbolAtChosen());
-        currentAtm    = newAtm;
-        currentCeSym  = sel.ceSymbolAtChosen();
-        currentPeSym  = sel.peSymbolAtChosen();
+        AtmChange ev = new AtmChange(baselineAtm, newAtm);
+        baselineAtm = newAtm;
         try {
-            log.info("[AtmTracker] ATM shifted {} → {} (CE={} PE={})",
+            log.info("[AtmTracker] ATM {} → {} (drift rebalance)",
                 ev.oldAtm() < 0 ? "(boot)" : String.valueOf(ev.oldAtm()),
-                ev.newAtm(), ev.newCeSym(), ev.newPeSym());
+                ev.newAtm());
             listener.accept(ev);
         } catch (Exception e) {
             log.warn("[AtmTracker] listener threw: {}", e.getMessage());
         }
     }
 
-    /** Payload emitted on every ATM transition. On the first emit, {@code oldAtm} is -1
-     *  and the old-symbol strings are empty — listener should treat that as initial bootstrap. */
-    public record AtmChange(
-        long   oldAtm, String oldCeSym, String oldPeSym,
-        long   newAtm, String newCeSym, String newPeSym
-    ) {}
+    /** ATM transition event. {@code oldAtm = -1} signals initial bootstrap.
+     *  The listener resolves the 6-contract watchlist (ATM, ITM ±1, OTM ±1) from
+     *  the numeric ATM via its own {@link BalancedAtmSelector} usage. */
+    public record AtmChange(long oldAtm, long newAtm) {}
 }

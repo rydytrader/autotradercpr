@@ -22,7 +22,8 @@
                   '<div class="sm-pane" data-pane="camarilla" style="display:none;">' +
                     '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-camarillaLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 75 NIFTY.</div></div>' +
                     '<div class="sm-field"><label>Order Type</label><select id="sm-camarillaOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select></div>' +
-                    '<div class="sm-field"><label>Trading Start Time (HH:mm IST)</label><input type="time" id="sm-camarillaTradingStartTime" step="60"><div class="sm-hint">New entries only fire on 5-min candle closes after this time. Default 09:30. Exits and position management run independently.</div></div>' +
+                    '<div class="sm-field"><label>Trading Start Time (HH:mm IST)</label><input type="time" id="sm-camarillaTradingStartTime" step="60"><div class="sm-hint">New entries only fire on candle closes after this time. Default 09:30. Exits and position management run independently.</div></div>' +
+                    '<div class="sm-field"><label>Trading End Time (HH:mm IST)</label><input type="time" id="sm-camarillaTradingEndTime" step="60"><div class="sm-hint">No new entries fire on candle closes after this time. Default 13:30. Existing positions keep running until target / SL / squareoff.</div></div>' +
                     '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-camarillaSquareOffTime" step="60"><div class="sm-hint">Hard exit if neither target nor SL has triggered.</div></div>' +
                     '<div class="sm-field"><label>Max Concurrent Positions</label><input type="number" id="sm-camarillaMaxConcurrentPositions" step="1" min="1" max="20"><div class="sm-hint">Hard cap on simultaneously open shorts across all symbols. Default 4.</div></div>' +
                   '</div>' +
@@ -150,6 +151,7 @@
             if (g('sm-camarillaLotsPerLeg'))        g('sm-camarillaLotsPerLeg').value = d.camarillaLotsPerLeg != null ? d.camarillaLotsPerLeg : 1;
             if (g('sm-camarillaOrderType'))         g('sm-camarillaOrderType').value = d.camarillaOrderType || 'INTRADAY';
             if (g('sm-camarillaTradingStartTime'))  g('sm-camarillaTradingStartTime').value = d.camarillaTradingStartTime || '09:30';
+            if (g('sm-camarillaTradingEndTime'))    g('sm-camarillaTradingEndTime').value = d.camarillaTradingEndTime || '13:30';
             if (g('sm-camarillaSquareOffTime'))     g('sm-camarillaSquareOffTime').value = d.camarillaSquareOffTime || '15:15';
             if (g('sm-camarillaMaxConcurrentPositions')) g('sm-camarillaMaxConcurrentPositions').value = d.camarillaMaxConcurrentPositions != null ? d.camarillaMaxConcurrentPositions : 4;
         }).catch(function() {});
@@ -161,6 +163,7 @@
             camarillaLotsPerLeg:        parseInt(g('sm-camarillaLotsPerLeg').value, 10) || 1,
             camarillaOrderType:         g('sm-camarillaOrderType').value,
             camarillaTradingStartTime:  (g('sm-camarillaTradingStartTime').value || '').trim(),
+            camarillaTradingEndTime:    (g('sm-camarillaTradingEndTime').value || '').trim(),
             camarillaSquareOffTime:     (g('sm-camarillaSquareOffTime').value || '').trim(),
             camarillaMaxConcurrentPositions: parseInt(g('sm-camarillaMaxConcurrentPositions').value, 10) || 4
         };

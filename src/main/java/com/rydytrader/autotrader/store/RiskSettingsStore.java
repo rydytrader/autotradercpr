@@ -37,6 +37,7 @@ public class RiskSettingsStore {
         volatile int     camarillaLotsPerLeg      = 1;       // 1 lot = 75 NIFTY
         volatile String  camarillaOrderType       = "INTRADAY"; // INTRADAY | OVERNIGHT
         volatile String  camarillaTradingStartTime = "09:30"; // signals fire only after this time (IST)
+        volatile String  camarillaTradingEndTime   = "13:30"; // no new signals after this time (IST); exits keep running
         volatile String  camarillaSquareOffTime   = "15:15";
         volatile int     camarillaMaxConcurrentPositions = 4; // hard cap on simultaneously-open positions
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
@@ -393,6 +394,7 @@ public class RiskSettingsStore {
     public int     getCamarillaLotsPerLeg()       { return cfg().camarillaLotsPerLeg; }
     public String  getCamarillaOrderType()        { return cfg().camarillaOrderType; }
     public String  getCamarillaTradingStartTime() { return cfg().camarillaTradingStartTime; }
+    public String  getCamarillaTradingEndTime()   { return cfg().camarillaTradingEndTime; }
     public String  getCamarillaSquareOffTime()    { return cfg().camarillaSquareOffTime; }
     public int     getCamarillaMaxConcurrentPositions() { return cfg().camarillaMaxConcurrentPositions; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
@@ -583,6 +585,7 @@ public class RiskSettingsStore {
     public void setCamarillaLotsPerLeg(int v)             { cfg().camarillaLotsPerLeg = Math.max(1, v); }
     public void setCamarillaOrderType(String v)           { cfg().camarillaOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
     public void setCamarillaTradingStartTime(String v)    { cfg().camarillaTradingStartTime = (v == null || v.isBlank()) ? "09:30" : v.trim(); }
+    public void setCamarillaTradingEndTime(String v)      { cfg().camarillaTradingEndTime = (v == null || v.isBlank()) ? "13:30" : v.trim(); }
     public void setCamarillaSquareOffTime(String v)       { cfg().camarillaSquareOffTime = v == null ? "" : v.trim(); }
     public void setCamarillaMaxConcurrentPositions(int v) { cfg().camarillaMaxConcurrentPositions = Math.max(1, v); }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
@@ -687,6 +690,7 @@ public class RiskSettingsStore {
     public int     getCamarillaLotsPerLeg(String mode)        { return cfgFor(mode).camarillaLotsPerLeg; }
     public String  getCamarillaOrderType(String mode)         { return cfgFor(mode).camarillaOrderType; }
     public String  getCamarillaTradingStartTime(String mode)  { return cfgFor(mode).camarillaTradingStartTime; }
+    public String  getCamarillaTradingEndTime(String mode)    { return cfgFor(mode).camarillaTradingEndTime; }
     public String  getCamarillaSquareOffTime(String mode)     { return cfgFor(mode).camarillaSquareOffTime; }
     public int     getCamarillaMaxConcurrentPositions(String mode) { return cfgFor(mode).camarillaMaxConcurrentPositions; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
@@ -716,6 +720,7 @@ public class RiskSettingsStore {
     public void setCamarillaLotsPerLeg(String mode, int v)             { cfgFor(mode).camarillaLotsPerLeg = Math.max(1, v); }
     public void setCamarillaOrderType(String mode, String v)           { cfgFor(mode).camarillaOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
     public void setCamarillaTradingStartTime(String mode, String v)    { cfgFor(mode).camarillaTradingStartTime = (v == null || v.isBlank()) ? "09:30" : v.trim(); }
+    public void setCamarillaTradingEndTime(String mode, String v)      { cfgFor(mode).camarillaTradingEndTime = (v == null || v.isBlank()) ? "13:30" : v.trim(); }
     public void setCamarillaSquareOffTime(String mode, String v)       { cfgFor(mode).camarillaSquareOffTime = v == null ? "" : v.trim(); }
     public void setCamarillaMaxConcurrentPositions(String mode, int v) { cfgFor(mode).camarillaMaxConcurrentPositions = Math.max(1, v); }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
@@ -755,6 +760,7 @@ public class RiskSettingsStore {
             upsert("camarillaLotsPerLeg",       String.valueOf(c.camarillaLotsPerLeg));
             upsert("camarillaOrderType",         c.camarillaOrderType);
             upsert("camarillaTradingStartTime",  c.camarillaTradingStartTime);
+            upsert("camarillaTradingEndTime",    c.camarillaTradingEndTime);
             upsert("camarillaSquareOffTime",     c.camarillaSquareOffTime);
             upsert("camarillaMaxConcurrentPositions", String.valueOf(c.camarillaMaxConcurrentPositions));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
@@ -920,6 +926,7 @@ public class RiskSettingsStore {
                     case "camarillaLotsPerLeg"        -> c.camarillaLotsPerLeg = Integer.parseInt(v);
                     case "camarillaOrderType"         -> c.camarillaOrderType = v;
                     case "camarillaTradingStartTime"  -> c.camarillaTradingStartTime = v;
+                    case "camarillaTradingEndTime"    -> c.camarillaTradingEndTime = v;
                     case "camarillaSquareOffTime"     -> c.camarillaSquareOffTime = v;
                     case "camarillaH3RevEnabled"           -> { /* retired — both setups always on */ }
                     case "camarillaL4BdEnabled"            -> { /* retired — both setups always on */ }

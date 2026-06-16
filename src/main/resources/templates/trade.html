@@ -7,7 +7,7 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/css/shared.css?v=24">
+    <link rel="stylesheet" href="/css/shared.css?v=25">
     <script>
         (function() {
             const t = localStorage.getItem('traderedge-theme') || 'dark';
@@ -82,8 +82,6 @@
         .sev-WARNING { color:var(--accent-amber, #fbbf24); }
         .sev-ERROR   { color:var(--accent-red, #f87171); }
 
-        .footer-row { display:flex; align-items:center; justify-content:center; gap:16px; margin-top:28px; }
-        .footer-note { font-family:var(--font-mono); font-size:0.7rem; color:var(--text-muted); }
     </style>
 </head>
 <body style="margin:0;display:flex;flex-direction:column;min-height:100vh;">
@@ -147,8 +145,8 @@
     <!-- ── Page header (kill switch + squareoff + refresh) ─────────────── -->
     <div class="page-header fade-in" style="margin-bottom:18px;">
         <div>
-            <div class="page-title">Trade</div>
-            <div class="page-subtitle" id="tradeSubtitle">Live Camarilla positions &amp; cycle activity</div>
+            <div class="page-title">Positions</div>
+            <div class="page-subtitle" id="tradeSubtitle">Live market positions &amp; trade activity</div>
         </div>
         <div style="display:flex; gap:10px; align-items:center;">
             <div class="kill-switch-wrap" id="killSwitchWrap">
@@ -159,32 +157,57 @@
                 </label>
             </div>
             <button class="squareoff-btn" id="squareOffBtn" onclick="executeSquareOff()" disabled>⬛ Square Off</button>
-            <a href="/trade" class="refresh-btn" title="Refresh page">⟳</a>
+            <a href="/trade" class="refresh-btn" title="Refresh positions and trade data" style="background:rgba(99,179,237,0.08); border-color:rgba(99,179,237,0.25); color:var(--accent-blue); padding:9px 12px;">⟳</a>
         </div>
     </div>
 
-    <!-- ── Stat grid ────────────────────────────────────────────────────── -->
-    <div class="stat-grid">
-        <div class="stat-card fade-in" style="--accent-color: var(--accent-blue)">
-            <div class="stat-label">Current Side</div>
-            <div class="stat-value" id="statSide">NONE</div>
-            <div class="stat-sub">Active option shorts</div>
+    <!-- ── Four hero stat cards (Open Positions / Net Day P&L / Exposed Risk / Market Clock) ── -->
+    <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:20px;" class="fade-in">
+
+        <!-- Open Positions -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div style="padding:20px 22px; text-align:center;">
+                <div class="stat-label" style="margin-bottom:8px;">Open Positions</div>
+                <div class="stat-value" id="statCount" style="font-size:2rem; color:var(--accent-cyan);">0</div>
+                <div class="stat-sub" style="margin-top:8px;">
+                    Side: <span id="statSide">NONE</span>
+                    <span style="color:var(--border); margin:0 6px;">|</span>
+                    <span style="color:var(--text-muted);" id="statNotional">Notional: ₹0</span>
+                </div>
+            </div>
         </div>
-        <div class="stat-card fade-in" style="--accent-color: var(--accent-cyan)">
-            <div class="stat-label">Open Positions</div>
-            <div class="stat-value" id="statCount">0</div>
-            <div class="stat-sub">Across CE + PE charts</div>
+
+        <!-- Net Day P&L -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div style="padding:20px 22px; text-align:center;">
+                <div class="stat-label" style="margin-bottom:8px;">Net Day P&amp;L</div>
+                <div class="stat-value" id="statPnl" style="font-size:2rem;">—</div>
+                <div class="stat-sub" id="statPnlSub" style="margin-top:8px;">Realized + Unrealized</div>
+            </div>
         </div>
-        <div class="stat-card fade-in" style="--accent-color: var(--accent-green)">
-            <div class="stat-label">Net Day P&amp;L</div>
-            <div class="stat-value" id="statPnl">—</div>
-            <div class="stat-sub" id="statPnlSub">Realized + Unrealized</div>
+
+        <!-- Exposed Risk -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div style="padding:20px 22px; text-align:center;">
+                <div class="stat-label" style="margin-bottom:8px;">Exposed Risk</div>
+                <div class="stat-value" id="exposedRiskVal" style="font-size:2rem; color:#f6ad55;">₹0</div>
+                <div class="stat-sub" style="margin-top:8px;">
+                    Consumed: <span id="consumedRiskVal" style="color:#fc8181;">₹0</span>
+                    <span style="color:var(--text-muted); margin-left:6px;">Budget:</span>
+                    <span id="riskBudgetVal" style="color:#68d391;">—</span>
+                </div>
+            </div>
         </div>
-        <div class="stat-card fade-in" style="--accent-color: var(--accent-yellow)">
-            <div class="stat-label">Last Update</div>
-            <div class="stat-value" id="lastUpdate">—</div>
-            <div class="stat-sub">State poll every 5 s</div>
+
+        <!-- Market Clock -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div style="padding:20px 22px; text-align:center;">
+                <div class="stat-label" style="margin-bottom:8px;">Market Clock</div>
+                <div class="stat-value" id="marketClock" style="font-size:2rem;">—</div>
+                <div class="stat-sub" id="marketClockSub" style="margin-top:8px;">Checking…</div>
+            </div>
         </div>
+
     </div>
 
     <!-- ── Live Positions table ─────────────────────────────────────────── -->
@@ -194,7 +217,11 @@
                 <div class="section-title-dot"></div>
                 Live Positions
             </div>
-            <div style="display:flex; gap:12px; align-items:center;">
+            <div style="display:flex; gap:18px; align-items:center; font-family:var(--font-mono); font-size:0.72rem;">
+                <span style="color:var(--text-muted);">NIFTY <span id="hdrNifty" style="color:var(--text-primary);font-weight:700;">—</span>
+                    <span id="hdrNiftyChg" style="margin-left:4px;color:var(--text-muted);font-weight:600;"></span></span>
+                <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                <span style="color:var(--text-muted);">ATM <span id="hdrAtm" style="color:var(--accent-cyan);font-weight:700;">—</span></span>
                 <select id="posSymbolFilter" onchange="filterPositions()" style="
                     background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
                     border-radius:4px;padding:2px 8px;font-size:0.65rem;font-family:var(--font-mono);
@@ -202,9 +229,6 @@
                     <option value="">All Symbols</option>
                 </select>
                 <span class="section-badge" id="positionsBadge">0 active</span>
-                <span class="section-badge" id="exposedRiskBadge" style="background:rgba(246,173,85,0.10); color:#f6ad55; border-color:rgba(246,173,85,0.25);">Exposed Risk: ₹0</span>
-                <span class="section-badge" id="consumedRiskBadge" style="background:rgba(252,129,129,0.10); color:#fc8181; border-color:rgba(252,129,129,0.25);">Consumed Risk: ₹0</span>
-                <span class="section-badge" id="riskBudgetBadge" style="background:rgba(104,211,145,0.10); color:#68d391; border-color:rgba(104,211,145,0.25);">Risk Budget: ₹0 / ₹0</span>
             </div>
         </div>
         <div class="table-wrap">
@@ -265,9 +289,11 @@
         </div>
     </div>
 
-    <div class="footer-row">
-        <div class="footer-note">© <span id="footerYear"></span> TraderEdge. All rights reserved.</div>
-    </div>
+    <footer class="page-footer">
+        <div class="footer-copy">&copy; <span id="footerYear"></span> TraderEdge. All rights reserved.</div>
+        <div class="footer-author">Built by <strong style="color: var(--text-secondary); margin: 0 4px;">Prabhu Arumugham</strong>
+            <span class="footer-tag">rydytrader</span></div>
+    </footer>
 </div>
 </div>
 
@@ -329,11 +355,60 @@
     function applyState(d) {
         if (!d) return;
         lastState = d;
+        renderHeader(d);
         renderStats(d);
         renderPositions(d);
         renderEvents(d);
         renderKillSwitch(d);
-        document.getElementById('lastUpdate').textContent = fmtTime(Date.now());
+        // (Market Clock card ticks independently on a 1 s interval — see updateMarketClock())
+    }
+
+    function renderHeader(d) {
+        // Initial / fallback render from the camarilla state stream (2 s heartbeat).
+        // After this, the ticker SSE listener takes over for sub-second updates.
+        var nfEl  = document.getElementById('hdrNifty');
+        var vxEl  = document.getElementById('hdrVix');
+        var atmEl = document.getElementById('hdrAtm');
+        if (nfEl)  nfEl.textContent  = d.niftySpot != null ? Number(d.niftySpot).toFixed(2) : '—';
+        if (vxEl)  vxEl.textContent  = d.indiaVix  != null ? Number(d.indiaVix).toFixed(2)  : '—';
+        if (atmEl) atmEl.textContent = d.currentAtm != null && d.currentAtm > 0 ? String(d.currentAtm) : '—';
+    }
+
+    // ── Tick-level NIFTY / VIX / ATM updates via the shared ticker SSE ─────
+    function setNiftyHeader(lp, ch, chp) {
+        var nfEl  = document.getElementById('hdrNifty');
+        var chgEl = document.getElementById('hdrNiftyChg');
+        var atmEl = document.getElementById('hdrAtm');
+        if (nfEl)  nfEl.textContent = Number(lp).toFixed(2);
+        if (atmEl) atmEl.textContent = String(Math.round(lp / 50) * 50);
+        if (chgEl) {
+            var arrow = ch >= 0 ? '▲' : '▼';
+            chgEl.textContent = arrow + ' ' + Math.abs(ch).toFixed(2) + ' (' + Math.abs(chp).toFixed(2) + '%)';
+            chgEl.style.color = ch >= 0 ? 'var(--accent-green,#34d399)' : 'var(--accent-red,#f87171)';
+        }
+    }
+    function setVixHeader(lp) {
+        var vxEl = document.getElementById('hdrVix');
+        if (vxEl) vxEl.textContent = Number(lp).toFixed(2);
+    }
+    function attachTickerHeaderUpdates() {
+        var src = window.__tickerSSE;
+        if (!src) { setTimeout(attachTickerHeaderUpdates, 500); return; }
+        src.addEventListener('ticker', function(ev) {
+            try {
+                var arr = JSON.parse(ev.data);
+                if (!arr || !arr.length) return;
+                for (var i = 0; i < arr.length; i++) {
+                    var t = arr[i];
+                    var key = t.fullSymbol || t.symbol || '';
+                    if (key === 'NSE:NIFTY50-INDEX' || t.symbol === 'Nifty 50') {
+                        setNiftyHeader(t.lp, t.ch, t.chp);
+                    } else if (key === 'NSE:INDIAVIX-INDEX' || t.symbol === 'India VIX') {
+                        setVixHeader(t.lp);
+                    }
+                }
+            } catch (e) {}
+        });
     }
 
     function loadState() {
@@ -380,26 +455,51 @@
 
     function renderStats(d) {
         var positions = d.openPositions || [];
-        // Compute side label
+
+        // ── Open Positions card: count + side + notional ──
         var sides = new Set();
+        var notional = 0;
         positions.forEach(function(p) {
             if (/CE$/.test(p.symbol)) sides.add('CE');
             else if (/PE$/.test(p.symbol)) sides.add('PE');
+            notional += Number(p.entryPrice || 0) * Number(p.qty || 0);
         });
         var sideLabel = positions.length === 0 ? 'NONE'
             : (sides.has('CE') && sides.has('PE') ? 'SHORT CE+PE'
                 : sides.has('CE') ? 'SHORT CE'
                 : sides.has('PE') ? 'SHORT PE' : 'SHORT');
-        document.getElementById('statSide').textContent = sideLabel;
         document.getElementById('statCount').textContent = positions.length;
+        document.getElementById('statSide').textContent = sideLabel;
+        document.getElementById('statNotional').textContent = 'Notional: ' + fmtRs(notional);
 
-        // Net day P&L = sum closed trades' netPnl + sum open MTM (charges baked in by backend)
+        // ── Net Day P&L card ──
         var closed = (d.todayClosedTrades || []).reduce(function(a, b) { return a + Number(b.netPnl || 0); }, 0);
         var openMtm = positions.reduce(function(a, p) { return a + Number(p.mtm || 0); }, 0);
         var net = closed + openMtm;
         var statPnlEl = document.getElementById('statPnl');
         statPnlEl.textContent = fmtRs(net);
         statPnlEl.className = 'stat-value ' + pnlClass(net);
+
+        // ── Exposed Risk card (replaces the section-header badges) ──
+        var risk = d.risk || { exposedRisk: 0, consumedRisk: 0, dailyRiskBudget: 0 };
+        var exposed  = Number(risk.exposedRisk || 0);
+        var consumed = Number(risk.consumedRisk || 0);
+        var budget   = Number(risk.dailyRiskBudget || 0);
+        document.getElementById('exposedRiskVal').textContent  = fmtRs(exposed);
+        document.getElementById('consumedRiskVal').textContent = fmtRs(consumed);
+        var budgetEl = document.getElementById('riskBudgetVal');
+        var used = exposed + consumed;
+        budgetEl.textContent = budget > 0
+            ? (fmtRs(used) + ' / ' + fmtRs(budget))
+            : fmtRs(used);
+        if (budget > 0) {
+            var pct = used / budget;
+            if (pct >= 1)        budgetEl.style.color = '#fc8181';
+            else if (pct >= 0.8) budgetEl.style.color = '#f6ad55';
+            else                 budgetEl.style.color = '#68d391';
+        } else {
+            budgetEl.style.color = 'var(--text-muted)';
+        }
 
         // Disable squareoff when nothing open
         document.getElementById('squareOffBtn').disabled = positions.length === 0;
@@ -440,13 +540,6 @@
         }
 
         document.getElementById('positionsBadge').textContent = positions.length + ' active';
-
-        // Risk badges
-        var risk = d.risk || { exposedRisk: 0, consumedRisk: 0, dailyRiskBudget: 0 };
-        document.getElementById('exposedRiskBadge').textContent  = 'Exposed Risk: ' + fmtRs(risk.exposedRisk);
-        document.getElementById('consumedRiskBadge').textContent = 'Consumed Risk: ' + fmtRs(risk.consumedRisk);
-        var used = Number(risk.exposedRisk || 0) + Number(risk.consumedRisk || 0);
-        document.getElementById('riskBudgetBadge').textContent   = 'Risk Budget: ' + fmtRs(used) + ' / ' + fmtRs(risk.dailyRiskBudget);
     }
 
     function renderEvents(d) {
@@ -492,6 +585,51 @@
         if (lastState) { renderEvents(lastState); }
     }
 
+    // ── Market Clock ────────────────────────────────────────────────────────
+    function isWeekend(d) { var dow = d.getDay(); return dow === 0 || dow === 6; }
+    function nextTradingDay(d) {
+        var nxt = new Date(d.getTime());
+        nxt.setDate(nxt.getDate() + 1);
+        while (isWeekend(nxt)) nxt.setDate(nxt.getDate() + 1);
+        return nxt.toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' });
+    }
+    function updateMarketClock() {
+        var now = new Date();
+        var clockEl = document.getElementById('marketClock');
+        var subEl = document.getElementById('marketClockSub');
+        if (!clockEl || !subEl) return;
+        if (isWeekend(now)) {
+            clockEl.textContent = now.toLocaleTimeString('en-IN', { hour12: false });
+            var dayName = now.getDay() === 0 ? 'Sunday' : 'Saturday';
+            subEl.textContent = dayName + ' — ' + nextTradingDay(now);
+            subEl.style.color = 'var(--accent-red)';
+            return;
+        }
+        var h = now.getHours(), m = now.getMinutes();
+        var mins = h * 60 + m;
+        var preMarket   = 9 * 60;           // 09:00
+        var marketOpen  = 9 * 60 + 15;     // 09:15
+        var marketClose = 15 * 60 + 30;    // 15:30
+        clockEl.textContent = now.toLocaleTimeString('en-IN', { hour12: false });
+        if (mins < preMarket) {
+            var diff = preMarket - mins;
+            var dh = Math.floor(diff / 60), dm = diff % 60;
+            subEl.textContent = 'Pre-market in ' + (dh > 0 ? dh + 'h ' : '') + dm + 'm';
+            subEl.style.color = 'var(--accent-yellow)';
+        } else if (mins < marketOpen) {
+            subEl.textContent = 'Pre-Market (' + (marketOpen - mins) + 'm to open)';
+            subEl.style.color = 'var(--accent-yellow)';
+        } else if (mins < marketClose) {
+            var rem = marketClose - mins;
+            var rh = Math.floor(rem / 60), rm2 = rem % 60;
+            subEl.textContent = 'Market Open (' + rh + 'h ' + rm2 + 'm left)';
+            subEl.style.color = 'var(--accent-green)';
+        } else {
+            subEl.textContent = 'Market Closed — ' + nextTradingDay(now);
+            subEl.style.color = 'var(--accent-red)';
+        }
+    }
+
     // ── Boot ───────────────────────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', function() {
         var yr = document.getElementById('footerYear');
@@ -499,10 +637,13 @@
         // Prime the page immediately, then attach the SSE stream for live updates.
         loadState();
         startStream();
+        updateMarketClock();
+        setInterval(updateMarketClock, 1000);
+        attachTickerHeaderUpdates();
     });
 </script>
-<script src="/js/common.js?v=24"></script>
-<script src="/js/ticker.js?v=24"></script>
-<script src="/js/settings-modal.js?v=24"></script>
+<script src="/js/common.js?v=25"></script>
+<script src="/js/ticker.js?v=25"></script>
+<script src="/js/settings-modal.js?v=25"></script>
 </body>
 </html>
