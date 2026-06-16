@@ -36,13 +36,9 @@ public class SettingsController {
         result.put("camarillaEnabled",            riskSettings.isCamarillaEnabled(effectiveMode));
         result.put("camarillaLotsPerLeg",         riskSettings.getCamarillaLotsPerLeg(effectiveMode));
         result.put("camarillaOrderType",          riskSettings.getCamarillaOrderType(effectiveMode));
+        result.put("camarillaTradingStartTime",   riskSettings.getCamarillaTradingStartTime(effectiveMode));
         result.put("camarillaSquareOffTime",      riskSettings.getCamarillaSquareOffTime(effectiveMode));
-        result.put("camarillaH3RevEnabled",       riskSettings.isCamarillaH3RevEnabled(effectiveMode));
-        result.put("camarillaL3RevEnabled",       riskSettings.isCamarillaL3RevEnabled(effectiveMode));
-        result.put("camarillaH4BoEnabled",        riskSettings.isCamarillaH4BoEnabled(effectiveMode));
-        result.put("camarillaL4BdEnabled",        riskSettings.isCamarillaL4BdEnabled(effectiveMode));
-        result.put("camarillaMaxTradesPerDay",    riskSettings.getCamarillaMaxTradesPerDay(effectiveMode));
-        result.put("camarillaPauseAfterNLosses",  riskSettings.getCamarillaPauseAfterNLosses(effectiveMode));
+        result.put("camarillaMaxConcurrentPositions", riskSettings.getCamarillaMaxConcurrentPositions(effectiveMode));
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
         result.put("maxRiskPerDayPct",    riskSettings.getMaxRiskPerDayPct(effectiveMode));
@@ -83,13 +79,9 @@ public class SettingsController {
             if (body.containsKey("camarillaEnabled"))           riskSettings.setCamarillaEnabled(effectiveMode, Boolean.parseBoolean(body.get("camarillaEnabled").toString()));
             if (body.containsKey("camarillaLotsPerLeg"))        riskSettings.setCamarillaLotsPerLeg(effectiveMode, Integer.parseInt(body.get("camarillaLotsPerLeg").toString()));
             if (body.containsKey("camarillaOrderType"))         riskSettings.setCamarillaOrderType(effectiveMode, body.get("camarillaOrderType").toString());
+            if (body.containsKey("camarillaTradingStartTime"))  riskSettings.setCamarillaTradingStartTime(effectiveMode, body.get("camarillaTradingStartTime").toString());
             if (body.containsKey("camarillaSquareOffTime"))     riskSettings.setCamarillaSquareOffTime(effectiveMode, body.get("camarillaSquareOffTime").toString());
-            if (body.containsKey("camarillaH3RevEnabled"))      riskSettings.setCamarillaH3RevEnabled(effectiveMode, Boolean.parseBoolean(body.get("camarillaH3RevEnabled").toString()));
-            if (body.containsKey("camarillaL3RevEnabled"))      riskSettings.setCamarillaL3RevEnabled(effectiveMode, Boolean.parseBoolean(body.get("camarillaL3RevEnabled").toString()));
-            if (body.containsKey("camarillaH4BoEnabled"))       riskSettings.setCamarillaH4BoEnabled(effectiveMode, Boolean.parseBoolean(body.get("camarillaH4BoEnabled").toString()));
-            if (body.containsKey("camarillaL4BdEnabled"))       riskSettings.setCamarillaL4BdEnabled(effectiveMode, Boolean.parseBoolean(body.get("camarillaL4BdEnabled").toString()));
-            if (body.containsKey("camarillaMaxTradesPerDay"))   riskSettings.setCamarillaMaxTradesPerDay(effectiveMode, Integer.parseInt(body.get("camarillaMaxTradesPerDay").toString()));
-            if (body.containsKey("camarillaPauseAfterNLosses")) riskSettings.setCamarillaPauseAfterNLosses(effectiveMode, Integer.parseInt(body.get("camarillaPauseAfterNLosses").toString()));
+            if (body.containsKey("camarillaMaxConcurrentPositions")) riskSettings.setCamarillaMaxConcurrentPositions(effectiveMode, Integer.parseInt(body.get("camarillaMaxConcurrentPositions").toString()));
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
             if (body.containsKey("maxRiskPerDayPct"))  riskSettings.setMaxRiskPerDayPct(effectiveMode, Double.parseDouble(body.get("maxRiskPerDayPct").toString()));

@@ -82,7 +82,6 @@
             <div class="ticker-track" id="tickerTrack"></div>
         </div>
         <div class="nav-right">
-            <button class="theme-toggle" id="calBtn" title="Calendar" onclick="window.location.href='/calendar'" style="font-size:1rem;">▦</button>
             <button class="theme-toggle" id="settingsBtn" title="Settings" onclick="SettingsModal.open()" style="font-size:1rem;">⚙</button>
             <button class="theme-toggle" id="chainBtn" title="Options Chain" onclick="OptionChainModal.open()" style="font-size:1rem;">⊞</button>
             <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
@@ -95,27 +94,34 @@
 <aside class="strategy-nav-aside"
        style="width:96px;flex-shrink:0;background:var(--navbar-bg);backdrop-filter:blur(16px);
               border-right:1px solid var(--border);
-              display:flex;flex-direction:column;align-items:center;padding:18px 8px 0;gap:10px;">
+              display:flex;flex-direction:column;align-items:center;padding:20px 6px 28px;gap:14px;">
     <div style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;
                 color:var(--text-muted);text-transform:uppercase;text-align:center;
-                width:72px;margin:2px 0 4px;">MAIN</div>
+                width:78px;margin:0 0 4px;">MENU</div>
     <a href="/home" class="nav-icon" title="Home" data-nav-key="home"
-       style="display:flex;align-items:center;justify-content:center;width:72px;height:34px;
-              border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
-              font-size:0.78rem;letter-spacing:0.10em;color:var(--text-secondary);
-              border:1px solid transparent;background:transparent;cursor:pointer;">HOME</a>
-    <div style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
-    <a href="/trade" class="nav-icon" title="Trade" data-nav-key="trade"
-       style="display:flex;align-items:center;justify-content:center;width:72px;height:34px;
-              border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
-              font-size:0.78rem;letter-spacing:0.10em;color:var(--text-secondary);
-              border:1px solid transparent;background:transparent;cursor:pointer;">TRADE</a>
-    <div style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
+       style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+              width:78px;padding:14px 6px 10px;gap:6px;
+              border-radius:14px;text-decoration:none;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">
+        <span style="font-size:1.75rem;line-height:1;">◉</span>
+        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">HOME</span>
+    </a>
+    <a href="/trade" class="nav-icon" title="Positions" data-nav-key="trade"
+       style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+              width:78px;padding:14px 6px 10px;gap:6px;
+              border-radius:14px;text-decoration:none;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">
+        <span style="font-size:1.75rem;line-height:1;">⬡</span>
+        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">POSITIONS</span>
+    </a>
     <a href="/calendar" class="nav-icon active" title="Calendar" data-nav-key="calendar"
-       style="display:flex;align-items:center;justify-content:center;width:72px;height:34px;
-              border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
-              font-size:0.78rem;letter-spacing:0.10em;color:var(--text-secondary);
-              border:1px solid transparent;background:transparent;cursor:pointer;">CAL</a>
+       style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+              width:78px;padding:14px 6px 10px;gap:6px;
+              border-radius:14px;text-decoration:none;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">
+        <span style="font-size:1.75rem;line-height:1;">▦</span>
+        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">CALENDAR</span>
+    </a>
 </aside>
 <div class="app-main" style="flex:1;min-width:0;margin-left:0;width:auto;">
 <div class="page-wrap">
@@ -123,7 +129,7 @@
     <div class="page-header">
         <div>
             <div class="page-title">Calendar</div>
-            <div class="page-subtitle">Straddle P&L by day, month, and year</div>
+            <div class="page-subtitle">Trade P&L by day, month, and year</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -160,7 +166,7 @@
             </div>
             <div style="display:flex; gap:28px; flex-wrap:wrap;">
                 <div style="text-align:center;">
-                    <div class="stat-label">Straddles</div>
+                    <div class="stat-label">Trades</div>
                     <div class="stat-value" id="heroSessions" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center;">
@@ -193,22 +199,7 @@
                 <div style="text-align:center;">
                     <div class="stat-label">Max DD Days</div>
                     <div class="stat-value" id="heroMaxDrawdownDays" style="font-size:1.1rem; margin-top:4px;"
-                         title="Number of straddles between the equity-curve peak and the trough of the deepest drawdown.">—</div>
-                </div>
-                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;">
-                    <div class="stat-label">0 SL Days</div>
-                    <div class="stat-value" id="heroZeroSlDays" style="font-size:1.1rem; margin-top:4px;"
-                         title="Days where neither leg got stopped — both ran to the timed squareoff.">—</div>
-                </div>
-                <div style="text-align:center;">
-                    <div class="stat-label">1 SL Days</div>
-                    <div class="stat-value" id="heroOneSlDays" style="font-size:1.1rem; margin-top:4px;"
-                         title="Days where exactly one leg got stopped; the surviving leg ran to squareoff.">—</div>
-                </div>
-                <div style="text-align:center;">
-                    <div class="stat-label">2 SL Days</div>
-                    <div class="stat-value" id="heroTwoSlDays" style="font-size:1.1rem; margin-top:4px;"
-                         title="Days where both legs got stopped before squareoff.">—</div>
+                         title="Number of trades between the equity-curve peak and the trough of the deepest drawdown.">—</div>
                 </div>
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;">
                     <div class="stat-label">Avg Monthly %</div>
@@ -263,9 +254,9 @@
     </div>
 </div>
 
-<script src="/js/common.js?v=21"></script>
+<script src="/js/common.js?v=23"></script>
 <script src="/js/ticker.js?v=4"></script>
-<script src="/js/settings-modal.js?v=9"></script>
+<script src="/js/settings-modal.js?v=24"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
 <script>
 (function(){
@@ -475,8 +466,7 @@
      *  → Mar 31 next year. */
     function renderAnalyticsTiles(fromIso, toIso) {
         // Clear while fetching so stale values don't linger across navs.
-        const clearIds = ['heroProfitFactor','heroRiskReward','heroMaxDrawdown','heroMaxDrawdownDays',
-                          'heroZeroSlDays','heroOneSlDays','heroTwoSlDays'];
+        const clearIds = ['heroProfitFactor','heroRiskReward','heroMaxDrawdown','heroMaxDrawdownDays'];
         clearIds.forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '—'; });
         // Pass calendar's includeAdjustments flag so Net P&L + Charges + Return match
         // exactly what the home page shows for the same period.
@@ -769,7 +759,7 @@
             '<div><div class="stat-label">Charges</div><div style="color:var(--text-muted);">' + fmtMoneyFull(straddleCharges) + '</div></div>' +
         '</div>' +
         '<div id="calDayStraddles" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">' +
-            '<div class="stat-label" style="margin-bottom:8px;">Straddles</div>' +
+            '<div class="stat-label" style="margin-bottom:8px;">Trades</div>' +
             '<div style="color:var(--text-muted);">Loading…</div>' +
         '</div>' +
         '<div id="calDayStrangles" style="display:none;"></div>';

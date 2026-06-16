@@ -9,44 +9,55 @@ import org.springframework.stereotype.Service;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.Collections;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 /**
- * Samples the NIFTY LTP from {@link MarketDataService} once per second and rolls samples
- * into 5-minute OHLC buckets. On bucket close (the first sample in a new 5-min window),
- * the closed candle is emitted to every registered listener.
+ * Samples LTPs for every subscribed Fyers symbol once per second and rolls samples into 5-minute
+ * OHLC buckets per symbol. On bucket close (the first sample in a new 5-min window), the closed
+ * candle is emitted to every listener registered for that symbol.
  *
- * <p>Sampling-based rather than tick-based to avoid wiring a listener API into the existing
- * {@link MarketDataService}. NIFTY index ticks at sub-second cadence; a 1 s sample loses
- * almost no information at the OHLC granularity that 5-min candles report.
- *
- * <p>Buckets are anchored on the IST wall clock — 09:15, 09:20, 09:25, … 15:25, 15:30.
- * The aggregator only emits during market hours (09:15 ≤ now ≤ 15:30).
+ * <p>Buckets are anchored on the IST wall clock — 09:15, 09:20, 09:25, … 15:25, 15:30 — and only
+ * emitted during market hours (09:15 ≤ now ≤ 15:30).
  */
 @Service
 public class CandleAggregator {
 
     private static final Logger log = LoggerFactory.getLogger(CandleAggregator.class);
-    private static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final int BUCKET_MINUTES = 5;
 
     private final MarketDataService marketDataService;
-    private final CopyOnWriteArrayList<Consumer<Candle>> listeners = new CopyOnWriteArrayList<>();
 
-    // Current open bucket
-    private int currentBucketMinute = -1;  // minutes-of-day for bucket start, -1 = none
-    private long currentBucketStartMs = 0;
-    private double openPx = 0, highPx = 0, lowPx = 0, closePx = 0;
+    private final Map<String, Bucket> bucketBySymbol = new ConcurrentHashMap<>();
+    private final Map<String, CopyOnWriteArrayList<Consumer<Candle>>> listenersBySymbol = new ConcurrentHashMap<>();
 
     public CandleAggregator(MarketDataService marketDataService) {
         this.marketDataService = marketDataService;
     }
 
-    /** Register a callback fired exactly once per 5-min candle close. */
-    public void onCandleClose(Consumer<Candle> listener) {
-        if (listener != null) listeners.add(listener);
+    /** Subscribe to 5-min candle closes on {@code symbol}. The symbol is also added to the
+     *  Fyers market-data feed if it isn't already streaming. Multiple subscribers per symbol
+     *  are allowed; each gets called on every close. */
+    public void subscribe(String symbol, Consumer<Candle> listener) {
+        if (symbol == null || symbol.isBlank() || listener == null) return;
+        listenersBySymbol
+            .computeIfAbsent(symbol, k -> new CopyOnWriteArrayList<>())
+            .add(listener);
+        try { marketDataService.subscribeAdditional(Collections.singletonList(symbol)); }
+        catch (Exception ignored) {}
+    }
+
+    /** Stop emitting candles for {@code symbol}. Drops every listener and the in-flight bucket.
+     *  The Fyers market-data subscription is NOT cancelled here — the caller can rely on the
+     *  existing position/strategy logic to manage the underlying WS subscription. */
+    public void unsubscribe(String symbol) {
+        if (symbol == null || symbol.isBlank()) return;
+        listenersBySymbol.remove(symbol);
+        bucketBySymbol.remove(symbol);
     }
 
     @Scheduled(fixedDelay = 1000, initialDelay = 5000)
@@ -54,68 +65,87 @@ public class CandleAggregator {
         ZonedDateTime nowIst = ZonedDateTime.now(IST);
         LocalTime t = nowIst.toLocalTime();
         if (t.isBefore(LocalTime.of(9, 15)) || t.isAfter(LocalTime.of(15, 31))) {
-            // outside market hours — flush any straggler bucket
-            if (currentBucketMinute >= 0) closeAndReset();
+            // outside market hours — flush any straggler buckets
+            for (Map.Entry<String, Bucket> e : bucketBySymbol.entrySet()) {
+                Bucket b = e.getValue();
+                if (b.currentBucketMinute >= 0) {
+                    emitClosed(e.getKey(), b);
+                    b.reset();
+                }
+            }
             return;
         }
-
-        double ltp;
-        try { ltp = marketDataService.getLtp(NIFTY_SYMBOL); }
-        catch (Exception e) { return; }
-        if (ltp <= 0) return;
 
         int minuteOfDay = t.getHour() * 60 + t.getMinute();
         int bucketStart = (minuteOfDay / BUCKET_MINUTES) * BUCKET_MINUTES;
 
-        if (currentBucketMinute < 0) {
-            // First sample of the day — open a new bucket without emitting anything.
-            startBucket(bucketStart, ltp, nowIst);
-            return;
+        for (String symbol : listenersBySymbol.keySet()) {
+            double ltp;
+            try { ltp = marketDataService.getLtp(symbol); }
+            catch (Exception e) { continue; }
+            if (ltp <= 0) continue;
+
+            Bucket b = bucketBySymbol.computeIfAbsent(symbol, k -> new Bucket());
+
+            if (b.currentBucketMinute < 0) {
+                // First sample for this symbol — open a bucket without emitting anything.
+                b.start(bucketStart, ltp, nowIst);
+                continue;
+            }
+            if (bucketStart != b.currentBucketMinute) {
+                // Rolled over — close current bucket for THIS symbol, fire listeners, start fresh.
+                emitClosed(symbol, b);
+                b.start(bucketStart, ltp, nowIst);
+                continue;
+            }
+            // Same bucket — update OHLC.
+            if (ltp > b.highPx) b.highPx = ltp;
+            if (ltp < b.lowPx)  b.lowPx  = ltp;
+            b.closePx = ltp;
         }
-        if (bucketStart != currentBucketMinute) {
-            // Rolled over — close the current bucket, fire listeners, start fresh.
-            emitClosed();
-            startBucket(bucketStart, ltp, nowIst);
-            return;
-        }
-        // Same bucket — update OHLC.
-        if (ltp > highPx) highPx = ltp;
-        if (ltp < lowPx)  lowPx  = ltp;
-        closePx = ltp;
     }
 
-    private void startBucket(int bucketStart, double ltp, ZonedDateTime nowIst) {
-        currentBucketMinute  = bucketStart;
-        ZonedDateTime bucketStartTime = nowIst.withHour(bucketStart / 60)
-            .withMinute(bucketStart % 60)
-            .withSecond(0)
-            .withNano(0);
-        currentBucketStartMs = bucketStartTime.toInstant().toEpochMilli();
-        openPx  = ltp;
-        highPx  = ltp;
-        lowPx   = ltp;
-        closePx = ltp;
-    }
-
-    private void emitClosed() {
+    private void emitClosed(String symbol, Bucket b) {
         Candle c = new Candle(
-            round(openPx), round(highPx), round(lowPx), round(closePx), 0L, currentBucketStartMs);
-        log.info("[CandleAggregator] 5-min close — o={} h={} l={} c={} startMs={}",
-            c.open(), c.high(), c.low(), c.close(), c.startMillis());
-        for (Consumer<Candle> l : listeners) {
+            round(b.openPx), round(b.highPx), round(b.lowPx), round(b.closePx),
+            0L, b.currentBucketStartMs);
+        log.info("[CandleAggregator] {} 5-min close — o={} h={} l={} c={} startMs={}",
+            symbol, c.open(), c.high(), c.low(), c.close(), c.startMillis());
+        CopyOnWriteArrayList<Consumer<Candle>> ls = listenersBySymbol.get(symbol);
+        if (ls == null) return;
+        for (Consumer<Candle> l : ls) {
             try { l.accept(c); }
-            catch (Exception e) { log.warn("[CandleAggregator] listener threw: {}", e.getMessage()); }
+            catch (Exception e) { log.warn("[CandleAggregator] {} listener threw: {}", symbol, e.getMessage()); }
         }
-    }
-
-    private void closeAndReset() {
-        emitClosed();
-        currentBucketMinute = -1;
-        currentBucketStartMs = 0;
-        openPx = highPx = lowPx = closePx = 0;
     }
 
     private static double round(double v) {
         return Math.round(v * 100.0) / 100.0;
+    }
+
+    /** Per-symbol bucket state. */
+    private static class Bucket {
+        int currentBucketMinute = -1;
+        long currentBucketStartMs = 0;
+        double openPx = 0, highPx = 0, lowPx = 0, closePx = 0;
+
+        void start(int bucketStart, double ltp, ZonedDateTime nowIst) {
+            currentBucketMinute  = bucketStart;
+            ZonedDateTime bucketStartTime = nowIst.withHour(bucketStart / 60)
+                .withMinute(bucketStart % 60)
+                .withSecond(0)
+                .withNano(0);
+            currentBucketStartMs = bucketStartTime.toInstant().toEpochMilli();
+            openPx  = ltp;
+            highPx  = ltp;
+            lowPx   = ltp;
+            closePx = ltp;
+        }
+
+        void reset() {
+            currentBucketMinute = -1;
+            currentBucketStartMs = 0;
+            openPx = highPx = lowPx = closePx = 0;
+        }
     }
 }

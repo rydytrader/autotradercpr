@@ -20,16 +20,11 @@
                 '<div id="sm-tabstrip" style="display:flex;border-bottom:1px solid var(--border);padding:0 24px;overflow-x:auto;"></div>' +
                 '<div class="sm-body" id="sm-body" style="flex:1;overflow-y:auto;padding:20px 24px;">' +
                   '<div class="sm-pane" data-pane="camarilla" style="display:none;">' +
-                    '<div class="sm-field"><label>Strategy Enabled</label><input type="checkbox" id="sm-camarillaEnabled"><div class="sm-hint">Master switch — when off, no new entries fire on 5-min candle closes. Open positions keep running until manually flattened.</div></div>' +
                     '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-camarillaLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 75 NIFTY.</div></div>' +
                     '<div class="sm-field"><label>Order Type</label><select id="sm-camarillaOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select></div>' +
+                    '<div class="sm-field"><label>Trading Start Time (HH:mm IST)</label><input type="time" id="sm-camarillaTradingStartTime" step="60"><div class="sm-hint">New entries only fire on 5-min candle closes after this time. Default 09:30. Exits and position management run independently.</div></div>' +
                     '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-camarillaSquareOffTime" step="60"><div class="sm-hint">Hard exit if neither target nor SL has triggered.</div></div>' +
-                    '<div class="sm-field"><label>H3 Reversal</label><input type="checkbox" id="sm-camarillaH3RevEnabled"><div class="sm-hint">Sell CE at H3 strike when a 5-min red candle closes below H3 after tagging it.</div></div>' +
-                    '<div class="sm-field"><label>L3 Reversal</label><input type="checkbox" id="sm-camarillaL3RevEnabled"><div class="sm-hint">Sell PE at L3 strike when a 5-min green candle closes above L3 after tagging it.</div></div>' +
-                    '<div class="sm-field"><label>H4 Breakout</label><input type="checkbox" id="sm-camarillaH4BoEnabled"><div class="sm-hint">Sell PE at H4 strike when a 5-min green candle closes above H4.</div></div>' +
-                    '<div class="sm-field"><label>L4 Breakdown</label><input type="checkbox" id="sm-camarillaL4BdEnabled"><div class="sm-hint">Sell CE at L4 strike when a 5-min red candle closes below L4.</div></div>' +
-                    '<div class="sm-field"><label>Max Trades Per Day</label><input type="number" id="sm-camarillaMaxTradesPerDay" step="1" min="0"><div class="sm-hint">0 = unlimited.</div></div>' +
-                    '<div class="sm-field"><label>Pause After N Losses</label><input type="number" id="sm-camarillaPauseAfterNLosses" step="1" min="0"><div class="sm-hint">Stop firing new entries after N consecutive losing trades. 0 = off.</div></div>' +
+                    '<div class="sm-field"><label>Max Concurrent Positions</label><input type="number" id="sm-camarillaMaxConcurrentPositions" step="1" min="1" max="20"><div class="sm-hint">Hard cap on simultaneously open shorts across all symbols. Default 4.</div></div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
                     '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline used by the Home analytics page (capital growth %, equity curve, return %). Default ₹10,00,000.</div></div>' +
@@ -81,8 +76,10 @@
 
         var style = document.createElement('style');
         style.textContent =
-            '.sm-tab { background:transparent;border:none;color:var(--text-secondary);padding:14px 18px;font-family:var(--font-mono);font-size:0.78rem;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap; }' +
-            '.sm-tab.active { color:var(--text-primary);border-bottom-color:var(--accent-cyan); }' +
+            '#sm-tabstrip { scrollbar-width: none; -ms-overflow-style: none; }' +
+            '#sm-tabstrip::-webkit-scrollbar { display: none; height: 0; width: 0; }' +
+            '.sm-tab { background:transparent;border:none;color:var(--text-secondary);padding:14px 18px;font-family:var(--font-mono);font-size:0.78rem;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap; }' +
+            '.sm-tab.active { color:var(--text-primary);border-bottom:2px solid var(--accent-cyan); }' +
             '.sm-tab:hover { color:var(--text-primary); }' +
             '.sm-field { margin-bottom:14px;font-family:var(--font-mono);font-size:0.78rem; }' +
             '.sm-field label { display:block;color:var(--text-muted);font-size:0.7rem;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:6px; }' +
@@ -150,32 +147,22 @@
         fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
             var g = id => document.getElementById(id);
-            if (g('sm-camarillaEnabled'))           g('sm-camarillaEnabled').checked = !!d.camarillaEnabled;
             if (g('sm-camarillaLotsPerLeg'))        g('sm-camarillaLotsPerLeg').value = d.camarillaLotsPerLeg != null ? d.camarillaLotsPerLeg : 1;
             if (g('sm-camarillaOrderType'))         g('sm-camarillaOrderType').value = d.camarillaOrderType || 'INTRADAY';
+            if (g('sm-camarillaTradingStartTime'))  g('sm-camarillaTradingStartTime').value = d.camarillaTradingStartTime || '09:30';
             if (g('sm-camarillaSquareOffTime'))     g('sm-camarillaSquareOffTime').value = d.camarillaSquareOffTime || '15:15';
-            if (g('sm-camarillaH3RevEnabled'))      g('sm-camarillaH3RevEnabled').checked = !!d.camarillaH3RevEnabled;
-            if (g('sm-camarillaL3RevEnabled'))      g('sm-camarillaL3RevEnabled').checked = !!d.camarillaL3RevEnabled;
-            if (g('sm-camarillaH4BoEnabled'))       g('sm-camarillaH4BoEnabled').checked = !!d.camarillaH4BoEnabled;
-            if (g('sm-camarillaL4BdEnabled'))       g('sm-camarillaL4BdEnabled').checked = !!d.camarillaL4BdEnabled;
-            if (g('sm-camarillaMaxTradesPerDay'))   g('sm-camarillaMaxTradesPerDay').value = d.camarillaMaxTradesPerDay != null ? d.camarillaMaxTradesPerDay : 0;
-            if (g('sm-camarillaPauseAfterNLosses')) g('sm-camarillaPauseAfterNLosses').value = d.camarillaPauseAfterNLosses != null ? d.camarillaPauseAfterNLosses : 2;
+            if (g('sm-camarillaMaxConcurrentPositions')) g('sm-camarillaMaxConcurrentPositions').value = d.camarillaMaxConcurrentPositions != null ? d.camarillaMaxConcurrentPositions : 4;
         }).catch(function() {});
     }
 
     function saveCamarillaTab() {
         var g = id => document.getElementById(id);
         var body = {
-            camarillaEnabled:           !!(g('sm-camarillaEnabled') && g('sm-camarillaEnabled').checked),
             camarillaLotsPerLeg:        parseInt(g('sm-camarillaLotsPerLeg').value, 10) || 1,
             camarillaOrderType:         g('sm-camarillaOrderType').value,
+            camarillaTradingStartTime:  (g('sm-camarillaTradingStartTime').value || '').trim(),
             camarillaSquareOffTime:     (g('sm-camarillaSquareOffTime').value || '').trim(),
-            camarillaH3RevEnabled:      !!(g('sm-camarillaH3RevEnabled') && g('sm-camarillaH3RevEnabled').checked),
-            camarillaL3RevEnabled:      !!(g('sm-camarillaL3RevEnabled') && g('sm-camarillaL3RevEnabled').checked),
-            camarillaH4BoEnabled:       !!(g('sm-camarillaH4BoEnabled') && g('sm-camarillaH4BoEnabled').checked),
-            camarillaL4BdEnabled:       !!(g('sm-camarillaL4BdEnabled') && g('sm-camarillaL4BdEnabled').checked),
-            camarillaMaxTradesPerDay:   parseInt(g('sm-camarillaMaxTradesPerDay').value, 10) || 0,
-            camarillaPauseAfterNLosses: parseInt(g('sm-camarillaPauseAfterNLosses').value, 10) || 0
+            camarillaMaxConcurrentPositions: parseInt(g('sm-camarillaMaxConcurrentPositions').value, 10) || 4
         };
         postSettings('/api/settings/risk', body);
     }

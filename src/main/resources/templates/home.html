@@ -71,7 +71,6 @@
             <div class="ticker-track" id="tickerTrack"></div>
         </div>
         <div class="nav-right">
-            <button class="theme-toggle" id="calBtn" title="Calendar" onclick="window.location.href='/calendar'" style="font-size:1rem;">▦</button>
             <button class="theme-toggle" id="settingsBtn" title="Settings" onclick="SettingsModal.open()" style="font-size:1rem;">⚙</button>
             <button class="theme-toggle" id="chainBtn" title="Options Chain" onclick="OptionChainModal.open()" style="font-size:1rem;">⊞</button>
             <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
@@ -84,27 +83,34 @@
 <aside class="strategy-nav-aside"
        style="width:96px;flex-shrink:0;background:var(--navbar-bg);backdrop-filter:blur(16px);
               border-right:1px solid var(--border);
-              display:flex;flex-direction:column;align-items:center;padding:18px 8px 0;gap:10px;">
+              display:flex;flex-direction:column;align-items:center;padding:20px 6px 28px;gap:14px;">
     <div style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;
                 color:var(--text-muted);text-transform:uppercase;text-align:center;
-                width:72px;margin:2px 0 4px;">MAIN</div>
+                width:78px;margin:0 0 4px;">MENU</div>
     <a href="/home" class="nav-icon active" title="Home" data-nav-key="home"
-       style="display:flex;align-items:center;justify-content:center;width:72px;height:34px;
-              border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
-              font-size:0.78rem;letter-spacing:0.10em;color:var(--text-secondary);
-              border:1px solid transparent;background:transparent;cursor:pointer;">HOME</a>
-    <div style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
-    <a href="/trade" class="nav-icon" title="Trade" data-nav-key="trade"
-       style="display:flex;align-items:center;justify-content:center;width:72px;height:34px;
-              border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
-              font-size:0.78rem;letter-spacing:0.10em;color:var(--text-secondary);
-              border:1px solid transparent;background:transparent;cursor:pointer;">TRADE</a>
-    <div style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
+       style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+              width:78px;padding:14px 6px 10px;gap:6px;
+              border-radius:14px;text-decoration:none;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">
+        <span style="font-size:1.75rem;line-height:1;">◉</span>
+        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">HOME</span>
+    </a>
+    <a href="/trade" class="nav-icon" title="Positions" data-nav-key="trade"
+       style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+              width:78px;padding:14px 6px 10px;gap:6px;
+              border-radius:14px;text-decoration:none;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">
+        <span style="font-size:1.75rem;line-height:1;">⬡</span>
+        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">POSITIONS</span>
+    </a>
     <a href="/calendar" class="nav-icon" title="Calendar" data-nav-key="calendar"
-       style="display:flex;align-items:center;justify-content:center;width:72px;height:34px;
-              border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
-              font-size:0.78rem;letter-spacing:0.10em;color:var(--text-secondary);
-              border:1px solid transparent;background:transparent;cursor:pointer;">CAL</a>
+       style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+              width:78px;padding:14px 6px 10px;gap:6px;
+              border-radius:14px;text-decoration:none;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">
+        <span style="font-size:1.75rem;line-height:1;">▦</span>
+        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">CALENDAR</span>
+    </a>
 </aside>
 <div class="app-main" style="flex:1;min-width:0;margin-left:0;width:auto;">
 <div class="page-wrap">
@@ -129,7 +135,6 @@
                 <span class="ah-stat-label" style="font-weight:700;">Period</span>
                 <div class="pill-row" id="periodPills">
                     <button class="scope-pill active" data-period="today"  title="Just today's session(s).">Today</button>
-                    <button class="scope-pill"        data-period="expiry" title="Sessions in the current weekly-options cycle — day after last expiry through today.">Current Expiry</button>
                     <button class="scope-pill"        data-period="mtd" title="Month-to-date — from the 1st of the current calendar month.">MTD</button>
                     <button class="scope-pill"        data-period="ytd" title="Financial year to date — from Apr 1 of the current Indian FY.">YTD</button>
                     <button class="scope-pill"        data-period="all">All Time</button>
@@ -153,13 +158,6 @@
                         title="Clear the year/month picker and go back to the period selection above."
                         style="display:none;">Clear</button>
             </div>
-            <div style="display:flex; align-items:center; gap:12px;">
-                <span class="ah-stat-label" style="font-weight:700;">Strategy</span>
-                <div class="pill-row" id="strategyPills">
-                    <button class="scope-pill active" data-strategy="all">All Strategies</button>
-                    <!-- Strategy-specific pills injected at runtime from /api/strategies -->
-                </div>
-            </div>
         </div>
     </div>
 
@@ -167,7 +165,7 @@
     <div class="section-card fade-in" style="margin-bottom:20px;">
         <div class="section-header">
             <div class="section-title"><div class="section-title-dot"></div> Overview</div>
-            <span class="section-badge" id="ahSessionCount" style="margin-left:auto;">— cycles</span>
+            <span class="section-badge" id="ahSessionCount" style="margin-left:auto;">— trades</span>
         </div>
         <div style="padding:20px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px;">
             <div>
@@ -202,22 +200,7 @@
                 <div style="text-align:center;">
                     <div class="stat-label">Max DD Days</div>
                     <div class="stat-value" id="ahMaxDrawdownDays" style="font-size:1.1rem; margin-top:4px;"
-                         title="Number of straddles between the equity-curve peak and the trough of the deepest drawdown.">—</div>
-                </div>
-                <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
-                    <div class="stat-label">0 SL Days</div>
-                    <div class="stat-value" id="ahZeroSlDays" style="font-size:1.1rem; margin-top:4px;"
-                         title="Days where neither leg got stopped — both ran to the timed squareoff. Full theta-decay outcome.">—</div>
-                </div>
-                <div style="text-align:center;">
-                    <div class="stat-label">1 SL Days</div>
-                    <div class="stat-value" id="ahOneSlDays" style="font-size:1.1rem; margin-top:4px;"
-                         title="Days where exactly one leg got stopped; the surviving leg ran to squareoff.">—</div>
-                </div>
-                <div style="text-align:center;">
-                    <div class="stat-label">2 SL Days</div>
-                    <div class="stat-value" id="ahTwoSlDays" style="font-size:1.1rem; margin-top:4px;"
-                         title="Days where both legs got stopped before squareoff — strong move in both directions.">—</div>
+                         title="Number of trades between the equity-curve peak and the trough of the deepest drawdown.">—</div>
                 </div>
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
                     <div class="stat-label">Avg Monthly %</div>
@@ -233,11 +216,11 @@
         <!-- Straddle Performance -->
         <div class="section-card" style="margin-bottom:0;">
             <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Straddle Performance</div>
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Trade Performance</div>
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;" title="Per straddle, not per day.">Wins / Losses</span>
+                    <span class="stat-label" style="margin:0;" title="Per trade, not per day.">Wins / Losses</span>
                     <span style="font-family:var(--font-mono); font-size:0.95rem; font-weight:700;">
                         <span class="pnl-positive" id="ahWins">0</span>
                         <span style="color:var(--text-muted);"> / </span>
@@ -245,11 +228,11 @@
                     </span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;" title="Average winning straddle net P&L vs average losing straddle.">Avg Win / Loss</span>
+                    <span class="stat-label" style="margin:0;" title="Average winning trade net P&L vs average losing trade.">Avg Win / Loss</span>
                     <span class="stat-value" id="ahAvgWinLoss" style="font-size:0.85rem;">— / —</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;" title="Single best and single worst straddle in scope.">Best / Worst</span>
+                    <span class="stat-label" style="margin:0;" title="Single best and single worst trade in scope.">Best / Worst</span>
                     <span class="stat-value" id="ahBestWorst" style="font-size:0.85rem;">— / —</span>
                 </div>
             </div>
@@ -287,13 +270,37 @@
                     <span class="stat-value" id="ahTotalCharges" style="font-size:1rem;">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Avg per Straddle</span>
+                    <span class="stat-label" style="margin:0;">Avg per Trade</span>
                     <span class="stat-value" id="ahAvgCharges" style="font-size:1rem; color:var(--text-muted);">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;">Charges / Gross %</span>
                     <span class="stat-value" id="ahChargesPct" style="font-size:1rem; color:var(--text-muted);"
                           title="What fraction of gross profit went to brokerage + statutory charges.">—</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Risk-Adjusted Returns -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan, #67e8f9);"></div> Risk-Adjusted Returns</div>
+            </div>
+            <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Expectancy<sup style="display:inline-block; width:11px; height:11px; border-radius:50%; border:1px solid var(--text-muted); color:var(--text-muted); font-size:0.52rem; font-weight:500; font-style:italic; text-transform:lowercase; line-height:9px; text-align:center; cursor:help; font-family:serif; margin-left:4px; vertical-align:super;"
+                              title="Expectancy = (Win Rate × Avg Win) − (Loss Rate × Avg Loss).&#10;Average ₹ profit per trade across wins and losses combined.&#10;>0 strategy makes money over time · =0 break-even · <0 it bleeds.">i</sup></span>
+                    <span class="stat-value" id="ahExpectancy" style="font-size:1rem;">—</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Recovery Factor<sup style="display:inline-block; width:11px; height:11px; border-radius:50%; border:1px solid var(--text-muted); color:var(--text-muted); font-size:0.52rem; font-weight:500; font-style:italic; text-transform:lowercase; line-height:9px; text-align:center; cursor:help; font-family:serif; margin-left:4px; vertical-align:super;"
+                              title="Recovery Factor = total net profit ÷ max drawdown.&#10;How much you've earned relative to the worst pain along the way.&#10;>3 strong · 1–3 acceptable · <1 fragile (one bad streak undoes everything).">i</sup></span>
+                    <span class="stat-value" id="ahRecoveryFactor" style="font-size:1rem;">—</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="stat-label" style="margin:0;">Sharpe Ratio<sup style="display:inline-block; width:11px; height:11px; border-radius:50%; border:1px solid var(--text-muted); color:var(--text-muted); font-size:0.52rem; font-weight:500; font-style:italic; text-transform:lowercase; line-height:9px; text-align:center; cursor:help; font-family:serif; margin-left:4px; vertical-align:super;"
+                              title="Sharpe Ratio (annualised) = avg return ÷ stddev of returns × √250.&#10;Measures how smooth the returns are.&#10;>1.5 excellent · 1.0–1.5 good · 0.5–1.0 mediocre · <0.5 poor.">i</sup></span>
+                    <span class="stat-value" id="ahSharpe" style="font-size:1rem;">—</span>
                 </div>
             </div>
         </div>
@@ -321,9 +328,9 @@
 </div><!-- /app-main -->
 </div><!-- /flex wrapper -->
 
-<script src="/js/common.js?v=21"></script>
+<script src="/js/common.js?v=23"></script>
 <script src="/js/ticker.js?v=4"></script>
-<script src="/js/settings-modal.js?v=9"></script>
+<script src="/js/settings-modal.js?v=24"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
 
 <script>
@@ -414,10 +421,8 @@
         clearPicker(false);
         loadSummary(true);
     });
-    bindPills('strategyPills', function(btn) {
-        currentStrategy = btn.getAttribute('data-strategy');
-        loadSummary(true);
-    });
+    // Strategy selector removed — Camarilla is the only strategy. `currentStrategy = 'all'`
+    // is left untouched so the existing `&strategyId=all` request still resolves backend-side.
 
     // ── Month/Year picker ────────────────────────────────────────────────────
     // Populate the year dropdown from current calendar year going back 5 years. Could be
@@ -600,7 +605,7 @@
             var scEl = document.getElementById('ahSessionCount');
             if (scEl) {
                 var n = d.straddleCount || 0;
-                scEl.textContent = n + ' cycle' + (n === 1 ? '' : 's');
+                scEl.textContent = n + ' trade' + (n === 1 ? '' : 's');
             }
 
             // ── HERO STRIP ─────────────────────────────────────────────────
@@ -612,7 +617,7 @@
                 subEl.textContent = 'Started ' + fmtRs(cap.startingCapital)
                     + ' • ' + sign + fmtRs(cap.totalReturn)
                     + ' (' + fmtPct(cap.totalReturnPct) + ')'
-                    + ' • ' + cyclesN + ' cycle' + (cyclesN === 1 ? '' : 's');
+                    + ' • ' + cyclesN + ' trade' + (cyclesN === 1 ? '' : 's');
             }
             setVal('ahTotalReturn',  fmtRs(cap.totalReturn), cap.totalReturn);
             setVal('ahWinRate',      (perf.winRate != null ? perf.winRate.toFixed(1) : '0') + '%',
@@ -623,20 +628,6 @@
             setVal('ahRiskReward',   rr > 0 ? rr.toFixed(2) : '—', rr - 1);
             setVal('ahMaxDrawdown',  fmtRs(ext.maxDrawdown), ext.maxDrawdown);
             setVal('ahMaxDrawdownDays', String(ext.maxDrawdownDays || 0), -(ext.maxDrawdownDays || 0));
-            // SL-day histogram — 0 SL is "good" (theta day) → green, 1 SL is mixed → amber,
-            // 2 SL is "bad" (whipsaw on both legs) → red. Colors are always applied, even at
-            // 0, so the tiles read consistently rather than only when the metric is non-zero.
-            (function() {
-                var z = Number(ext.zeroSlDays || 0);
-                var o = Number(ext.oneSlDays  || 0);
-                var t = Number(ext.twoSlDays  || 0);
-                var zEl = document.getElementById('ahZeroSlDays');
-                var oEl = document.getElementById('ahOneSlDays');
-                var tEl = document.getElementById('ahTwoSlDays');
-                if (zEl) { zEl.textContent = String(z); zEl.style.color = 'var(--accent-green, #34d399)'; }
-                if (oEl) { oEl.textContent = String(o); oEl.style.color = 'var(--accent-amber, #fbbf24)'; }
-                if (tEl) { tEl.textContent = String(t); tEl.style.color = 'var(--accent-red,   #f87171)'; }
-            })();
             setVal('ahAvgMonthlyPct', fmtPct(cap.avgMonthlyPct), cap.avgMonthlyPct);
 
             // ── DETAIL CARDS — only metrics that aren't already in the hero ─
@@ -663,6 +654,25 @@
             // Use absolute gross (winners only) as the denominator so a net-flat year doesn't divide by ~0.
             var grossWins = Number(ext.avgProfit || 0) * (perf.wins || 0);
             setVal('ahChargesPct', grossWins > 0 ? ((charges / grossWins) * 100).toFixed(1) + '%' : '—');
+
+            // Risk-Adjusted Returns card — all three sourced from edge{} computed by AnalyticsService.edge().
+            var nClosed = numStraddles;
+            // Expectancy: needs ≥ 20 trades to read meaningfully; below that the average is dominated by noise.
+            if (nClosed >= 20) {
+                setVal('ahExpectancy', fmtRs(edge.expectancy || 0), edge.expectancy);
+            } else {
+                setVal('ahExpectancy', '—');
+            }
+            // Recovery Factor: zero / no drawdown means no signal — display a dash.
+            var rf = Number(edge.recoveryFactor || 0);
+            setVal('ahRecoveryFactor', rf > 0 ? rf.toFixed(2) : '—', rf - 1);
+            // Sharpe Ratio: needs ≥ 20 closed trades for stddev to stabilise; below that, dash.
+            if (nClosed >= 20) {
+                var sh = Number(edge.sharpe || 0);
+                setVal('ahSharpe', sh !== 0 ? sh.toFixed(2) : '—', sh - 0.5);
+            } else {
+                setVal('ahSharpe', '—');
+            }
 
             // Equity curve — re-render on first load, on selector change (when
             // loadSummary is called with forceEquity=true), or every 15 minutes. Skipping

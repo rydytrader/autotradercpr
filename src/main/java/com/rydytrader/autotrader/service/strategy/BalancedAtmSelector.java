@@ -16,9 +16,12 @@ import java.util.TreeMap;
  *
  * <p>Two entry points:
  * <ul>
- *   <li>{@link #select(double)} — synthetic-futures ATM via put-call parity. Kept because it's
- *       still useful for any future strategy that wants the truly balanced strike (and because
- *       the chain fetch + parsing is shared with {@link #resolveStrikeAtLevel(double)}).</li>
+ *   <li>{@link #select(double)} — spot-based ATM (NIFTY/50 rounded to nearest). Returns the
+ *       strike's CE + PE symbols and LTPs. The synthetic-futures-via-parity variant was
+ *       retired because the strategy short-sells CE and PE on independent triggers — they
+ *       never fire at the same instant, so put-call premium balance offers no value over
+ *       plain spot rounding. Spot ATM is simpler, matches retail convention, and avoids the
+ *       intra-bar drift that put-call parity introduces.</li>
  *   <li>{@link #resolveStrikeAtLevel(double)} — Camarilla's workhorse: given an arbitrary price
  *       level (H3, H4, L3, L4 etc.), returns the nearest tradable strike along with its CE+PE
  *       symbols and current LTPs.</li>
@@ -68,8 +71,9 @@ public class BalancedAtmSelector {
     ) {}
 
     /**
-     * Compute the synthetic-futures ATM for the given live NIFTY LTP. Returns {@code null}
-     * when the option chain is unavailable or the spot-ATM strike is unquoted.
+     * Spot-based ATM for the given live NIFTY LTP — strike = round(NIFTY / 50). Returns the
+     * strike's CE and PE symbols and current LTPs. Returns {@code null} when the option chain
+     * is unavailable or the ATM strike is unquoted.
      */
     public AtmSelection select(double niftyLtp) {
         if (niftyLtp <= 0) return null;
@@ -85,24 +89,14 @@ public class BalancedAtmSelector {
             return null;
         }
 
-        double forward = spotAtm + (atmRow.ce - atmRow.pe);
-        long   chosen  = Math.round(forward / (double) STRIKE_STEP) * STRIKE_STEP;
-
-        ChainRow chosenRow = chain.get(chosen);
-        if (chosenRow == null || chosenRow.ce <= 0 || chosenRow.pe <= 0) {
-            log.warn("[atm-selector] synthetic strike {} unquoted — falling back to spot-ATM {}",
-                chosen, spotAtm);
-            chosen = spotAtm; chosenRow = atmRow;
-        }
-
         return new AtmSelection(
             spotAtm,
-            chosen,
-            chosenRow.ce,
-            chosenRow.pe,
-            Math.abs(chosenRow.ce - chosenRow.pe),
-            chosenRow.ceSym,
-            chosenRow.peSym
+            spotAtm,                              // chosen == spot (no synthetic adjustment)
+            atmRow.ce,
+            atmRow.pe,
+            Math.abs(atmRow.ce - atmRow.pe),
+            atmRow.ceSym,
+            atmRow.peSym
         );
     }
 

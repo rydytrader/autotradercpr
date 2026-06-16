@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.dto.CamarillaLevels;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
+import com.rydytrader.autotrader.service.strategy.BalancedAtmSelector;
 import com.rydytrader.autotrader.store.TokenStore;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
@@ -19,109 +20,147 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Computes and caches Camarilla pivot levels (H1–H6, L1–L6, PP) for NIFTY each session.
+ * Per-symbol Camarilla pivot level cache. Each entry is computed from a symbol's prior-day
+ * daily OHLC and is valid for the current IST session.
  *
  * <p>Lifecycle:
  * <ul>
- *   <li>On boot ({@code @PostConstruct}): load today's cached levels from disk if present;
- *       otherwise schedule an async fetch.</li>
- *   <li>Daily at 09:05 IST ({@code @Scheduled cron}): refresh from Fyers history.</li>
- *   <li>On any {@link #getNiftyLevels()} call when the cache is empty/stale: fire an async
- *       refresh and return the currently-cached value (possibly null) immediately.</li>
+ *   <li>On boot ({@code @PostConstruct}): load today's cached level map from disk if present.</li>
+ *   <li>{@link #warmUpAroundAtm(long)} — fan-out fetch for ~10 strikes per side around an ATM
+ *       (≈ 42 option symbols total). Called by the strategy at boot and on daily 09:05 cron.</li>
+ *   <li>{@link #getLevels(String)} — non-blocking lookup. Returns the cached entry (possibly
+ *       null) and triggers an async per-symbol refresh on miss.</li>
  * </ul>
  *
- * <p>Disk cache: {@code ../store/data/camarilla-nifty.json}.
+ * <p>Disk cache: {@code ../store/data/camarilla-levels.json} — JSON map of symbol → levels.
  */
 @Service
 public class CamarillaService {
 
     private static final Logger log = LoggerFactory.getLogger(CamarillaService.class);
-    private static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    private static final String STATE_FILE = "../store/data/camarilla-nifty.json";
+    private static final String STATE_FILE = "../store/data/camarilla-levels.json";
+    private static final long   STRIKE_STEP = 50L;
+    private static final int    STRIKES_PER_SIDE = 10;
 
-    private final FyersClientRouter fyersClient;
-    private final TokenStore        tokenStore;
-    private final FyersProperties   fyersProperties;
-    private final ObjectMapper      mapper = new ObjectMapper().findAndRegisterModules();
+    private final FyersClientRouter   fyersClient;
+    private final TokenStore          tokenStore;
+    private final FyersProperties     fyersProperties;
+    private final BalancedAtmSelector atmSelector;
+    private final ObjectMapper        mapper = new ObjectMapper().findAndRegisterModules();
 
-    private volatile CamarillaLevels cached = null;
-    private final AtomicBoolean refreshInFlight = new AtomicBoolean(false);
+    private final Map<String, CamarillaLevels> bySymbol = new ConcurrentHashMap<>();
+    private final Map<String, AtomicBoolean>   refreshGates = new ConcurrentHashMap<>();
+    private final AtomicBoolean warmUpInFlight = new AtomicBoolean(false);
 
     public CamarillaService(FyersClientRouter fyersClient,
                             TokenStore tokenStore,
-                            FyersProperties fyersProperties) {
+                            FyersProperties fyersProperties,
+                            BalancedAtmSelector atmSelector) {
         this.fyersClient     = fyersClient;
         this.tokenStore      = tokenStore;
         this.fyersProperties = fyersProperties;
+        this.atmSelector     = atmSelector;
     }
 
     @PostConstruct
     public void init() {
         loadFromDisk();
-        if (cached == null || !cached.sessionDate().equals(todayIst())) {
-            triggerAsyncRefresh();
-        } else {
-            log.info("[CamarillaService] loaded today's cached levels from disk — skipping fetch");
+        int kept = 0;
+        for (Map.Entry<String, CamarillaLevels> e : bySymbol.entrySet()) {
+            if (e.getValue() != null && e.getValue().sessionDate().equals(todayIst())) kept++;
         }
+        log.info("[CamarillaService] booted — {} cached level entries valid for today", kept);
     }
 
     /** Cron daily at 09:05 IST. NSE pre-open completes at 09:00 so by 09:05 the prior-day
-     *  daily candle is settled. */
+     *  daily candle is settled. Re-fetches around current ATM. */
     @Scheduled(cron = "0 5 9 * * MON-FRI", zone = "Asia/Kolkata")
     public void scheduledRefresh() {
         log.info("[CamarillaService] daily refresh fired");
-        triggerAsyncRefresh();
+        // strategy will re-trigger warmUpAroundAtm when ATM is resolved
     }
 
-    /** Non-blocking accessor — returns cached levels (possibly null on cold start) and fires
-     *  an async refresh when the cache is empty or stale. */
-    public CamarillaLevels getNiftyLevels() {
-        if (cached == null || !cached.sessionDate().equals(todayIst())) {
-            triggerAsyncRefresh();
+    /** Returns cached levels for {@code symbol}, possibly null if not yet warmed. On miss,
+     *  triggers an async per-symbol fetch — the next caller usually finds it populated. */
+    public CamarillaLevels getLevels(String symbol) {
+        if (symbol == null || symbol.isBlank()) return null;
+        CamarillaLevels lv = bySymbol.get(symbol);
+        if (lv == null || !lv.sessionDate().equals(todayIst())) {
+            triggerAsyncRefresh(symbol);
+            return lv;  // best-effort: return stale or null
         }
-        return cached;
+        return lv;
     }
 
-    private void triggerAsyncRefresh() {
-        if (!refreshInFlight.compareAndSet(false, true)) return;
+    /** Snapshot of every cached entry (for /api/camarilla/levels). */
+    public Map<String, CamarillaLevels> snapshot() {
+        return Map.copyOf(bySymbol);
+    }
+
+    /** Fan-out warm-up. For each strike in [atmStrike − 10×50 … atmStrike + 10×50], resolve
+     *  the CE+PE symbols via the option chain, then fetch each symbol's prior-day OHLC and
+     *  compute its Camarilla levels. Runs async — non-blocking for the caller. */
+    public void warmUpAroundAtm(long atmStrike) {
+        if (!warmUpInFlight.compareAndSet(false, true)) return;
         CompletableFuture.runAsync(() -> {
-            try { refresh(); }
-            catch (Exception e) { log.warn("[CamarillaService] async refresh failed: {}", e.getMessage()); }
-            finally { refreshInFlight.set(false); }
+            try { doWarmUp(atmStrike); }
+            catch (Exception e) { log.warn("[CamarillaService] warm-up failed: {}", e.getMessage()); }
+            finally { warmUpInFlight.set(false); }
         });
     }
 
-    /** Synchronous refresh — only called from the background task. */
-    private void refresh() {
+    private void doWarmUp(long atmStrike) {
         if (!tokenStore.isTokenAvailable()) {
-            log.info("[CamarillaService] skip refresh — Fyers token not available");
+            log.info("[CamarillaService] skip warm-up — Fyers token not available");
             return;
         }
-        LocalDate today = todayIst();
-        LocalDate priorDate = priorTradingDay(today);
-        String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
+        int fetched = 0;
+        for (int i = -STRIKES_PER_SIDE; i <= STRIKES_PER_SIDE; i++) {
+            long strike = atmStrike + i * STRIKE_STEP;
+            BalancedAtmSelector.StrikeAtLevel pair = atmSelector.resolveStrikeAtLevel(strike);
+            if (pair == null) continue;
+            if (fetchAndStore(pair.ceSymbol())) fetched++;
+            if (fetchAndStore(pair.peSymbol())) fetched++;
+        }
+        saveToDisk();
+        log.info("[CamarillaService] warmed up {} option symbols around ATM={}", fetched, atmStrike);
+    }
 
-        // Pull 10 calendar days of daily candles ending today so we always have at least one
-        // settled session even after long weekends / holidays.
+    private void triggerAsyncRefresh(String symbol) {
+        AtomicBoolean gate = refreshGates.computeIfAbsent(symbol, k -> new AtomicBoolean(false));
+        if (!gate.compareAndSet(false, true)) return;
+        CompletableFuture.runAsync(() -> {
+            try { fetchAndStore(symbol); saveToDisk(); }
+            catch (Exception e) { log.warn("[CamarillaService] async refresh failed for {}: {}", symbol, e.getMessage()); }
+            finally { gate.set(false); }
+        });
+    }
+
+    /** Synchronous per-symbol fetch + compute. Returns true on success. */
+    private boolean fetchAndStore(String symbol) {
+        if (symbol == null || symbol.isBlank() || !tokenStore.isTokenAvailable()) return false;
+        LocalDate today = todayIst();
+        // Pull 10 calendar days of daily candles so we always have a settled session.
         LocalDate from = today.minusDays(10);
+        String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
         JsonNode root;
-        try { root = fyersClient.getHistory(NIFTY_SYMBOL, "D", from.toString(), today.toString(), auth); }
+        try { root = fyersClient.getHistory(symbol, "D", from.toString(), today.toString(), auth); }
         catch (Exception e) {
-            log.warn("[CamarillaService] history fetch failed: {}", e.getMessage());
-            return;
+            log.warn("[CamarillaService] history fetch failed for {}: {}", symbol, e.getMessage());
+            return false;
         }
         if (root == null || !root.has("candles") || !root.get("candles").isArray()) {
-            log.warn("[CamarillaService] history response missing candles");
-            return;
+            log.warn("[CamarillaService] history response missing candles for {}", symbol);
+            return false;
         }
         JsonNode candles = root.get("candles");
-        // Fyers returns rows as [epochSec, open, high, low, close, volume]. Find the latest
-        // row whose date is strictly before today — that's the prior trading day.
         double priorHigh = 0, priorLow = 0, priorClose = 0;
         LocalDate resolvedPrior = null;
         for (int i = candles.size() - 1; i >= 0; i--) {
@@ -129,7 +168,7 @@ public class CamarillaService {
             if (!row.isArray() || row.size() < 5) continue;
             long epochSec = row.get(0).asLong();
             LocalDate d = ZonedDateTime.ofInstant(java.time.Instant.ofEpochSecond(epochSec), IST).toLocalDate();
-            if (!d.isBefore(today)) continue;   // skip today's row if present
+            if (!d.isBefore(today)) continue;
             priorHigh  = row.get(2).asDouble();
             priorLow   = row.get(3).asDouble();
             priorClose = row.get(4).asDouble();
@@ -137,54 +176,45 @@ public class CamarillaService {
             break;
         }
         if (resolvedPrior == null || priorHigh <= 0 || priorLow <= 0 || priorClose <= 0) {
-            log.warn("[CamarillaService] no usable prior-day candle in response (size={})", candles.size());
-            return;
-        }
-        // If our calendar-walked guess differs, log it — usually means a holiday we don't track.
-        if (!resolvedPrior.equals(priorDate)) {
-            log.info("[CamarillaService] prior trading day resolved as {} (calendar guess was {})",
-                resolvedPrior, priorDate);
+            log.warn("[CamarillaService] no usable prior-day candle for {} (size={})", symbol, candles.size());
+            return false;
         }
         CamarillaLevels fresh = CamarillaLevels.compute(today, resolvedPrior, priorHigh, priorLow, priorClose);
-        cached = fresh;
-        saveToDisk(fresh);
-        log.info("[CamarillaService] computed pivots: PP={} H3={} H4={} H5={} L3={} L4={} L5={} (priorDate={})",
-            fresh.pp(), fresh.h3(), fresh.h4(), fresh.h5(), fresh.l3(), fresh.l4(), fresh.l5(), fresh.priorDate());
+        bySymbol.put(symbol, fresh);
+        return true;
     }
 
     private static LocalDate todayIst() {
         return LocalDate.now(IST);
     }
 
-    /** Walk backwards skipping weekends. Doesn't know about NSE holidays — the refresh()
-     *  loop above corrects this by picking the actual latest pre-today row in the history. */
-    private static LocalDate priorTradingDay(LocalDate today) {
-        LocalDate d = today.minusDays(1);
-        while (d.getDayOfWeek().getValue() >= 6) d = d.minusDays(1);
-        return d;
-    }
-
     // ── Disk cache ────────────────────────────────────────────────────────────
 
-    private void loadFromDisk() {
+    @SuppressWarnings("unchecked")
+    private synchronized void loadFromDisk() {
         try {
             Path p = Path.of(STATE_FILE);
             if (!Files.exists(p)) return;
             String json = Files.readString(p);
-            CamarillaLevels levels = mapper.readValue(json, CamarillaLevels.class);
-            if (levels != null) cached = levels;
+            Map<String, CamarillaLevels> map = mapper.readValue(json,
+                mapper.getTypeFactory().constructMapType(java.util.LinkedHashMap.class,
+                    String.class, CamarillaLevels.class));
+            if (map != null) {
+                bySymbol.clear();
+                bySymbol.putAll(map);
+            }
         } catch (IOException e) {
             log.warn("[CamarillaService] failed to load disk cache: {}", e.getMessage());
         }
     }
 
-    private synchronized void saveToDisk(CamarillaLevels levels) {
+    private synchronized void saveToDisk() {
         try {
             Path dst = Path.of(STATE_FILE);
             File parent = dst.toFile().getParentFile();
             if (parent != null && !parent.exists()) parent.mkdirs();
             Path tmp = Path.of(STATE_FILE + ".tmp");
-            Files.writeString(tmp, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(levels));
+            Files.writeString(tmp, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(bySymbol));
             Files.move(tmp, dst, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
                 java.nio.file.StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {

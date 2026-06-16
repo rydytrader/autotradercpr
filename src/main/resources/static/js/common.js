@@ -7,6 +7,28 @@ var THEME_ICONS = { dark: '\uD83C\uDF19', light: '\u2600\uFE0F', forest: '\uD83C
 // shows the same centered "Fyers Broker Not Connected" card the parent branch
 // used \u2014 lightning bolt, headline, cyan "Login to Fyers \u2192" button. Inserted
 // into the main content area so it sits inside the page layout (not over it).
+function isFyersGateSuppressed() {
+    var p = (window.location && window.location.pathname) || '';
+    // The Fyers gate is only required on pages that consume live broker data (the Trade page).
+    // Pre-auth screens (app login + Fyers OAuth handoff) and information-only screens (Home
+    // analytics, Calendar) work fine without a broker token, so the gate is suppressed there.
+    if (p === '/login' || p.indexOf('/fyers/login') === 0) return true;
+    if (p === '/home' || p.indexOf('/home') === 0) return true;
+    if (p === '/calendar' || p.indexOf('/calendar') === 0) return true;
+    if (p === '/' || p === '') return true;
+    return false;
+}
+function ensureFyersGateStyle() {
+    if (document.getElementById('fyersGateStyle')) return;
+    var style = document.createElement('style');
+    style.id = 'fyersGateStyle';
+    // When the gate is shown, hide every other direct child of .app-main so the user only sees
+    // the connect prompt. Navigation (top navbar + side rail + sidebar) stays visible so the
+    // operator can switch pages, log out, toggle theme, etc.
+    style.textContent =
+        'html.fyers-disconnected .app-main > *:not(#fyersGate) { display:none !important; }';
+    document.head.appendChild(style);
+}
 function ensureFyersBanner() {
     if (document.getElementById('fyersGate')) return;
     var gate = document.createElement('div');
@@ -34,6 +56,14 @@ function ensureFyersBanner() {
     else host.appendChild(gate);
 }
 function refreshFyersBanner() {
+    if (isFyersGateSuppressed()) {
+        // Make sure no stale gate / class lingers on pre-auth screens.
+        document.documentElement.classList.remove('fyers-disconnected');
+        var existing = document.getElementById('fyersGate');
+        if (existing) existing.style.display = 'none';
+        return;
+    }
+    ensureFyersGateStyle();
     ensureFyersBanner();
     fetch('/api/fyers/status').then(function(r) {
         if (!r.ok || (r.headers.get('content-type') || '').indexOf('json') < 0) return null;
@@ -43,6 +73,7 @@ function refreshFyersBanner() {
         if (!gate) return;
         var ok = !!(d && d.connected);
         gate.style.display = ok ? 'none' : 'block';
+        document.documentElement.classList.toggle('fyers-disconnected', !ok);
     }).catch(function() {});
 }
 if (typeof window !== 'undefined') {
