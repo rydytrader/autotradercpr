@@ -62,7 +62,7 @@ public class Camarilla implements Strategy {
     private static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final String STATE_FILE = "../store/data/camarilla-state.json";
-    private static final int LOT_SIZE = 75;
+    private static final int LOT_SIZE = 65;
     private static final int RECENT_EVENTS_LIMIT = 60;
     /** Number of consecutive fast-scheduler polls (~500 ms each) that LTP must sit at or above
      *  the SL level before the position is squared off. At ~500 ms cadence, 3 polls ≈ 1.5 s of
@@ -71,11 +71,11 @@ public class Camarilla implements Strategy {
     private static final int SL_BREACH_CONFIRM_TICKS = 3;
     /** NIFTY strike interval — 50 points. */
     private static final long STRIKE_STEP = 50L;
-    /** Grace window after a 3-min bar close before we resolve the buffer for that bar. All six
+    /** Grace window after a 5-min bar close before we resolve the buffer for that bar. All six
      *  symbols' candles emit inside a single 1-second sample tick at the boundary; 1.5 s gives
      *  every candidate a chance to land before the tiebreaker runs. */
     private static final long BAR_PROCESSING_GRACE_MS = 1500L;
-    private static final long THREE_MIN_MS = 3 * 60 * 1000L;
+    private static final long BAR_LENGTH_MS = 5 * 60 * 1000L;
 
     public enum ActiveSetup { H3_REVERSAL, L4_BREAKDOWN }
 
@@ -189,7 +189,7 @@ public class Camarilla implements Strategy {
             state.openPositions.clear();
             state.doneForDay = false;
             saveToDisk();
-            event("[INFO]", "reset — " + (reason == null ? "" : reason));
+            event("[INFO]", "System", "reset — " + (reason == null ? "" : reason));
         }
     }
 
@@ -229,6 +229,7 @@ public class Camarilla implements Strategy {
     public void tick() {
         rolloverIfNewDay();
         watchSquareoff();
+        refreshUnresolvedFills();
         // Ensure ATM-around warm-up is at least requested once an ATM is known.
         if (atmTracker.getCurrentAtm() > 0 && camarillaService.snapshot().isEmpty()) {
             camarillaService.warmUpAroundAtm(atmTracker.getCurrentAtm());
@@ -261,7 +262,7 @@ public class Camarilla implements Strategy {
                     Position p2 = state.openPositions.get(symbol);
                     if (p2 == null) continue;
                     if (ltp > p2.targetLevel) continue;
-                    event("[SUCCESS]", symbol + " " + p2.setup + " TARGET_HIT — ltp=" + round2(ltp)
+                    event("[SUCCESS]", "Exit", symbol + " " + p2.setup + " TARGET_HIT — ltp=" + round2(ltp)
                         + " <= target=" + round2(p2.targetLevel));
                     closePosition(symbol, "TARGET_HIT");
                 }
@@ -276,7 +277,7 @@ public class Camarilla implements Strategy {
                     synchronized (lock) {
                         Position p2 = state.openPositions.get(symbol);
                         if (p2 == null) continue;
-                        event("[WARNING]", symbol + " " + p2.setup + " SL_HIT — ltp=" + round2(ltp)
+                        event("[WARNING]", "Exit", symbol + " " + p2.setup + " SL_HIT — ltp=" + round2(ltp)
                             + " >= SL=" + round2(p2.slLevel)
                             + " confirmed over " + SL_BREACH_CONFIRM_TICKS + " ticks");
                         closePosition(symbol, "SL_HIT");
@@ -300,7 +301,7 @@ public class Camarilla implements Strategy {
         long now = System.currentTimeMillis();
         // Iterate via snapshot to allow safe removal.
         for (Long barStart : new ArrayList<>(pendingByBar.keySet())) {
-            long barCloseDeadline = barStart + THREE_MIN_MS + BAR_PROCESSING_GRACE_MS;
+            long barCloseDeadline = barStart + BAR_LENGTH_MS + BAR_PROCESSING_GRACE_MS;
             if (now < barCloseDeadline) continue;
             List<EntryCandidate> bar = pendingByBar.remove(barStart);
             if (bar == null || bar.isEmpty()) continue;
@@ -364,6 +365,13 @@ public class Camarilla implements Strategy {
         long atm = ev.newAtm();
         if (atm <= 0) return;
 
+        // Drift-check heartbeat — AtmTracker fires this when the 30-min check ran but ATM did
+        // not move (oldAtm == newAtm). Log to confirm the system is alive, then skip rebalance.
+        if (ev.oldAtm() == ev.newAtm() && ev.oldAtm() > 0) {
+            event("[INFO]", "ATM", "Drift check — ATM unchanged at " + atm);
+            return;
+        }
+
         // Resolve the 6-contract V2 watchlist with role assignment:
         //   ATM strike     → ATM_L4 (both CE and PE only check L4 breakdown)
         //   ATM − 50 (CE)  → ITM_L4 (CE in-the-money, lower strike)
@@ -413,7 +421,30 @@ public class Camarilla implements Strategy {
         camarillaService.warmUpAroundAtm(atm);
 
         String tag = ev.oldAtm() < 0 ? "boot" : String.valueOf(ev.oldAtm());
-        event("[INFO]", "ATM " + tag + " → " + atm + " — watchlist=" + newRoles.size() + " contracts");
+        // Compact one-line watchlist log: shows strike(role) for each side, low → high.
+        StringBuilder ceDump = new StringBuilder();
+        StringBuilder peDump = new StringBuilder();
+        if (downRow != null) {
+            if (downRow.ceSymbol() != null && !downRow.ceSymbol().isBlank())
+                ceDump.append(downRow.resolvedStrike()).append("(ITM_L4) ");
+            if (downRow.peSymbol() != null && !downRow.peSymbol().isBlank())
+                peDump.append(downRow.resolvedStrike()).append("(OTM_H3) ");
+        }
+        if (atmRow != null) {
+            if (atmRow.ceSymbol() != null && !atmRow.ceSymbol().isBlank())
+                ceDump.append(atmRow.resolvedStrike()).append("(ATM_L4) ");
+            if (atmRow.peSymbol() != null && !atmRow.peSymbol().isBlank())
+                peDump.append(atmRow.resolvedStrike()).append("(ATM_L4) ");
+        }
+        if (upRow != null) {
+            if (upRow.ceSymbol() != null && !upRow.ceSymbol().isBlank())
+                ceDump.append(upRow.resolvedStrike()).append("(OTM_H3) ");
+            if (upRow.peSymbol() != null && !upRow.peSymbol().isBlank())
+                peDump.append(upRow.resolvedStrike()).append("(ITM_L4) ");
+        }
+        event("[INFO]", "ATM", "ATM " + tag + " → " + atm
+            + " — CE: " + ceDump.toString().trim()
+            + " | PE: " + peDump.toString().trim());
         saveToDisk();
     }
 
@@ -508,14 +539,14 @@ public class Camarilla implements Strategy {
 
         log.info("[Camarilla] {} fired — selling {} qty={} entryLtp={} target={} sl={}",
             setup, symbol, qty, entryLtp, targetLevel, slLevel);
-        event("[INFO]", setup + " fired — sell " + symbol + " qty " + qty
+        event("[INFO]", "Entry", setup + " fired — sell " + symbol + " qty " + qty
             + " entry≈" + round2(entryLtp) + " target=" + round2(targetLevel) + " SL=" + round2(slLevel));
 
         // side = -1 → sell (short the option)
         OrderDTO order = orderService.placeOrder(symbol, qty, -1, 0, productType);
         if (order == null || order.getId() == null || order.getId().isEmpty()) {
             log.warn("[Camarilla] entry order rejected for {} — staying idle", symbol);
-            event("[ERROR]", "entry order rejected for " + symbol);
+            event("[ERROR]", "Entry", "entry order rejected for " + symbol);
             return;
         }
 
@@ -526,7 +557,8 @@ public class Camarilla implements Strategy {
         p.symbol       = symbol;
         p.setup        = setup;
         p.qty          = qty;
-        p.entryPrice   = entryLtp;
+        p.entryPrice   = entryLtp;       // LTP estimate — refreshUnresolvedFills() overwrites with the broker fill
+        p.fillResolved = false;
         p.entryOrderId = order.getId();
         p.openMillis   = System.currentTimeMillis();
         p.targetLevel  = targetLevel;
@@ -534,6 +566,30 @@ public class Camarilla implements Strategy {
         state.openPositions.put(symbol, p);
         state.tradesToday++;
         saveToDisk();
+    }
+
+    /** For every open position that hasn't had its broker fill resolved yet, look up the actual
+     *  trade price by entryOrderId in the cached tradebook and overwrite the estimate. Runs on
+     *  the slow 5 s tick — usually resolves within the first tick after the order fills (Fyers
+     *  tradebook is refreshed by OrderService on a similar cadence). */
+    private void refreshUnresolvedFills() {
+        if (state.openPositions.isEmpty()) return;
+        for (Position p : state.openPositions.values()) {
+            if (p.fillResolved) continue;
+            if (p.entryOrderId == null || p.entryOrderId.isBlank()) continue;
+            try {
+                double fillPrice = orderService.getFilledPriceByOrderId(p.entryOrderId);
+                if (fillPrice <= 0) continue;
+                double oldEntry = p.entryPrice;
+                p.entryPrice = round2(fillPrice);
+                p.fillResolved = true;
+                event("[INFO]", "Fill", p.symbol + " fill resolved — entry "
+                    + round2(oldEntry) + " → " + round2(fillPrice));
+                saveToDisk();
+            } catch (Exception e) {
+                log.warn("[Camarilla] fill lookup failed for {}: {}", p.entryOrderId, e.getMessage());
+            }
+        }
     }
 
     /** Time-based squareoff — flatten every open position at the configured IST time. */
@@ -545,7 +601,7 @@ public class Camarilla implements Strategy {
         try { cutoff = LocalTime.parse(hhmm); }
         catch (Exception e) { return; }
         if (ZonedDateTime.now(IST).toLocalTime().isAfter(cutoff)) {
-            event("[INFO]", "TIMED_EXIT — clock reached " + hhmm + ", flattening " + state.openPositions.size() + " position(s)");
+            event("[INFO]", "Squareoff", "TIMED_EXIT — clock reached " + hhmm + ", flattening " + state.openPositions.size() + " position(s)");
             for (String sym : new ArrayList<>(state.openPositions.keySet())) {
                 closePosition(sym, "TIMED_EXIT");
             }
@@ -557,8 +613,11 @@ public class Camarilla implements Strategy {
     private boolean closePosition(String symbol, String reason) {
         Position p = state.openPositions.get(symbol);
         if (p == null) return false;
-        // side = +1 → buy to close
-        OrderDTO close = orderService.placeExitOrder(symbol, p.qty, 1);
+        // side = +1 → buy to close. CRITICAL: pass the same productType used for the entry so
+        // Fyers nets the two legs. A MARGIN buy against an INTRADAY short does NOT square off —
+        // they're treated as separate positions and the original short stays open.
+        String productType = riskSettings.getCamarillaOrderType();
+        OrderDTO close = orderService.placeExitOrder(symbol, p.qty, 1, productType);
         double exitPrice = 0;
         if (close != null) {
             try { exitPrice = marketDataService.getLtp(symbol); }
@@ -570,7 +629,12 @@ public class Camarilla implements Strategy {
         double charges = perCycleCharges(sellTurnover, buyTurnover);
         double net     = gross - charges;
 
-        persistTradeRow(reason, p.qty, gross, charges, net, reason.equals("SL_HIT") ? 1 : 0);
+        // Single timestamp shared by the persisted DB row AND the in-memory ring entry —
+        // AnalyticsService dedups by closedAtMillis to avoid double-counting today's cycles,
+        // and that dedup only works if both sources stamp the SAME value.
+        long closedAtMillis = System.currentTimeMillis();
+        persistTradeRow(p.symbol, p.setup.name(), reason, p.qty, gross, charges, net,
+            reason.equals("SL_HIT") ? 1 : 0, closedAtMillis);
 
         Map<String, Object> cycle = new LinkedHashMap<>();
         cycle.put("setup",          p.setup.name());
@@ -582,12 +646,12 @@ public class Camarilla implements Strategy {
         cycle.put("charges",        round2(charges));
         cycle.put("netPnl",         round2(net));
         cycle.put("closeReason",    reason);
-        cycle.put("closedAtMillis", System.currentTimeMillis());
+        cycle.put("closedAtMillis", closedAtMillis);
         state.todayClosedTrades.add(cycle);
         while (state.todayClosedTrades.size() > 100) state.todayClosedTrades.remove(0);
 
         if (net < 0) state.consecutiveLosses++; else state.consecutiveLosses = 0;
-        event(net >= 0 ? "[SUCCESS]" : "[WARNING]",
+        event(net >= 0 ? "[SUCCESS]" : "[WARNING]", "Exit",
             symbol + " closed (" + reason + ") net=" + round2(net) + " gross=" + round2(gross));
 
         state.openPositions.remove(symbol);
@@ -601,14 +665,16 @@ public class Camarilla implements Strategy {
         return true;
     }
 
-    private void persistTradeRow(String reason, int qty, double gross, double charges, double net, int slHits) {
+    private void persistTradeRow(String symbol, String setup, String reason, int qty, double gross, double charges, double net, int slHits, long closedAtMillis) {
         try {
             StrategyTradeRepository repo = tradeRepoProvider == null ? null : tradeRepoProvider.getIfAvailable();
             if (repo == null) return;
             StrategyTradeEntity row = new StrategyTradeEntity();
             row.setStrategyId(STRATEGY_ID);
+            row.setSymbol(symbol);
+            row.setSetup(setup);
             row.setSessionDate(LocalDate.now(IST).toString());
-            row.setClosedAtMillis(System.currentTimeMillis());
+            row.setClosedAtMillis(closedAtMillis);
             row.setQty(qty);
             row.setGrossPnl(round2(gross));
             row.setCharges(round2(charges));
@@ -782,20 +848,34 @@ public class Camarilla implements Strategy {
         public long       openMillis;
         public double     targetLevel;
         public double     slLevel;
+        /** Set to true once {@code entryPrice} has been replaced with the actual broker fill
+         *  price (looked up by entryOrderId in the tradebook). Until then, {@code entryPrice}
+         *  is the LTP estimate captured at order-placement time. The strategy's slow tick loop
+         *  periodically resolves unresolved fills. */
+        public boolean fillResolved;
         /** Consecutive fast-tick polls observing LTP at or above slLevel. Resets on every poll
          *  where LTP drops back below. SL fires when this reaches SL_BREACH_CONFIRM_TICKS.
          *  Transient — not persisted, repopulated by the runtime after a restart. */
         public transient int slBreachStreak;
     }
 
+    /** Backward-compat overload — defaults source to "Strategy". */
     private void event(String severity, String message) {
+        event(severity, "Strategy", message);
+    }
+
+    /** Record an event with severity + source-component tag + message. The source label is
+     *  surfaced in the Trade page event log so the operator can see which subsystem produced
+     *  each line (ATM / Entry / Exit / Fill / System / Strategy). */
+    private void event(String severity, String source, String message) {
         Map<String, Object> e = new LinkedHashMap<>();
         e.put("ts",       System.currentTimeMillis());
         e.put("severity", severity);
+        e.put("source",   source);
         e.put("message",  message);
         state.recentEvents.add(0, e);
         while (state.recentEvents.size() > RECENT_EVENTS_LIMIT) state.recentEvents.remove(state.recentEvents.size() - 1);
-        if (eventService != null) eventService.log(severity + " [camarilla] " + message);
+        if (eventService != null) eventService.log(severity + " [camarilla:" + source + "] " + message);
         publishStream();
     }
 

@@ -2,6 +2,7 @@ package com.rydytrader.autotrader.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.dto.CamarillaLevels;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
@@ -53,7 +54,9 @@ public class CamarillaService {
     private final TokenStore          tokenStore;
     private final FyersProperties     fyersProperties;
     private final BalancedAtmSelector atmSelector;
-    private final ObjectMapper        mapper = new ObjectMapper().findAndRegisterModules();
+    private final ObjectMapper        mapper = new ObjectMapper()
+        .registerModule(new JavaTimeModule())
+        .findAndRegisterModules();
 
     private final Map<String, CamarillaLevels> bySymbol = new ConcurrentHashMap<>();
     private final Map<String, AtomicBoolean>   refreshGates = new ConcurrentHashMap<>();

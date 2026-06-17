@@ -207,6 +207,7 @@ public class AnalyticsService {
         LocalDate cutoff = explicitRange ? null : switch (period == null ? "all" : period.toLowerCase()) {
             case "today"  -> today;
             case "expiry" -> currentExpiryStart(today);
+            case "qtd"    -> indianFinancialQuarterStart(today);
             case "ytd"    -> indianFinancialYearStart(today);
             case "mtd"    -> LocalDate.of(today.getYear(), today.getMonthValue(), 1);
             default       -> null; // all-time
@@ -267,26 +268,46 @@ public class AnalyticsService {
 
         String iso = today.toString();
         // Pre-compute today's persisted net + charges so OPEN_POSITION_MTM only carries the
-        // leftover, never double-counts what's already in strategy_trades.
+        // leftover, never double-counts what's already in strategy_trades. Also collect the
+        // closedAtMillis of every today-row already in `out` so we can dedup the in-memory
+        // ring entries that map to the same cycle — without this, every closed trade today
+        // would be counted twice (once from DB, once from todayClosedTrades).
         double persistedNet = 0, persistedCh = 0;
+        List<Long> persistedMillis = new ArrayList<>();
         for (Trade t : out) {
             if (!iso.equals(t.sessionDate())) continue;
             if (!strat.id().equals(t.strategyId())) continue;
             persistedNet += t.netPnl();
             persistedCh  += t.charges();
+            persistedMillis.add(t.closedAtMillis());
         }
+        // Dedup window: legacy DB rows were persisted with a separate System.currentTimeMillis()
+        // call from the in-memory ring entry, so timestamps can drift by a few ms. Match any
+        // ring entry whose closedAtMillis falls within this window of an already-persisted
+        // row's millis. New cycles (post-fix) stamp both writes with the SAME value, so 0-ms
+        // drift — but legacy today-rows from before the fix need the tolerance to dedup.
+        final long DEDUP_WINDOW_MS = 5_000L;
         try {
             // 1. Today's already-closed events from the strategy's recent-events ring.
+            //    Skip entries whose closedAtMillis is within the dedup window of a row already
+            //    in `out` (those came from the DB on the same cycle). The remaining in-memory
+            //    entries are cycles that haven't been persisted yet — keep them so today's
+            //    analytics stay current.
             double addedTodayNet     = 0;
             double addedTodayCharges = 0;
             List<Map<String, Object>> live = strat.todayClosedTrades();
             if (live != null) {
                 for (Map<String, Object> m : live) {
+                    long ts = asLong(m.get("closedAtMillis"));
+                    if (ts == 0) ts = System.currentTimeMillis();
+                    boolean dup = false;
+                    for (Long pm : persistedMillis) {
+                        if (Math.abs(pm - ts) <= DEDUP_WINDOW_MS) { dup = true; break; }
+                    }
+                    if (dup) continue;
                     double gross = asDouble(m.get("grossPnl"));
                     double ch    = asDouble(m.get("charges"));
                     double net   = ch != 0 ? gross - ch : gross;
-                    long ts = asLong(m.get("closedAtMillis"));
-                    if (ts == 0) ts = System.currentTimeMillis();
                     String reason = String.valueOf(m.getOrDefault("closeReason", "OPEN"));
                     out.add(new Trade(strat.id(), iso, ts, gross, ch, net, reason, 0));
                     addedTodayNet     += net;
@@ -324,6 +345,17 @@ public class AnalyticsService {
     private static LocalDate indianFinancialYearStart(LocalDate today) {
         int fyYear = today.getMonthValue() >= 4 ? today.getYear() : today.getYear() - 1;
         return LocalDate.of(fyYear, 4, 1);
+    }
+
+    /** Quarter-to-date start aligned to the Indian financial year. Q1=Apr-Jun, Q2=Jul-Sep,
+     *  Q3=Oct-Dec, Q4=Jan-Mar — returns the first day of the quarter that {@code today}
+     *  falls in. Jan/Feb/Mar return Jan 1 of the current calendar year (Q4 of last FY). */
+    private static LocalDate indianFinancialQuarterStart(LocalDate today) {
+        int m = today.getMonthValue();
+        int quarterStartMonth = ((m - 4 + 12) % 12 / 3) * 3 + 4;       // 4, 7, 10, or 13 (→ Jan)
+        int year = quarterStartMonth > 12 ? today.getYear() : today.getYear();
+        if (quarterStartMonth > 12) { quarterStartMonth -= 12; }
+        return LocalDate.of(year, quarterStartMonth, 1);
     }
 
     private LocalDate currentExpiryStart(LocalDate today) {
@@ -372,12 +404,14 @@ public class AnalyticsService {
         int wins = 0, losses = 0;
         double grossProfit = 0, grossLoss = 0;
         double sumWin = 0, sumLoss = 0;
+        int total = 0;
         for (Trade t : trades) {
+            if (!isClosedStraddle(t)) continue;
             double pnl = t.netPnl();
+            total++;
             if (pnl > 0)      { wins++;   grossProfit += pnl; sumWin  += pnl; }
             else if (pnl < 0) { losses++; grossLoss   += pnl; sumLoss += pnl; }
         }
-        int total = trades.size();
         double winRate      = total > 0 ? (wins / (double) total) * 100.0 : 0;
         double profitFactor = grossLoss < 0 ? grossProfit / Math.abs(grossLoss) : 0;
         double avgWin       = wins > 0 ? sumWin / wins : 0;
@@ -395,10 +429,17 @@ public class AnalyticsService {
 
     // ── P&L EXTREMES (per straddle) ─────────────────────────────────────────
     private Map<String, Object> extremes(List<Trade> trades) {
+        // Filter out the synthetic OPEN_POSITION_MTM row so per-trade stats (max/min,
+        // averages, drawdown, SL histogram) reflect closed cycles only — otherwise an
+        // unrealized open MTM gets counted as a "trade" and pollutes wins/losses/extremes.
+        List<Trade> closed = new ArrayList<>();
+        for (Trade t : trades) {
+            if (isClosedStraddle(t)) closed.add(t);
+        }
         double maxProfit = 0, maxLoss = 0;
         double sumWin = 0, sumLoss = 0;
         int wins = 0, losses = 0;
-        for (Trade t : trades) {
+        for (Trade t : closed) {
             double pnl = t.netPnl();
             if (pnl > maxProfit) maxProfit = pnl;
             if (pnl < maxLoss)   maxLoss   = pnl;
@@ -410,8 +451,8 @@ public class AnalyticsService {
         // "Max Drawdown Days" = number of trades between them (inclusive of the trough).
         double peak = 0, cum = 0, maxDd = 0;
         int peakIdx = 0, troughIdx = 0, curPeakIdx = 0;
-        for (int i = 0; i < trades.size(); i++) {
-            cum += trades.get(i).netPnl();
+        for (int i = 0; i < closed.size(); i++) {
+            cum += closed.get(i).netPnl();
             if (cum > peak) { peak = cum; curPeakIdx = i; }
             double dd = cum - peak;
             if (dd < maxDd) { maxDd = dd; peakIdx = curPeakIdx; troughIdx = i; }
@@ -422,7 +463,7 @@ public class AnalyticsService {
         // mix between "both legs survived to squareoff" (0 SL), "one leg got stopped" (1 SL)
         // and "both legs stopped out" (2 SL) is visible at a glance.
         int zeroSl = 0, oneSl = 0, twoSl = 0;
-        for (Trade t : trades) {
+        for (Trade t : closed) {
             int n = t.slHitCount();
             if (n <= 0)      zeroSl++;
             else if (n == 1) oneSl++;
@@ -447,6 +488,7 @@ public class AnalyticsService {
         int curWin = 0, curLoss = 0, longestWin = 0, longestLoss = 0;
         double totalCharges = 0;
         for (Trade t : trades) {
+            if (!isClosedStraddle(t)) continue;
             double pnl = t.netPnl();
             totalCharges += t.charges();
             if (pnl > 0) {

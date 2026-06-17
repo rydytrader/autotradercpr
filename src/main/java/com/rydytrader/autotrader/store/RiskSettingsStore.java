@@ -34,7 +34,7 @@ public class RiskSettingsStore {
         volatile String manualAutoSquareOffTime = "";
         // ── Camarilla strategy settings (singleton) ──────────────────────────
         volatile boolean camarillaEnabled         = true;
-        volatile int     camarillaLotsPerLeg      = 1;       // 1 lot = 75 NIFTY
+        volatile int     camarillaLotsPerLeg      = 1;       // 1 lot = 65 NIFTY
         volatile String  camarillaOrderType       = "INTRADAY"; // INTRADAY | OVERNIGHT
         volatile String  camarillaTradingStartTime = "09:30"; // signals fire only after this time (IST)
         volatile String  camarillaTradingEndTime   = "13:30"; // no new signals after this time (IST); exits keep running

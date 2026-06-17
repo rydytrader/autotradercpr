@@ -1,6 +1,7 @@
 package com.rydytrader.autotrader.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.rydytrader.autotrader.service.strategy.Camarilla;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,7 +32,9 @@ public class CamarillaStreamBroker {
     private static final Logger log = LoggerFactory.getLogger(CamarillaStreamBroker.class);
 
     private final ObjectProvider<Camarilla> camarillaProvider;
-    private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+    private final ObjectMapper mapper = new ObjectMapper()
+        .registerModule(new JavaTimeModule())
+        .findAndRegisterModules();
     private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
 
     public CamarillaStreamBroker(ObjectProvider<Camarilla> camarillaProvider) {
@@ -63,9 +66,11 @@ public class CamarillaStreamBroker {
     private void sendSnapshot(SseEmitter e) {
         try {
             Map<String, Object> payload = currentState();
-            if (payload != null) e.send(SseEmitter.event().name("state").data(mapper.writeValueAsString(payload)));
+            if (payload == null) return;
+            String json = mapper.writeValueAsString(payload);
+            e.send(SseEmitter.event().name("state").data(json));
         } catch (Exception ex) {
-            // Drop on failure — the emitter list will clean up via onError.
+            log.warn("[CamarillaStream] initial snapshot send failed: {}", ex.getMessage());
             emitters.remove(e);
         }
     }
@@ -75,13 +80,17 @@ public class CamarillaStreamBroker {
         if (payload == null) return;
         String json;
         try { json = mapper.writeValueAsString(payload); }
-        catch (Exception e) { return; }
+        catch (Exception e) {
+            log.warn("[CamarillaStream] serialize failed (heartbeat will skip): {}", e.getMessage());
+            return;
+        }
         for (SseEmitter e : emitters) {
             try { e.send(SseEmitter.event().name("state").data(json)); }
             catch (IOException ex) {
                 emitters.remove(e);
                 try { e.complete(); } catch (Exception ignored) {}
             } catch (Exception ex) {
+                log.debug("[CamarillaStream] emitter send failed (removing): {}", ex.getMessage());
                 emitters.remove(e);
             }
         }

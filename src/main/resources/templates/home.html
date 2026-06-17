@@ -103,6 +103,14 @@
         <span style="font-size:1.75rem;line-height:1;">⬡</span>
         <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">POSITIONS</span>
     </a>
+    <a href="/trades" class="nav-icon" title="Trades" data-nav-key="trades"
+       style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+              width:78px;padding:14px 6px 10px;gap:6px;
+              border-radius:14px;text-decoration:none;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">
+        <span style="font-size:1.95rem;line-height:1;">≡</span>
+        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">TRADES</span>
+    </a>
     <a href="/calendar" class="nav-icon" title="Calendar" data-nav-key="calendar"
        style="display:flex;flex-direction:column;align-items:center;justify-content:center;
               width:78px;padding:14px 6px 10px;gap:6px;
@@ -136,6 +144,7 @@
                 <div class="pill-row" id="periodPills">
                     <button class="scope-pill active" data-period="today"  title="Just today's session(s).">Today</button>
                     <button class="scope-pill"        data-period="mtd" title="Month-to-date — from the 1st of the current calendar month.">MTD</button>
+                    <button class="scope-pill"        data-period="qtd" title="Indian financial quarter to date — Q1 Apr–Jun, Q2 Jul–Sep, Q3 Oct–Dec, Q4 Jan–Mar.">QTD</button>
                     <button class="scope-pill"        data-period="ytd" title="Financial year to date — from Apr 1 of the current Indian FY.">YTD</button>
                     <button class="scope-pill"        data-period="all">All Time</button>
                 </div>

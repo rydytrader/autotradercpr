@@ -44,11 +44,24 @@ public class OrderService {
      *  settings can control the Fyers product the order is placed under. */
     public OrderDTO placeOrder(String symbol, int qty, int side, double stoploss, String productType) {
         try {
-            String pt = (productType == null || productType.isBlank()) ? "MARGIN" : productType.trim();
+            String pt = normalizeProductType(productType);
             String json = buildOrderJson(symbol, qty, side, 2, 0, 0, "AutoTrader", pt);
             log.info("Entry Order: {}", json);
             return postOrder(json);
         } catch (Exception e) { log.error("Error placing entry order", e); return null; }
+    }
+
+    /** Map UI-friendly productType labels to Fyers's expected values. Fyers only accepts
+     *  INTRADAY / MARGIN / CNC / CO / BO — anything else is rejected. Strategies surface
+     *  "OVERNIGHT" in their settings UI because that's the operator's mental model for F&O
+     *  carry-forward; here we translate it to {@code MARGIN}, which is Fyers's NRML product. */
+    private static String normalizeProductType(String productType) {
+        if (productType == null || productType.isBlank()) return "MARGIN";
+        String pt = productType.trim().toUpperCase();
+        return switch (pt) {
+            case "OVERNIGHT", "NRML", "OVN" -> "MARGIN";
+            default -> pt;
+        };
     }
 
     // ── STOP LOSS ORDER (Stop-Market) ─────────────────────────────────────────
@@ -110,9 +123,16 @@ public class OrderService {
     }
 
     // ── EXIT MARKET ORDER (Square-off) ────────────────────────────────────────
+    /** Backward-compat overload — defaults to MARGIN. Use the productType-aware variant
+     *  below for any exit that must NET against an existing INTRADAY position; mismatched
+     *  product types leave the original leg open at Fyers. */
     public OrderDTO placeExitOrder(String symbol, int qty, int side) {
+        return placeExitOrder(symbol, qty, side, "MARGIN");
+    }
+    public OrderDTO placeExitOrder(String symbol, int qty, int side, String productType) {
         try {
-            String json = buildOrderJson(symbol, qty, side, 2, 0, 0, "SquareOff");
+            String pt = normalizeProductType(productType);
+            String json = buildOrderJson(symbol, qty, side, 2, 0, 0, "SquareOff", pt);
             log.info("Exit Order: {}", json);
             return postOrder(json);
         } catch (Exception e) { log.error("Error placing exit order", e); return null; }

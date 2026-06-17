@@ -75,6 +75,18 @@ public class AtmTracker {
         tryUpdate();
     }
 
+    /** End-of-day reset. Clears the baseline at 15:31 IST every weekday so the
+     *  dashboard's ATM display shows "—" overnight / on weekends, and so the next
+     *  morning's bootstrap fires fresh against actual day-open NIFTY (not against
+     *  a stale carryover from yesterday's close). */
+    @Scheduled(cron = "0 31 15 * * MON-FRI", zone = "Asia/Kolkata")
+    public void endOfDayReset() {
+        if (baselineAtm > 0) {
+            log.info("[AtmTracker] end-of-day reset — clearing baseline ATM {}", baselineAtm);
+            baselineAtm = -1;
+        }
+    }
+
     private void tryUpdate() {
         LocalTime t = ZonedDateTime.now(IST).toLocalTime();
         if (t.isBefore(LocalTime.of(9, 15)) || t.isAfter(LocalTime.of(15, 30))) return;
@@ -87,7 +99,16 @@ public class AtmTracker {
         BalancedAtmSelector.AtmSelection sel = atmSelector.select(spot);
         if (sel == null) return;
         long newAtm = sel.chosenAtm();
-        if (newAtm == baselineAtm) return;
+        if (newAtm == baselineAtm) {
+            // No drift — fire a status-only AtmChange (oldAtm == newAtm) so the listener can
+            // log a heartbeat to the event ring. Confirms drift checks are running even when
+            // ATM doesn't move.
+            if (listener != null) {
+                try { listener.accept(new AtmChange(baselineAtm, baselineAtm)); }
+                catch (Exception ignored) {}
+            }
+            return;
+        }
 
         AtmChange ev = new AtmChange(baselineAtm, newAtm);
         baselineAtm = newAtm;

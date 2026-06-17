@@ -205,4 +205,9 @@ public class ViewController {
     public String trade() {
         return "trade";
     }
+
+    @GetMapping("/trades")
+    public String trades() {
+        return "trades";
+    }
 }

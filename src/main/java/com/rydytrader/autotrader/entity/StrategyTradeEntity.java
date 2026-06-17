@@ -29,6 +29,17 @@ public class StrategyTradeEntity {
     @Column(name = "strategy_id", nullable = false, length = 40)
     private String strategyId;
 
+    /** Fyers option symbol of the leg this cycle traded (e.g. NSE:NIFTY...CE). Nullable for
+     *  legacy rows persisted before this column existed — readers must treat null as "—". */
+    @Column(name = "symbol", length = 80)
+    private String symbol;
+
+    /** The setup that opened this cycle — e.g. {@code H3_REVERSAL} or {@code L4_BREAKDOWN}.
+     *  Nullable for legacy rows persisted before this column existed — readers backfill from
+     *  the in-memory ring for today's rows where present, fall back to "—" otherwise. */
+    @Column(name = "setup", length = 32)
+    private String setup;
+
     /** ISO yyyy-MM-dd of the trading day. */
     @Column(name = "session_date", nullable = false, length = 10)
     private String sessionDate;
@@ -73,6 +84,10 @@ public class StrategyTradeEntity {
     public void setId(Long id) { this.id = id; }
     public String getStrategyId() { return strategyId; }
     public void setStrategyId(String v) { this.strategyId = v; }
+    public String getSymbol() { return symbol; }
+    public void setSymbol(String v) { this.symbol = v; }
+    public String getSetup() { return setup; }
+    public void setSetup(String v) { this.setup = v; }
     public String getSessionDate() { return sessionDate; }
     public void setSessionDate(String v) { this.sessionDate = v; }
     public long getClosedAtMillis() { return closedAtMillis; }

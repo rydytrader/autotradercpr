@@ -63,6 +63,19 @@
         .cal-month-stats { display:grid; grid-template-columns:1fr 1fr; gap:6px 14px; font-family:var(--font-mono); font-size:0.7rem; padding-top:10px; border-top:1px solid var(--border); }
         .cal-month-stat-label { color:var(--text-muted); }
         .cal-month-stat-value { color:var(--text-primary); font-weight:700; text-align:right; }
+        .trade-pill {
+            display:inline-block; padding:3px 10px; border-radius:999px;
+            font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
+            letter-spacing:0.06em; text-transform:uppercase; line-height:1.25;
+            border:1px solid transparent; white-space:nowrap;
+        }
+        .trade-pill-setup-h3   { color:#a78bfa; background:rgba(167,139,250,0.10); border-color:rgba(167,139,250,0.35); }
+        .trade-pill-setup-l4   { color:#f59e0b; background:rgba(245,158,11,0.10);  border-color:rgba(245,158,11,0.35); }
+        .trade-pill-setup-def  { color:var(--text-secondary); background:rgba(148,163,184,0.10); border-color:rgba(148,163,184,0.30); }
+        .trade-pill-reason-target { color:#34d399; background:rgba(52,211,153,0.10); border-color:rgba(52,211,153,0.35); }
+        .trade-pill-reason-sl     { color:#f87171; background:rgba(248,113,113,0.10); border-color:rgba(248,113,113,0.35); }
+        .trade-pill-reason-timed  { color:#fbbf24; background:rgba(251,191,36,0.10); border-color:rgba(251,191,36,0.35); }
+        .trade-pill-reason-manual { color:var(--text-secondary); background:rgba(148,163,184,0.10); border-color:rgba(148,163,184,0.30); }
     </style>
 </head>
 <body style="margin:0;display:flex;flex-direction:column;min-height:100vh;">
@@ -113,6 +126,14 @@
               border:1px solid transparent;background:transparent;cursor:pointer;">
         <span style="font-size:1.75rem;line-height:1;">⬡</span>
         <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">POSITIONS</span>
+    </a>
+    <a href="/trades" class="nav-icon" title="Trades" data-nav-key="trades"
+       style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+              width:78px;padding:14px 6px 10px;gap:6px;
+              border-radius:14px;text-decoration:none;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">
+        <span style="font-size:1.95rem;line-height:1;">≡</span>
+        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">TRADES</span>
     </a>
     <a href="/calendar" class="nav-icon active" title="Calendar" data-nav-key="calendar"
        style="display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -779,7 +800,7 @@
                 rows.sort((a, b) => (a.closedAtMillis || 0) - (b.closedAtMillis || 0));
                 renderStrategyTradeSection(
                     document.getElementById('calDayStraddles'),
-                    rows, 'Camarilla', 'Camarilla');
+                    rows, 'Symbol', 'Trades');
                 // Strangle section retired — clear it so nothing dangles.
                 const strangleWrap = document.getElementById('calDayStrangles');
                 if (strangleWrap) strangleWrap.innerHTML = '';
@@ -801,6 +822,25 @@
             const d = new Date(Number(ms));
             return d.toTimeString().slice(0, 5);
         };
+        // Inline pill renderers — match the trades page styles so cycles look identical
+        // across the Trades and Calendar views.
+        const setupPill = (setup) => {
+            const s = String(setup || '').toUpperCase();
+            if (!s) return '<span class="trade-pill trade-pill-setup-def">—</span>';
+            const cls = s.indexOf('H3') >= 0 ? 'trade-pill-setup-h3'
+                      : s.indexOf('L4') >= 0 ? 'trade-pill-setup-l4'
+                      : 'trade-pill-setup-def';
+            return '<span class="trade-pill ' + cls + '">' + s + '</span>';
+        };
+        const reasonPill = (reason) => {
+            const r = String(reason || '').toUpperCase();
+            if (!r) return '<span class="trade-pill trade-pill-reason-manual">—</span>';
+            const cls = r === 'TARGET_HIT' ? 'trade-pill-reason-target'
+                      : r === 'SL_HIT'     ? 'trade-pill-reason-sl'
+                      : r === 'TIMED_EXIT' ? 'trade-pill-reason-timed'
+                      : 'trade-pill-reason-manual';
+            return '<span class="trade-pill ' + cls + '">' + r + '</span>';
+        };
         let body = '';
         rows.forEach((t, i) => {
             const n   = Number(t.netPnl || 0);
@@ -808,30 +848,30 @@
             body +=
                 '<tr style="border-top:1px solid rgba(128,128,128,0.10);">' +
                     '<td style="padding:8px 10px;color:var(--text-muted);">#' + (i + 1) + '</td>' +
-                    '<td style="padding:8px 10px;color:var(--text-primary);">' + (t.shortCode || t.strategyId || '—') + '</td>' +
+                    '<td style="padding:8px 10px;color:var(--text-primary);">' + (t.symbol || t.shortCode || '—') + '</td>' +
                     '<td style="padding:8px 10px;">' + fmtTime(t.closedAtMillis) + '</td>' +
-                    '<td style="padding:8px 10px;color:var(--text-muted);">' + (t.closeReason || '—') + '</td>' +
+                    '<td style="padding:8px 10px;">' + setupPill(t.setup) + '</td>' +
+                    '<td style="padding:8px 10px;">' + reasonPill(t.closeReason) + '</td>' +
                     '<td style="padding:8px 10px;text-align:right;color:var(--text-muted);">' + (t.qty || 0) + '</td>' +
                     '<td style="padding:8px 10px;text-align:right;">' + fmtMoneyFull(t.grossPnl) + '</td>' +
                     '<td style="padding:8px 10px;text-align:right;color:var(--text-muted);">' + fmtMoneyFull(t.charges) + '</td>' +
                     '<td style="padding:8px 10px;text-align:right;" class="' + cls + '">' + fmtMoneyFull(t.netPnl) + '</td>' +
-                    '<td style="padding:8px 10px;text-align:center;color:' + (t.slHitCount > 0 ? 'var(--accent-red, #f87171)' : 'var(--text-muted)') + ';">' + (t.slHitCount || 0) + '</td>' +
                 '</tr>';
         });
         wrap.innerHTML =
             '<div class="stat-label" style="margin-bottom:8px;">' + pluralLabel + ' · ' + rows.length + ' cycle' + (rows.length === 1 ? '' : 's') + '</div>' +
             '<div style="overflow-x:auto;max-width:100%;">' +
-            '<table style="width:100%;min-width:760px;border-collapse:collapse;font-family:var(--font-mono);font-size:0.74rem;table-layout:auto;white-space:nowrap;">' +
+            '<table style="width:100%;min-width:840px;border-collapse:collapse;font-family:var(--font-mono);font-size:0.74rem;table-layout:auto;white-space:nowrap;">' +
                 '<thead><tr style="color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;">' +
                     '<th style="padding:6px 10px;text-align:left;">#</th>' +
                     '<th style="padding:6px 10px;text-align:left;">' + singularLabel.toUpperCase() + '</th>' +
                     '<th style="padding:6px 10px;text-align:left;">CLOSED</th>' +
+                    '<th style="padding:6px 10px;text-align:left;">SETUP</th>' +
                     '<th style="padding:6px 10px;text-align:left;">REASON</th>' +
                     '<th style="padding:6px 10px;text-align:right;">QTY</th>' +
                     '<th style="padding:6px 10px;text-align:right;">GROSS</th>' +
                     '<th style="padding:6px 10px;text-align:right;">CHARGES</th>' +
                     '<th style="padding:6px 10px;text-align:right;">NET</th>' +
-                    '<th style="padding:6px 10px;text-align:center;">SL</th>' +
                 '</tr></thead><tbody>' + body + '</tbody>' +
             '</table>' +
             '</div>';
