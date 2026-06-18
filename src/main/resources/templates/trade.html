@@ -238,6 +238,12 @@
                 <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
                     <span id="hdrVixChg" style="margin-left:4px;font-weight:600;"></span></span>
                 <span style="color:var(--text-muted);">ATM <span id="hdrAtm" style="color:var(--accent-cyan);font-weight:700;">—</span></span>
+                <span style="color:var(--text-muted);">ΔCE <span id="hdrOiCe" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                <span style="color:var(--text-muted);">ΔPE <span id="hdrOiPe" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                <span style="color:var(--text-muted);">DIFF <span id="hdrOiDiff" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                <span id="hdrOiTrend" onclick="OiBiasModal.open()" title="Click to open trend chart"
+                      style="cursor:pointer;padding:2px 10px;border-radius:999px;font-weight:700;font-size:0.62rem;letter-spacing:0.05em;
+                             background:rgba(148,163,184,0.10);color:var(--text-secondary);border:1px solid rgba(148,163,184,0.30);">— TREND</span>
                 <select id="posSymbolFilter" onchange="filterPositions()" style="
                     background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
                     border-radius:4px;padding:2px 8px;font-size:0.65rem;font-family:var(--font-mono);
@@ -778,8 +784,132 @@
         attachTickerPositionUpdates();
         checkConnection();
         setInterval(checkConnection, 5000);
+        OiBiasHeader.start();
     });
 </script>
+
+<!-- ── OI BIAS HEADER + TREND MODAL ────────────────────────────────────────── -->
+<div id="oiBiasModalOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:998;align-items:center;justify-content:center;">
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;width:760px;max-width:94vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,0.3);">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid var(--border);">
+            <div style="font-family:var(--font-mono);font-size:0.92rem;font-weight:700;color:var(--text-primary);">📈 OI Bias — Intraday Trend</div>
+            <button onclick="OiBiasModal.close()" style="background:transparent;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;line-height:1;padding:0 4px;">&times;</button>
+        </div>
+        <div style="padding:18px 24px;font-family:var(--font-mono);font-size:0.78rem;color:var(--text-secondary);">
+            <div id="oiBiasModalMeta" style="margin-bottom:10px;">Baseline —</div>
+            <canvas id="oiBiasChart" height="280"></canvas>
+            <div style="margin-top:10px;font-size:0.68rem;color:var(--text-muted);">
+                ΔCE / ΔPE are cumulative changes since 09:15 IST across the 21 strikes around ATM.
+                Ratio ≥ 1.5 = STRONG_BEARISH (call writers dominating). Ratio ≤ 0.66 = STRONG_BULLISH (put writers dominating).
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+(function() {
+    const $ = id => document.getElementById(id);
+
+    function fmtSigned(n) {
+        var v = Number(n);
+        if (!isFinite(v)) return '—';
+        var sign = v >= 0 ? '+' : '';
+        return sign + v.toLocaleString('en-IN');
+    }
+
+    function applyTrendPill(bias) {
+        var el = $('hdrOiTrend');
+        if (!el) return;
+        var label = '—';
+        var bg = 'rgba(148,163,184,0.10)', fg = 'var(--text-secondary)', bd = 'rgba(148,163,184,0.30)';
+        if (bias === 'STRONG_BEARISH_BIAS') {
+            label = 'BEARISH'; bg = 'rgba(248,113,113,0.10)'; fg = '#f87171'; bd = 'rgba(248,113,113,0.35)';
+        } else if (bias === 'STRONG_BULLISH_BIAS') {
+            label = 'BULLISH'; bg = 'rgba(52,211,153,0.10)'; fg = '#34d399'; bd = 'rgba(52,211,153,0.35)';
+        } else if (bias === 'NEUTRAL') {
+            label = 'NEUTRAL';
+        }
+        el.textContent = '● ' + label;
+        el.style.background = bg;
+        el.style.color = fg;
+        el.style.borderColor = bd;
+    }
+
+    window.OiBiasHeader = {
+        start() {
+            this.refresh();
+            setInterval(() => this.refresh(), 30000);
+        },
+        refresh() {
+            fetch('/api/option-oi/state').then(r => r.ok ? r.json() : null).then(d => {
+                if (!d) return;
+                $('hdrOiCe').textContent   = fmtSigned(d.cumulativeCeChange);
+                $('hdrOiPe').textContent   = fmtSigned(d.cumulativePeChange);
+                $('hdrOiDiff').textContent = fmtSigned(d.diff);
+                // Color ΔCE / ΔPE by sign
+                $('hdrOiCe').style.color   = (d.cumulativeCeChange || 0) >= 0 ? '#34d399' : '#f87171';
+                $('hdrOiPe').style.color   = (d.cumulativePeChange || 0) >= 0 ? '#34d399' : '#f87171';
+                $('hdrOiDiff').style.color = (d.diff || 0) >= 0 ? '#f87171' : '#34d399';
+                applyTrendPill(d.bias);
+            }).catch(() => {});
+        }
+    };
+
+    let chart = null;
+    window.OiBiasModal = {
+        open() {
+            $('oiBiasModalOverlay').style.display = 'flex';
+            this.load();
+        },
+        close() {
+            $('oiBiasModalOverlay').style.display = 'none';
+        },
+        load() {
+            fetch('/api/option-oi/history').then(r => r.ok ? r.json() : null).then(d => {
+                if (!d) return;
+                var samples = d.samples || [];
+                var labels  = samples.map(s => s.t);
+                var ceData  = samples.map(s => s.cumCe);
+                var peData  = samples.map(s => s.cumPe);
+                $('oiBiasModalMeta').textContent = samples.length
+                    ? 'Baseline ' + (d.baselineTakenAt || '—') + ' · ' + samples.length + ' samples'
+                    : 'No samples yet — waiting for first 3-min tick after 09:15';
+                var ctx = $('oiBiasChart').getContext('2d');
+                if (chart) chart.destroy();
+                chart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            { label: 'ΔCE OI', data: ceData, borderColor: '#f87171', backgroundColor: 'rgba(248,113,113,0.10)', tension: 0.25, pointRadius: 2 },
+                            { label: 'ΔPE OI', data: peData, borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,0.10)', tension: 0.25, pointRadius: 2 }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            legend: { labels: { color: '#9ca3af', font: { family: 'monospace', size: 11 } } },
+                            tooltip: { callbacks: { label: c => c.dataset.label + ': ' + fmtSigned(c.parsed.y) } }
+                        },
+                        scales: {
+                            x: { ticks: { color: '#6b7280', maxRotation: 0, autoSkipPadding: 12 }, grid: { color: 'rgba(128,128,128,0.08)' } },
+                            y: { ticks: { color: '#6b7280', callback: v => fmtSigned(v) }, grid: { color: 'rgba(128,128,128,0.08)' } }
+                        }
+                    }
+                });
+            }).catch(() => {});
+        }
+    };
+
+    document.getElementById('oiBiasModalOverlay').addEventListener('click', e => {
+        if (e.target.id === 'oiBiasModalOverlay') OiBiasModal.close();
+    });
+})();
+</script>
+
 <script src="/js/common.js?v=36"></script>
 <script src="/js/ticker.js?v=36"></script>
 <script src="/js/settings-modal.js?v=36"></script>

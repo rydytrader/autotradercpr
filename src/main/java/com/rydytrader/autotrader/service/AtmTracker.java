@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 /**
@@ -39,7 +40,7 @@ public class AtmTracker {
     private final MarketDataService    marketDataService;
     private final BalancedAtmSelector  atmSelector;
 
-    private volatile Consumer<AtmChange> listener;
+    private final CopyOnWriteArrayList<Consumer<AtmChange>> listeners = new CopyOnWriteArrayList<>();
     private volatile long baselineAtm = -1;
 
     public AtmTracker(MarketDataService marketDataService, BalancedAtmSelector atmSelector) {
@@ -47,11 +48,18 @@ public class AtmTracker {
         this.atmSelector       = atmSelector;
     }
 
-    /** Register the single ATM-change listener. The first successful resolution
-     *  fires an {@link AtmChange} with {@code oldAtm = -1} — signals the listener
-     *  to bootstrap. */
+    /** Register an ATM-change listener. The first successful resolution fires an
+     *  {@link AtmChange} with {@code oldAtm = -1} to every registered listener — signals
+     *  bootstrap. Multiple consumers (Camarilla, OptionOiSubscriber, …) can subscribe
+     *  independently; each receives every event. */
+    public void addListener(Consumer<AtmChange> l) {
+        if (l != null) listeners.add(l);
+    }
+
+    /** Backward-compat single-listener entrypoint. New code should use
+     *  {@link #addListener}; this is kept so existing callers don't need a rename. */
     public void setListener(Consumer<AtmChange> l) {
-        this.listener = l;
+        addListener(l);
     }
 
     public long getCurrentAtm() { return baselineAtm; }
@@ -61,7 +69,7 @@ public class AtmTracker {
     @Scheduled(fixedDelay = 30_000, initialDelay = 10_000)
     public void bootstrap() {
         if (baselineAtm > 0) return;
-        if (listener == null) return;
+        if (listeners.isEmpty()) return;
         tryUpdate();
     }
 
@@ -71,7 +79,7 @@ public class AtmTracker {
     @Scheduled(fixedDelay = 30 * 60_000, initialDelay = 30 * 60_000)
     public void driftCheck() {
         if (baselineAtm <= 0) return;        // wait for bootstrap to complete
-        if (listener == null) return;
+        if (listeners.isEmpty()) return;
         tryUpdate();
     }
 
@@ -100,25 +108,24 @@ public class AtmTracker {
         if (sel == null) return;
         long newAtm = sel.chosenAtm();
         if (newAtm == baselineAtm) {
-            // No drift — fire a status-only AtmChange (oldAtm == newAtm) so the listener can
-            // log a heartbeat to the event ring. Confirms drift checks are running even when
-            // ATM doesn't move.
-            if (listener != null) {
-                try { listener.accept(new AtmChange(baselineAtm, baselineAtm)); }
-                catch (Exception ignored) {}
-            }
+            // No drift — fire a status-only AtmChange (oldAtm == newAtm) so listeners can
+            // log a heartbeat. Confirms drift checks are running even when ATM doesn't move.
+            fireAtmChange(new AtmChange(baselineAtm, baselineAtm));
             return;
         }
 
         AtmChange ev = new AtmChange(baselineAtm, newAtm);
         baselineAtm = newAtm;
-        try {
-            log.info("[AtmTracker] ATM {} → {} (drift rebalance)",
-                ev.oldAtm() < 0 ? "(boot)" : String.valueOf(ev.oldAtm()),
-                ev.newAtm());
-            listener.accept(ev);
-        } catch (Exception e) {
-            log.warn("[AtmTracker] listener threw: {}", e.getMessage());
+        log.info("[AtmTracker] ATM {} → {} (drift rebalance)",
+            ev.oldAtm() < 0 ? "(boot)" : String.valueOf(ev.oldAtm()),
+            ev.newAtm());
+        fireAtmChange(ev);
+    }
+
+    private void fireAtmChange(AtmChange ev) {
+        for (Consumer<AtmChange> l : listeners) {
+            try { l.accept(ev); }
+            catch (Exception e) { log.warn("[AtmTracker] listener threw: {}", e.getMessage()); }
         }
     }
 

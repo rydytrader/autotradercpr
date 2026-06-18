@@ -19,6 +19,7 @@ import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -105,6 +106,7 @@ public class Camarilla implements Strategy {
     private final RiskSettingsStore     riskSettings;
     private final ObjectProvider<StrategyTradeRepository> tradeRepoProvider;
     private final ObjectProvider<CamarillaStreamBroker>   streamBrokerProvider;
+    private final ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> oiTrackerProvider;
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
 
     private volatile State state = new State();
@@ -119,7 +121,8 @@ public class Camarilla implements Strategy {
                      EventService eventService,
                      RiskSettingsStore riskSettings,
                      ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
-                     ObjectProvider<CamarillaStreamBroker> streamBrokerProvider) {
+                     ObjectProvider<CamarillaStreamBroker> streamBrokerProvider,
+                     ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> oiTrackerProvider) {
         this.camarillaService     = camarillaService;
         this.candleAggregator     = candleAggregator;
         this.atmTracker           = atmTracker;
@@ -130,6 +133,7 @@ public class Camarilla implements Strategy {
         this.riskSettings         = riskSettings;
         this.tradeRepoProvider    = tradeRepoProvider;
         this.streamBrokerProvider = streamBrokerProvider;
+        this.oiTrackerProvider    = oiTrackerProvider;
     }
 
     /** Push the latest dashboard state to every SSE-connected browser. No-op when no clients. */
@@ -143,7 +147,17 @@ public class Camarilla implements Strategy {
     @PostConstruct
     public void boot() {
         loadFromDisk();
+        // Defensive backfill: if state.json carries entries from a session whose DB rows
+        // pre-date the symbol/setup columns, copy that data into the DB rows BEFORE the
+        // rollover wipes the in-memory ring. No-op when DB rows already have the data.
+        backfillLegacyDbRowsFromState();
         rolloverIfNewDay();
+        // Independently drop any recentEvents from before today's 00:00 IST. Day rollover
+        // alone isn't sufficient — a partial earlier reset (clears trades but not events)
+        // can leave state.dayKey == today with stale event timestamps, so {@code
+        // rolloverIfNewDay()} short-circuits and yesterday's events bleed into today's
+        // Positions Event Log. This timestamp filter always runs on boot.
+        pruneStaleEventsBeforeToday();
         // Re-subscribe candle listeners for any positions restored from disk so we keep
         // evaluating their exit conditions after a restart.
         for (String sym : state.openPositions.keySet()) {
@@ -153,6 +167,68 @@ public class Camarilla implements Strategy {
         log.info("[Camarilla] booted — enabled={}, lots={}, squareoff={}, restoredPositions={}",
             riskSettings.isCamarillaEnabled(), riskSettings.getCamarillaLotsPerLeg(),
             riskSettings.getCamarillaSquareOffTime(), state.openPositions.size());
+    }
+
+    /** Drop any event whose timestamp is before today's IST midnight. Called on boot to
+     *  catch state files that have today's dayKey but stale event timestamps from a partial
+     *  earlier reset. */
+    private void pruneStaleEventsBeforeToday() {
+        if (state.recentEvents == null || state.recentEvents.isEmpty()) return;
+        long startOfTodayMillis = LocalDate.now(IST).atStartOfDay(IST).toInstant().toEpochMilli();
+        int before = state.recentEvents.size();
+        state.recentEvents.removeIf(e -> {
+            Object ts = e.get("ts");
+            return !(ts instanceof Number) || ((Number) ts).longValue() < startOfTodayMillis;
+        });
+        int removed = before - state.recentEvents.size();
+        if (removed > 0) {
+            log.info("[Camarilla] pruned {} stale event(s) from before today's 00:00 IST", removed);
+            saveToDisk();
+            publishStream();
+        }
+    }
+
+    /** Walk through {@code state.todayClosedTrades} (just loaded from disk) and patch any
+     *  DB rows whose {@code symbol} or {@code setup} column is null but whose
+     *  {@code closedAtMillis} matches an in-memory entry within ±5 s. Runs once at boot,
+     *  before {@link #rolloverIfNewDay()} which would otherwise clear the ring. */
+    private void backfillLegacyDbRowsFromState() {
+        if (state.todayClosedTrades == null || state.todayClosedTrades.isEmpty()) return;
+        StrategyTradeRepository repo = tradeRepoProvider == null ? null : tradeRepoProvider.getIfAvailable();
+        if (repo == null) return;
+        try {
+            List<StrategyTradeEntity> rows = repo.findByStrategyIdAndSessionDateOrderByClosedAtMillisAsc(
+                STRATEGY_ID, state.dayKey);
+            int patched = 0;
+            for (StrategyTradeEntity row : rows) {
+                boolean needSymbol = row.getSymbol() == null || row.getSymbol().isBlank();
+                boolean needSetup  = row.getSetup()  == null || row.getSetup().isBlank();
+                if (!needSymbol && !needSetup) continue;
+                for (Map<String, Object> m : state.todayClosedTrades) {
+                    Object ts = m.get("closedAtMillis");
+                    if (!(ts instanceof Number)) continue;
+                    long ms = ((Number) ts).longValue();
+                    if (Math.abs(ms - row.getClosedAtMillis()) > 5_000L) continue;
+                    if (needSymbol) {
+                        Object sym = m.get("symbol");
+                        if (sym != null) row.setSymbol(String.valueOf(sym));
+                    }
+                    if (needSetup) {
+                        Object setup = m.get("setup");
+                        if (setup != null) row.setSetup(String.valueOf(setup));
+                    }
+                    patched++;
+                    break;
+                }
+            }
+            if (patched > 0) {
+                repo.saveAll(rows);
+                log.info("[Camarilla] backfilled symbol/setup on {} legacy DB row(s) for {}",
+                    patched, state.dayKey);
+            }
+        } catch (Exception e) {
+            log.warn("[Camarilla] backfill failed: {}", e.getMessage());
+        }
     }
 
     // ── Strategy interface ──────────────────────────────────────────────────
@@ -542,6 +618,15 @@ public class Camarilla implements Strategy {
         event("[INFO]", "Entry", setup + " fired — sell " + symbol + " qty " + qty
             + " entry≈" + round2(entryLtp) + " target=" + round2(targetLevel) + " SL=" + round2(slLevel));
 
+        // OI bias context — display-only in Phase 1 so the operator can validate the signal
+        // before letting it block trades in a future iteration. Logged immediately after
+        // the entry event so the two appear adjacent in the event log.
+        try {
+            com.rydytrader.autotrader.service.OptionOiTracker oi = oiTrackerProvider == null ? null
+                : oiTrackerProvider.getIfAvailable();
+            if (oi != null) event("[INFO]", "OiBias", oi.biasLogLine());
+        } catch (Exception ignored) {}
+
         // side = -1 → sell (short the option)
         OrderDTO order = orderService.placeOrder(symbol, qty, -1, 0, productType);
         if (order == null || order.getId() == null || order.getId().isEmpty()) {
@@ -689,6 +774,32 @@ public class Camarilla implements Strategy {
 
     // ── Day rollover ─────────────────────────────────────────────────────────
 
+    /** Hard daily reset cron — fires at 06:00 IST every day. Don't wait for the first
+     *  market-hour tick to clear yesterday's state: by 06:00 the operator may already
+     *  be looking at the Positions Event Log and expects a clean slate.
+     *  Forces a fresh day key + clears the event ring, trades list, and stale watchlist
+     *  roles even if {@code state.dayKey} happens to equal today (e.g. after a manual
+     *  edit or a partial earlier reset). */
+    @Scheduled(cron = "0 0 6 * * *", zone = "Asia/Kolkata")
+    public synchronized void scheduledDailyReset() {
+        String today = LocalDate.now(IST).toString();
+        log.info("[Camarilla] 06:00 IST daily reset — clearing events + today's trades (was dayKey={})", state.dayKey);
+        state.dayKey = today;
+        state.tradesToday = 0;
+        state.consecutiveLosses = 0;
+        state.doneForDay = false;
+        state.todayClosedTrades.clear();
+        if (state.recentEvents != null) state.recentEvents.clear();
+        for (String sym : new ArrayList<>(state.openPositions.keySet())) {
+            candleAggregator.unsubscribe(sym);
+        }
+        state.openPositions.clear();
+        state.symbolRole.clear();
+        pendingByBar.clear();
+        saveToDisk();
+        publishStream();
+    }
+
     private void rolloverIfNewDay() {
         String today = LocalDate.now(IST).toString();
         if (today.equals(state.dayKey)) return;
@@ -699,6 +810,10 @@ public class Camarilla implements Strategy {
             state.consecutiveLosses = 0;
             state.doneForDay = false;
             state.todayClosedTrades.clear();
+            // Event ring is per-session — drop yesterday's events so the Positions Event Log
+            // starts fresh each morning. Without this the log accumulates indefinitely across
+            // restarts and old [Entry] / [Exit] lines from previous days bleed into today's view.
+            if (state.recentEvents != null) state.recentEvents.clear();
             // Any positions surviving overnight are dropped (intraday product or operator action).
             for (String sym : new ArrayList<>(state.openPositions.keySet())) {
                 candleAggregator.unsubscribe(sym);

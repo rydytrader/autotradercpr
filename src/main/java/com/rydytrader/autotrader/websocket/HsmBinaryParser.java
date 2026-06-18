@@ -408,6 +408,12 @@ public class HsmBinaryParser {
         Integer eftRaw = meta.rawValues.get("exch_feed_time");
         if (eftRaw != null) tick.exchFeedTime = eftRaw;
 
+        // OI ships as a raw integer (not a price field — no divisor applied). Index updates
+        // ("if" type) don't carry an OI field, so this stays at 0 for indices. Used by the
+        // OI bias tracker to compute cumulative ΔCE / ΔPE since 09:15.
+        Integer oiRaw = meta.rawValues.get("OI");
+        if (oiRaw != null) tick.oi = oiRaw.longValue();
+
         return tick;
     }
 
@@ -476,6 +482,7 @@ public class HsmBinaryParser {
         public double atp;
         public long volume;
         public long exchFeedTime; // epoch seconds — when exchange disseminated the update
+        public long oi;           // open interest (raw, no divisor) — non-zero only for option scrips
         public int messageNumber;
     }
 }

@@ -83,6 +83,16 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
     // Ad-hoc subscription set (e.g. open option legs from the rolling straddle)
     private final Set<String> adHocSymbols = ConcurrentHashMap.newKeySet();
 
+    // Last seen OI per fyersSymbol — populated by full-mode ticks for option scrips. Index
+    // ticks carry no OI so this stays absent for those symbols.
+    private final ConcurrentHashMap<String, Long> oiBySymbol = new ConcurrentHashMap<>();
+
+    // OI tick listeners — fired on every tick that carries a non-zero OI value AND that
+    // represents a change vs the previously stored value. Used by OptionOiTracker to
+    // maintain its per-strike OI map without polling.
+    public record OiTick(String fyersSymbol, long oi, long exchFeedTimeSec) {}
+    private final CopyOnWriteArrayList<java.util.function.Consumer<OiTick>> oiListeners = new CopyOnWriteArrayList<>();
+
     // Equity-only flags kept as no-ops for API compatibility with callers we haven't
     // yet stripped (PollingService etc.). Returns false / does nothing.
     private final Set<String> trailedSymbols = ConcurrentHashMap.newKeySet();
@@ -279,6 +289,32 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         tick.setLastTickDate(today);
         tick.recalcChange();
         dirty = true;
+
+        // Fan out OI changes to registered listeners. Option scrips report OI in every full
+        // update; equity / index ticks carry raw.oi=0 and never trigger a fan-out.
+        if (raw.oi > 0) {
+            Long prev = oiBySymbol.put(fyersSymbol, raw.oi);
+            if (prev == null || prev != raw.oi) {
+                OiTick ev = new OiTick(fyersSymbol, raw.oi, raw.exchFeedTime);
+                for (var l : oiListeners) {
+                    try { l.accept(ev); } catch (Exception e) {
+                        log.warn("[MarketData] OI listener threw: {}", e.getMessage());
+                    }
+                }
+            }
+        }
+    }
+
+    /** Register a listener for OI updates. Called for every option-scrip tick whose OI
+     *  value changed since the last tick for that symbol. */
+    public void addOiListener(java.util.function.Consumer<OiTick> listener) {
+        if (listener != null) oiListeners.add(listener);
+    }
+
+    /** Last seen OI value for {@code fyersSymbol}, or {@code null} if no tick has reported
+     *  OI for it yet (e.g. an index, or a strike that hasn't traded since subscribe). */
+    public Long getOi(String fyersSymbol) {
+        return oiBySymbol.get(fyersSymbol);
     }
 
     @Override
@@ -352,6 +388,11 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         Set<String> posSymbols = PositionManager.getAllSymbols();
         for (TickData tick : currentTicks.values()) {
             if (tick.getLtp() <= 0) continue;
+            // Hide option legs from the scrolling ticker — those are subscribed for OI bias
+            // tracking (and for any live position legs) but the ticker is meant to show only
+            // indices + the NIFTY-style base set. Open positions on options still get visibility
+            // through the Live Positions card.
+            if (isOptionSymbol(tick.getFyersSymbol())) continue;
             Map<String, Object> m = new LinkedHashMap<>();
             // Field names match ticker.js renderTicker expectations + the REST /api/market-ticker
             // payload: symbol = short display name, lp = last price, ch = absolute change,
@@ -553,6 +594,22 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         } catch (Exception e) {
             return fyersSymbol;
         }
+    }
+
+    /** True when the Fyers symbol is an option leg (CE/PE on any underlying), false for
+     *  equity, index, futures, mutual funds. Used to exclude OI-tracker subscriptions and
+     *  position legs from the scrolling ticker which only shows indices.
+     *  Accepts both option-symbol formats Fyers has used:
+     *    A) NSE:NIFTY2660223850CE / PE          (current — CE/PE suffix after digits)
+     *    B) NSE:NIFTY25527C24350 / P24350       (older — C/P letter followed by strike) */
+    private static boolean isOptionSymbol(String fyersSymbol) {
+        if (fyersSymbol == null || fyersSymbol.isEmpty()) return false;
+        String upper = fyersSymbol.toUpperCase();
+        if (upper.endsWith("-EQ") || upper.endsWith("-INDEX") || upper.endsWith("-MF")
+            || upper.endsWith("-BE") || upper.endsWith("-BL") || upper.endsWith("-SM")
+            || upper.endsWith("FUT")) return false;
+        return upper.matches(".*[CP]\\d+$")        // format B: ends in C/P + digits
+            || upper.matches(".*\\d+(CE|PE)$");    // format A: ends in digits + CE/PE
     }
 
     // ── Public accessors ──────────────────────────────────────────────────────
