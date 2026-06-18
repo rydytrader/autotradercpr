@@ -40,6 +40,11 @@ public class RiskSettingsStore {
         volatile String  camarillaTradingEndTime   = "13:30"; // no new signals after this time (IST); exits keep running
         volatile String  camarillaSquareOffTime   = "15:15";
         volatile int     camarillaMaxConcurrentPositions = 4; // hard cap on simultaneously-open positions
+        /** When true, Camarilla.fire() rejects CE shorts in a STRONG_BULLISH_BIAS market and
+         *  PE shorts in a STRONG_BEARISH_BIAS market — the bias must NOT oppose the trade
+         *  direction. NEUTRAL and STALE pass through (no signal = no block). Off by default
+         *  for the first 1–2 weeks of live observation; flip in settings when confident. */
+        volatile boolean camarillaOiBiasFilterEnabled = false;
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
         /** Initial capital used as the baseline for the Analytics Home page (capital growth %,
@@ -397,6 +402,7 @@ public class RiskSettingsStore {
     public String  getCamarillaTradingEndTime()   { return cfg().camarillaTradingEndTime; }
     public String  getCamarillaSquareOffTime()    { return cfg().camarillaSquareOffTime; }
     public int     getCamarillaMaxConcurrentPositions() { return cfg().camarillaMaxConcurrentPositions; }
+    public boolean isCamarillaOiBiasFilterEnabled()     { return cfg().camarillaOiBiasFilterEnabled; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getStartingCapital()      { return cfg().startingCapital; }
@@ -588,6 +594,7 @@ public class RiskSettingsStore {
     public void setCamarillaTradingEndTime(String v)      { cfg().camarillaTradingEndTime = (v == null || v.isBlank()) ? "13:30" : v.trim(); }
     public void setCamarillaSquareOffTime(String v)       { cfg().camarillaSquareOffTime = v == null ? "" : v.trim(); }
     public void setCamarillaMaxConcurrentPositions(int v) { cfg().camarillaMaxConcurrentPositions = Math.max(1, v); }
+    public void setCamarillaOiBiasFilterEnabled(boolean v) { cfg().camarillaOiBiasFilterEnabled = v; }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setStartingCapital(double v)      { cfg().startingCapital = Math.max(0, v); }
@@ -693,6 +700,7 @@ public class RiskSettingsStore {
     public String  getCamarillaTradingEndTime(String mode)    { return cfgFor(mode).camarillaTradingEndTime; }
     public String  getCamarillaSquareOffTime(String mode)     { return cfgFor(mode).camarillaSquareOffTime; }
     public int     getCamarillaMaxConcurrentPositions(String mode) { return cfgFor(mode).camarillaMaxConcurrentPositions; }
+    public boolean isCamarillaOiBiasFilterEnabled(String mode)     { return cfgFor(mode).camarillaOiBiasFilterEnabled; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
     public double getStartingCapital(String mode)      { return cfgFor(mode).startingCapital; }
@@ -723,6 +731,7 @@ public class RiskSettingsStore {
     public void setCamarillaTradingEndTime(String mode, String v)      { cfgFor(mode).camarillaTradingEndTime = (v == null || v.isBlank()) ? "13:30" : v.trim(); }
     public void setCamarillaSquareOffTime(String mode, String v)       { cfgFor(mode).camarillaSquareOffTime = v == null ? "" : v.trim(); }
     public void setCamarillaMaxConcurrentPositions(String mode, int v) { cfgFor(mode).camarillaMaxConcurrentPositions = Math.max(1, v); }
+    public void setCamarillaOiBiasFilterEnabled(String mode, boolean v) { cfgFor(mode).camarillaOiBiasFilterEnabled = v; }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
     public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
     public void setStartingCapital(String mode, double v)      { cfgFor(mode).startingCapital = Math.max(0, v); }
@@ -763,6 +772,7 @@ public class RiskSettingsStore {
             upsert("camarillaTradingEndTime",    c.camarillaTradingEndTime);
             upsert("camarillaSquareOffTime",     c.camarillaSquareOffTime);
             upsert("camarillaMaxConcurrentPositions", String.valueOf(c.camarillaMaxConcurrentPositions));
+            upsert("camarillaOiBiasFilterEnabled", String.valueOf(c.camarillaOiBiasFilterEnabled));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("startingCapital",      String.valueOf(c.startingCapital));
@@ -931,6 +941,7 @@ public class RiskSettingsStore {
                     case "camarillaH3RevEnabled"           -> { /* retired — both setups always on */ }
                     case "camarillaL4BdEnabled"            -> { /* retired — both setups always on */ }
                     case "camarillaMaxConcurrentPositions" -> c.camarillaMaxConcurrentPositions = Integer.parseInt(v);
+                    case "camarillaOiBiasFilterEnabled" -> c.camarillaOiBiasFilterEnabled = Boolean.parseBoolean(v);
                     case "camarillaMaxTradesPerDay"        -> { /* retired */ }
                     case "camarillaPauseAfterNLosses"      -> { /* retired */ }
                     case "camarillaDailyRiskBudget"        -> { /* retired — now uses portfolio max daily loss */ }

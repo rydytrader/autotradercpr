@@ -605,6 +605,30 @@ public class Camarilla implements Strategy {
     }
 
     private void fire(String symbol, ActiveSetup setup, double targetLevel, double slLevel, Candle entryCandle) {
+        // OI bias gate (when enabled in settings). Only blocks the side that's against the
+        // signal — CE shorts in a bullish market, PE shorts in a bearish market. NEUTRAL and
+        // STALE pass through (no signal = no block). Trades aligned with the bias direction
+        // (CE in bearish, PE in bullish) are never gated.
+        if (riskSettings.isCamarillaOiBiasFilterEnabled()) {
+            try {
+                com.rydytrader.autotrader.service.OptionOiTracker oiCheck = oiTrackerProvider == null ? null
+                    : oiTrackerProvider.getIfAvailable();
+                if (oiCheck != null) {
+                    String bias = oiCheck.snapshot().bias();
+                    boolean isCe = symbol != null && symbol.endsWith("CE");
+                    boolean isPe = symbol != null && symbol.endsWith("PE");
+                    if (isCe && "STRONG_BULLISH_BIAS".equals(bias)) {
+                        event("[WARNING]", "OiBias", "skipping CE short on " + symbol + " — bias=" + bias);
+                        return;
+                    }
+                    if (isPe && "STRONG_BEARISH_BIAS".equals(bias)) {
+                        event("[WARNING]", "OiBias", "skipping PE short on " + symbol + " — bias=" + bias);
+                        return;
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
         int qty = riskSettings.getCamarillaLotsPerLeg() * LOT_SIZE;
         String productType = riskSettings.getCamarillaOrderType();
 

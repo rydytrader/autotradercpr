@@ -26,6 +26,7 @@
                     '<div class="sm-field"><label>Trading End Time (HH:mm IST)</label><input type="time" id="sm-camarillaTradingEndTime" step="60"><div class="sm-hint">No new entries fire on candle closes after this time. Default 13:30. Existing positions keep running until target / SL / squareoff.</div></div>' +
                     '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-camarillaSquareOffTime" step="60"><div class="sm-hint">Hard exit if neither target nor SL has triggered.</div></div>' +
                     '<div class="sm-field"><label>Max Concurrent Positions</label><input type="number" id="sm-camarillaMaxConcurrentPositions" step="1" min="1" max="20"><div class="sm-hint">Hard cap on simultaneously open shorts across all symbols. Default 4.</div></div>' +
+                    '<div class="sm-field"><label><input type="checkbox" id="sm-camarillaOiBiasFilterEnabled"> &nbsp;OI Bias Filter</label><div class="sm-hint">When ON: block CE shorts in STRONG_BULLISH markets, block PE shorts in STRONG_BEARISH markets. NEUTRAL / STALE always pass through. Off by default — observe live data for 1–2 weeks before enabling.</div></div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
                     '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline used by the Home analytics page (capital growth %, equity curve, return %). Default ₹10,00,000.</div></div>' +
@@ -160,6 +161,7 @@
             if (g('sm-camarillaTradingEndTime'))    g('sm-camarillaTradingEndTime').value = d.camarillaTradingEndTime || '13:30';
             if (g('sm-camarillaSquareOffTime'))     g('sm-camarillaSquareOffTime').value = d.camarillaSquareOffTime || '15:15';
             if (g('sm-camarillaMaxConcurrentPositions')) g('sm-camarillaMaxConcurrentPositions').value = d.camarillaMaxConcurrentPositions != null ? d.camarillaMaxConcurrentPositions : 4;
+            if (g('sm-camarillaOiBiasFilterEnabled')) g('sm-camarillaOiBiasFilterEnabled').checked = !!d.camarillaOiBiasFilterEnabled;
         }).catch(function() {});
     }
 
@@ -171,7 +173,8 @@
             camarillaTradingStartTime:  (g('sm-camarillaTradingStartTime').value || '').trim(),
             camarillaTradingEndTime:    (g('sm-camarillaTradingEndTime').value || '').trim(),
             camarillaSquareOffTime:     (g('sm-camarillaSquareOffTime').value || '').trim(),
-            camarillaMaxConcurrentPositions: parseInt(g('sm-camarillaMaxConcurrentPositions').value, 10) || 4
+            camarillaMaxConcurrentPositions: parseInt(g('sm-camarillaMaxConcurrentPositions').value, 10) || 4,
+            camarillaOiBiasFilterEnabled: !!g('sm-camarillaOiBiasFilterEnabled').checked
         };
         postSettings('/api/settings/risk', body);
     }

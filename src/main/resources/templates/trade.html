@@ -797,7 +797,9 @@
         </div>
         <div style="padding:18px 24px;font-family:var(--font-mono);font-size:0.78rem;color:var(--text-secondary);">
             <div id="oiBiasModalMeta" style="margin-bottom:10px;">Baseline —</div>
-            <canvas id="oiBiasChart" height="280"></canvas>
+            <div style="position:relative;height:300px;width:100%;">
+                <canvas id="oiBiasChart"></canvas>
+            </div>
             <div style="margin-top:10px;font-size:0.68rem;color:var(--text-muted);">
                 ΔCE / ΔPE are cumulative changes since 09:15 IST across the 21 strikes around ATM.
                 Ratio ≥ 1.5 = STRONG_BEARISH (call writers dominating). Ratio ≤ 0.66 = STRONG_BULLISH (put writers dominating).
@@ -857,13 +859,20 @@
     };
 
     let chart = null;
+    let savedBodyOverflow = '';
     window.OiBiasModal = {
         open() {
+            // Lock the page scroll while the modal is up so the body doesn't jump when the
+            // overlay activates, and so background scrolling doesn't bleed through.
+            savedBodyOverflow = document.body.style.overflow || '';
+            document.body.style.overflow = 'hidden';
             $('oiBiasModalOverlay').style.display = 'flex';
             this.load();
         },
         close() {
             $('oiBiasModalOverlay').style.display = 'none';
+            document.body.style.overflow = savedBodyOverflow;
+            if (chart) { chart.destroy(); chart = null; }
         },
         load() {
             fetch('/api/option-oi/history').then(r => r.ok ? r.json() : null).then(d => {
@@ -872,9 +881,12 @@
                 var labels  = samples.map(s => s.t);
                 var ceData  = samples.map(s => s.cumCe);
                 var peData  = samples.map(s => s.cumPe);
+                // Live values stream from WebSocket on every tick; the chart trace is
+                // sampled every 3 minutes so the line stays evenly spaced. Until the first
+                // 3-min snapshot lands after market open, no points exist yet.
                 $('oiBiasModalMeta').textContent = samples.length
-                    ? 'Baseline ' + (d.baselineTakenAt || '—') + ' · ' + samples.length + ' samples'
-                    : 'No samples yet — waiting for first 3-min tick after 09:15';
+                    ? 'Baseline ' + (d.baselineTakenAt || '—') + ' · ' + samples.length + ' snapshot' + (samples.length === 1 ? '' : 's') + ' (recorded every minute)'
+                    : 'No history yet — chart points are recorded every minute during market hours';
                 var ctx = $('oiBiasChart').getContext('2d');
                 if (chart) chart.destroy();
                 chart = new Chart(ctx, {
@@ -889,6 +901,11 @@
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
+                        // Disable Chart.js's default left-to-right animation — it looked like
+                        // the chart was scrolling on open. We want it to render in place.
+                        animation: false,
+                        animations: { colors: false, x: false, y: false },
+                        transitions: { active: { animation: { duration: 0 } } },
                         interaction: { mode: 'index', intersect: false },
                         plugins: {
                             legend: { labels: { color: '#9ca3af', font: { family: 'monospace', size: 11 } } },

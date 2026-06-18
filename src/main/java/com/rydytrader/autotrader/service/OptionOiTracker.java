@@ -62,7 +62,7 @@ public class OptionOiTracker {
     private static final Logger log = LoggerFactory.getLogger(OptionOiTracker.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final String STATE_FILE = "../store/data/option-oi-state.json";
-    private static final int    MAX_SAMPLES = 150;
+    private static final int    MAX_SAMPLES = 400;        // 1-min cadence × ~6h15m session = 375 + headroom
     private static final long   STALE_THRESHOLD_MS = 5 * 60_000L;
     private static final double RATIO_BEARISH_THRESHOLD = 1.5;
     private static final double RATIO_BULLISH_THRESHOLD = 0.66;
@@ -211,9 +211,9 @@ public class OptionOiTracker {
     }
 
     /** Periodic chart snapshot — records the current cumulative + bias into the bounded
-     *  sample ring every 3 minutes during market hours. The trend modal's Chart.js line
+     *  sample ring every minute during market hours. The trend modal's Chart.js line
      *  plots from this ring. Also doubles as the canonical "save to disk" tick. */
-    @Scheduled(cron = "0 0/3 9-15 * * MON-FRI", zone = "Asia/Kolkata")
+    @Scheduled(cron = "0 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
     public synchronized void snapshotForChart() {
         LocalTime now = ZonedDateTime.now(IST).toLocalTime();
         if (now.isBefore(SESSION_START) || now.isAfter(SESSION_END)) return;
