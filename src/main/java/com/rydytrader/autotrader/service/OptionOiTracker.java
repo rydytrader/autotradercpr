@@ -354,7 +354,13 @@ public class OptionOiTracker {
         return Math.round(v * 100.0) / 100.0;
     }
 
-    private static String sign(long v) { return (v >= 0 ? "+" : "") + v; }
+    private static final java.text.NumberFormat IN_NUMBER_FMT =
+        java.text.NumberFormat.getNumberInstance(new java.util.Locale("en", "IN"));
+
+    /** Sign-prefixed Indian-style number with comma grouping. e.g. 14496040 → "+1,44,96,040". */
+    private static String sign(long v) {
+        return (v >= 0 ? "+" : "-") + IN_NUMBER_FMT.format(Math.abs(v));
+    }
 
     // ── State / DTOs ────────────────────────────────────────────────────────────
 

@@ -238,12 +238,6 @@
                 <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
                     <span id="hdrVixChg" style="margin-left:4px;font-weight:600;"></span></span>
                 <span style="color:var(--text-muted);">ATM <span id="hdrAtm" style="color:var(--accent-cyan);font-weight:700;">—</span></span>
-                <span style="color:var(--text-muted);">ΔCE <span id="hdrOiCe" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                <span style="color:var(--text-muted);">ΔPE <span id="hdrOiPe" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                <span style="color:var(--text-muted);">DIFF <span id="hdrOiDiff" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                <span id="hdrOiTrend" onclick="OiBiasModal.open()" title="Click to open trend chart"
-                      style="cursor:pointer;padding:2px 10px;border-radius:999px;font-weight:700;font-size:0.62rem;letter-spacing:0.05em;
-                             background:rgba(148,163,184,0.10);color:var(--text-secondary);border:1px solid rgba(148,163,184,0.30);">— TREND</span>
                 <select id="posSymbolFilter" onchange="filterPositions()" style="
                     background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
                     border-radius:4px;padding:2px 8px;font-size:0.65rem;font-family:var(--font-mono);
@@ -286,28 +280,58 @@
     </div>
 
 
-    <!-- ── Event Log ────────────────────────────────────────────────────── -->
-    <div class="section-card fixed-card-log fade-in" style="margin-top:18px;">
-        <div class="section-header">
-            <div class="section-title">
-                <div class="section-title-dot" style="background: var(--accent-cyan)"></div>
-                Event Log
+    <!-- ── OI Bias chart + Event Log (side-by-side) ─────────────────────── -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px;">
+        <!-- OI Bias chart panel -->
+        <div class="section-card fixed-card-log fade-in" style="margin:0;">
+            <div class="section-header">
+                <div class="section-title">
+                    <div class="section-title-dot" style="background: var(--accent-amber, #fbbf24)"></div>
+                    Trend
+                </div>
+                <div style="display:flex;align-items:center;gap:14px;margin-left:auto;font-family:var(--font-mono);font-size:0.72rem;">
+                    <span style="color:var(--text-muted);">ΔCE <span id="hdrOiCe" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                    <span style="color:var(--text-muted);">ΔPE <span id="hdrOiPe" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                    <span style="color:var(--text-muted);">DIFF <span id="hdrOiDiff" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                    <span id="hdrOiTrend"
+                          style="padding:2px 10px;border-radius:999px;font-weight:700;font-size:0.62rem;letter-spacing:0.05em;
+                                 background:rgba(148,163,184,0.10);color:var(--text-secondary);border:1px solid rgba(148,163,184,0.30);">— TREND</span>
+                    <button onclick="OiBiasChart.refresh()" title="Refresh"
+                            style="background:rgba(99,179,237,0.10);border:1px solid rgba(99,179,237,0.30);color:var(--accent-blue);
+                                   padding:4px 10px;border-radius:6px;font-family:var(--font-mono);font-size:0.66rem;font-weight:700;
+                                   letter-spacing:0.05em;cursor:pointer;">⟳</button>
+                </div>
             </div>
-            <div style="display:flex;align-items:center;gap:8px;margin-left:auto;">
-                <select id="logSymbolFilter" onchange="filterLogs()" style="
-                    background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
-                    border-radius:4px;padding:2px 8px;font-size:0.65rem;font-family:var(--font-mono);
-                    outline:none;cursor:pointer;min-width:140px;">
-                    <option value="">All Symbols</option>
-                </select>
-                <span class="section-badge" id="logStatusBadge" style="color: var(--accent-cyan); border-color: rgba(34,211,238,0.2); background: rgba(34,211,238,0.07);">Live</span>
+            <div style="padding:14px 18px;height:100%;display:flex;flex-direction:column;">
+                <div style="position:relative;flex:1;width:100%;min-height:260px;">
+                    <canvas id="oiBiasChart"></canvas>
+                </div>
             </div>
         </div>
-        <div class="log-wrap">
-            <div id="eventsBody">
-                <div class="empty-state">
-                    <div class="empty-icon">⌁</div>
-                    No events recorded
+
+        <!-- Event Log -->
+        <div class="section-card fixed-card-log fade-in" style="margin:0;">
+            <div class="section-header">
+                <div class="section-title">
+                    <div class="section-title-dot" style="background: var(--accent-cyan)"></div>
+                    Event Log
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;margin-left:auto;">
+                    <select id="logSymbolFilter" onchange="filterLogs()" style="
+                        background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
+                        border-radius:4px;padding:2px 8px;font-size:0.65rem;font-family:var(--font-mono);
+                        outline:none;cursor:pointer;min-width:140px;">
+                        <option value="">All Symbols</option>
+                    </select>
+                    <span class="section-badge" id="logStatusBadge" style="color: var(--accent-cyan); border-color: rgba(34,211,238,0.2); background: rgba(34,211,238,0.07);">Live</span>
+                </div>
+            </div>
+            <div class="log-wrap">
+                <div id="eventsBody">
+                    <div class="empty-state">
+                        <div class="empty-icon">⌁</div>
+                        No events recorded
+                    </div>
                 </div>
             </div>
         </div>
@@ -375,8 +399,12 @@
     }
     function squareOffRow(symbol) {
         if (!confirm('Square off ' + symbol + '?')) return;
-        // For now use the strategy-wide squareoff endpoint; per-row is left as a UI nicety to add.
-        executeSquareOff();
+        fetch('/api/camarilla/squareoff', {
+            method: 'POST',
+            headers: csrfHeaders(),
+            body: JSON.stringify({ symbol: symbol })
+        }).then(function() { setTimeout(loadState, 500); })
+          .catch(function() {});
     }
 
     // ── State refresh (SSE primary, REST poll fallback) ────────────────────
@@ -591,6 +619,21 @@
         document.getElementById('positionsBadge').textContent = positions.length + ' active';
     }
 
+    // "NSE:NIFTY2662325100PE" → "NIFTY 25100 PE". Falls back to original on no-match
+    // so non-NIFTY-option symbols (or other formats) pass through unchanged.
+    function shortenSymbol(sym) {
+        if (!sym) return sym;
+        var m = String(sym).match(/^NSE:NIFTY[\dA-Z]+?(\d{4,5})(CE|PE)$/);
+        if (!m) return sym;
+        return 'NIFTY ' + m[1] + ' ' + m[2];
+    }
+    function shortenSymbolInText(text) {
+        if (!text) return text;
+        return String(text).replace(/NSE:NIFTY[\dA-Z]+(?:CE|PE)\b/g, function(full) {
+            return shortenSymbol(full);
+        });
+    }
+
     function renderEvents(d) {
         var events = (d.recentEvents || []).slice();
         var filter = logFilterValue;
@@ -606,8 +649,10 @@
         var sel = document.getElementById('logSymbolFilter');
         var prior = sel.value;
         var all = Array.from(symbolSet);
+        // Display the shortened label but keep the full Fyers symbol as the option value so
+        // the indexOf-on-message filter logic still matches what's in the event text.
         sel.innerHTML = '<option value="">All Symbols</option>'
-            + all.map(function(s) { return '<option value="' + escapeHtml(s) + '">' + escapeHtml(s) + '</option>'; }).join('');
+            + all.map(function(s) { return '<option value="' + escapeHtml(s) + '">' + escapeHtml(shortenSymbol(s)) + '</option>'; }).join('');
         if (all.indexOf(prior) >= 0) sel.value = prior;
 
         var body = document.getElementById('eventsBody');
@@ -622,7 +667,7 @@
                 + '<span style="color:var(--text-muted);">' + fmtTime(e.ts) + '</span>'
                 + '<span class="sev-' + sev + '">' + escapeHtml(sev) + '</span>'
                 + '<span class="event-src">[' + escapeHtml(src) + ']</span>'
-                + '<span class="event-msg">' + escapeHtml(e.message) + '</span>'
+                + '<span class="event-msg">' + escapeHtml(shortenSymbolInText(e.message)) + '</span>'
                 + '</div>';
         }).join('');
     }
@@ -785,28 +830,9 @@
         checkConnection();
         setInterval(checkConnection, 5000);
         OiBiasHeader.start();
+        OiBiasChart.init();
     });
 </script>
-
-<!-- ── OI BIAS HEADER + TREND MODAL ────────────────────────────────────────── -->
-<div id="oiBiasModalOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:998;align-items:center;justify-content:center;">
-    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:12px;width:760px;max-width:94vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 16px 48px rgba(0,0,0,0.3);">
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 24px;border-bottom:1px solid var(--border);">
-            <div style="font-family:var(--font-mono);font-size:0.92rem;font-weight:700;color:var(--text-primary);">📈 OI Bias — Intraday Trend</div>
-            <button onclick="OiBiasModal.close()" style="background:transparent;border:none;color:var(--text-muted);font-size:1.5rem;cursor:pointer;line-height:1;padding:0 4px;">&times;</button>
-        </div>
-        <div style="padding:18px 24px;font-family:var(--font-mono);font-size:0.78rem;color:var(--text-secondary);">
-            <div id="oiBiasModalMeta" style="margin-bottom:10px;">Baseline —</div>
-            <div style="position:relative;height:300px;width:100%;">
-                <canvas id="oiBiasChart"></canvas>
-            </div>
-            <div style="margin-top:10px;font-size:0.68rem;color:var(--text-muted);">
-                ΔCE / ΔPE are cumulative changes since 09:15 IST across the 21 strikes around ATM.
-                Ratio ≥ 1.5 = STRONG_BEARISH (call writers dominating). Ratio ≤ 0.66 = STRONG_BULLISH (put writers dominating).
-            </div>
-        </div>
-    </div>
-</div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
@@ -859,34 +885,23 @@
     };
 
     let chart = null;
-    let savedBodyOverflow = '';
-    window.OiBiasModal = {
-        open() {
-            // Lock the page scroll while the modal is up so the body doesn't jump when the
-            // overlay activates, and so background scrolling doesn't bleed through.
-            savedBodyOverflow = document.body.style.overflow || '';
-            document.body.style.overflow = 'hidden';
-            $('oiBiasModalOverlay').style.display = 'flex';
-            this.load();
+    window.OiBiasChart = {
+        // Initial draw + auto-refresh loop. Chart snapshots land every minute on the backend
+        // so polling every 15s keeps the line within ~15s of the latest snapshot while not
+        // hammering the server (and most polls between snapshots will just re-render the same
+        // data with negligible cost).
+        init() {
+            this.refresh();
+            setInterval(() => this.refresh(), 15000);
         },
-        close() {
-            $('oiBiasModalOverlay').style.display = 'none';
-            document.body.style.overflow = savedBodyOverflow;
-            if (chart) { chart.destroy(); chart = null; }
-        },
-        load() {
+        // Manual refresh via the ⟳ button on the chart card.
+        refresh() {
             fetch('/api/option-oi/history').then(r => r.ok ? r.json() : null).then(d => {
                 if (!d) return;
                 var samples = d.samples || [];
                 var labels  = samples.map(s => s.t);
                 var ceData  = samples.map(s => s.cumCe);
                 var peData  = samples.map(s => s.cumPe);
-                // Live values stream from WebSocket on every tick; the chart trace is
-                // sampled every 3 minutes so the line stays evenly spaced. Until the first
-                // 3-min snapshot lands after market open, no points exist yet.
-                $('oiBiasModalMeta').textContent = samples.length
-                    ? 'Baseline ' + (d.baselineTakenAt || '—') + ' · ' + samples.length + ' snapshot' + (samples.length === 1 ? '' : 's') + ' (recorded every minute)'
-                    : 'No history yet — chart points are recorded every minute during market hours';
                 var ctx = $('oiBiasChart').getContext('2d');
                 if (chart) chart.destroy();
                 chart = new Chart(ctx, {
@@ -894,15 +909,13 @@
                     data: {
                         labels: labels,
                         datasets: [
-                            { label: 'ΔCE OI', data: ceData, borderColor: '#f87171', backgroundColor: 'rgba(248,113,113,0.10)', tension: 0.25, pointRadius: 2 },
-                            { label: 'ΔPE OI', data: peData, borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,0.10)', tension: 0.25, pointRadius: 2 }
+                            { label: 'ΔCE OI', data: ceData, borderColor: '#f87171', backgroundColor: 'rgba(248,113,113,0.10)', tension: 0.25, pointRadius: 0, pointHoverRadius: 4 },
+                            { label: 'ΔPE OI', data: peData, borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,0.10)', tension: 0.25, pointRadius: 0, pointHoverRadius: 4 }
                         ]
                     },
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
-                        // Disable Chart.js's default left-to-right animation — it looked like
-                        // the chart was scrolling on open. We want it to render in place.
                         animation: false,
                         animations: { colors: false, x: false, y: false },
                         transitions: { active: { animation: { duration: 0 } } },
@@ -920,10 +933,6 @@
             }).catch(() => {});
         }
     };
-
-    document.getElementById('oiBiasModalOverlay').addEventListener('click', e => {
-        if (e.target.id === 'oiBiasModalOverlay') OiBiasModal.close();
-    });
 })();
 </script>
 

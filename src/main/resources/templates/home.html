@@ -327,6 +327,37 @@
         </div>
     </div>
 
+    <!-- ── Breakdown cards (CE vs PE, AM vs PM, Expiry vs Non, OI Confirmation) ── -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-bottom:20px;" id="ahBreakdowns">
+        <div class="section-card fade-in" style="margin:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:#a78bfa;"></div> CE vs PE</div>
+            </div>
+            <div id="ahBreakdownCeVsPe" style="padding:14px 18px;"></div>
+        </div>
+        <div class="section-card fade-in" style="margin:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:#fbbf24;"></div> Morning vs Afternoon</div>
+                <span class="section-badge" style="font-size:0.58rem;margin-left:auto;">Split at 12:30 IST</span>
+            </div>
+            <div id="ahBreakdownAmVsPm" style="padding:14px 18px;"></div>
+        </div>
+        <div class="section-card fade-in" style="margin:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:#34d399;"></div> Expiry vs Non-Expiry</div>
+                <span class="section-badge" style="font-size:0.58rem;margin-left:auto;">Tue = Expiry</span>
+            </div>
+            <div id="ahBreakdownExpiryVsNon" style="padding:14px 18px;"></div>
+        </div>
+        <div class="section-card fade-in" style="margin:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:#f87171;"></div> OI Confirmation</div>
+                <span class="section-badge" style="font-size:0.58rem;margin-left:auto;">Strong = with-trend</span>
+            </div>
+            <div id="ahBreakdownOiConfirmation" style="padding:14px 18px;"></div>
+        </div>
+    </div>
+
     <footer class="page-footer">
         <div class="footer-copy">&copy; <span id="footerYear"></span> TraderEdge. All rights reserved.</div>
         <div class="footer-author">Built by <strong style="color: var(--text-secondary); margin: 0 4px;">Prabhu Arumugham</strong>
@@ -692,7 +723,43 @@
                 renderEquityChart(eq.labels || [], eq.values || [], cap.startingCapital, eq.kinds || []);
                 lastEquityRenderMs = nowMs;
             }
+
+            renderBreakdowns(d.breakdowns || {});
         }).catch(function() {});
+    }
+
+    function renderBreakdowns(b) {
+        renderBin('ahBreakdownCeVsPe',         b.ceVsPe         || {});
+        renderBin('ahBreakdownAmVsPm',         b.amVsPm         || {});
+        renderBin('ahBreakdownExpiryVsNon',    b.expiryVsNon    || {});
+        renderBin('ahBreakdownOiConfirmation', b.oiConfirmation || {});
+    }
+
+    /** Render a {groupName: {trades, wins, losses, netPnl, winRate}} object as a small
+     *  stacked-row table. Skips groups with 0 trades unless they're the only entry — keeps
+     *  the cards visually compact when one side dominates. */
+    function renderBin(containerId, bin) {
+        var el = document.getElementById(containerId);
+        if (!el) return;
+        var keys = Object.keys(bin);
+        if (keys.length === 0) { el.innerHTML = '<div style="color:var(--text-muted);font-size:0.74rem;">No data yet.</div>'; return; }
+        var anyNonZero = keys.some(function(k) { return (bin[k].trades || 0) > 0; });
+        var rows = keys
+            .filter(function(k) { return anyNonZero ? (bin[k].trades || 0) > 0 : true; })
+            .map(function(k) {
+                var g = bin[k];
+                var net = Number(g.netPnl || 0);
+                var pnlClass = net > 0 ? 'pnl-positive' : (net < 0 ? 'pnl-negative' : '');
+                var wr = Number(g.winRate || 0);
+                return '<div style="display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:baseline;padding:8px 0;border-top:1px solid rgba(128,128,128,0.10);font-family:var(--font-mono);font-size:0.74rem;">'
+                    + '<span style="color:var(--text-primary);font-weight:700;">' + k + '</span>'
+                    + '<span style="color:var(--text-muted);">' + g.trades + ' trade' + (g.trades === 1 ? '' : 's') + '</span>'
+                    + '<span style="color:var(--text-muted);">WR ' + wr.toFixed(0) + '%</span>'
+                    + '<span class="' + pnlClass + '" style="font-weight:700;">' + fmtRs(net) + '</span>'
+                    + '</div>';
+            }).join('');
+        if (!rows) { el.innerHTML = '<div style="color:var(--text-muted);font-size:0.74rem;">No closed trades.</div>'; return; }
+        el.innerHTML = rows;
     }
     loadSummary(true);
     // Live refresh: while the tab is visible AND the current scope includes today, re-poll

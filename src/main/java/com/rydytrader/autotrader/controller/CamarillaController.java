@@ -63,7 +63,17 @@ public class CamarillaController {
 
     @PostMapping("/api/camarilla/squareoff")
     public Map<String, Object> squareoff(@RequestBody(required = false) Map<String, Object> body) {
-        boolean closed = strategy.forceClose("MANUAL");
+        // Per-row close — caller passes {"symbol":"NSE:NIFTY...CE"}. Closes only that symbol;
+        // other open positions stay running. Empty/missing symbol flattens everything (the
+        // header "Square Off" button continues to work that way).
+        Object symObj = body == null ? null : body.get("symbol");
+        String symbol = symObj == null ? "" : symObj.toString().trim();
+        boolean closed;
+        if (!symbol.isEmpty()) {
+            closed = strategy.forceCloseSymbol(symbol, "MANUAL");
+        } else {
+            closed = strategy.forceClose("MANUAL");
+        }
         return Map.of("ok", true, "closedSomething", closed);
     }
 

@@ -7,7 +7,12 @@ import com.rydytrader.autotrader.store.TokenStore;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -37,10 +42,16 @@ import java.util.Map;
 public class OptionOiSubscriber {
 
     private static final Logger log = LoggerFactory.getLogger(OptionOiSubscriber.class);
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final String NIFTY_SYMBOL  = "NSE:NIFTY50-INDEX";
     private static final long   STRIKE_STEP   = 50L;
     private static final int    STRIKES_PER_SIDE = 10;
     private static final int    CHAIN_FETCH_STRIKES = 25;
+    /** A successful subscription places at least this many strike pairs into the active window
+     *  (some far-edge strikes may be missing legs near boot, so we don't require all 21). */
+    private static final int    HEALTHY_WINDOW_MIN_STRIKES = 15;
+
+    private volatile boolean subscriptionsHealthy = false;
 
     private final FyersClientRouter fyersClient;
     private final TokenStore        tokenStore;
@@ -80,8 +91,14 @@ public class OptionOiSubscriber {
 
         // Resolve 21 strikes × CE+PE symbols via one chain fetch.
         List<OptionOiTracker.StrikeSymbols> window = resolveWindowSymbols(atm);
-        if (window.isEmpty()) {
-            log.warn("[OptionOiSubscriber] could not resolve symbols around ATM={} — chain empty?", atm);
+        if (window.size() < HEALTHY_WINDOW_MIN_STRIKES) {
+            // Common at 09:15:0x — Fyers can return an empty or partial chain right at market
+            // open. Mark unhealthy so {@link #retryIfSubscriptionsMissing} keeps re-attempting
+            // every minute until the chain comes back full, instead of waiting 30 min for the
+            // next ATM drift heartbeat.
+            subscriptionsHealthy = false;
+            log.warn("[OptionOiSubscriber] could not resolve full symbol set around ATM={} (got {} strikes, need {}). Will retry.",
+                atm, window.size(), HEALTHY_WINDOW_MIN_STRIKES);
             return;
         }
 
@@ -96,6 +113,21 @@ public class OptionOiSubscriber {
             log.info("[OptionOiSubscriber] ATM={} window unchanged ({} strikes already subscribed)",
                 atm, window.size());
         }
+        subscriptionsHealthy = true;
+    }
+
+    /** Retry loop — runs every minute during market hours. If the initial subscription attempt
+     *  at 09:15 failed (typical: Fyers chain endpoint is empty for the first few seconds after
+     *  market open), this catches up so we don't sit idle until the 30-min ATM drift check. */
+    @Scheduled(fixedDelay = 60_000, initialDelay = 60_000)
+    public void retryIfSubscriptionsMissing() {
+        if (subscriptionsHealthy) return;
+        LocalTime t = ZonedDateTime.now(IST).toLocalTime();
+        if (t.isBefore(LocalTime.of(9, 15)) || t.isAfter(LocalTime.of(15, 30))) return;
+        long atm = atmTracker.getCurrentAtm();
+        if (atm <= 0) return;
+        log.info("[OptionOiSubscriber] retry — attempting to resolve symbols around ATM={}", atm);
+        onAtmChange(new AtmTracker.AtmChange(atm, atm));
     }
 
     /** One chain fetch → walk strikes ATM − 500 … ATM + 500 (step 50) → 21 strikes,

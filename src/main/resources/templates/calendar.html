@@ -440,16 +440,29 @@
     }
 
     function aggregate(sessions) {
-        let net = 0, gross = 0, charges = 0, rolls = 0, wins = 0, losses = 0;
+        let net = 0, gross = 0, charges = 0, rolls = 0;
+        let trades = 0, wins = 0, losses = 0;
         sessions.forEach(s => {
             net     += s.netPnl   || 0;
             gross   += s.grossPnl || 0;
             charges += s.charges  || 0;
             rolls   += s.rolls    || 0;
-            if ((s.netPnl || 0) > 0) wins++;
-            else if ((s.netPnl || 0) < 0) losses++;
+            // Per-day rows from the server carry s.entries (trade count for cycle-based
+            // strategies, straddle-entry count for legacy sessions) + s.wins / s.losses
+            // (trade-level when the controller knows them). Fall back to day-level
+            // win/loss when s.wins isn't available — old sessions endpoint shape.
+            trades += Number(s.entries) || 0;
+            if (s.wins != null || s.losses != null) {
+                wins   += Number(s.wins)   || 0;
+                losses += Number(s.losses) || 0;
+            } else if ((s.netPnl || 0) > 0) {
+                wins++;
+            } else if ((s.netPnl || 0) < 0) {
+                losses++;
+            }
         });
-        return { netPnl: net, grossPnl: gross, charges, rolls, wins, losses, sessions: sessions.length };
+        return { netPnl: net, grossPnl: gross, charges, rolls, wins, losses,
+                 trades, days: sessions.length };
     }
 
     function renderHero(agg) {
@@ -682,7 +695,7 @@
             const y = m >= 4 ? curFyStart : curFyStart + 1;
             const monthSessions = filterSessions(y, m);
             const agg = aggregate(monthSessions);
-            const has = agg.sessions > 0;
+            const has = agg.trades > 0;
             const net = agg.netPnl || 0;
             const clsBase = ['cal-month-card'];
             if (has && net > 0) clsBase.push('profit');
@@ -698,13 +711,13 @@
                 '<div class="cal-month-name">' + MONTH_NAMES[m - 1] + ' ' + y + '</div>' +
                 '<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:12px;">' +
                     '<div class="' + pnlCls.join(' ') + '">' + (has ? fmtMoney(net) : '—') + '</div>' +
-                    '<div style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-muted);">' + (has ? agg.sessions + ' session' + (agg.sessions === 1 ? '' : 's') : '') + '</div>' +
+                    '<div style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-muted);">' + (has ? agg.trades + ' trade' + (agg.trades === 1 ? '' : 's') : '') + '</div>' +
                 '</div>' +
                 '<div class="cal-month-stats">' +
                     '<div class="cal-month-stat-label">Win %</div><div class="cal-month-stat-value cal-month-winrate">—</div>' +
                     '<div class="cal-month-stat-label">Gross</div><div class="cal-month-stat-value">' + (has ? fmtMoney(agg.grossPnl) : '—') + '</div>' +
                     '<div class="cal-month-stat-label">Charges</div><div class="cal-month-stat-value">' + (has ? fmtMoney(agg.charges) : '—') + '</div>' +
-                    '<div class="cal-month-stat-label">Sessions</div><div class="cal-month-stat-value">' + (has ? agg.sessions : '—') + '</div>' +
+                    '<div class="cal-month-stat-label">Trades</div><div class="cal-month-stat-value">' + (has ? agg.trades : '—') + '</div>' +
                 '</div>' +
             '</div>';
         });

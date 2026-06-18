@@ -255,6 +255,17 @@ public class Camarilla implements Strategy {
         return anyClosed;
     }
 
+    /** Per-row manual squareoff. Closes only the supplied {@code symbol}, leaves the rest
+     *  of the open-positions map untouched. No-op (returns {@code false}) when the symbol
+     *  isn't currently open. */
+    public boolean forceCloseSymbol(String symbol, String reason) {
+        if (symbol == null || symbol.isBlank()) return false;
+        synchronized (this) {
+            if (!state.openPositions.containsKey(symbol)) return false;
+            return closePosition(symbol, reason == null ? "MANUAL" : reason);
+        }
+    }
+
     @Override
     public void resetToIdle(String reason) {
         synchronized (this) {
@@ -386,38 +397,18 @@ public class Camarilla implements Strategy {
     }
 
     private void processBar(List<EntryCandidate> bar) {
-        // Group by side × setup. For each (side, setup) combination, pick the winner using the
-        // V2 tiebreaker rule.
-        EntryCandidate ceL4Winner = selectL4Winner(bar, true);   // CE-side L4: prefer ATM over ITM
-        EntryCandidate peL4Winner = selectL4Winner(bar, false);  // PE-side L4: prefer ATM over ITM
-        EntryCandidate ceH3Winner = selectH3Winner(bar, true);   // CE-side H3: only OTM_H3 contributes
-        EntryCandidate peH3Winner = selectH3Winner(bar, false);  // PE-side H3: only OTM_H3 contributes
-
-        // Fire in deterministic order: ATM L4 first (highest-conviction setups), then OTM H3.
-        // canFireNewEntry() inside fire() guards against exceeding the concurrent-positions cap.
+        // V3: only ATM L4 breakdown candidates are queued, one per side. No tiebreaker
+        // needed (no ITM fallback), no H3 reversal path (those roles aren't assigned).
+        EntryCandidate ceL4Winner = selectL4Winner(bar, true);
+        EntryCandidate peL4Winner = selectL4Winner(bar, false);
         fireIfPresent(ceL4Winner);
         fireIfPresent(peL4Winner);
-        fireIfPresent(ceH3Winner);
-        fireIfPresent(peH3Winner);
     }
 
     private EntryCandidate selectL4Winner(List<EntryCandidate> bar, boolean ceSide) {
-        EntryCandidate atm = null, itm = null;
         for (EntryCandidate cand : bar) {
             if (cand.setup() != ActiveSetup.L4_BREAKDOWN) continue;
-            if (ceSide && !cand.isCe()) continue;
-            if (!ceSide && !cand.isPe()) continue;
-            if (cand.role() == WatchRole.ATM_L4) atm = cand;
-            else if (cand.role() == WatchRole.ITM_L4) itm = cand;
-        }
-        // Tiebreaker: prefer ATM over ITM when both fire on the same side.
-        return atm != null ? atm : itm;
-    }
-
-    private EntryCandidate selectH3Winner(List<EntryCandidate> bar, boolean ceSide) {
-        for (EntryCandidate cand : bar) {
-            if (cand.setup() != ActiveSetup.H3_REVERSAL) continue;
-            if (cand.role() != WatchRole.OTM_H3) continue;
+            if (cand.role() != WatchRole.ATM_L4) continue;
             if (ceSide && !cand.isCe()) continue;
             if (!ceSide && !cand.isPe()) continue;
             return cand;
@@ -448,29 +439,18 @@ public class Camarilla implements Strategy {
             return;
         }
 
-        // Resolve the 6-contract V2 watchlist with role assignment:
-        //   ATM strike     → ATM_L4 (both CE and PE only check L4 breakdown)
-        //   ATM − 50 (CE)  → ITM_L4 (CE in-the-money, lower strike)
-        //   ATM + 50 (CE)  → OTM_H3 (CE out-of-the-money, higher strike)
-        //   ATM + 50 (PE)  → ITM_L4 (PE in-the-money, higher strike)
-        //   ATM − 50 (PE)  → OTM_H3 (PE out-of-the-money, lower strike)
+        // V3 watchlist — L4-breakdown-only on the ATM strikes:
+        //   ATM CE → ATM_L4 (L4 breakdown signals premium collapse on the call side)
+        //   ATM PE → ATM_L4 (L4 breakdown signals premium collapse on the put side)
+        // H3 reversal and ITM/OTM neighbour strikes are intentionally dropped — H3 had higher
+        // false-signal risk after strike drift, and ITM L4 fallback rarely fired without ATM
+        // also breaking (per operator analysis). Net: 2-contract watchlist, single setup,
+        // simpler dispatch, cleaner signal quality.
         Map<String, WatchRole> newRoles = new LinkedHashMap<>();
-        BalancedAtmSelector.StrikeAtLevel atmRow  = atmSelector.resolveStrikeAtLevel(atm);
-        BalancedAtmSelector.StrikeAtLevel upRow   = atmSelector.resolveStrikeAtLevel(atm + STRIKE_STEP);
-        BalancedAtmSelector.StrikeAtLevel downRow = atmSelector.resolveStrikeAtLevel(atm - STRIKE_STEP);
+        BalancedAtmSelector.StrikeAtLevel atmRow = atmSelector.resolveStrikeAtLevel(atm);
         if (atmRow != null) {
             if (atmRow.ceSymbol() != null && !atmRow.ceSymbol().isBlank()) newRoles.put(atmRow.ceSymbol(), WatchRole.ATM_L4);
             if (atmRow.peSymbol() != null && !atmRow.peSymbol().isBlank()) newRoles.put(atmRow.peSymbol(), WatchRole.ATM_L4);
-        }
-        if (upRow != null) {
-            // Strike above ATM: CE is OTM, PE is ITM.
-            if (upRow.ceSymbol() != null && !upRow.ceSymbol().isBlank()) newRoles.put(upRow.ceSymbol(), WatchRole.OTM_H3);
-            if (upRow.peSymbol() != null && !upRow.peSymbol().isBlank()) newRoles.put(upRow.peSymbol(), WatchRole.ITM_L4);
-        }
-        if (downRow != null) {
-            // Strike below ATM: CE is ITM, PE is OTM.
-            if (downRow.ceSymbol() != null && !downRow.ceSymbol().isBlank()) newRoles.put(downRow.ceSymbol(), WatchRole.ITM_L4);
-            if (downRow.peSymbol() != null && !downRow.peSymbol().isBlank()) newRoles.put(downRow.peSymbol(), WatchRole.OTM_H3);
         }
         if (newRoles.isEmpty()) {
             log.warn("[Camarilla] watchlist resolution returned 0 symbols around ATM={}; skipping rebalance", atm);
@@ -497,30 +477,9 @@ public class Camarilla implements Strategy {
         camarillaService.warmUpAroundAtm(atm);
 
         String tag = ev.oldAtm() < 0 ? "boot" : String.valueOf(ev.oldAtm());
-        // Compact one-line watchlist log: shows strike(role) for each side, low → high.
-        StringBuilder ceDump = new StringBuilder();
-        StringBuilder peDump = new StringBuilder();
-        if (downRow != null) {
-            if (downRow.ceSymbol() != null && !downRow.ceSymbol().isBlank())
-                ceDump.append(downRow.resolvedStrike()).append("(ITM_L4) ");
-            if (downRow.peSymbol() != null && !downRow.peSymbol().isBlank())
-                peDump.append(downRow.resolvedStrike()).append("(OTM_H3) ");
-        }
-        if (atmRow != null) {
-            if (atmRow.ceSymbol() != null && !atmRow.ceSymbol().isBlank())
-                ceDump.append(atmRow.resolvedStrike()).append("(ATM_L4) ");
-            if (atmRow.peSymbol() != null && !atmRow.peSymbol().isBlank())
-                peDump.append(atmRow.resolvedStrike()).append("(ATM_L4) ");
-        }
-        if (upRow != null) {
-            if (upRow.ceSymbol() != null && !upRow.ceSymbol().isBlank())
-                ceDump.append(upRow.resolvedStrike()).append("(OTM_H3) ");
-            if (upRow.peSymbol() != null && !upRow.peSymbol().isBlank())
-                peDump.append(upRow.resolvedStrike()).append("(ITM_L4) ");
-        }
         event("[INFO]", "ATM", "ATM " + tag + " → " + atm
-            + " — CE: " + ceDump.toString().trim()
-            + " | PE: " + peDump.toString().trim());
+            + " — CE: " + (atmRow != null ? atmRow.resolvedStrike() + "(ATM_L4)" : "—")
+            + " | PE: " + (atmRow != null ? atmRow.resolvedStrike() + "(ATM_L4)" : "—"));
         saveToDisk();
     }
 
@@ -551,22 +510,14 @@ public class Camarilla implements Strategy {
             WatchRole role = state.symbolRole.get(symbol);
             if (role == null) return;  // not in current watchlist; ignore
 
+            // V3 setup: ATM L4 breakdown only. ITM_L4 / OTM_H3 roles are no longer assigned
+            // by onAtmChange, so any non-ATM_L4 role here is dead code — return safely.
+            if (role != WatchRole.ATM_L4) return;
+            // L4 breakdown: red bar touches L4 from above and closes back below.
             EntryCandidate candidate = null;
-            switch (role) {
-                case ATM_L4, ITM_L4 -> {
-                    // L4 breakdown: red bar touches L4 from above and closes back below.
-                    if (c.isRed() && c.high() >= lv.l4() && c.close() < lv.l4()) {
-                        candidate = new EntryCandidate(symbol, role, ActiveSetup.L4_BREAKDOWN,
-                            lv.l5(), lv.l3(), c);
-                    }
-                }
-                case OTM_H3 -> {
-                    // H3 reversion: red bar touches H3 from above and closes back below.
-                    if (c.isRed() && c.high() >= lv.h3() && c.close() < lv.h3()) {
-                        candidate = new EntryCandidate(symbol, role, ActiveSetup.H3_REVERSAL,
-                            lv.l3(), lv.h4(), c);
-                    }
-                }
+            if (c.isRed() && c.high() >= lv.l4() && c.close() < lv.l4()) {
+                candidate = new EntryCandidate(symbol, role, ActiveSetup.L4_BREAKDOWN,
+                    lv.l5(), lv.l3(), c);
             }
             if (candidate == null) return;
 
@@ -672,6 +623,16 @@ public class Camarilla implements Strategy {
         p.openMillis   = System.currentTimeMillis();
         p.targetLevel  = targetLevel;
         p.slLevel      = slLevel;
+        // Freeze the OI bias at entry — the analytics page splits trades by Strong
+        // (with-trend) vs Weak (NEUTRAL/STALE/against) confirmation using this value.
+        try {
+            com.rydytrader.autotrader.service.OptionOiTracker oiAtEntry = oiTrackerProvider == null ? null
+                : oiTrackerProvider.getIfAvailable();
+            if (oiAtEntry != null) {
+                String b = oiAtEntry.snapshot().bias();
+                p.entryOiBias = b == null ? "" : b;
+            }
+        } catch (Exception ignored) {}
         state.openPositions.put(symbol, p);
         state.tradesToday++;
         saveToDisk();
@@ -743,7 +704,7 @@ public class Camarilla implements Strategy {
         // and that dedup only works if both sources stamp the SAME value.
         long closedAtMillis = System.currentTimeMillis();
         persistTradeRow(p.symbol, p.setup.name(), reason, p.qty, gross, charges, net,
-            reason.equals("SL_HIT") ? 1 : 0, closedAtMillis);
+            reason.equals("SL_HIT") ? 1 : 0, closedAtMillis, p.openMillis, p.entryOiBias);
 
         Map<String, Object> cycle = new LinkedHashMap<>();
         cycle.put("setup",          p.setup.name());
@@ -756,6 +717,8 @@ public class Camarilla implements Strategy {
         cycle.put("netPnl",         round2(net));
         cycle.put("closeReason",    reason);
         cycle.put("closedAtMillis", closedAtMillis);
+        cycle.put("openedAtMillis", p.openMillis);
+        cycle.put("entryOiBias",    p.entryOiBias);
         state.todayClosedTrades.add(cycle);
         while (state.todayClosedTrades.size() > 100) state.todayClosedTrades.remove(0);
 
@@ -774,16 +737,26 @@ public class Camarilla implements Strategy {
         return true;
     }
 
-    private void persistTradeRow(String symbol, String setup, String reason, int qty, double gross, double charges, double net, int slHits, long closedAtMillis) {
+    private void persistTradeRow(String symbol, String setup, String reason, int qty,
+                                 double gross, double charges, double net, int slHits,
+                                 long closedAtMillis, long openedAtMillis, String entryOiBias) {
         try {
             StrategyTradeRepository repo = tradeRepoProvider == null ? null : tradeRepoProvider.getIfAvailable();
             if (repo == null) return;
+            LocalDate sessionDate = LocalDate.now(IST);
             StrategyTradeEntity row = new StrategyTradeEntity();
             row.setStrategyId(STRATEGY_ID);
             row.setSymbol(symbol);
             row.setSetup(setup);
-            row.setSessionDate(LocalDate.now(IST).toString());
+            row.setSessionDate(sessionDate.toString());
             row.setClosedAtMillis(closedAtMillis);
+            row.setOpenedAtMillis(openedAtMillis);
+            row.setEntryOiBias(entryOiBias == null || entryOiBias.isBlank() ? null : entryOiBias);
+            // Freeze whether the close happened on the currently-configured weekly expiry
+            // day. NSE has changed this day before (Thursday → Tuesday) and may change it
+            // again; storing the flag at write time keeps historical bucketing accurate
+            // regardless of future setting changes.
+            row.setWasExpiryDay(isExpiryDayNow(sessionDate));
             row.setQty(qty);
             row.setGrossPnl(round2(gross));
             row.setCharges(round2(charges));
@@ -793,6 +766,18 @@ public class Camarilla implements Strategy {
             repo.save(row);
         } catch (Exception e) {
             log.warn("[Camarilla] persist trade failed: {}", e.getMessage());
+        }
+    }
+
+    /** Compare the session date's day-of-week against the operator-configured weekly expiry
+     *  day. Defaults to TUESDAY when the setting is blank or unparseable. */
+    private boolean isExpiryDayNow(LocalDate sessionDate) {
+        String configured = riskSettings.getWeeklyExpiryDayOfWeek();
+        if (configured == null || configured.isBlank()) configured = "TUESDAY";
+        try {
+            return sessionDate.getDayOfWeek() == java.time.DayOfWeek.valueOf(configured.toUpperCase());
+        } catch (Exception e) {
+            return sessionDate.getDayOfWeek() == java.time.DayOfWeek.TUESDAY;
         }
     }
 
@@ -992,6 +977,11 @@ public class Camarilla implements Strategy {
          *  is the LTP estimate captured at order-placement time. The strategy's slow tick loop
          *  periodically resolves unresolved fills. */
         public boolean fillResolved;
+        /** OI bias state read at the moment the entry order was placed. Frozen for the life
+         *  of the position so the analytics page can compare outcomes between
+         *  with-trend (Strong) and against-trend / no-signal (Weak) confirmations.
+         *  Empty string when the bias couldn't be read (e.g. tracker not yet baselined). */
+        public String entryOiBias = "";
         /** Consecutive fast-tick polls observing LTP at or above slLevel. Resets on every poll
          *  where LTP drops back below. SL fires when this reaches SL_BREACH_CONFIRM_TICKS.
          *  Transient — not persisted, repopulated by the runtime after a restart. */

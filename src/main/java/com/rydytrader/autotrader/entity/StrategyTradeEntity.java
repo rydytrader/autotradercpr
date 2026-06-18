@@ -40,6 +40,29 @@ public class StrategyTradeEntity {
     @Column(name = "setup", length = 32)
     private String setup;
 
+    /** Epoch millis when the entry order was placed. Used by the AM/PM-of-day analytics
+     *  breakdown. Boxed Long so legacy rows persisted before this column existed —
+     *  which DB-side hold NULL — load without exploding the primitive setter. Null = unknown
+     *  (analytics falls back to {@link #closedAtMillis} for those rows). */
+    @Column(name = "opened_at_millis")
+    private Long openedAtMillis;
+
+    /** OI bias state captured at the moment the entry order was placed —
+     *  STRONG_BEARISH_BIAS / STRONG_BULLISH_BIAS / NEUTRAL / STALE / no-baseline-yet.
+     *  Null for legacy rows. Readers bucket null as "Unknown" in the OI-confirmation
+     *  breakdown alongside Strong / Weak. */
+    @Column(name = "entry_oi_bias", length = 32)
+    private String entryOiBias;
+
+    /** True when this trade's session date matched the weekly expiry day-of-week THAT WAS
+     *  CONFIGURED AT CLOSE TIME. Persisted per trade so subsequent changes to the expiry
+     *  day setting (NSE has moved it before — Thursday → Tuesday) don't retroactively
+     *  re-bucket historical rows. Null for legacy rows persisted before this column
+     *  existed — readers fall back to comparing the row's session day-of-week against the
+     *  currently-configured expiry day for those rows only. */
+    @Column(name = "was_expiry_day")
+    private Boolean wasExpiryDay;
+
     /** ISO yyyy-MM-dd of the trading day. */
     @Column(name = "session_date", nullable = false, length = 10)
     private String sessionDate;
@@ -88,6 +111,13 @@ public class StrategyTradeEntity {
     public void setSymbol(String v) { this.symbol = v; }
     public String getSetup() { return setup; }
     public void setSetup(String v) { this.setup = v; }
+    public Long   getOpenedAtMillis() { return openedAtMillis; }
+    public void   setOpenedAtMillis(Long v) { this.openedAtMillis = v; }
+    public void   setOpenedAtMillis(long v) { this.openedAtMillis = Long.valueOf(v); }
+    public String getEntryOiBias() { return entryOiBias; }
+    public void   setEntryOiBias(String v) { this.entryOiBias = v; }
+    public Boolean getWasExpiryDay() { return wasExpiryDay; }
+    public void    setWasExpiryDay(Boolean v) { this.wasExpiryDay = v; }
     public String getSessionDate() { return sessionDate; }
     public void setSessionDate(String v) { this.sessionDate = v; }
     public long getClosedAtMillis() { return closedAtMillis; }

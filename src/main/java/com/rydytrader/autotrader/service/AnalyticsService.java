@@ -97,6 +97,7 @@ public class AnalyticsService {
         out.put("equityCurve", equityCurve(trades, startingCapital));
         out.put("byMonth",     byMonth(trades, closed));
         out.put("byDate",      byDate(trades, closed));
+        out.put("breakdowns",  breakdowns(closed));
         return out;
     }
 
@@ -197,7 +198,21 @@ public class AnalyticsService {
      *  entity so the synthesized live-today rows (which have no DB id) plug in cleanly. */
     private record Trade(String strategyId, String sessionDate, long closedAtMillis,
                          double grossPnl, double charges, double netPnl, String closeReason,
-                         int slHitCount) {}
+                         int slHitCount,
+                         /** Fyers leg symbol — used to bucket CE vs PE in the analytics
+                          *  breakdowns. Null for legacy rows / synthetic open-MTM. */
+                         String symbol,
+                         /** Epoch millis when the entry order was placed. 0 for legacy
+                          *  rows persisted before the column existed. */
+                         long openedAtMillis,
+                         /** OI bias state captured at fire-time. Null for legacy rows
+                          *  and for any cycle where the tracker wasn't yet baselined. */
+                         String entryOiBias,
+                         /** True/false frozen at write-time based on the then-current
+                          *  weekly expiry day setting. Null for legacy rows persisted
+                          *  before the column existed — analytics falls back to the
+                          *  current setting for those rows. */
+                         Boolean wasExpiryDay) {}
 
     private List<Trade> loadTrades(String period, String strategyId, String from, String to) {
         LocalDate today = LocalDate.now(IST);
@@ -232,8 +247,11 @@ public class AnalyticsService {
             if (rangeFrom != null && d.isBefore(rangeFrom)) continue;
             if (rangeTo   != null && d.isAfter(rangeTo))    continue;
             int sl = e.getSlHitCount() == null ? 0 : e.getSlHitCount();
+            Long openedAt = e.getOpenedAtMillis();
             out.add(new Trade(e.getStrategyId(), e.getSessionDate(), e.getClosedAtMillis(),
-                              e.getGrossPnl(), e.getCharges(), e.getNetPnl(), e.getCloseReason(), sl));
+                              e.getGrossPnl(), e.getCharges(), e.getNetPnl(), e.getCloseReason(), sl,
+                              e.getSymbol(), openedAt == null ? 0L : openedAt, e.getEntryOiBias(),
+                              e.getWasExpiryDay()));
         }
         // Live overlay: today's in-progress closes from in-memory state.
         if (windowIncludesToday(cutoff, rangeFrom, rangeTo, today)) {
@@ -309,7 +327,11 @@ public class AnalyticsService {
                     double ch    = asDouble(m.get("charges"));
                     double net   = ch != 0 ? gross - ch : gross;
                     String reason = String.valueOf(m.getOrDefault("closeReason", "OPEN"));
-                    out.add(new Trade(strat.id(), iso, ts, gross, ch, net, reason, 0));
+                    String sym   = asString(m.get("symbol"));
+                    long openMs  = asLong(m.get("openedAtMillis"));
+                    String bias  = asString(m.get("entryOiBias"));
+                    out.add(new Trade(strat.id(), iso, ts, gross, ch, net, reason, 0,
+                        sym, openMs, bias, null));
                     addedTodayNet     += net;
                     addedTodayCharges += ch;
                 }
@@ -322,7 +344,8 @@ public class AnalyticsService {
             double openGross      = openNet + openChargesRem;
             if (Math.abs(openNet) > 0.01 || Math.abs(openChargesRem) > 0.01) {
                 out.add(new Trade(strat.id(), iso, System.currentTimeMillis(),
-                    openGross, openChargesRem, openNet, OPEN_POSITION_MTM_REASON, 0));
+                    openGross, openChargesRem, openNet, OPEN_POSITION_MTM_REASON, 0,
+                    null, 0L, null, null));
             }
         } catch (Exception e) {
             log.warn("[Analytics] Live today overlay failed: {}", e.getMessage());
@@ -600,5 +623,141 @@ public class AnalyticsService {
         if (o instanceof Number n) return n.longValue();
         if (o == null) return 0;
         try { return Long.parseLong(String.valueOf(o)); } catch (Exception e) { return 0; }
+    }
+    private static String asString(Object o) {
+        if (o == null) return null;
+        String s = String.valueOf(o);
+        return s.isBlank() ? null : s;
+    }
+
+    // ── BREAKDOWN: CE vs PE / AM vs PM / Expiry vs Non-expiry / OI confirmation ─
+
+    /** Renders four side-by-side comparison cards. Each card returns
+     *  {@code { groupName: { trades, wins, losses, netPnl, winRate } }}. Filters out the
+     *  synthetic OPEN_POSITION_MTM row everywhere. */
+    private Map<String, Object> breakdowns(List<Trade> trades) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ceVsPe",         splitCeVsPe(trades));
+        out.put("amVsPm",         splitAmVsPm(trades));
+        out.put("expiryVsNon",    splitExpiryVsNon(trades));
+        out.put("oiConfirmation", splitOiConfirmation(trades));
+        return out;
+    }
+
+    private Map<String, Map<String, Object>> splitCeVsPe(List<Trade> trades) {
+        Map<String, List<Trade>> bins = new LinkedHashMap<>();
+        bins.put("CE", new ArrayList<>());
+        bins.put("PE", new ArrayList<>());
+        bins.put("Unknown", new ArrayList<>());
+        for (Trade t : trades) {
+            if (!isClosedStraddle(t)) continue;
+            String s = t.symbol();
+            if (s == null || s.isBlank())     bins.get("Unknown").add(t);
+            else if (s.toUpperCase().endsWith("CE")) bins.get("CE").add(t);
+            else if (s.toUpperCase().endsWith("PE")) bins.get("PE").add(t);
+            else                              bins.get("Unknown").add(t);
+        }
+        return summariseBins(bins);
+    }
+
+    /** 12:30 IST split. Trades whose openedAtMillis falls before 12:30 → Morning, at/after → Afternoon.
+     *  Rows with openedAtMillis = 0 (legacy) fall back to closedAtMillis as a proxy. */
+    private Map<String, Map<String, Object>> splitAmVsPm(List<Trade> trades) {
+        final int cutoffMinuteOfDay = 12 * 60 + 30;
+        Map<String, List<Trade>> bins = new LinkedHashMap<>();
+        bins.put("Morning",   new ArrayList<>());
+        bins.put("Afternoon", new ArrayList<>());
+        for (Trade t : trades) {
+            if (!isClosedStraddle(t)) continue;
+            long ms = t.openedAtMillis() > 0 ? t.openedAtMillis() : t.closedAtMillis();
+            if (ms == 0) continue;
+            java.time.LocalTime lt = java.time.Instant.ofEpochMilli(ms).atZone(IST).toLocalTime();
+            int mod = lt.getHour() * 60 + lt.getMinute();
+            (mod < cutoffMinuteOfDay ? bins.get("Morning") : bins.get("Afternoon")).add(t);
+        }
+        return summariseBins(bins);
+    }
+
+    /** Expiry bucket = the trade's persisted {@code wasExpiryDay} flag, frozen at write time
+     *  against the then-current weekly expiry day setting. Legacy rows that lack the flag
+     *  fall back to comparing their session date's day-of-week against the CURRENTLY-configured
+     *  expiry day — best-effort; the analytics will silently update for those legacy rows
+     *  when the operator changes the expiry-day setting. */
+    private Map<String, Map<String, Object>> splitExpiryVsNon(List<Trade> trades) {
+        java.time.DayOfWeek fallbackExpiryDay = parseExpiryDay(riskSettings.getWeeklyExpiryDayOfWeek());
+        Map<String, List<Trade>> bins = new LinkedHashMap<>();
+        bins.put("Expiry",     new ArrayList<>());
+        bins.put("Non-Expiry", new ArrayList<>());
+        for (Trade t : trades) {
+            if (!isClosedStraddle(t)) continue;
+            boolean expiry;
+            if (t.wasExpiryDay() != null) {
+                expiry = t.wasExpiryDay();
+            } else {
+                try {
+                    expiry = LocalDate.parse(t.sessionDate()).getDayOfWeek() == fallbackExpiryDay;
+                } catch (Exception e) { continue; }
+            }
+            (expiry ? bins.get("Expiry") : bins.get("Non-Expiry")).add(t);
+        }
+        return summariseBins(bins);
+    }
+
+    private static java.time.DayOfWeek parseExpiryDay(String s) {
+        if (s == null || s.isBlank()) return java.time.DayOfWeek.TUESDAY;
+        try { return java.time.DayOfWeek.valueOf(s.trim().toUpperCase()); }
+        catch (Exception e) { return java.time.DayOfWeek.TUESDAY; }
+    }
+
+    /** Strong = bias at entry agreed with the trade direction
+     *    – CE short + STRONG_BEARISH_BIAS → Strong
+     *    – PE short + STRONG_BULLISH_BIAS → Strong
+     *  Weak = NEUTRAL, STALE, or bias OPPOSED the trade.
+     *  Unknown = legacy rows with no entry-bias recorded. */
+    private Map<String, Map<String, Object>> splitOiConfirmation(List<Trade> trades) {
+        Map<String, List<Trade>> bins = new LinkedHashMap<>();
+        bins.put("Strong",  new ArrayList<>());
+        bins.put("Weak",    new ArrayList<>());
+        bins.put("Unknown", new ArrayList<>());
+        for (Trade t : trades) {
+            if (!isClosedStraddle(t)) continue;
+            String bias = t.entryOiBias();
+            String sym  = t.symbol();
+            if (bias == null || bias.isBlank() || sym == null || sym.isBlank()) {
+                bins.get("Unknown").add(t);
+                continue;
+            }
+            boolean isCe = sym.toUpperCase().endsWith("CE");
+            boolean isPe = sym.toUpperCase().endsWith("PE");
+            boolean strong = (isCe && "STRONG_BEARISH_BIAS".equals(bias))
+                          || (isPe && "STRONG_BULLISH_BIAS".equals(bias));
+            (strong ? bins.get("Strong") : bins.get("Weak")).add(t);
+        }
+        return summariseBins(bins);
+    }
+
+    private Map<String, Map<String, Object>> summariseBins(Map<String, List<Trade>> bins) {
+        Map<String, Map<String, Object>> out = new LinkedHashMap<>();
+        for (Map.Entry<String, List<Trade>> e : bins.entrySet()) {
+            List<Trade> list = e.getValue();
+            int wins = 0, losses = 0;
+            double netSum = 0;
+            for (Trade t : list) {
+                double n = t.netPnl();
+                netSum += n;
+                if (n > 0) wins++;
+                else if (n < 0) losses++;
+            }
+            int total = list.size();
+            double winRate = total > 0 ? (wins / (double) total) * 100.0 : 0.0;
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("trades",  total);
+            m.put("wins",    wins);
+            m.put("losses",  losses);
+            m.put("netPnl",  round2(netSum));
+            m.put("winRate", round2(winRate));
+            out.put(e.getKey(), m);
+        }
+        return out;
     }
 }

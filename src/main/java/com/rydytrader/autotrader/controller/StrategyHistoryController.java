@@ -45,9 +45,10 @@ public class StrategyHistoryController {
     @GetMapping("/api/strategies/{id}/history")
     public ResponseEntity<Map<String, Object>> list(@PathVariable String id) {
         List<StrategySessionEntity> rows = repo.findByStrategyIdOrderBySessionDateDesc(id);
-        List<Map<String, Object>> sessions = new ArrayList<>();
+        Map<String, Map<String, Object>> byDate = new LinkedHashMap<>();
         double totalGross = 0, totalCharges = 0, totalNet = 0;
         int totalRolls = 0;
+        // 1. Legacy session rows take precedence per date (older straddle/strangle data).
         for (StrategySessionEntity s : rows) {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("date",            s.getSessionDate());
@@ -63,20 +64,63 @@ public class StrategyHistoryController {
             m.put("grossPnl",         round(s.getGrossPnl()));
             m.put("charges",          round(s.getCharges()));
             m.put("netPnl",           round(s.getNetPnl()));
-            sessions.add(m);
+            m.put("wins",             0);
+            m.put("losses",           0);
+            byDate.put(s.getSessionDate(), m);
             totalGross   += s.getGrossPnl();
             totalCharges += s.getCharges();
             totalNet     += s.getNetPnl();
             totalRolls   += s.getRolls();
         }
+        // 2. Camarilla (and any other cycle-based strategies) persist per-cycle trade rows
+        // instead of session rows. Aggregate those by sessionDate into session-shaped maps
+        // so the calendar's yearly view + day modal see real data. ONLY emit a row for
+        // dates that don't already have a legacy session row, so we don't double-count.
+        List<StrategyTradeEntity> tradeRows = tradeRepo.findByStrategyIdOrderByClosedAtMillisAsc(id);
+        Map<String, double[]> tradeAggByDate = new LinkedHashMap<>();   // date → [gross, charges, net, wins, losses, count]
+        for (StrategyTradeEntity t : tradeRows) {
+            String d = t.getSessionDate();
+            if (d == null || d.isBlank()) continue;
+            if (byDate.containsKey(d)) continue;                       // legacy session wins
+            double[] agg = tradeAggByDate.computeIfAbsent(d, k -> new double[6]);
+            agg[0] += t.getGrossPnl();
+            agg[1] += t.getCharges();
+            agg[2] += t.getNetPnl();
+            if (t.getNetPnl() > 0)      agg[3]++;
+            else if (t.getNetPnl() < 0) agg[4]++;
+            agg[5]++;
+        }
+        for (Map.Entry<String, double[]> e : tradeAggByDate.entrySet()) {
+            double[] a = e.getValue();
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("date",            e.getKey());
+            m.put("entries",         (int) a[5]);                       // count of trades that day
+            m.put("rolls",           0);
+            m.put("finalState",      "");
+            m.put("niftyOpen",       0.0);
+            m.put("niftyHigh",       0.0);
+            m.put("niftyLow",        0.0);
+            m.put("niftyClose",      0.0);
+            m.put("premiumCollected", 0.0);
+            m.put("premiumPaidBack",  0.0);
+            m.put("grossPnl",         round(a[0]));
+            m.put("charges",          round(a[1]));
+            m.put("netPnl",           round(a[2]));
+            m.put("wins",             (int) a[3]);
+            m.put("losses",           (int) a[4]);
+            byDate.put(e.getKey(), m);
+            totalGross   += a[0];
+            totalCharges += a[1];
+            totalNet     += a[2];
+        }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("strategyId",   id);
-        out.put("sessions",     sessions);
+        out.put("sessions",     new ArrayList<>(byDate.values()));
         out.put("totalGross",   round(totalGross));
         out.put("totalCharges", round(totalCharges));
         out.put("totalNet",     round(totalNet));
         out.put("totalRolls",   totalRolls);
-        out.put("sessionCount", sessions.size());
+        out.put("sessionCount", byDate.size());
         return ResponseEntity.ok(out);
     }
 

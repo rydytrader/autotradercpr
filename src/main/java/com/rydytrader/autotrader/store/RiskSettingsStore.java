@@ -45,6 +45,12 @@ public class RiskSettingsStore {
          *  direction. NEUTRAL and STALE pass through (no signal = no block). Off by default
          *  for the first 1–2 weeks of live observation; flip in settings when confident. */
         volatile boolean camarillaOiBiasFilterEnabled = false;
+        /** NIFTY weekly options expiry day-of-week (uppercase English name —
+         *  MONDAY/TUESDAY/WEDNESDAY/THURSDAY/FRIDAY). NSE has changed this in the past
+         *  (Thursday → Tuesday) and may change it again; making it a setting means future
+         *  changes are a one-click flip in the Settings UI, no code change needed. Used by
+         *  the Analytics "Expiry vs Non-Expiry" breakdown card. */
+        volatile String weeklyExpiryDayOfWeek = "TUESDAY";
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
         /** Initial capital used as the baseline for the Analytics Home page (capital growth %,
@@ -403,6 +409,7 @@ public class RiskSettingsStore {
     public String  getCamarillaSquareOffTime()    { return cfg().camarillaSquareOffTime; }
     public int     getCamarillaMaxConcurrentPositions() { return cfg().camarillaMaxConcurrentPositions; }
     public boolean isCamarillaOiBiasFilterEnabled()     { return cfg().camarillaOiBiasFilterEnabled; }
+    public String  getWeeklyExpiryDayOfWeek()           { return cfg().weeklyExpiryDayOfWeek; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getStartingCapital()      { return cfg().startingCapital; }
@@ -595,6 +602,10 @@ public class RiskSettingsStore {
     public void setCamarillaSquareOffTime(String v)       { cfg().camarillaSquareOffTime = v == null ? "" : v.trim(); }
     public void setCamarillaMaxConcurrentPositions(int v) { cfg().camarillaMaxConcurrentPositions = Math.max(1, v); }
     public void setCamarillaOiBiasFilterEnabled(boolean v) { cfg().camarillaOiBiasFilterEnabled = v; }
+    public void setWeeklyExpiryDayOfWeek(String v) {
+        if (v == null || v.isBlank()) { cfg().weeklyExpiryDayOfWeek = "TUESDAY"; return; }
+        cfg().weeklyExpiryDayOfWeek = v.trim().toUpperCase();
+    }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setStartingCapital(double v)      { cfg().startingCapital = Math.max(0, v); }
@@ -701,6 +712,7 @@ public class RiskSettingsStore {
     public String  getCamarillaSquareOffTime(String mode)     { return cfgFor(mode).camarillaSquareOffTime; }
     public int     getCamarillaMaxConcurrentPositions(String mode) { return cfgFor(mode).camarillaMaxConcurrentPositions; }
     public boolean isCamarillaOiBiasFilterEnabled(String mode)     { return cfgFor(mode).camarillaOiBiasFilterEnabled; }
+    public String  getWeeklyExpiryDayOfWeek(String mode)           { return cfgFor(mode).weeklyExpiryDayOfWeek; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
     public double getStartingCapital(String mode)      { return cfgFor(mode).startingCapital; }
@@ -732,6 +744,10 @@ public class RiskSettingsStore {
     public void setCamarillaSquareOffTime(String mode, String v)       { cfgFor(mode).camarillaSquareOffTime = v == null ? "" : v.trim(); }
     public void setCamarillaMaxConcurrentPositions(String mode, int v) { cfgFor(mode).camarillaMaxConcurrentPositions = Math.max(1, v); }
     public void setCamarillaOiBiasFilterEnabled(String mode, boolean v) { cfgFor(mode).camarillaOiBiasFilterEnabled = v; }
+    public void setWeeklyExpiryDayOfWeek(String mode, String v) {
+        if (v == null || v.isBlank()) { cfgFor(mode).weeklyExpiryDayOfWeek = "TUESDAY"; return; }
+        cfgFor(mode).weeklyExpiryDayOfWeek = v.trim().toUpperCase();
+    }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
     public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
     public void setStartingCapital(String mode, double v)      { cfgFor(mode).startingCapital = Math.max(0, v); }
@@ -773,6 +789,7 @@ public class RiskSettingsStore {
             upsert("camarillaSquareOffTime",     c.camarillaSquareOffTime);
             upsert("camarillaMaxConcurrentPositions", String.valueOf(c.camarillaMaxConcurrentPositions));
             upsert("camarillaOiBiasFilterEnabled", String.valueOf(c.camarillaOiBiasFilterEnabled));
+            upsert("weeklyExpiryDayOfWeek", c.weeklyExpiryDayOfWeek);
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("startingCapital",      String.valueOf(c.startingCapital));
@@ -942,6 +959,7 @@ public class RiskSettingsStore {
                     case "camarillaL4BdEnabled"            -> { /* retired — both setups always on */ }
                     case "camarillaMaxConcurrentPositions" -> c.camarillaMaxConcurrentPositions = Integer.parseInt(v);
                     case "camarillaOiBiasFilterEnabled" -> c.camarillaOiBiasFilterEnabled = Boolean.parseBoolean(v);
+                    case "weeklyExpiryDayOfWeek" -> c.weeklyExpiryDayOfWeek = (v == null || v.isBlank()) ? "TUESDAY" : v.trim().toUpperCase();
                     case "camarillaMaxTradesPerDay"        -> { /* retired */ }
                     case "camarillaPauseAfterNLosses"      -> { /* retired */ }
                     case "camarillaDailyRiskBudget"        -> { /* retired — now uses portfolio max daily loss */ }
