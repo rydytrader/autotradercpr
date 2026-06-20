@@ -45,6 +45,18 @@ public class RiskSettingsStore {
          *  direction. NEUTRAL and STALE pass through (no signal = no block). Off by default
          *  for the first 1–2 weeks of live observation; flip in settings when confident. */
         volatile boolean camarillaOiBiasFilterEnabled = false;
+        /** When true, the strategy slides slLevel to entryPrice the instant the option's
+         *  premium has moved 1R in our favor (R = original SL distance from entry). One-shot
+         *  per position; never trails further. Default off so the operator can validate the
+         *  trigger live before relying on it. Sits in the Portfolio Risk family (not strategy-
+         *  specific) so future strategies can read the same flag. */
+        volatile boolean moveSlToBreakevenEnabled = false;
+        /** When true, Camarilla can also BUY options on H4 breakout — CE only when OI bias
+         *  is VERY_BULLISH, PE only when VERY_BEARISH. Strict gate; no neutral entries on
+         *  the buying side. Default off — operator should validate the H4 breakout pattern
+         *  + VERY-tier signal frequency for 1-2 weeks before enabling. Sits in the Risk tab
+         *  family alongside Move SL to Breakeven and the OI bias filter. */
+        volatile boolean h4BreakoutBuyingEnabled = false;
         /** NIFTY weekly options expiry day-of-week (uppercase English name —
          *  MONDAY/TUESDAY/WEDNESDAY/THURSDAY/FRIDAY). NSE has changed this in the past
          *  (Thursday → Tuesday) and may change it again; making it a setting means future
@@ -409,6 +421,8 @@ public class RiskSettingsStore {
     public String  getCamarillaSquareOffTime()    { return cfg().camarillaSquareOffTime; }
     public int     getCamarillaMaxConcurrentPositions() { return cfg().camarillaMaxConcurrentPositions; }
     public boolean isCamarillaOiBiasFilterEnabled()     { return cfg().camarillaOiBiasFilterEnabled; }
+    public boolean isMoveSlToBreakevenEnabled()         { return cfg().moveSlToBreakevenEnabled; }
+    public boolean isH4BreakoutBuyingEnabled()          { return cfg().h4BreakoutBuyingEnabled; }
     public String  getWeeklyExpiryDayOfWeek()           { return cfg().weeklyExpiryDayOfWeek; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
@@ -602,6 +616,8 @@ public class RiskSettingsStore {
     public void setCamarillaSquareOffTime(String v)       { cfg().camarillaSquareOffTime = v == null ? "" : v.trim(); }
     public void setCamarillaMaxConcurrentPositions(int v) { cfg().camarillaMaxConcurrentPositions = Math.max(1, v); }
     public void setCamarillaOiBiasFilterEnabled(boolean v) { cfg().camarillaOiBiasFilterEnabled = v; }
+    public void setMoveSlToBreakevenEnabled(boolean v)     { cfg().moveSlToBreakevenEnabled = v; }
+    public void setH4BreakoutBuyingEnabled(boolean v)      { cfg().h4BreakoutBuyingEnabled = v; }
     public void setWeeklyExpiryDayOfWeek(String v) {
         if (v == null || v.isBlank()) { cfg().weeklyExpiryDayOfWeek = "TUESDAY"; return; }
         cfg().weeklyExpiryDayOfWeek = v.trim().toUpperCase();
@@ -712,6 +728,8 @@ public class RiskSettingsStore {
     public String  getCamarillaSquareOffTime(String mode)     { return cfgFor(mode).camarillaSquareOffTime; }
     public int     getCamarillaMaxConcurrentPositions(String mode) { return cfgFor(mode).camarillaMaxConcurrentPositions; }
     public boolean isCamarillaOiBiasFilterEnabled(String mode)     { return cfgFor(mode).camarillaOiBiasFilterEnabled; }
+    public boolean isMoveSlToBreakevenEnabled(String mode)         { return cfgFor(mode).moveSlToBreakevenEnabled; }
+    public boolean isH4BreakoutBuyingEnabled(String mode)          { return cfgFor(mode).h4BreakoutBuyingEnabled; }
     public String  getWeeklyExpiryDayOfWeek(String mode)           { return cfgFor(mode).weeklyExpiryDayOfWeek; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
@@ -744,6 +762,8 @@ public class RiskSettingsStore {
     public void setCamarillaSquareOffTime(String mode, String v)       { cfgFor(mode).camarillaSquareOffTime = v == null ? "" : v.trim(); }
     public void setCamarillaMaxConcurrentPositions(String mode, int v) { cfgFor(mode).camarillaMaxConcurrentPositions = Math.max(1, v); }
     public void setCamarillaOiBiasFilterEnabled(String mode, boolean v) { cfgFor(mode).camarillaOiBiasFilterEnabled = v; }
+    public void setMoveSlToBreakevenEnabled(String mode, boolean v)     { cfgFor(mode).moveSlToBreakevenEnabled = v; }
+    public void setH4BreakoutBuyingEnabled(String mode, boolean v)      { cfgFor(mode).h4BreakoutBuyingEnabled = v; }
     public void setWeeklyExpiryDayOfWeek(String mode, String v) {
         if (v == null || v.isBlank()) { cfgFor(mode).weeklyExpiryDayOfWeek = "TUESDAY"; return; }
         cfgFor(mode).weeklyExpiryDayOfWeek = v.trim().toUpperCase();
@@ -789,6 +809,8 @@ public class RiskSettingsStore {
             upsert("camarillaSquareOffTime",     c.camarillaSquareOffTime);
             upsert("camarillaMaxConcurrentPositions", String.valueOf(c.camarillaMaxConcurrentPositions));
             upsert("camarillaOiBiasFilterEnabled", String.valueOf(c.camarillaOiBiasFilterEnabled));
+            upsert("moveSlToBreakevenEnabled",     String.valueOf(c.moveSlToBreakevenEnabled));
+            upsert("h4BreakoutBuyingEnabled",      String.valueOf(c.h4BreakoutBuyingEnabled));
             upsert("weeklyExpiryDayOfWeek", c.weeklyExpiryDayOfWeek);
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
@@ -959,6 +981,8 @@ public class RiskSettingsStore {
                     case "camarillaL4BdEnabled"            -> { /* retired — both setups always on */ }
                     case "camarillaMaxConcurrentPositions" -> c.camarillaMaxConcurrentPositions = Integer.parseInt(v);
                     case "camarillaOiBiasFilterEnabled" -> c.camarillaOiBiasFilterEnabled = Boolean.parseBoolean(v);
+                    case "moveSlToBreakevenEnabled"     -> c.moveSlToBreakevenEnabled = Boolean.parseBoolean(v);
+                    case "h4BreakoutBuyingEnabled"      -> c.h4BreakoutBuyingEnabled = Boolean.parseBoolean(v);
                     case "weeklyExpiryDayOfWeek" -> c.weeklyExpiryDayOfWeek = (v == null || v.isBlank()) ? "TUESDAY" : v.trim().toUpperCase();
                     case "camarillaMaxTradesPerDay"        -> { /* retired */ }
                     case "camarillaPauseAfterNLosses"      -> { /* retired */ }

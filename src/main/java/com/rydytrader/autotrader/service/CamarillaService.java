@@ -124,16 +124,42 @@ public class CamarillaService {
             log.info("[CamarillaService] skip warm-up — Fyers token not available");
             return;
         }
-        int fetched = 0;
+        // ONE chain fetch — walk all 21 strikes from a single response. Previously we
+        // called resolveStrikeAtLevel(strike) inside a loop, which fetched the chain 21
+        // times (once per strike) even though all strikes are in the same chain response.
+        java.util.NavigableMap<Long, BalancedAtmSelector.ChainStrike> chain = atmSelector.fetchChainStrikes();
+        if (chain.isEmpty()) {
+            log.warn("[CamarillaService] warm-up skipped — chain fetch returned empty");
+            return;
+        }
+        LocalDate today = todayIst();
+        int fetched = 0, cacheHit = 0;
         for (int i = -STRIKES_PER_SIDE; i <= STRIKES_PER_SIDE; i++) {
             long strike = atmStrike + i * STRIKE_STEP;
-            BalancedAtmSelector.StrikeAtLevel pair = atmSelector.resolveStrikeAtLevel(strike);
-            if (pair == null) continue;
-            if (fetchAndStore(pair.ceSymbol())) fetched++;
-            if (fetchAndStore(pair.peSymbol())) fetched++;
+            BalancedAtmSelector.ChainStrike row = chain.get(strike);
+            if (row == null) continue;
+            int[] result = maybeFetch(row.ceSymbol(), today);
+            fetched  += result[0];
+            cacheHit += result[1];
+            result    = maybeFetch(row.peSymbol(), today);
+            fetched  += result[0];
+            cacheHit += result[1];
         }
         saveToDisk();
-        log.info("[CamarillaService] warmed up {} option symbols around ATM={}", fetched, atmStrike);
+        log.info("[CamarillaService] warm-up ATM={} fetched={} cache-hit={}",
+            atmStrike, fetched, cacheHit);
+    }
+
+    /** Cache-hit short-circuit. Returns {@code [fetchedCount, cacheHitCount]} so the
+     *  caller can roll up counts for the warm-up log line. Skips the history REST call
+     *  entirely when the symbol already has today's levels in the cache. */
+    private int[] maybeFetch(String sym, LocalDate today) {
+        if (sym == null || sym.isBlank()) return new int[]{0, 0};
+        CamarillaLevels existing = bySymbol.get(sym);
+        if (existing != null && today.equals(existing.sessionDate())) {
+            return new int[]{0, 1};                          // cache hit
+        }
+        return new int[]{fetchAndStore(sym) ? 1 : 0, 0};     // cache miss
     }
 
     private void triggerAsyncRefresh(String symbol) {
@@ -150,6 +176,11 @@ public class CamarillaService {
     private boolean fetchAndStore(String symbol) {
         if (symbol == null || symbol.isBlank() || !tokenStore.isTokenAvailable()) return false;
         LocalDate today = todayIst();
+        // Cache-hit short-circuit — if today's levels are already cached, skip the REST call
+        // entirely. Defends both the warm-up path AND the async on-demand refresh path so we
+        // never re-fetch history for a symbol whose levels are still valid for this session.
+        CamarillaLevels cached = bySymbol.get(symbol);
+        if (cached != null && today.equals(cached.sessionDate())) return true;
         // Pull 10 calendar days of daily candles so we always have a settled session.
         LocalDate from = today.minusDays(10);
         String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
@@ -160,7 +191,10 @@ public class CamarillaService {
             return false;
         }
         if (root == null || !root.has("candles") || !root.get("candles").isArray()) {
-            log.warn("[CamarillaService] history response missing candles for {}", symbol);
+            // Edge-of-window strikes (far ITM / far OTM weekly options) frequently have
+            // no historical daily candles from Fyers — illiquid or freshly listed contracts.
+            // Non-actionable noise at warm-up; demoted to DEBUG.
+            log.debug("[CamarillaService] history response missing candles for {}", symbol);
             return false;
         }
         JsonNode candles = root.get("candles");
@@ -179,7 +213,10 @@ public class CamarillaService {
             break;
         }
         if (resolvedPrior == null || priorHigh <= 0 || priorLow <= 0 || priorClose <= 0) {
-            log.warn("[CamarillaService] no usable prior-day candle for {} (size={})", symbol, candles.size());
+            // Same illiquid-strike scenario as above — Fyers returned a candles array but
+            // none of the rows have usable OHLC. Demoted to DEBUG; the symbol just won't
+            // get Camarilla levels and the strategy already short-circuits on null levels.
+            log.debug("[CamarillaService] no usable prior-day candle for {} (size={})", symbol, candles.size());
             return false;
         }
         CamarillaLevels fresh = CamarillaLevels.compute(today, resolvedPrior, priorHigh, priorLow, priorClose);

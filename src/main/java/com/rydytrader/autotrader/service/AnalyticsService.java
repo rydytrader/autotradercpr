@@ -80,6 +80,12 @@ public class AnalyticsService {
         for (Trade t : trades) if (isClosedStraddle(t)) closed.add(t);
         double startingCapital = riskSettings.getStartingCapital();
 
+        // Current Capital is the REAL account balance — starting + every trade ever
+        // closed, across all modes. The period pill and the mode pill should NOT shrink
+        // it. Only the performance metrics (returns, win rate, etc.) scope to the
+        // selected filters; the running balance stays universal.
+        double allTimeNet = sumAllTimeNet(null);
+
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("period",        period);
         out.put("strategyId",    strategyId);
@@ -89,7 +95,7 @@ public class AnalyticsService {
         out.put("sessionCount",  distinctDates(closed));
         out.put("includeAdjustments", false);
 
-        out.put("capital",     capital(trades, startingCapital));
+        out.put("capital",     capital(trades, startingCapital, allTimeNet));
         out.put("performance", performance(closed));
         out.put("extremes",    extremes(closed));
         out.put("streaks",     streaks(closed));
@@ -212,7 +218,11 @@ public class AnalyticsService {
                           *  weekly expiry day setting. Null for legacy rows persisted
                           *  before the column existed — analytics falls back to the
                           *  current setting for those rows. */
-                         Boolean wasExpiryDay) {}
+                         Boolean wasExpiryDay,
+                         /** Setup name (L4_BREAKDOWN / H3_REVERSAL / H4_BREAKOUT). Drives
+                          *  the analytics direction split — H4_BREAKOUT = Buy, others = Sell.
+                          *  Null for legacy rows persisted before this column existed. */
+                         String setup) {}
 
     private List<Trade> loadTrades(String period, String strategyId, String from, String to) {
         LocalDate today = LocalDate.now(IST);
@@ -251,7 +261,7 @@ public class AnalyticsService {
             out.add(new Trade(e.getStrategyId(), e.getSessionDate(), e.getClosedAtMillis(),
                               e.getGrossPnl(), e.getCharges(), e.getNetPnl(), e.getCloseReason(), sl,
                               e.getSymbol(), openedAt == null ? 0L : openedAt, e.getEntryOiBias(),
-                              e.getWasExpiryDay()));
+                              e.getWasExpiryDay(), e.getSetup()));
         }
         // Live overlay: today's in-progress closes from in-memory state.
         if (windowIncludesToday(cutoff, rangeFrom, rangeTo, today)) {
@@ -282,7 +292,9 @@ public class AnalyticsService {
         Strategy strat = strategy();
         if (strat == null || !strat.isEnabled()) return;
         boolean allStrategies = strategyId == null || strategyId.isBlank() || "all".equalsIgnoreCase(strategyId);
-        if (!allStrategies && !strat.id().equals(strategyId)) return;
+        // NOTE: do NOT bail when strat.id() != strategyId. The strategy's cycle ring also
+        // holds MANUAL cycles (strategyId="manual") and those need to flow through the Manual
+        // filter even though the registered strategy is Camarilla. Per-cycle filtering below.
 
         String iso = today.toString();
         // Pre-compute today's persisted net + charges so OPEN_POSITION_MTM only carries the
@@ -294,7 +306,9 @@ public class AnalyticsService {
         List<Long> persistedMillis = new ArrayList<>();
         for (Trade t : out) {
             if (!iso.equals(t.sessionDate())) continue;
-            if (!strat.id().equals(t.strategyId())) continue;
+            // Dedup window doesn't care about strategyId — closedAtMillis collisions across
+            // strategies are vanishingly rare, and we want every DB-persisted today-row to
+            // suppress its in-memory counterpart regardless of strategyId attribution.
             persistedNet += t.netPnl();
             persistedCh  += t.charges();
             persistedMillis.add(t.closedAtMillis());
@@ -323,6 +337,13 @@ public class AnalyticsService {
                         if (Math.abs(pm - ts) <= DEDUP_WINDOW_MS) { dup = true; break; }
                     }
                     if (dup) continue;
+                    // Cycle-level strategy attribution. Legacy cycles (pre-MANUAL feature) don't
+                    // carry "strategyId" — fall back to the registered strategy's id. New
+                    // cycles persist their actual strategyId so MANUAL trades flow to "manual"
+                    // and algo trades stay at "camarilla".
+                    String cycleStrategy = asString(m.get("strategyId"));
+                    if (cycleStrategy == null || cycleStrategy.isBlank()) cycleStrategy = strat.id();
+                    if (!allStrategies && !strategyId.equals(cycleStrategy)) continue;
                     double gross = asDouble(m.get("grossPnl"));
                     double ch    = asDouble(m.get("charges"));
                     double net   = ch != 0 ? gross - ch : gross;
@@ -330,8 +351,9 @@ public class AnalyticsService {
                     String sym   = asString(m.get("symbol"));
                     long openMs  = asLong(m.get("openedAtMillis"));
                     String bias  = asString(m.get("entryOiBias"));
-                    out.add(new Trade(strat.id(), iso, ts, gross, ch, net, reason, 0,
-                        sym, openMs, bias, null));
+                    String setup = asString(m.get("setup"));
+                    out.add(new Trade(cycleStrategy, iso, ts, gross, ch, net, reason, 0,
+                        sym, openMs, bias, null, setup));
                     addedTodayNet     += net;
                     addedTodayCharges += ch;
                 }
@@ -345,7 +367,7 @@ public class AnalyticsService {
             if (Math.abs(openNet) > 0.01 || Math.abs(openChargesRem) > 0.01) {
                 out.add(new Trade(strat.id(), iso, System.currentTimeMillis(),
                     openGross, openChargesRem, openNet, OPEN_POSITION_MTM_REASON, 0,
-                    null, 0L, null, null));
+                    null, 0L, null, null, null));
             }
         } catch (Exception e) {
             log.warn("[Analytics] Live today overlay failed: {}", e.getMessage());
@@ -395,13 +417,17 @@ public class AnalyticsService {
     }
 
     // ── CAPITAL ─────────────────────────────────────────────────────────────
-    private Map<String, Object> capital(List<Trade> trades, double starting) {
-        double netSum = trades.stream().mapToDouble(Trade::netPnl).sum();
-        double current = starting + netSum;
-        double returnPct = starting > 0 ? (netSum / starting) * 100.0 : 0;
+    /** {@code periodTrades} drives the period-scoped fields (totalReturn, returnPct,
+     *  avgMonthlyPct). {@code allTimeNet} drives {@code currentCapital} so it always
+     *  reflects the real running account value regardless of which period pill is
+     *  selected. */
+    private Map<String, Object> capital(List<Trade> periodTrades, double starting, double allTimeNet) {
+        double periodNet = periodTrades.stream().mapToDouble(Trade::netPnl).sum();
+        double current = starting + allTimeNet;
+        double returnPct = starting > 0 ? (periodNet / starting) * 100.0 : 0;
         // Avg monthly % — group by yyyy-MM, sum net, divide by starting, average.
         Map<String, Double> byMonth = new LinkedHashMap<>();
-        for (Trade t : trades) {
+        for (Trade t : periodTrades) {
             String ym = t.sessionDate() != null && t.sessionDate().length() >= 7
                 ? t.sessionDate().substring(0, 7) : "";
             if (ym.isEmpty()) continue;
@@ -416,10 +442,24 @@ public class AnalyticsService {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("startingCapital", round2(starting));
         m.put("currentCapital",  round2(current));
-        m.put("totalReturn",     round2(netSum));
+        m.put("totalReturn",     round2(periodNet));
         m.put("totalReturnPct",  round2(returnPct));
         m.put("avgMonthlyPct",   round2(avgMonthlyPct));
         return m;
+    }
+
+    /** Sum of net P&L across every trade ever closed. Callers pass {@code strategyId =
+     *  null} (or "all") to get the universal account balance — that's what {@code
+     *  currentCapital} uses so the running balance is consistent no matter which mode /
+     *  period the operator is currently viewing. */
+    private double sumAllTimeNet(String strategyId) {
+        try {
+            List<Trade> all = loadTrades("all", strategyId, null, null);
+            return all.stream().mapToDouble(Trade::netPnl).sum();
+        } catch (Exception e) {
+            log.warn("[Analytics] sumAllTimeNet failed: {}", e.getMessage());
+            return 0;
+        }
     }
 
     // ── PERFORMANCE (per straddle) ──────────────────────────────────────────
@@ -469,9 +509,10 @@ public class AnalyticsService {
             if (pnl > 0)      { wins++;   sumWin  += pnl; }
             else if (pnl < 0) { losses++; sumLoss += pnl; }
         }
-        // Drawdown over the cumulative per-trade equity curve. Also tracks the index of the
-        // peak that preceded the deepest drawdown and the trough index so we can report
-        // "Max Drawdown Days" = number of trades between them (inclusive of the trough).
+        // Drawdown over the cumulative per-trade equity curve. Track the indices of the
+        // peak preceding the deepest drawdown and of the trough itself, then convert those
+        // indices into CALENDAR DAYS between sessionDate(peak) and sessionDate(trough).
+        // Multiple trades on the same day → 0 days; the metric counts dates, not trades.
         double peak = 0, cum = 0, maxDd = 0;
         int peakIdx = 0, troughIdx = 0, curPeakIdx = 0;
         for (int i = 0; i < closed.size(); i++) {
@@ -480,7 +521,17 @@ public class AnalyticsService {
             double dd = cum - peak;
             if (dd < maxDd) { maxDd = dd; peakIdx = curPeakIdx; troughIdx = i; }
         }
-        int maxDrawdownDays = (maxDd < 0) ? (troughIdx - peakIdx) : 0;
+        int maxDrawdownDays = 0;
+        if (maxDd < 0) {
+            try {
+                LocalDate peakDate   = LocalDate.parse(closed.get(peakIdx).sessionDate());
+                LocalDate troughDate = LocalDate.parse(closed.get(troughIdx).sessionDate());
+                long daysBetween = java.time.temporal.ChronoUnit.DAYS.between(peakDate, troughDate);
+                maxDrawdownDays = (int) Math.max(0, daysBetween);
+            } catch (Exception ignored) {
+                // Bad sessionDate format → fall back to 0 rather than spike a spurious value.
+            }
+        }
 
         // Per-day SL hit histogram. Per the operator's request, exposed in the hero so the
         // mix between "both legs survived to squareoff" (0 SL), "one leg got stopped" (1 SL)
@@ -582,24 +633,27 @@ public class AnalyticsService {
      *  history still produces 2 points (enough for Chart.js to draw a connecting line — the
      *  hero chart uses {@code pointRadius: 0}, so a single isolated point would be invisible). */
     private Map<String, Object> equityCurve(List<Trade> trades, double starting) {
-        record EquityEvent(long millis, String label, double net) {}
-        List<EquityEvent> events = new ArrayList<>();
+        // Sum each day's net P&L (across all cycles closed that day) into a single
+        // point. Multi-cycle days previously produced multiple X-axis entries with the
+        // same date label — confusing on hover and visually compresses the curve. Now
+        // each day appears once, with the line stepping by that day's total contribution.
+        java.util.NavigableMap<String, Double> netByDate = new java.util.TreeMap<>();
         for (Trade t : trades) {
-            events.add(new EquityEvent(t.closedAtMillis(),
-                t.sessionDate() == null ? "" : t.sessionDate(), t.netPnl()));
+            String d = t.sessionDate();
+            if (d == null || d.isBlank()) continue;
+            netByDate.merge(d, t.netPnl(), Double::sum);
         }
-        events.sort(Comparator.comparingLong(EquityEvent::millis));
 
         List<String>  labels = new ArrayList<>();
         List<Double>  values = new ArrayList<>();
         List<String>  kinds  = new ArrayList<>();
         labels.add("Start"); values.add(round2(starting)); kinds.add("START");
         double cum = starting;
-        for (EquityEvent e : events) {
-            cum += e.net();
-            labels.add(e.label());
+        for (Map.Entry<String, Double> e : netByDate.entrySet()) {
+            cum += e.getValue();
+            labels.add(e.getKey());
             values.add(round2(cum));
-            kinds.add("TRADE");
+            kinds.add("DAY");
         }
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("labels", labels);
@@ -644,18 +698,25 @@ public class AnalyticsService {
         return out;
     }
 
+    /** 4-way split by leg side AND trade direction. Direction is derived from setup —
+     *  L4_BREAKDOWN / H3_REVERSAL = short (Sell row); H4_BREAKOUT = long (Buy row). */
     private Map<String, Map<String, Object>> splitCeVsPe(List<Trade> trades) {
         Map<String, List<Trade>> bins = new LinkedHashMap<>();
-        bins.put("CE", new ArrayList<>());
-        bins.put("PE", new ArrayList<>());
+        bins.put("CE Sell", new ArrayList<>());
+        bins.put("CE Buy",  new ArrayList<>());
+        bins.put("PE Sell", new ArrayList<>());
+        bins.put("PE Buy",  new ArrayList<>());
         bins.put("Unknown", new ArrayList<>());
         for (Trade t : trades) {
             if (!isClosedStraddle(t)) continue;
             String s = t.symbol();
-            if (s == null || s.isBlank())     bins.get("Unknown").add(t);
-            else if (s.toUpperCase().endsWith("CE")) bins.get("CE").add(t);
-            else if (s.toUpperCase().endsWith("PE")) bins.get("PE").add(t);
-            else                              bins.get("Unknown").add(t);
+            if (s == null || s.isBlank()) { bins.get("Unknown").add(t); continue; }
+            String setup = t.setup() == null ? "" : t.setup();
+            boolean isLong = "H4_BREAKOUT".equals(setup);
+            String up = s.toUpperCase();
+            if (up.endsWith("CE"))      bins.get(isLong ? "CE Buy"  : "CE Sell").add(t);
+            else if (up.endsWith("PE")) bins.get(isLong ? "PE Buy"  : "PE Sell").add(t);
+            else                        bins.get("Unknown").add(t);
         }
         return summariseBins(bins);
     }
@@ -709,29 +770,35 @@ public class AnalyticsService {
         catch (Exception e) { return java.time.DayOfWeek.TUESDAY; }
     }
 
-    /** Strong = bias at entry agreed with the trade direction
-     *    – CE short + STRONG_BEARISH_BIAS → Strong
-     *    – PE short + STRONG_BULLISH_BIAS → Strong
-     *  Weak = NEUTRAL, STALE, or bias OPPOSED the trade.
-     *  Unknown = legacy rows with no entry-bias recorded. */
+    /** 5-tier split keyed on the bias state frozen at entry. Legacy STRONG_* labels collapse
+     *  into the regular Bullish/Bearish buckets so historical rows still appear in the right
+     *  group when the operator opens the card. Unknown catches null / blank / no-baseline-yet. */
     private Map<String, Map<String, Object>> splitOiConfirmation(List<Trade> trades) {
         Map<String, List<Trade>> bins = new LinkedHashMap<>();
-        bins.put("Strong",  new ArrayList<>());
-        bins.put("Weak",    new ArrayList<>());
-        bins.put("Unknown", new ArrayList<>());
+        bins.put("Very Bullish", new ArrayList<>());
+        bins.put("Bullish",      new ArrayList<>());
+        bins.put("Neutral",      new ArrayList<>());
+        bins.put("Bearish",      new ArrayList<>());
+        bins.put("Very Bearish", new ArrayList<>());
+        bins.put("Unknown",      new ArrayList<>());
         for (Trade t : trades) {
             if (!isClosedStraddle(t)) continue;
             String bias = t.entryOiBias();
-            String sym  = t.symbol();
-            if (bias == null || bias.isBlank() || sym == null || sym.isBlank()) {
+            if (bias == null || bias.isBlank() || "no-baseline-yet".equals(bias)) {
                 bins.get("Unknown").add(t);
                 continue;
             }
-            boolean isCe = sym.toUpperCase().endsWith("CE");
-            boolean isPe = sym.toUpperCase().endsWith("PE");
-            boolean strong = (isCe && "STRONG_BEARISH_BIAS".equals(bias))
-                          || (isPe && "STRONG_BULLISH_BIAS".equals(bias));
-            (strong ? bins.get("Strong") : bins.get("Weak")).add(t);
+            switch (bias) {
+                case "VERY_BULLISH_BIAS"   -> bins.get("Very Bullish").add(t);
+                case "BULLISH_BIAS",
+                     "STRONG_BULLISH_BIAS" -> bins.get("Bullish").add(t);   // legacy + new
+                case "NEUTRAL",
+                     "STALE"               -> bins.get("Neutral").add(t);
+                case "BEARISH_BIAS",
+                     "STRONG_BEARISH_BIAS" -> bins.get("Bearish").add(t);   // legacy + new
+                case "VERY_BEARISH_BIAS"   -> bins.get("Very Bearish").add(t);
+                default                    -> bins.get("Unknown").add(t);
+            }
         }
         return summariseBins(bins);
     }

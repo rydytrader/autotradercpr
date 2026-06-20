@@ -16,19 +16,23 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 /**
- * Samples LTPs for every subscribed Fyers symbol once per second and rolls samples into 5-minute
- * OHLC buckets per symbol. On bucket close (the first sample in a new 5-min window), the closed
+ * Samples LTPs for every subscribed Fyers symbol once per second and rolls samples into 3-minute
+ * OHLC buckets per symbol. On bucket close (the first sample in a new 3-min window), the closed
  * candle is emitted to every listener registered for that symbol.
  *
- * <p>Buckets are anchored on the IST wall clock — 09:15, 09:20, 09:25, … 15:25, 15:30 — and only
+ * <p>Buckets are anchored on the IST wall clock — 09:15, 09:18, 09:21, … 15:27, 15:30 — and only
  * emitted during market hours (09:15 ≤ now ≤ 15:30).
+ *
+ * <p>{@link #BUCKET_MINUTES} is public so downstream consumers (e.g. the Camarilla strategy's
+ * bar-close grace timer) can derive bar length without hardcoding it and risk drifting from
+ * the aggregator's actual cadence.
  */
 @Service
 public class CandleAggregator {
 
     private static final Logger log = LoggerFactory.getLogger(CandleAggregator.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    private static final int BUCKET_MINUTES = 5;
+    public  static final int    BUCKET_MINUTES = 3;
 
     private final MarketDataService marketDataService;
 
@@ -39,7 +43,7 @@ public class CandleAggregator {
         this.marketDataService = marketDataService;
     }
 
-    /** Subscribe to 5-min candle closes on {@code symbol}. The symbol is also added to the
+    /** Subscribe to 3-min candle closes on {@code symbol}. The symbol is also added to the
      *  Fyers market-data feed if it isn't already streaming. Multiple subscribers per symbol
      *  are allowed; each gets called on every close. */
     public void subscribe(String symbol, Consumer<Candle> listener) {
@@ -109,10 +113,10 @@ public class CandleAggregator {
         Candle c = new Candle(
             round(b.openPx), round(b.highPx), round(b.lowPx), round(b.closePx),
             0L, b.currentBucketStartMs);
-        // Per-symbol candle-close logging is too chatty (one line per symbol every 5 min).
+        // Per-symbol candle-close logging is too chatty (one line per symbol every 3 min).
         // Demoted to debug so it stays available for troubleshooting without spamming INFO.
-        log.debug("[CandleAggregator] {} 5-min close — o={} h={} l={} c={} startMs={}",
-            symbol, c.open(), c.high(), c.low(), c.close(), c.startMillis());
+        log.debug("[CandleAggregator] {} {}-min close — o={} h={} l={} c={} startMs={}",
+            symbol, BUCKET_MINUTES, c.open(), c.high(), c.low(), c.close(), c.startMillis());
         CopyOnWriteArrayList<Consumer<Candle>> ls = listenersBySymbol.get(symbol);
         if (ls == null) return;
         for (Consumer<Candle> l : ls) {

@@ -60,10 +60,19 @@ public class Camarilla implements Strategy {
 
     private static final Logger log = LoggerFactory.getLogger(Camarilla.class);
     private static final String STRATEGY_ID = "camarilla";
+    /** Strategy ID written to DB rows for MANUAL-tagged trades. Analytics, calendar
+     *  day-modal, and Trade Log filter on this string so manual scalps stay distinguishable
+     *  from algorithm trades while still aggregating into the same portfolio totals. */
+    public  static final String MANUAL_STRATEGY_ID = "manual";
     private static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final String STATE_FILE = "../store/data/camarilla-state.json";
     private static final int LOT_SIZE = 65;
+
+    /** NIFTY contract lot size — used by the Manual Terminal controller to translate
+     *  the operator's "lots" input into a contract count. Public so the controller
+     *  doesn't have to duplicate the constant. */
+    public static int lotSize() { return LOT_SIZE; }
     private static final int RECENT_EVENTS_LIMIT = 60;
     /** Number of consecutive fast-scheduler polls (~500 ms each) that LTP must sit at or above
      *  the SL level before the position is squared off. At ~500 ms cadence, 3 polls ≈ 1.5 s of
@@ -72,13 +81,27 @@ public class Camarilla implements Strategy {
     private static final int SL_BREACH_CONFIRM_TICKS = 3;
     /** NIFTY strike interval — 50 points. */
     private static final long STRIKE_STEP = 50L;
-    /** Grace window after a 5-min bar close before we resolve the buffer for that bar. All six
+    /** Grace window after a bar close before we resolve the buffer for that bar. All six
      *  symbols' candles emit inside a single 1-second sample tick at the boundary; 1.5 s gives
      *  every candidate a chance to land before the tiebreaker runs. */
     private static final long BAR_PROCESSING_GRACE_MS = 1500L;
-    private static final long BAR_LENGTH_MS = 5 * 60 * 1000L;
+    /** Bar length sourced from {@link com.rydytrader.autotrader.service.CandleAggregator#BUCKET_MINUTES}
+     *  so this constant never drifts from the aggregator's actual cadence. */
+    private static final long BAR_LENGTH_MS =
+        com.rydytrader.autotrader.service.CandleAggregator.BUCKET_MINUTES * 60_000L;
 
-    public enum ActiveSetup { H3_REVERSAL, L4_BREAKDOWN }
+    public enum ActiveSetup {
+        H3_REVERSAL,       // legacy SHORT setup (retired but enum value retained for DB compat)
+        L4_BREAKDOWN,      // SHORT — premium broke below L4
+        H4_BREAKOUT,       // LONG  — premium broke above H4 (V3 buying setup)
+        MANUAL             // user-placed via Options Scalper Terminal — direction comes from caller
+    }
+
+    /** True for setups that take a SHORT (sell) position on entry. MANUAL is intentionally
+     *  excluded — its direction is supplied by the caller, not derived from the setup tag. */
+    private static boolean isShortSetup(ActiveSetup s) {
+        return s == ActiveSetup.L4_BREAKDOWN || s == ActiveSetup.H3_REVERSAL;
+    }
 
     /** V2 watchlist role for each monitored option contract. ATM and ITM strikes only check
      *  L4 breakdown; OTM strikes only check H3 reversal. The role is stored per-symbol in
@@ -255,6 +278,63 @@ public class Camarilla implements Strategy {
         return anyClosed;
     }
 
+    /** Maintenance action — wipes today's closed-trade records WITHOUT touching open
+     *  positions. Clears the in-memory cycle ring, today's event entries, the day's
+     *  trade-count + consecutive-loss counters, and the DB rows where
+     *  {@code session_date = today} (both ALGO and MANUAL strategyIds).
+     *
+     *  <p>Open positions are deliberately left running — they're still live at the broker;
+     *  the bot needs to keep managing their SL / squareoff. Use this only to reset
+     *  reporting/analytics state, typically after a test session before going live. */
+    public synchronized Map<String, Object> clearTodayRecords() {
+        int cyclesCleared = state.todayClosedTrades.size();
+        state.todayClosedTrades.clear();
+
+        int prevTradesToday      = state.tradesToday;
+        int prevConsecutiveLoss  = state.consecutiveLosses;
+        state.tradesToday        = 0;
+        state.consecutiveLosses  = 0;
+
+        // Drop any event whose timestamp is today's IST midnight or later.
+        long startOfTodayMillis = LocalDate.now(IST).atStartOfDay(IST).toInstant().toEpochMilli();
+        int eventsBefore = state.recentEvents.size();
+        state.recentEvents.removeIf(e -> {
+            Object ts = e.get("ts");
+            return ts instanceof Number && ((Number) ts).longValue() >= startOfTodayMillis;
+        });
+        int eventsCleared = eventsBefore - state.recentEvents.size();
+
+        saveToDisk();
+
+        // DB wipe — both ALGO ("camarilla") and MANUAL ("manual") rows for today vanish
+        // because deleteBySessionDate doesn't filter on strategyId.
+        long dbCleared = 0;
+        try {
+            StrategyTradeRepository repo = tradeRepoProvider == null ? null : tradeRepoProvider.getIfAvailable();
+            if (repo != null) {
+                dbCleared = repo.deleteBySessionDate(LocalDate.now(IST).toString());
+            }
+        } catch (Exception e) {
+            log.warn("[Camarilla] clearTodayRecords DB wipe failed: {}", e.getMessage());
+        }
+
+        // Record a single event marking the wipe so the operator has an audit trail.
+        event("[WARNING]", "Maintenance",
+            "Cleared today's records — cycles=" + cyclesCleared
+            + " events=" + eventsCleared
+            + " dbRows=" + dbCleared
+            + " (open positions preserved)");
+        log.warn("[Camarilla] clearTodayRecords — cycles={} events={} dbRows={} prevTradesToday={} prevConsLoss={}",
+            cyclesCleared, eventsCleared, dbCleared, prevTradesToday, prevConsecutiveLoss);
+        publishStream();
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("cyclesCleared", cyclesCleared);
+        out.put("eventsCleared", eventsCleared);
+        out.put("dbCleared",     dbCleared);
+        return out;
+    }
+
     /** Per-row manual squareoff. Closes only the supplied {@code symbol}, leaves the rest
      *  of the open-positions map untouched. No-op (returns {@code false}) when the symbol
      *  isn't currently open. */
@@ -263,6 +343,84 @@ public class Camarilla implements Strategy {
         synchronized (this) {
             if (!state.openPositions.containsKey(symbol)) return false;
             return closePosition(symbol, reason == null ? "MANUAL" : reason);
+        }
+    }
+
+    /** Snapshot of all open positions whose {@code setup == MANUAL}. Returned as a fresh
+     *  list so the caller can iterate without holding the strategy lock. Used by the
+     *  Options Scalper Terminal dashboard endpoint to render only its own positions. */
+    public java.util.List<Position> openManualPositions() {
+        synchronized (this) {
+            java.util.List<Position> out = new ArrayList<>();
+            for (Position p : state.openPositions.values()) {
+                if (p != null && p.setup == ActiveSetup.MANUAL) out.add(p);
+            }
+            return out;
+        }
+    }
+
+    /** Today's closed-trade ring filtered to {@code setup == MANUAL}. Returns deep copies
+     *  of the ring entries so mutations on the caller side don't affect strategy state. */
+    public java.util.List<Map<String, Object>> todayManualClosedTrades() {
+        synchronized (this) {
+            java.util.List<Map<String, Object>> out = new ArrayList<>();
+            for (Map<String, Object> row : state.todayClosedTrades) {
+                Object s = row == null ? null : row.get("setup");
+                if (s != null && ActiveSetup.MANUAL.name().equals(s.toString())) {
+                    out.add(new LinkedHashMap<>(row));
+                }
+            }
+            return out;
+        }
+    }
+
+    /** Look up an open MANUAL position by its current {@code entryOrderId}. Returns
+     *  {@code null} when no match exists. Used by the Manual Terminal qty / SL adjust
+     *  endpoints which receive the order ID as the per-row handle and need to read
+     *  the full {@link Position} to derive the existing direction and SL distance. */
+    public Position findOpenManualByOrderId(String orderId) {
+        if (orderId == null || orderId.isBlank()) return null;
+        synchronized (this) {
+            for (Position p : state.openPositions.values()) {
+                if (p != null && p.setup == ActiveSetup.MANUAL
+                    && orderId.equals(p.entryOrderId)) {
+                    return p;
+                }
+            }
+            return null;
+        }
+    }
+
+    /** Close the MANUAL position whose Fyers {@code entryOrderId} matches. Returns the
+     *  symbol that was closed, or {@code null} when no matching open MANUAL position
+     *  exists. The Options Scalper Terminal's per-position × button uses the order ID
+     *  as its handle (the original Manual Terminal did the same), so this is the lookup
+     *  helper that bridges to the strategy's symbol-keyed close path. */
+    public String closeManualByOrderId(String orderId, String reason) {
+        if (orderId == null || orderId.isBlank()) return null;
+        synchronized (this) {
+            String found = null;
+            for (Position p : state.openPositions.values()) {
+                if (p != null && p.setup == ActiveSetup.MANUAL
+                    && orderId.equals(p.entryOrderId)) {
+                    found = p.symbol;
+                    break;
+                }
+            }
+            if (found == null) return null;
+            return closePosition(found, reason == null ? "MANUAL_CLOSE" : reason) ? found : null;
+        }
+    }
+
+    /** Close every open MANUAL position. Strategy positions (L4_BREAKDOWN, H4_BREAKOUT,
+     *  etc.) are left untouched. Returns the count of positions closed. */
+    public int closeAllManual(String reason) {
+        synchronized (this) {
+            int closed = 0;
+            for (Position p : new ArrayList<>(openManualPositions())) {
+                if (closePosition(p.symbol, reason == null ? "MANUAL_CLOSE" : reason)) closed++;
+            }
+            return closed;
         }
     }
 
@@ -293,10 +451,21 @@ public class Camarilla implements Strategy {
             double net = 0;
             for (Map<String, Object> m : state.todayClosedTrades) net += asDouble(m.get("netPnl"));
             for (Position p : state.openPositions.values()) {
-                net += openPositionMtm(p) - perCycleCharges(p.entryPrice * p.qty, currentExitTurnover(p));
+                net += openPositionMtm(p) - cycleChargesFor(p);
             }
             return round2(net);
         }
+    }
+
+    /** Direction-aware turnover ordering for {@link #perCycleCharges}. STT lands on the
+     *  sell side, stamp on the buy side — for SHORT the entry is the sell; for LONG the
+     *  entry is the buy. */
+    private double cycleChargesFor(Position p) {
+        double entryTurnover = p.entryPrice * p.qty;
+        double exitTurnover  = currentExitTurnover(p);
+        return p.isShort
+            ? perCycleCharges(entryTurnover, exitTurnover)
+            : perCycleCharges(exitTurnover,  entryTurnover);
     }
 
     @Override
@@ -306,7 +475,7 @@ public class Camarilla implements Strategy {
             double ch = 0;
             for (Map<String, Object> m : state.todayClosedTrades) ch += asDouble(m.get("charges"));
             for (Position p : state.openPositions.values()) {
-                ch += perCycleCharges(p.entryPrice * p.qty, currentExitTurnover(p));
+                ch += cycleChargesFor(p);
             }
             return round2(ch);
         }
@@ -337,42 +506,85 @@ public class Camarilla implements Strategy {
         for (String symbol : new ArrayList<>(state.openPositions.keySet())) {
             Position p = state.openPositions.get(symbol);
             if (p == null) continue;
+            // MANUAL positions: targetLevel is NaN (so target compares always return false),
+            // breakevenMoved is pre-set true (skips breakeven). slLevel is honoured when set
+            // by the operator's stopLossPts choice — NaN comparisons are also always false,
+            // so a MANUAL position with stopLossPts=0 simply never fires SL.
             double ltp;
             try { ltp = marketDataService.getLtp(symbol); }
             catch (Exception e) { continue; }
             if (ltp <= 0) continue;
 
+            // BREAKEVEN trigger — slide slLevel to entryPrice once premium has dropped by 1R
+            // in our favor. One-shot per position. Runs BEFORE target/SL so if a single tick
+            // hits 1R + target simultaneously, target still closes the trade but the
+            // breakeven safety is set first in case of a same-tick reversal sequence.
+            if (riskSettings.isMoveSlToBreakevenEnabled() && !p.breakevenMoved) {
+                // R distance — for SHORT, originalSL is above entry; for LONG, below.
+                // Take absolute distance so the comparison is direction-neutral.
+                double refSl = p.originalSlLevel > 0 ? p.originalSlLevel : p.slLevel;
+                double r = Math.abs(refSl - p.entryPrice);
+                // Favorable move from entry: SHORT wants ltp DOWN, LONG wants ltp UP.
+                double favorMove = p.isShort ? (p.entryPrice - ltp) : (ltp - p.entryPrice);
+                if (r > 0 && favorMove >= r) {
+                    Object beLock = symbolLocks.computeIfAbsent(symbol, k -> new Object());
+                    synchronized (beLock) {
+                        Position p2 = state.openPositions.get(symbol);
+                        if (p2 != null && !p2.breakevenMoved) {
+                            double oldSl  = p2.slLevel;
+                            p2.slLevel        = p2.entryPrice;
+                            p2.breakevenMoved = true;
+                            // Reset partial SL-breach streak — fresh 3-tick confirmation
+                            // must apply to the new tighter level.
+                            p2.slBreachStreak = 0;
+                            event("[INFO]", "AUTO SL", symbol + " " + p2.setup
+                                + " SL → breakeven — ltp=" + round2(ltp)
+                                + " entry=" + round2(p2.entryPrice)
+                                + " R=" + round2(r)
+                                + " (was " + round2(oldSl) + ")");
+                            saveToDisk();
+                        }
+                    }
+                }
+            }
+
+            // Direction-aware comparisons. SHORT: target BELOW, SL ABOVE. LONG: flipped.
+            boolean targetHit = p.isShort ? (ltp <= p.targetLevel) : (ltp >= p.targetLevel);
+            boolean slBreach  = p.isShort ? (ltp >= p.slLevel)     : (ltp <= p.slLevel);
+
             // TARGET first — if both fire on the same tick the win takes precedence.
-            if (ltp <= p.targetLevel) {
+            if (targetHit) {
                 Object lock = symbolLocks.computeIfAbsent(symbol, k -> new Object());
                 synchronized (lock) {
                     Position p2 = state.openPositions.get(symbol);
                     if (p2 == null) continue;
-                    if (ltp > p2.targetLevel) continue;
+                    boolean stillHit = p2.isShort ? (ltp <= p2.targetLevel) : (ltp >= p2.targetLevel);
+                    if (!stillHit) continue;
+                    String cmp = p2.isShort ? " <= target=" : " >= target=";
                     event("[SUCCESS]", "Exit", symbol + " " + p2.setup + " TARGET_HIT — ltp=" + round2(ltp)
-                        + " <= target=" + round2(p2.targetLevel));
+                        + cmp + round2(p2.targetLevel));
                     closePosition(symbol, "TARGET_HIT");
                 }
                 continue;
             }
 
             // SL: counted, confirmed.
-            if (ltp >= p.slLevel) {
+            if (slBreach) {
                 p.slBreachStreak++;
                 if (p.slBreachStreak >= SL_BREACH_CONFIRM_TICKS) {
                     Object lock = symbolLocks.computeIfAbsent(symbol, k -> new Object());
                     synchronized (lock) {
                         Position p2 = state.openPositions.get(symbol);
                         if (p2 == null) continue;
+                        String cmp = p2.isShort ? " >= SL=" : " <= SL=";
                         event("[WARNING]", "Exit", symbol + " " + p2.setup + " SL_HIT — ltp=" + round2(ltp)
-                            + " >= SL=" + round2(p2.slLevel)
+                            + cmp + round2(p2.slLevel)
                             + " confirmed over " + SL_BREACH_CONFIRM_TICKS + " ticks");
                         closePosition(symbol, "SL_HIT");
                     }
                 }
             } else if (p.slBreachStreak > 0) {
-                // Price retreated — reset the streak. Avoids accumulating partial breaches
-                // across the whole life of the position.
+                // Price retreated to the favorable side of SL — reset the streak.
                 p.slBreachStreak = 0;
             }
         }
@@ -397,17 +609,17 @@ public class Camarilla implements Strategy {
     }
 
     private void processBar(List<EntryCandidate> bar) {
-        // V3: only ATM L4 breakdown candidates are queued, one per side. No tiebreaker
-        // needed (no ITM fallback), no H3 reversal path (those roles aren't assigned).
-        EntryCandidate ceL4Winner = selectL4Winner(bar, true);
-        EntryCandidate peL4Winner = selectL4Winner(bar, false);
-        fireIfPresent(ceL4Winner);
-        fireIfPresent(peL4Winner);
+        // V3: each (side × setup) cell holds at most one candidate — L4 breakdown shorts
+        // and H4 breakout longs are mutually exclusive on the same bar.
+        fireIfPresent(selectBySetup(bar, ActiveSetup.L4_BREAKDOWN, true));
+        fireIfPresent(selectBySetup(bar, ActiveSetup.L4_BREAKDOWN, false));
+        fireIfPresent(selectBySetup(bar, ActiveSetup.H4_BREAKOUT,  true));
+        fireIfPresent(selectBySetup(bar, ActiveSetup.H4_BREAKOUT,  false));
     }
 
-    private EntryCandidate selectL4Winner(List<EntryCandidate> bar, boolean ceSide) {
+    private EntryCandidate selectBySetup(List<EntryCandidate> bar, ActiveSetup setup, boolean ceSide) {
         for (EntryCandidate cand : bar) {
-            if (cand.setup() != ActiveSetup.L4_BREAKDOWN) continue;
+            if (cand.setup() != setup) continue;
             if (cand.role() != WatchRole.ATM_L4) continue;
             if (ceSide && !cand.isCe()) continue;
             if (!ceSide && !cand.isPe()) continue;
@@ -510,14 +722,24 @@ public class Camarilla implements Strategy {
             WatchRole role = state.symbolRole.get(symbol);
             if (role == null) return;  // not in current watchlist; ignore
 
-            // V3 setup: ATM L4 breakdown only. ITM_L4 / OTM_H3 roles are no longer assigned
-            // by onAtmChange, so any non-ATM_L4 role here is dead code — return safely.
+            // V3 setup: ATM L4 breakdown (SHORT) + optional H4 breakout (LONG). Both check
+            // only the ATM_L4 role. Premium chart can't satisfy both conditions in the same
+            // bar (a candle can't close both above H4 and below L4), so the if/else-if is
+            // mathematically safe.
             if (role != WatchRole.ATM_L4) return;
-            // L4 breakdown: red bar touches L4 from above and closes back below.
             EntryCandidate candidate = null;
+            // L4 breakdown: red bar touches L4 from above and closes back below.
             if (c.isRed() && c.high() >= lv.l4() && c.close() < lv.l4()) {
                 candidate = new EntryCandidate(symbol, role, ActiveSetup.L4_BREAKDOWN,
                     lv.l5(), lv.l3(), c);
+            }
+            // H4 breakout (V3 BUYING setup): green bar touches H4 from below and closes
+            // back above. Target = H5 (momentum extension), SL = H3 (one level below entry).
+            // Gated by the operator flag — when buying is disabled, this branch never fires.
+            else if (riskSettings.isH4BreakoutBuyingEnabled()
+                  && c.isGreen() && c.low() <= lv.h4() && c.close() > lv.h4()) {
+                candidate = new EntryCandidate(symbol, role, ActiveSetup.H4_BREAKOUT,
+                    lv.h5(), lv.h3(), c);
             }
             if (candidate == null) return;
 
@@ -549,38 +771,89 @@ public class Camarilla implements Strategy {
                 if (!now.isBefore(end)) return false;
             } catch (Exception ignored) {}
         }
-        int maxConcurrent = riskSettings.getCamarillaMaxConcurrentPositions();
-        if (maxConcurrent <= 0) maxConcurrent = 4;
-        if (state.openPositions.size() >= maxConcurrent) return false;
+        // Note: count-based "max concurrent positions" gate was removed in favor of the
+        // risk-budget gate in fire() — sizing decisions there reflect actual ₹ at risk, not
+        // a raw position count. The camarillaMaxConcurrentPositions setting is retained for
+        // saved-JSON compat but no longer consulted at runtime.
         return true;
     }
 
+    /** Sum of remaining ₹ at risk across all currently-open positions. For SHORTs that's
+     *  {@code max(0, slLevel − entryPrice) × qty}; for LONGs it's
+     *  {@code max(0, entryPrice − slLevel) × qty}. Once breakeven moves slLevel to entry,
+     *  the per-position contribution drops to 0 either direction. Single source of truth —
+     *  used by both the dashboard badge AND the budget gate at entry time. */
+    private double exposedRiskNow() {
+        double total = 0;
+        for (Position p : state.openPositions.values()) {
+            double perShare = p.isShort
+                ? Math.max(0, p.slLevel - p.entryPrice)
+                : Math.max(0, p.entryPrice - p.slLevel);
+            total += perShare * p.qty;
+        }
+        return total;
+    }
+
+    /** Sum of realized losses (absolute value) across today's closed-trade ring. Profitable
+     *  cycles contribute 0 — only losses consume budget. */
+    private double consumedRiskNow() {
+        double total = 0;
+        for (Map<String, Object> trade : state.todayClosedTrades) {
+            double net = asDouble(trade.get("netPnl"));
+            if (net < 0) total += Math.abs(net);
+        }
+        return total;
+    }
+
     private void fire(String symbol, ActiveSetup setup, double targetLevel, double slLevel, Candle entryCandle) {
-        // OI bias gate (when enabled in settings). Only blocks the side that's against the
-        // signal — CE shorts in a bullish market, PE shorts in a bearish market. NEUTRAL and
-        // STALE pass through (no signal = no block). Trades aligned with the bias direction
-        // (CE in bearish, PE in bullish) are never gated.
-        if (riskSettings.isCamarillaOiBiasFilterEnabled()) {
-            try {
-                com.rydytrader.autotrader.service.OptionOiTracker oiCheck = oiTrackerProvider == null ? null
-                    : oiTrackerProvider.getIfAvailable();
-                if (oiCheck != null) {
-                    String bias = oiCheck.snapshot().bias();
-                    boolean isCe = symbol != null && symbol.endsWith("CE");
-                    boolean isPe = symbol != null && symbol.endsWith("PE");
-                    if (isCe && "STRONG_BULLISH_BIAS".equals(bias)) {
+        boolean shortSetup = isShortSetup(setup);
+        String  sideWord   = shortSetup ? "sell"  : "buy";
+        boolean isCe = symbol != null && symbol.endsWith("CE");
+        boolean isPe = symbol != null && symbol.endsWith("PE");
+
+        // ── OI bias gate ──
+        //   SHORT (existing behavior, label-tolerant): when the filter is enabled, block CE
+        //   in any bullish-family bias, PE in any bearish-family bias. NEUTRAL passes.
+        //   LONG (V3, always strict when buying is enabled): require VERY_BULLISH for CE buy,
+        //   VERY_BEARISH for PE buy. Anything else blocks.
+        try {
+            com.rydytrader.autotrader.service.OptionOiTracker oiCheck = oiTrackerProvider == null ? null
+                : oiTrackerProvider.getIfAvailable();
+            if (oiCheck != null) {
+                String bias = oiCheck.snapshot().bias();
+                if (shortSetup && riskSettings.isCamarillaOiBiasFilterEnabled()) {
+                    boolean bearishFamily = "BEARISH_BIAS".equals(bias)
+                        || "VERY_BEARISH_BIAS".equals(bias)
+                        || "STRONG_BEARISH_BIAS".equals(bias);   // legacy
+                    boolean bullishFamily = "BULLISH_BIAS".equals(bias)
+                        || "VERY_BULLISH_BIAS".equals(bias)
+                        || "STRONG_BULLISH_BIAS".equals(bias);   // legacy
+                    if (isCe && bullishFamily) {
                         event("[WARNING]", "OiBias", "skipping CE short on " + symbol + " — bias=" + bias);
                         return;
                     }
-                    if (isPe && "STRONG_BEARISH_BIAS".equals(bias)) {
+                    if (isPe && bearishFamily) {
                         event("[WARNING]", "OiBias", "skipping PE short on " + symbol + " — bias=" + bias);
                         return;
                     }
                 }
-            } catch (Exception ignored) {}
-        }
+                if (!shortSetup) {
+                    if (isCe && !"VERY_BULLISH_BIAS".equals(bias)) {
+                        event("[WARNING]", "OiBias", symbol + " H4 BUY blocked — bias=" + bias
+                            + " (need VERY_BULLISH)");
+                        return;
+                    }
+                    if (isPe && !"VERY_BEARISH_BIAS".equals(bias)) {
+                        event("[WARNING]", "OiBias", symbol + " H4 BUY blocked — bias=" + bias
+                            + " (need VERY_BEARISH)");
+                        return;
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
 
-        int qty = riskSettings.getCamarillaLotsPerLeg() * LOT_SIZE;
+        int lots = riskSettings.getCamarillaLotsPerLeg();
+        int qty = lots * LOT_SIZE;
         String productType = riskSettings.getCamarillaOrderType();
 
         double entryLtp;
@@ -588,25 +861,60 @@ public class Camarilla implements Strategy {
         catch (Exception e) { entryLtp = entryCandle.close(); }
         if (entryLtp <= 0) entryLtp = entryCandle.close();
 
-        log.info("[Camarilla] {} fired — selling {} qty={} entryLtp={} target={} sl={}",
-            setup, symbol, qty, entryLtp, targetLevel, slLevel);
-        event("[INFO]", "Entry", setup + " fired — sell " + symbol + " qty " + qty
+        // ── Risk-budget gate ──
+        // Compare (consumedRisk + exposedRisk + thisTradeRisk) against the portfolio daily
+        // risk cap. If full size won't fit, try halving the lot count once. If half still
+        // exceeds budget, skip the trade entirely. Bypassed when portfolio risk is disabled
+        // (maxRisk = 0) — operator hasn't opted in. R-per-share flips by direction.
+        double maxRisk = riskSettings.getPortfolioMaxDailyLoss();
+        if (maxRisk > 0) {
+            double rPerShare = shortSetup ? (slLevel - entryLtp) : (entryLtp - slLevel);
+            if (rPerShare > 0) {
+                double budget   = exposedRiskNow() + consumedRiskNow();
+                double headroom = maxRisk - budget;
+                double fullRisk = rPerShare * qty;
+                if (fullRisk <= headroom) {
+                    event("[INFO]", "Sizing", symbol + " budget OK — risk ₹"
+                        + round2(fullRisk) + " ≤ headroom ₹" + round2(headroom)
+                        + " (budget=₹" + round2(budget) + ", max=₹" + round2(maxRisk) + ")");
+                } else {
+                    int halvedLots = lots / 2;
+                    int halvedQty  = halvedLots * LOT_SIZE;
+                    double halvedRisk = rPerShare * halvedQty;
+                    if (halvedLots >= 1 && halvedRisk <= headroom) {
+                        qty = halvedQty;
+                        event("[WARNING]", "Sizing", symbol + " full risk ₹"
+                            + round2(fullRisk) + " > headroom ₹" + round2(headroom)
+                            + " — halving lots " + lots + " → " + halvedLots
+                            + " (new risk ₹" + round2(halvedRisk) + ")");
+                    } else {
+                        event("[ERROR]", "Sizing", symbol + " skipped — even halved risk ₹"
+                            + round2(halvedRisk) + " exceeds headroom ₹" + round2(headroom)
+                            + " (budget=₹" + round2(budget) + ", max=₹" + round2(maxRisk) + ")");
+                        return;
+                    }
+                }
+            }
+        }
+
+        log.info("[Camarilla] {} fired — {} {} qty={} entryLtp={} target={} sl={}",
+            setup, sideWord, symbol, qty, entryLtp, targetLevel, slLevel);
+        event("[INFO]", "AUTO ENTRY", setup + " fired — " + sideWord + " " + symbol + " qty " + qty
             + " entry≈" + round2(entryLtp) + " target=" + round2(targetLevel) + " SL=" + round2(slLevel));
 
-        // OI bias context — display-only in Phase 1 so the operator can validate the signal
-        // before letting it block trades in a future iteration. Logged immediately after
-        // the entry event so the two appear adjacent in the event log.
+        // OI bias context line so the operator can see what gate state allowed the trade.
         try {
             com.rydytrader.autotrader.service.OptionOiTracker oi = oiTrackerProvider == null ? null
                 : oiTrackerProvider.getIfAvailable();
             if (oi != null) event("[INFO]", "OiBias", oi.biasLogLine());
         } catch (Exception ignored) {}
 
-        // side = -1 → sell (short the option)
-        OrderDTO order = orderService.placeOrder(symbol, qty, -1, 0, productType);
+        // Side: -1 = sell (SHORT setups), +1 = buy (LONG H4_BREAKOUT).
+        int orderSide = shortSetup ? -1 : +1;
+        OrderDTO order = orderService.placeOrder(symbol, qty, orderSide, 0, productType);
         if (order == null || order.getId() == null || order.getId().isEmpty()) {
             log.warn("[Camarilla] entry order rejected for {} — staying idle", symbol);
-            event("[ERROR]", "Entry", "entry order rejected for " + symbol);
+            event("[ERROR]", "AUTO ENTRY", "entry order rejected for " + symbol);
             return;
         }
 
@@ -621,8 +929,11 @@ public class Camarilla implements Strategy {
         p.fillResolved = false;
         p.entryOrderId = order.getId();
         p.openMillis   = System.currentTimeMillis();
-        p.targetLevel  = targetLevel;
-        p.slLevel      = slLevel;
+        p.targetLevel    = targetLevel;
+        p.slLevel        = slLevel;
+        p.originalSlLevel = slLevel;     // frozen R reference for breakeven trigger
+        p.breakevenMoved  = false;
+        p.isShort         = shortSetup;
         // Freeze the OI bias at entry — the analytics page splits trades by Strong
         // (with-trend) vs Weak (NEUTRAL/STALE/against) confirmation using this value.
         try {
@@ -638,6 +949,310 @@ public class Camarilla implements Strategy {
         saveToDisk();
     }
 
+    /** Result of a manual order placement via the Options Scalper Terminal. */
+    public record ManualPlaceResult(boolean ok, String orderId, String message) {
+        public static ManualPlaceResult ok(String orderId)                       { return new ManualPlaceResult(true,  orderId, "placed"); }
+        public static ManualPlaceResult ok(String orderId, String message)       { return new ManualPlaceResult(true,  orderId, message); }
+        public static ManualPlaceResult err(String reason)                       { return new ManualPlaceResult(false, null,    reason); }
+    }
+
+    /**
+     * Place a single manual option order via the Options Scalper Terminal. Bypasses the
+     * setup-specific gates (OI bias, candle pattern, L4/H4 level math) and risk-budget
+     * sizing — the operator picked everything. Still respects: global kill switch,
+     * duplicate-symbol guard, and basic input validation.
+     *
+     * <p>Target is unset ({@link Double#NaN}). Stop-loss is configurable in premium
+     * points from entry: when {@code stopLossPts > 0}, the fast-tick SL watcher fires
+     * a market exit at {@code entry ± stopLossPts} (sign flipped by direction). When
+     * {@code stopLossPts == 0}, no auto-SL is attached and the operator exits manually
+     * via the per-row squareoff button (which calls {@link #forceCloseSymbol}).
+     *
+     * @param symbol       Fyers option symbol (e.g. {@code NSE:NIFTY25W13124100CE})
+     * @param side         {@code +1} = BUY, {@code -1} = SELL
+     * @param qty          contract count (positive)
+     * @param orderType    {@code 2} = MARKET, {@code 1} = LIMIT (Fyers code)
+     * @param limitPrice   limit price when {@code orderType == 1}; ignored for market orders
+     * @param stopLossPts  auto-SL distance in premium points; {@code 0} disables auto-SL
+     */
+    public ManualPlaceResult placeManual(String symbol, int side, int qty,
+                                         int orderType, double limitPrice, double stopLossPts) {
+        if (symbol == null || symbol.isBlank()) return ManualPlaceResult.err("symbol required");
+        if (side != 1 && side != -1)            return ManualPlaceResult.err("side must be +1 or -1");
+        if (qty <= 0)                           return ManualPlaceResult.err("qty must be > 0");
+        if (orderType != 1 && orderType != 2)   return ManualPlaceResult.err("orderType must be 1 (LMT) or 2 (MKT)");
+        if (orderType == 1 && !(limitPrice > 0)) return ManualPlaceResult.err("limitPrice required for LMT");
+        if (!(stopLossPts > 0))                  return ManualPlaceResult.err("SL is required and must be greater than 0");
+        if (stopLossPts > 50)                    return ManualPlaceResult.err("SL cannot exceed 50 points");
+        if (!isEnabled())                       return ManualPlaceResult.err("trading kill switch is OFF");
+
+        Object lock = symbolLocks.computeIfAbsent(symbol, k -> new Object());
+        synchronized (lock) {
+            // Merge path: when a MANUAL position already exists on this symbol, the second
+            // order is either an ADD (same direction) or a REDUCE (opposite direction). The
+            // original "reject duplicate" behaviour blocked legitimate scalper workflows;
+            // both flows now route through mergeAdd / mergeReduce. Strategy positions
+            // (L4_BREAKDOWN etc) don't merge — they're owned by the algo and reject here.
+            Position existing = state.openPositions.get(symbol);
+            if (existing != null) {
+                if (existing.setup != ActiveSetup.MANUAL) {
+                    return ManualPlaceResult.err("strategy position open on " + symbol + " — manual merge blocked");
+                }
+                boolean sameDirection = (side == -1) == existing.isShort;
+                if (sameDirection) {
+                    return mergeAdd(existing, side, qty, orderType, limitPrice);
+                } else {
+                    return mergeReduce(existing, qty, orderType, limitPrice);
+                }
+            }
+
+            double entryLtp;
+            try { entryLtp = marketDataService.getLtp(symbol); }
+            catch (Exception e) { entryLtp = 0; }
+            // For LMT, use the user's limit price as the entry estimate.
+            // For MKT, use the live LTP. If LTP isn't cached yet (rare — symbol not streaming),
+            // reject the order. With a mandatory SL we need a real entry reference to derive
+            // slLevel before placement; accepting a zero entry would set slLevel to NaN and
+            // silently disable the auto-SL the operator explicitly asked for.
+            double entryEstimate = orderType == 1 ? limitPrice : entryLtp;
+            if (!(entryEstimate > 0)) {
+                return ManualPlaceResult.err("symbol LTP unavailable — wait for the feed and retry");
+            }
+
+            String productType = riskSettings.getCamarillaOrderType();
+            String sideWord = side == -1 ? "sell" : "buy";
+
+            // OrderService.placeOrder treats stoploss=0 + orderType=2 as MARKET. For LMT we
+            // need to invoke the limit-order path. Inspect existing placeLimitOrder helper
+            // signatures during integration; if absent, fall back to placeOrder with a tagged
+            // payload. The simplest cross-version-safe path used by Camarilla today is
+            // placeOrder(symbol, qty, side, 0, productType) which posts MARKET; the LMT path
+            // is wired via the same OrderService method using the broker's order-type code.
+            OrderDTO order;
+            if (orderType == 2) {
+                order = orderService.placeOrder(symbol, qty, side, 0, productType);
+            } else {
+                // LMT — reuse the limit-order helper exposed by OrderService for trailing/
+                // bracket SL paths. If not available on this branch, the controller layer
+                // returns a descriptive error rather than silently posting a MARKET.
+                order = orderService.placeLimitOrder(symbol, qty, side, limitPrice, productType);
+            }
+            if (order == null || order.getId() == null || order.getId().isEmpty()) {
+                event("[ERROR]", "MANUAL ENTRY", "order rejected for " + symbol
+                    + " (" + sideWord + " qty " + qty + ", type=" + (orderType == 1 ? "LMT" : "MKT") + ")");
+                return ManualPlaceResult.err("broker rejected the order");
+            }
+
+            try { marketDataService.subscribeAdditional(Collections.singletonList(symbol)); }
+            catch (Exception ignored) {}
+
+            // Direction-aware SL price from premium-point distance. SHORT (sell): SL above
+            // entry — stop fires when LTP rises stopLossPts ABOVE the entry price. LONG
+            // (buy): SL below entry. stopLossPts=0 leaves slLevel as NaN — fast-tick SL
+            // comparison against NaN always returns false, so no auto-SL fires.
+            double slPrice = Double.NaN;
+            if (stopLossPts > 0 && entryEstimate > 0) {
+                slPrice = (side == -1)
+                    ? entryEstimate + stopLossPts
+                    : entryEstimate - stopLossPts;
+            }
+
+            Position p = new Position();
+            p.symbol         = symbol;
+            p.setup          = ActiveSetup.MANUAL;
+            p.qty            = qty;
+            p.entryPrice     = entryEstimate;       // refreshUnresolvedFills() overwrites with broker fill
+            p.fillResolved   = false;
+            p.entryOrderId   = order.getId();
+            p.openMillis     = System.currentTimeMillis();
+            p.targetLevel    = Double.NaN;          // MANUAL has no auto target — operator exits
+            p.slLevel        = slPrice;             // NaN when stopLossPts=0 (no auto-SL)
+            p.originalSlLevel = slPrice;
+            p.breakevenMoved  = true;               // skip the breakeven trigger entirely
+            p.isShort         = (side == -1);
+
+            try {
+                com.rydytrader.autotrader.service.OptionOiTracker oiAtEntry = oiTrackerProvider == null ? null
+                    : oiTrackerProvider.getIfAvailable();
+                if (oiAtEntry != null) {
+                    String b = oiAtEntry.snapshot().bias();
+                    p.entryOiBias = b == null ? "" : b;
+                }
+            } catch (Exception ignored) {}
+
+            state.openPositions.put(symbol, p);
+            state.tradesToday++;
+            saveToDisk();
+
+            log.info("[Camarilla] MANUAL placed — {} {} qty={} entry≈{} orderId={}",
+                sideWord, symbol, qty, round2(entryEstimate), order.getId());
+            event("[SUCCESS]", "MANUAL ENTRY", sideWord + " " + symbol
+                + " qty " + qty + " entry≈" + round2(entryEstimate)
+                + " (" + (orderType == 1 ? "LMT @ " + round2(limitPrice) : "MKT") + ")");
+            return ManualPlaceResult.ok(order.getId());
+        }
+    }
+
+    /** Same-direction top-up. Places the order, then on successful submission updates
+     *  the existing {@link Position} in place — qty incremented, entryPrice recomputed
+     *  as a weighted average across the old fill + the new add's estimated fill. SL
+     *  level is intentionally unchanged: the operator's existing SL choice carries
+     *  forward; the implicit stopLossPts shifts because entryPrice shifts, but the
+     *  trigger price the SL watcher reads stays the same. Caller must hold the symbol
+     *  lock — this method must be invoked from inside {@link #placeManual}'s
+     *  synchronized block. */
+    private ManualPlaceResult mergeAdd(Position existing, int side, int addQty,
+                                       int orderType, double limitPrice) {
+        double entryLtp;
+        try { entryLtp = marketDataService.getLtp(existing.symbol); }
+        catch (Exception e) { entryLtp = 0; }
+        double addEstimate = orderType == 1 ? limitPrice : entryLtp;
+        if (!(addEstimate > 0)) {
+            return ManualPlaceResult.err("symbol LTP unavailable — wait for the feed and retry");
+        }
+        String productType = riskSettings.getCamarillaOrderType();
+        OrderDTO order = (orderType == 2)
+            ? orderService.placeOrder     (existing.symbol, addQty, side, 0, productType)
+            : orderService.placeLimitOrder(existing.symbol, addQty, side, limitPrice, productType);
+        if (order == null || order.getId() == null || order.getId().isEmpty()) {
+            event("[ERROR]", "MANUAL ENTRY", "add-on rejected for " + existing.symbol);
+            return ManualPlaceResult.err("broker rejected the add-on order");
+        }
+
+        int oldQty = existing.qty;
+        double oldEntry = existing.entryPrice;
+        int    newQty   = oldQty + addQty;
+        double newEntry = (oldQty * oldEntry + addQty * addEstimate) / (double) newQty;
+
+        // Capture pre-add state so refreshUnresolvedFills can recompute the weighted
+        // average using the real broker fill for the add (instead of overwriting
+        // entryPrice with just the new fill — which would erase the older fills'
+        // contribution).
+        existing.preAddQty     = oldQty;
+        existing.preAddEntry   = oldEntry;
+        existing.qty           = newQty;
+        existing.entryPrice    = newEntry;       // initial weighted-avg estimate
+        existing.entryOrderId  = order.getId();
+        existing.fillResolved  = false;          // refreshUnresolvedFills will reconcile
+        saveToDisk();
+
+        log.info("[Camarilla] MANUAL add — {} qty {}→{} entry {}→{} orderId={}",
+            existing.symbol, oldQty, newQty, round2(oldEntry), round2(newEntry), order.getId());
+        String msg = "Added " + (addQty / LOT_SIZE) + " lot → " + (newQty / LOT_SIZE)
+            + " lots @ avg " + round2(newEntry);
+        event("[SUCCESS]", "MANUAL ENTRY", "add " + existing.symbol + " " + msg);
+        return ManualPlaceResult.ok(order.getId(), msg);
+    }
+
+    /** Opposite-direction reduce. Places the reduce-side order and either closes the
+     *  full position (when {@code reduceQty == existing.qty}) or books a partial-reduce
+     *  trade row for the closed portion. Rejects reduces that exceed the open qty —
+     *  flipping direction requires explicit close + reopen. Caller must hold the symbol
+     *  lock. */
+    private ManualPlaceResult mergeReduce(Position existing, int reduceQty,
+                                          int orderType, double limitPrice) {
+        if (reduceQty > existing.qty) {
+            return ManualPlaceResult.err("reduce qty exceeds open qty — close + reopen to flip");
+        }
+        int closeSide = existing.isShort ? +1 : -1;   // SHORT closes via BUY, LONG via SELL
+        String productType = riskSettings.getCamarillaOrderType();
+        OrderDTO order = (orderType == 2)
+            ? orderService.placeOrder     (existing.symbol, reduceQty, closeSide, 0, productType)
+            : orderService.placeLimitOrder(existing.symbol, reduceQty, closeSide, limitPrice, productType);
+        if (order == null || order.getId() == null || order.getId().isEmpty()) {
+            event("[ERROR]", "MANUAL ENTRY", "reduce rejected for " + existing.symbol);
+            return ManualPlaceResult.err("broker rejected the reduce order");
+        }
+
+        // Full reduce → route through existing closePosition so the trade row, charges,
+        // analytics fold-in, and event log all stay consistent with the × button path.
+        if (reduceQty == existing.qty) {
+            event("[SUCCESS]", "MANUAL ENTRY", "reduce " + existing.symbol
+                + " full close (" + (reduceQty / LOT_SIZE) + " lots)");
+            closePosition(existing.symbol, "MANUAL_REDUCE");
+            return ManualPlaceResult.ok(order.getId(), "Closed " + (reduceQty / LOT_SIZE) + " lots");
+        }
+
+        // Partial reduce — book a closed-trade row for the reduced portion, decrement qty,
+        // leave entryPrice unchanged.
+        double exitPrice = 0;
+        try { exitPrice = marketDataService.getLtp(existing.symbol); }
+        catch (Exception ignored) {}
+        double sellTurnover = (existing.isShort ? existing.entryPrice : exitPrice) * reduceQty;
+        double buyTurnover  = (existing.isShort ? exitPrice  : existing.entryPrice) * reduceQty;
+        double gross   = existing.isShort
+            ? (existing.entryPrice - exitPrice) * reduceQty
+            : (exitPrice  - existing.entryPrice) * reduceQty;
+        double charges = perCycleCharges(sellTurnover, buyTurnover);
+        double net     = gross - charges;
+        long closedAtMillis = System.currentTimeMillis();
+
+        persistTradeRow(MANUAL_STRATEGY_ID, existing.symbol, existing.setup.name(), "MANUAL_REDUCE",
+            reduceQty, gross, charges, net, 0, closedAtMillis, existing.openMillis, existing.entryOiBias);
+
+        Map<String, Object> cycle = new LinkedHashMap<>();
+        cycle.put("strategyId",     MANUAL_STRATEGY_ID);
+        cycle.put("setup",          existing.setup.name());
+        cycle.put("symbol",         existing.symbol);
+        cycle.put("side",           existing.isShort ? "SELL" : "BUY");
+        cycle.put("qty",            reduceQty);
+        cycle.put("entryPrice",     round2(existing.entryPrice));
+        cycle.put("exitPrice",      round2(exitPrice));
+        cycle.put("grossPnl",       round2(gross));
+        cycle.put("charges",        round2(charges));
+        cycle.put("netPnl",         round2(net));
+        cycle.put("closeReason",    "MANUAL_REDUCE");
+        cycle.put("closedAtMillis", closedAtMillis);
+        cycle.put("openedAtMillis", existing.openMillis);
+        cycle.put("entryOiBias",    existing.entryOiBias);
+        state.todayClosedTrades.add(cycle);
+        while (state.todayClosedTrades.size() > 100) state.todayClosedTrades.remove(0);
+
+        existing.qty -= reduceQty;
+        saveToDisk();
+
+        log.info("[Camarilla] MANUAL partial reduce — {} closed {} qty, {} remaining, net={}",
+            existing.symbol, reduceQty, existing.qty, round2(net));
+        event(net >= 0 ? "[SUCCESS]" : "[WARNING]", "MANUAL ENTRY",
+            "reduce " + existing.symbol + " −" + (reduceQty / LOT_SIZE)
+            + " lot → " + (existing.qty / LOT_SIZE) + " lots remaining, net=" + round2(net));
+        return ManualPlaceResult.ok(order.getId());
+    }
+
+    /** Adjust an open MANUAL position's stop-loss trigger price by {@code deltaPts}
+     *  (price-based, not direction-aware). {@code +1} raises slLevel by 1 point;
+     *  {@code −1} lowers it. Rejects when no MANUAL position exists on the symbol or
+     *  the position has no SL. The fast-tick SL watcher reads the new value on its
+     *  next ~500 ms iteration. */
+    public ManualPlaceResult adjustManualSl(String symbol, double deltaPts) {
+        if (symbol == null || symbol.isBlank()) return ManualPlaceResult.err("symbol required");
+        if (deltaPts == 0) return ManualPlaceResult.err("deltaPts cannot be zero");
+        Object lock = symbolLocks.computeIfAbsent(symbol, k -> new Object());
+        synchronized (lock) {
+            Position p = state.openPositions.get(symbol);
+            if (p == null || p.setup != ActiveSetup.MANUAL) {
+                return ManualPlaceResult.err("no open MANUAL position on " + symbol);
+            }
+            if (Double.isNaN(p.slLevel)) {
+                return ManualPlaceResult.err("position has no SL to adjust");
+            }
+            double newSl = p.slLevel + deltaPts;
+            if (newSl <= 0) {
+                return ManualPlaceResult.err("SL would go to zero or below");
+            }
+            double oldSl = p.slLevel;
+            p.slLevel = round2(newSl);   // 2-dp round matches the price grid display
+            saveToDisk();
+            event("[INFO]", "MANUAL SL", symbol + " SL " + round2(oldSl) + " → "
+                + round2(p.slLevel) + " (Δ=" + (deltaPts > 0 ? "+" : "") + round2(deltaPts) + ")");
+            // No order is placed at the broker — SL is a virtual trigger watched by the
+            // fast-tick loop, which fires a MKT exit when LTP crosses slLevel. Return a
+            // descriptive message so the modal status banner doesn't say "placed".
+            String msg = "SL trigger " + round2(oldSl) + " → " + round2(p.slLevel);
+            return ManualPlaceResult.ok(null, msg);
+        }
+    }
+
     /** For every open position that hasn't had its broker fill resolved yet, look up the actual
      *  trade price by entryOrderId in the cached tradebook and overwrite the estimate. Runs on
      *  the slow 5 s tick — usually resolves within the first tick after the order fills (Fyers
@@ -651,10 +1266,28 @@ public class Camarilla implements Strategy {
                 double fillPrice = orderService.getFilledPriceByOrderId(p.entryOrderId);
                 if (fillPrice <= 0) continue;
                 double oldEntry = p.entryPrice;
-                p.entryPrice = round2(fillPrice);
+                double newEntry;
+                if (p.preAddQty > 0 && p.qty > p.preAddQty) {
+                    // The pending unresolved fill is for the LATEST mergeAdd top-up.
+                    // Reconstruct the weighted average from (pre-add fills @ pre-add entry)
+                    // and (add fills @ actual broker fill price). This preserves the
+                    // contribution of every earlier fill instead of clobbering with just
+                    // the latest one.
+                    int    addQty       = p.qty - p.preAddQty;
+                    double trueWeighted = (p.preAddQty * p.preAddEntry + addQty * fillPrice)
+                                          / (double) p.qty;
+                    newEntry = round2(trueWeighted);
+                } else {
+                    // Fresh-entry path — overwrite with the actual fill.
+                    newEntry = round2(fillPrice);
+                }
+                p.entryPrice = newEntry;
                 p.fillResolved = true;
+                p.preAddQty    = 0;     // reconciliation complete
+                p.preAddEntry  = 0;
                 event("[INFO]", "Fill", p.symbol + " fill resolved — entry "
-                    + round2(oldEntry) + " → " + round2(fillPrice));
+                    + round2(oldEntry) + " → " + round2(newEntry)
+                    + (p.qty > 0 ? " (qty=" + p.qty + ")" : ""));
                 saveToDisk();
             } catch (Exception e) {
                 log.warn("[Camarilla] fill lookup failed for {}: {}", p.entryOrderId, e.getMessage());
@@ -683,19 +1316,25 @@ public class Camarilla implements Strategy {
     private boolean closePosition(String symbol, String reason) {
         Position p = state.openPositions.get(symbol);
         if (p == null) return false;
-        // side = +1 → buy to close. CRITICAL: pass the same productType used for the entry so
-        // Fyers nets the two legs. A MARGIN buy against an INTRADAY short does NOT square off —
-        // they're treated as separate positions and the original short stays open.
+        // SHORT closes with a BUY (+1); LONG closes with a SELL (-1). CRITICAL: pass the
+        // SAME productType used for the entry so Fyers nets the two legs. A MARGIN buy
+        // against an INTRADAY short does NOT square off — they're treated as separate
+        // positions and the original entry stays open.
         String productType = riskSettings.getCamarillaOrderType();
-        OrderDTO close = orderService.placeExitOrder(symbol, p.qty, 1, productType);
+        int closeSide = p.isShort ? +1 : -1;
+        OrderDTO close = orderService.placeExitOrder(symbol, p.qty, closeSide, productType);
         double exitPrice = 0;
         if (close != null) {
             try { exitPrice = marketDataService.getLtp(symbol); }
             catch (Exception ignored) {}
         }
-        double sellTurnover = p.entryPrice * p.qty;
-        double buyTurnover  = exitPrice * p.qty;
-        double gross   = (p.entryPrice - exitPrice) * p.qty;
+        // SHORT P&L = (entry − exit) × qty (we sold high, hope to buy low).
+        // LONG  P&L = (exit − entry) × qty (we bought low, hope to sell high).
+        double sellTurnover = (p.isShort ? p.entryPrice : exitPrice) * p.qty;
+        double buyTurnover  = (p.isShort ? exitPrice  : p.entryPrice) * p.qty;
+        double gross   = p.isShort
+            ? (p.entryPrice - exitPrice) * p.qty
+            : (exitPrice  - p.entryPrice) * p.qty;
         double charges = perCycleCharges(sellTurnover, buyTurnover);
         double net     = gross - charges;
 
@@ -703,12 +1342,23 @@ public class Camarilla implements Strategy {
         // AnalyticsService dedups by closedAtMillis to avoid double-counting today's cycles,
         // and that dedup only works if both sources stamp the SAME value.
         long closedAtMillis = System.currentTimeMillis();
-        persistTradeRow(p.symbol, p.setup.name(), reason, p.qty, gross, charges, net,
+        // MANUAL trades persist with strategyId="manual" so analytics, calendar, and
+        // strategy-history endpoints surface them as a separate source from the algo.
+        String dbStrategyId = (p.setup == ActiveSetup.MANUAL) ? MANUAL_STRATEGY_ID : STRATEGY_ID;
+        persistTradeRow(dbStrategyId, p.symbol, p.setup.name(), reason, p.qty, gross, charges, net,
             reason.equals("SL_HIT") ? 1 : 0, closedAtMillis, p.openMillis, p.entryOiBias);
 
         Map<String, Object> cycle = new LinkedHashMap<>();
+        // strategyId persisted on the in-memory cycle so AnalyticsService.appendLiveTodayTrades
+        // can route MANUAL cycles to the "manual" filter and algo cycles to "camarilla".
+        // Without this, every live cycle would inherit strat.id()="camarilla" and MANUAL
+        // trades would show up under the Algo filter / disappear under the Manual filter.
+        cycle.put("strategyId",     dbStrategyId);
         cycle.put("setup",          p.setup.name());
         cycle.put("symbol",         p.symbol);
+        // Entry side — needed by the recent-trades renderer. Without this stored,
+        // sideFromCycle defaults to SELL, which mislabels closed BUY positions.
+        cycle.put("side",           p.isShort ? "SELL" : "BUY");
         cycle.put("qty",            p.qty);
         cycle.put("entryPrice",     round2(p.entryPrice));
         cycle.put("exitPrice",      round2(exitPrice));
@@ -737,7 +1387,7 @@ public class Camarilla implements Strategy {
         return true;
     }
 
-    private void persistTradeRow(String symbol, String setup, String reason, int qty,
+    private void persistTradeRow(String strategyId, String symbol, String setup, String reason, int qty,
                                  double gross, double charges, double net, int slHits,
                                  long closedAtMillis, long openedAtMillis, String entryOiBias) {
         try {
@@ -745,7 +1395,7 @@ public class Camarilla implements Strategy {
             if (repo == null) return;
             LocalDate sessionDate = LocalDate.now(IST);
             StrategyTradeEntity row = new StrategyTradeEntity();
-            row.setStrategyId(STRATEGY_ID);
+            row.setStrategyId(strategyId == null ? STRATEGY_ID : strategyId);
             row.setSymbol(symbol);
             row.setSetup(setup);
             row.setSessionDate(sessionDate.toString());
@@ -861,7 +1511,11 @@ public class Camarilla implements Strategy {
         try {
             double ltp = marketDataService.getLtp(p.symbol);
             if (ltp <= 0) return 0;
-            return (p.entryPrice - ltp) * p.qty;
+            // SHORT: profit when LTP drops below entry → (entry − ltp) × qty.
+            // LONG:  profit when LTP rises above entry → (ltp − entry) × qty.
+            return p.isShort
+                ? (p.entryPrice - ltp) * p.qty
+                : (ltp - p.entryPrice) * p.qty;
         } catch (Exception e) {
             return 0;
         }
@@ -885,7 +1539,6 @@ public class Camarilla implements Strategy {
 
         // Open positions list — each row carries its own LTP, MTM, target/SL levels.
         List<Map<String, Object>> rows = new ArrayList<>();
-        double exposedRisk = 0;
         for (Position p : state.openPositions.values()) {
             Map<String, Object> row = new LinkedHashMap<>();
             double ltp = 0;
@@ -897,13 +1550,15 @@ public class Camarilla implements Strategy {
             row.put("entryPrice",  round2(p.entryPrice));
             row.put("ltp",         round2(ltp));
             row.put("mtm",         round2(mtm));
-            row.put("targetLevel", round2(p.targetLevel));
-            row.put("slLevel",     round2(p.slLevel));
-            row.put("openMillis",  p.openMillis);
+            row.put("targetLevel",   round2(p.targetLevel));
+            row.put("slLevel",       round2(p.slLevel));
+            row.put("breakevenMoved", p.breakevenMoved);
+            row.put("isShort",       p.isShort);
+            row.put("openMillis",    p.openMillis);
             rows.add(row);
-            exposedRisk += Math.max(0, p.slLevel - p.entryPrice) * p.qty;
         }
         m.put("openPositions", rows);
+        double exposedRisk = exposedRiskNow();
 
         // Per-symbol levels for the V2 6-contract watchlist + any open-position symbols.
         Map<String, CamarillaLevels> perSymbolLevels = new LinkedHashMap<>();
@@ -919,11 +1574,7 @@ public class Camarilla implements Strategy {
         m.put("perSymbolLevels", perSymbolLevels);
 
         // Risk block — same shape as equities Positions page badges.
-        double consumedRisk = 0;
-        for (Map<String, Object> trade : state.todayClosedTrades) {
-            double net = asDouble(trade.get("netPnl"));
-            if (net < 0) consumedRisk += Math.abs(net);
-        }
+        double consumedRisk = consumedRiskNow();
         Map<String, Object> risk = new LinkedHashMap<>();
         risk.put("exposedRisk",      round2(exposedRisk));
         risk.put("consumedRisk",     round2(consumedRisk));
@@ -972,11 +1623,24 @@ public class Camarilla implements Strategy {
         public long       openMillis;
         public double     targetLevel;
         public double     slLevel;
+        /** Original SL level frozen at {@code fire()} time. Used to compute 1R for the
+         *  move-SL-to-breakeven trigger after {@code slLevel} mutates. Default 0 for
+         *  legacy state files — readers fall back to current slLevel when this is 0. */
+        public double     originalSlLevel;
+        /** True once the breakeven trigger has fired and {@code slLevel} has been moved
+         *  to entry. Guard so the move runs exactly once per position. */
+        public boolean    breakevenMoved;
         /** Set to true once {@code entryPrice} has been replaced with the actual broker fill
          *  price (looked up by entryOrderId in the tradebook). Until then, {@code entryPrice}
          *  is the LTP estimate captured at order-placement time. The strategy's slow tick loop
          *  periodically resolves unresolved fills. */
         public boolean fillResolved;
+        /** True if this is a SHORT (sell) position, false if LONG (buy). Derived from setup
+         *  at fire() time and persisted so target/SL/breakeven/risk-budget comparisons can
+         *  flip cleanly. Defaults to {@code true} on legacy state files (Jackson sets the
+         *  field to the Java default for missing JSON properties), which is correct because
+         *  all pre-V3 positions were SHORTs. */
+        public boolean isShort = true;
         /** OI bias state read at the moment the entry order was placed. Frozen for the life
          *  of the position so the analytics page can compare outcomes between
          *  with-trend (Strong) and against-trend / no-signal (Weak) confirmations.
@@ -986,6 +1650,12 @@ public class Camarilla implements Strategy {
          *  where LTP drops back below. SL fires when this reaches SL_BREACH_CONFIRM_TICKS.
          *  Transient — not persisted, repopulated by the runtime after a restart. */
         public transient int slBreachStreak;
+        /** Captured BEFORE the latest mergeAdd top-up, so refreshUnresolvedFills can
+         *  reconstruct the correct weighted average once the new order's actual broker
+         *  fill is known. {@code preAddQty == 0} signals "no pending add to reconcile" —
+         *  refreshUnresolvedFills then falls back to the fresh-entry overwrite path. */
+        public int    preAddQty;
+        public double preAddEntry;
     }
 
     /** Backward-compat overload — defaults source to "Strategy". */

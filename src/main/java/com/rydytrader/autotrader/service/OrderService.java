@@ -51,6 +51,23 @@ public class OrderService {
         } catch (Exception e) { log.error("Error placing entry order", e); return null; }
     }
 
+    /** LIMIT entry order — used by the Options Scalper Terminal when the operator picks LMT
+     *  in the manual-entry form. Fyers order type code 1 = LIMIT. The limit price is rounded
+     *  to the symbol's tick size before submission. */
+    public OrderDTO placeLimitOrder(String symbol, int qty, int side, double limitPrice, String productType) {
+        try {
+            if (Double.isNaN(limitPrice) || limitPrice <= 0) {
+                log.error("[OrderService] Invalid LMT price {} for {} — skipping order", limitPrice, symbol);
+                return null;
+            }
+            double rounded = roundToTick(limitPrice, symbol);
+            String pt = normalizeProductType(productType);
+            String json = buildOrderJson(symbol, qty, side, 1, rounded, 0, "ManualLMT", pt);
+            log.info("Limit Entry Order: {}", json);
+            return postOrder(json);
+        } catch (Exception e) { log.error("Error placing limit entry order", e); return null; }
+    }
+
     /** Map UI-friendly productType labels to Fyers's expected values. Fyers only accepts
      *  INTRADAY / MARGIN / CNC / CO / BO — anything else is rejected. Strategies surface
      *  "OVERNIGHT" in their settings UI because that's the operator's mental model for F&O

@@ -73,6 +73,7 @@
         <div class="nav-right">
             <button class="theme-toggle" id="settingsBtn" title="Settings" onclick="SettingsModal.open()" style="font-size:1rem;">⚙</button>
             <button class="theme-toggle" id="chainBtn" title="Options Chain" onclick="OptionChainModal.open()" style="font-size:1rem;">⊞</button>
+            <button class="theme-toggle" id="manualTerminalBtn" title="Options Terminal" onclick="ManualTerminal.open()" style="font-size:1rem;color:var(--accent-purple, #8b5cf6);">▲</button>
             <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
             <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
         </div>
@@ -167,6 +168,14 @@
                         title="Clear the year/month picker and go back to the period selection above."
                         style="display:none;">Clear</button>
             </div>
+            <div style="display:flex; align-items:center; gap:12px;">
+                <span class="ah-stat-label" style="font-weight:700;">Mode</span>
+                <div class="pill-row" id="sourcePills">
+                    <button class="scope-pill active" data-strategy="all"      title="Aggregate algo + manual trades.">All</button>
+                    <button class="scope-pill"        data-strategy="camarilla" title="Camarilla algorithm trades only.">Algo</button>
+                    <button class="scope-pill"        data-strategy="manual"   title="Manual scalper trades only.">Manual</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -209,7 +218,7 @@
                 <div style="text-align:center;">
                     <div class="stat-label">Max DD Days</div>
                     <div class="stat-value" id="ahMaxDrawdownDays" style="font-size:1.1rem; margin-top:4px;"
-                         title="Number of trades between the equity-curve peak and the trough of the deepest drawdown.">—</div>
+                         title="Calendar days between the equity-curve peak and the trough of the deepest drawdown.">—</div>
                 </div>
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
                     <div class="stat-label">Avg Monthly %</div>
@@ -370,8 +379,9 @@
 
 <script src="/js/common.js?v=23"></script>
 <script src="/js/ticker.js?v=4"></script>
-<script src="/js/settings-modal.js?v=24"></script>
+<script src="/js/settings-modal.js?v=40"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
+<script src="/js/manual-terminal-modal.js?v=40"></script>
 
 <script>
     // Footer year
@@ -461,8 +471,14 @@
         clearPicker(false);
         loadSummary(true);
     });
-    // Strategy selector removed — Camarilla is the only strategy. `currentStrategy = 'all'`
-    // is left untouched so the existing `&strategyId=all` request still resolves backend-side.
+    // Source pills — All / Algo / Manual. Sets currentStrategy which feeds the
+    // /api/analytics/* endpoints' strategyId filter. All=>aggregate, camarilla=>algo only,
+    // manual=>manual only. The DB strategyId column was populated when each trade closed
+    // (camarilla for algo trades, manual for Options Terminal trades).
+    bindPills('sourcePills', function(btn) {
+        currentStrategy = btn.getAttribute('data-strategy') || 'all';
+        loadSummary(true);
+    });
 
     // ── Month/Year picker ────────────────────────────────────────────────────
     // Populate the year dropdown from current calendar year going back 5 years. Could be
@@ -696,9 +712,12 @@
             setVal('ahChargesPct', grossWins > 0 ? ((charges / grossWins) * 100).toFixed(1) + '%' : '—');
 
             // Risk-Adjusted Returns card — all three sourced from edge{} computed by AnalyticsService.edge().
+            // The previous code hid Expectancy + Sharpe until ≥20 closed trades to suppress
+            // small-sample noise. The operator prefers seeing the values from day one even if
+            // the early reads are noisy — small-sample caveats are easier to remember when the
+            // number is visible than when it's hidden behind a dash.
             var nClosed = numStraddles;
-            // Expectancy: needs ≥ 20 trades to read meaningfully; below that the average is dominated by noise.
-            if (nClosed >= 20) {
+            if (nClosed >= 1) {
                 setVal('ahExpectancy', fmtRs(edge.expectancy || 0), edge.expectancy);
             } else {
                 setVal('ahExpectancy', '—');
@@ -706,8 +725,9 @@
             // Recovery Factor: zero / no drawdown means no signal — display a dash.
             var rf = Number(edge.recoveryFactor || 0);
             setVal('ahRecoveryFactor', rf > 0 ? rf.toFixed(2) : '—', rf - 1);
-            // Sharpe Ratio: needs ≥ 20 closed trades for stddev to stabilise; below that, dash.
-            if (nClosed >= 20) {
+            // Sharpe needs at least 2 trades for a defined stddev (the backend's edge() also
+            // guards n>=2 and returns 0 otherwise).
+            if (nClosed >= 2) {
                 var sh = Number(edge.sharpe || 0);
                 setVal('ahSharpe', sh !== 0 ? sh.toFixed(2) : '—', sh - 0.5);
             } else {

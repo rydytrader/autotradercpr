@@ -40,8 +40,10 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>Bias classifier (matches the operator's Python reference):
  * <ul>
- *   <li>{@code cumCE / cumPE ≥ 1.5} → {@code STRONG_BEARISH_BIAS}</li>
- *   <li>{@code cumCE / cumPE ≤ 0.66} → {@code STRONG_BULLISH_BIAS}</li>
+ *   <li>{@code cumCE / cumPE ≥ 2.00} → {@code VERY_BEARISH_BIAS}</li>
+ *   <li>{@code cumCE / cumPE ≥ 1.50} → {@code BEARISH_BIAS}</li>
+ *   <li>{@code cumCE / cumPE ≤ 0.50} → {@code VERY_BULLISH_BIAS}</li>
+ *   <li>{@code cumCE / cumPE ≤ 0.66} → {@code BULLISH_BIAS}</li>
  *   <li>otherwise → {@code NEUTRAL}</li>
  *   <li>{@code cumPE ≤ 0} edge: BEARISH if cumCE &gt; 0, else NEUTRAL.</li>
  * </ul>
@@ -64,8 +66,13 @@ public class OptionOiTracker {
     private static final String STATE_FILE = "../store/data/option-oi-state.json";
     private static final int    MAX_SAMPLES = 400;        // 1-min cadence × ~6h15m session = 375 + headroom
     private static final long   STALE_THRESHOLD_MS = 5 * 60_000L;
-    private static final double RATIO_BEARISH_THRESHOLD = 1.5;
-    private static final double RATIO_BULLISH_THRESHOLD = 0.66;
+    // 5-tier bias classifier — strong selling regimes vs neutral vs strong buying regimes.
+    // Ratio = cumCE / cumPE. CE-dominated flow (high ratio) = bearish (call writers stacking
+    // resistance); PE-dominated flow (low ratio) = bullish (put writers building floors).
+    private static final double RATIO_VERY_BEARISH = 2.00;
+    private static final double RATIO_BEARISH      = 1.50;
+    private static final double RATIO_BULLISH      = 0.66;
+    private static final double RATIO_VERY_BULLISH = 0.50;
     private static final LocalTime SESSION_START = LocalTime.of(9, 15);
     private static final LocalTime SESSION_END   = LocalTime.of(15, 30);
 
@@ -295,10 +302,14 @@ public class OptionOiTracker {
     }
 
     static String evaluateBias(long cumCe, long cumPe) {
-        if (cumPe <= 0) return cumCe > 0 ? "STRONG_BEARISH_BIAS" : "NEUTRAL";
+        // cumPE ≤ 0 edge: zero or net-PE-unwound. If cumCE is positive, very high call
+        // flow dominance → VERY_BEARISH. Otherwise neutral (both sides unwinding).
+        if (cumPe <= 0) return cumCe > 0 ? "VERY_BEARISH_BIAS" : "NEUTRAL";
         double ratio = (double) cumCe / (double) cumPe;
-        if (ratio >= RATIO_BEARISH_THRESHOLD) return "STRONG_BEARISH_BIAS";
-        if (ratio <= RATIO_BULLISH_THRESHOLD) return "STRONG_BULLISH_BIAS";
+        if (ratio >= RATIO_VERY_BEARISH) return "VERY_BEARISH_BIAS";
+        if (ratio >= RATIO_BEARISH)      return "BEARISH_BIAS";
+        if (ratio <= RATIO_VERY_BULLISH) return "VERY_BULLISH_BIAS";
+        if (ratio <= RATIO_BULLISH)      return "BULLISH_BIAS";
         return "NEUTRAL";
     }
 

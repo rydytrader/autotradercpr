@@ -73,10 +73,13 @@ public class AtmTracker {
         tryUpdate();
     }
 
-    /** Drift check — every 30 minutes during market hours. Fires AtmChange only
-     *  when the resolved ATM has moved past the baseline (the watchlist needs
-     *  rebalancing). */
-    @Scheduled(fixedDelay = 30 * 60_000, initialDelay = 30 * 60_000)
+    /** Drift check — fires at every 15-min wall-clock boundary (09:00, 09:15, 09:30,
+     *  09:45, …, 15:45 IST) on weekdays. Cron-aligned (not fixed-delay) so the checks
+     *  land exactly on the candle aggregator's 15-min landmarks (every 5th 3-min bar
+     *  close) — when that bar closes and evaluates L4/H4 patterns, the watchlist is
+     *  already on the freshest ATM. Fires AtmChange only when the resolved ATM has
+     *  moved past the baseline. */
+    @Scheduled(cron = "0 0/15 9-15 * * MON-FRI", zone = "Asia/Kolkata")
     public void driftCheck() {
         if (baselineAtm <= 0) return;        // wait for bootstrap to complete
         if (listeners.isEmpty()) return;

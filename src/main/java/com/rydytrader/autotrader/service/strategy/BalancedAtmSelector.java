@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
 
@@ -69,6 +70,12 @@ public class BalancedAtmSelector {
         double  ceLtp,
         double  peLtp
     ) {}
+
+    /** Per-strike chain row exposed to callers that want to walk the entire chain without
+     *  re-fetching it for each strike. Mirrors the private {@code ChainRow} fields but in a
+     *  public, immutable record so cross-package consumers can read it safely. */
+    public record ChainStrike(long strike, String ceSymbol, double ceLtp,
+                              String peSymbol, double peLtp) {}
 
     /**
      * Spot-based ATM for the given live NIFTY LTP — strike = round(NIFTY / 50). Returns the
@@ -146,6 +153,24 @@ public class BalancedAtmSelector {
         return row.ce > 0 && row.pe > 0
             && row.ceSym != null && !row.ceSym.isEmpty()
             && row.peSym != null && !row.peSym.isEmpty();
+    }
+
+    /** Public bulk-fetch entry point: returns the entire current chain as a NavigableMap
+     *  keyed by strike. Cross-package callers (e.g. CamarillaService warm-up) use this when
+     *  they want to walk MANY strikes from a single chain response instead of calling
+     *  {@link #resolveStrikeAtLevel(double)} once per strike (which would re-fetch the
+     *  chain every time). Returns an empty map when the chain is unavailable. */
+    public NavigableMap<Long, ChainStrike> fetchChainStrikes() {
+        NavigableMap<Long, ChainRow> raw = fetchChain();
+        NavigableMap<Long, ChainStrike> out = new TreeMap<>();
+        if (raw == null) return out;
+        for (Map.Entry<Long, ChainRow> e : raw.entrySet()) {
+            ChainRow r = e.getValue();
+            out.put(e.getKey(), new ChainStrike(e.getKey(),
+                r.ceSym == null ? "" : r.ceSym, r.ce,
+                r.peSym == null ? "" : r.peSym, r.pe));
+        }
+        return out;
     }
 
     private static class ChainRow {

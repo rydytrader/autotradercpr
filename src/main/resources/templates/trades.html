@@ -68,6 +68,7 @@
         <div class="nav-right">
             <button class="theme-toggle" id="settingsBtn" title="Settings" onclick="SettingsModal.open()" style="font-size:1rem;">⚙</button>
             <button class="theme-toggle" id="chainBtn" title="Options Chain" onclick="OptionChainModal.open()" style="font-size:1rem;">⊞</button>
+            <button class="theme-toggle" id="manualTerminalBtn" title="Options Terminal" onclick="ManualTerminal.open()" style="font-size:1rem;color:var(--accent-purple, #8b5cf6);">▲</button>
             <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
             <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
         </div>
@@ -122,7 +123,12 @@
             <div class="page-title">Trades</div>
             <div class="page-subtitle">Today's completed trades</div>
         </div>
-        <a href="/trades" class="refresh-btn" title="Refresh">⟳</a>
+        <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
+            <div style="font-size:1rem; color:var(--text-secondary);">
+                Welcome, <span id="userName" style="color:var(--text-primary); font-weight:600;">—</span>
+            </div>
+            <div id="fyersIdLine" style="font-size:0.72rem; color:var(--text-muted); margin-top:10px;">—</div>
+        </div>
     </div>
 
     <!-- Hero stat row: count + win/loss + net P&L + charges -->
@@ -350,6 +356,17 @@
             });
     }
 
+    // ── Welcome line — populate from /api/user/me ─────────────────────────
+    function loadWelcome() {
+        fetch('/api/user/me').then(function(r){ return r.json(); }).then(function(u){
+            if (!u || !u.email) return;
+            var nm = document.getElementById('userName');
+            var id = document.getElementById('fyersIdLine');
+            if (nm) nm.textContent = (u.firstName || u.email).trim();
+            if (id) id.textContent = u.email;
+        }).catch(function(){});
+    }
+
     document.addEventListener('DOMContentLoaded', function() {
         var yr = document.getElementById('footerYear');
         if (yr) yr.textContent = new Date().getFullYear();
@@ -357,10 +374,12 @@
         startStream();
         checkConnection();
         setInterval(checkConnection, 5000);
+        loadWelcome();
     });
 </script>
 <script src="/js/common.js?v=34"></script>
 <script src="/js/ticker.js?v=34"></script>
-<script src="/js/settings-modal.js?v=34"></script>
+<script src="/js/settings-modal.js?v=40"></script>
+<script src="/js/manual-terminal-modal.js?v=40"></script>
 </body>
 </html>

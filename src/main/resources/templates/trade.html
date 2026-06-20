@@ -81,9 +81,9 @@
 
         .pnl-positive { color:var(--accent-green, #34d399) !important; }
         .pnl-negative { color:var(--accent-red, #f87171) !important; }
-        .event-row { display:grid; grid-template-columns:80px 80px 100px 1fr; padding:6px 10px; border-bottom:1px solid rgba(128,128,128,0.10); font-family:var(--font-mono); font-size:0.78rem; }
-        .event-src   { color:var(--accent-cyan, #67e8f9); text-transform:uppercase; }
-        .event-msg   { color:var(--text-secondary); }
+        .event-row { display:grid; grid-template-columns:70px 60px 160px 1fr; padding:6px 10px; border-bottom:1px solid rgba(128,128,128,0.10); font-family:var(--font-mono); font-size:0.78rem; }
+        .event-src   { color:var(--accent-cyan, #67e8f9); text-transform:uppercase; white-space:nowrap; }
+        .event-msg   { color:var(--text-secondary); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .sev-INFO    { color:var(--accent-blue, #63b3ed); }
         .sev-SUCCESS { color:var(--accent-green); }
         .sev-WARNING { color:var(--accent-amber, #fbbf24); }
@@ -108,6 +108,7 @@
         <div class="nav-right">
             <button class="theme-toggle" id="settingsBtn" title="Settings" onclick="SettingsModal.open()" style="font-size:1rem;">⚙</button>
             <button class="theme-toggle" id="chainBtn" title="Options Chain" onclick="OptionChainModal.open()" style="font-size:1rem;">⊞</button>
+            <button class="theme-toggle" id="manualTerminalBtn" title="Options Terminal" onclick="ManualTerminal.open()" style="font-size:1rem;color:var(--accent-purple, #8b5cf6);">▲</button>
             <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
             <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
         </div>
@@ -157,22 +158,17 @@
 </aside>
 <div class="app-main" style="flex:1;min-width:0;margin-left:0;width:auto;padding:20px 24px;">
 
-    <!-- ── Page header (kill switch + squareoff + refresh) ─────────────── -->
+    <!-- ── Page header — left: title + subtitle | right: welcome + fyers id (mirrors Home / Calendar) ── -->
     <div class="page-header fade-in" style="margin-bottom:18px;">
         <div>
             <div class="page-title">Positions</div>
             <div class="page-subtitle" id="tradeSubtitle">Live market positions &amp; trade activity</div>
         </div>
-        <div style="display:flex; gap:10px; align-items:center;">
-            <div class="kill-switch-wrap" id="killSwitchWrap">
-                <span class="kill-switch-label" id="killSwitchLabel">Trading ON</span>
-                <label class="kill-switch">
-                    <input type="checkbox" id="killSwitchToggle" checked onchange="toggleKillSwitch()">
-                    <span class="kill-switch-slider"></span>
-                </label>
+        <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
+            <div style="font-size:1rem; color:var(--text-secondary);">
+                Welcome, <span id="userName" style="color:var(--text-primary); font-weight:600;">—</span>
             </div>
-            <button class="squareoff-btn" id="squareOffBtn" onclick="executeSquareOff()" disabled>⬛ Square Off</button>
-            <a href="/trade" class="refresh-btn" title="Refresh positions and trade data" style="background:rgba(99,179,237,0.08); border-color:rgba(99,179,237,0.25); color:var(--accent-blue); padding:9px 12px;">⟳</a>
+            <div id="fyersIdLine" style="font-size:0.72rem; color:var(--text-muted); margin-top:10px;">—</div>
         </div>
     </div>
 
@@ -228,22 +224,28 @@
     <!-- ── Live Positions table ─────────────────────────────────────────── -->
     <div class="section-card fixed-card fade-in">
         <div class="section-header">
-            <div class="section-title">
-                <div class="section-title-dot"></div>
-                Live Positions
+            <div class="section-title" style="display:flex; align-items:center; gap:22px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <div class="section-title-dot"></div>
+                    Live Positions
+                </div>
+                <div style="display:flex; gap:18px; align-items:center; font-family:var(--font-mono); font-size:0.72rem; font-weight:normal;">
+                    <span style="color:var(--text-muted);">NIFTY <span id="hdrNifty" style="color:var(--text-primary);font-weight:700;">—</span>
+                        <span id="hdrNiftyChg" style="margin-left:4px;font-weight:600;"></span></span>
+                    <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
+                        <span id="hdrVixChg" style="margin-left:4px;font-weight:600;"></span></span>
+                    <span style="color:var(--text-muted);">ATM <span id="hdrAtm" style="color:var(--accent-cyan);font-weight:700;">—</span></span>
+                </div>
             </div>
-            <div style="display:flex; gap:18px; align-items:center; font-family:var(--font-mono); font-size:0.72rem;">
-                <span style="color:var(--text-muted);">NIFTY <span id="hdrNifty" style="color:var(--text-primary);font-weight:700;">—</span>
-                    <span id="hdrNiftyChg" style="margin-left:4px;font-weight:600;"></span></span>
-                <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
-                    <span id="hdrVixChg" style="margin-left:4px;font-weight:600;"></span></span>
-                <span style="color:var(--text-muted);">ATM <span id="hdrAtm" style="color:var(--accent-cyan);font-weight:700;">—</span></span>
-                <select id="posSymbolFilter" onchange="filterPositions()" style="
-                    background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
-                    border-radius:4px;padding:2px 8px;font-size:0.65rem;font-family:var(--font-mono);
-                    outline:none;cursor:pointer;min-width:140px;">
-                    <option value="">All Symbols</option>
-                </select>
+            <div style="display:flex; gap:10px; align-items:center;">
+                <div class="kill-switch-wrap" id="killSwitchWrap">
+                    <span class="kill-switch-label" id="killSwitchLabel">Trading ON</span>
+                    <label class="kill-switch">
+                        <input type="checkbox" id="killSwitchToggle" checked onchange="toggleKillSwitch()">
+                        <span class="kill-switch-slider"></span>
+                    </label>
+                </div>
+                <button class="squareoff-btn" id="squareOffBtn" onclick="executeSquareOff()" disabled>⬛ Square Off</button>
                 <span class="section-badge" id="positionsBadge">0 active</span>
             </div>
         </div>
@@ -369,7 +371,6 @@
     function pnlClass(v) { return Number(v) >= 0 ? 'pnl-positive' : 'pnl-negative'; }
 
     var lastState = null;
-    var posFilterValue = '';
     var logFilterValue = '';
 
     // ── Kill switch ────────────────────────────────────────────────────────
@@ -582,17 +583,6 @@
 
     function renderPositions(d) {
         var positions = (d.openPositions || []).slice();
-        var filter = posFilterValue;
-        if (filter) positions = positions.filter(function(p) { return p.symbol === filter; });
-
-        // Refresh filter options
-        var allSymbols = (d.openPositions || []).map(function(p) { return p.symbol; });
-        var sel = document.getElementById('posSymbolFilter');
-        var prior = sel.value;
-        sel.innerHTML = '<option value="">All Symbols</option>'
-            + allSymbols.map(function(s) { return '<option value="' + escapeHtml(s) + '">' + escapeHtml(s) + '</option>'; }).join('');
-        if (allSymbols.indexOf(prior) >= 0) sel.value = prior;
-
         var tbody = document.getElementById('positionsTableBody');
         if (positions.length === 0) {
             tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state"><div class="empty-icon">◎</div>No active positions</div></td></tr>';
@@ -604,10 +594,18 @@
                     + '<td>' + fmtTime(p.openMillis) + '</td>'
                     + '<td>' + escapeHtml(p.symbol) + '</td>'
                     + '<td class="text-right">' + escapeHtml(String(p.qty)) + '</td>'
-                    + '<td class="text-center">SHORT</td>'
+                    + '<td class="text-center">'
+                        + (p.isShort === false
+                            ? '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;background:rgba(52,211,153,0.10);color:#34d399;border:1px solid rgba(52,211,153,0.35);">BUY</span>'
+                            : '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;background:rgba(248,113,113,0.10);color:#f87171;border:1px solid rgba(248,113,113,0.35);">SELL</span>')
+                      + '</td>'
                     + '<td class="text-center">' + escapeHtml(p.setup) + '</td>'
                     + '<td class="text-right">' + fmtRs(p.entryPrice) + '</td>'
-                    + '<td class="text-right pnl-negative">' + fmtRs(p.slLevel) + '</td>'
+                    + '<td class="text-right pnl-negative">' + fmtRs(p.slLevel)
+                        + (p.breakevenMoved
+                            ? ' <span title="SL moved to breakeven" style="color:#fbbf24;font-size:0.7rem;margin-left:6px;cursor:help;">▲</span>'
+                            : '')
+                        + '</td>'
                     + '<td class="text-right pnl-positive">' + fmtRs(p.targetLevel) + '</td>'
                     + '<td class="text-right">' + fmtRs(p.ltp) + '</td>'
                     + '<td class="text-right ' + pnlClass(pnl) + '" style="font-weight:700;">' + fmtRs(pnl) + '</td>'
@@ -660,9 +658,21 @@
             body.innerHTML = '<div class="empty-state"><div class="empty-icon">⌁</div>No events recorded</div>';
             return;
         }
+        // Legacy source labels rewritten at render time. The strategy used to emit
+        // "ManualSL", "ManualEntry", "BreakEven", and a generic "Entry" before the
+        // recent rename to "MANUAL SL", "MANUAL ENTRY", "AUTO SL", "AUTO ENTRY".
+        // Persisted events from before the rename still carry the old strings — patch
+        // them here so the operator sees the new labels without needing to clear the
+        // event ring.
+        function normalizeEventSource(s) {
+            if (s === 'ManualSL')     return 'MANUAL SL';
+            if (s === 'ManualEntry')  return 'MANUAL ENTRY';
+            if (s === 'BreakEven')    return 'AUTO SL';
+            return s;
+        }
         body.innerHTML = events.map(function(e) {
             var sev = String(e.severity || '').replace(/[\[\]]/g, '');
-            var src = String(e.source || 'Strategy').replace(/[\[\]]/g, '');
+            var src = normalizeEventSource(String(e.source || 'Strategy').replace(/[\[\]]/g, ''));
             return '<div class="event-row">'
                 + '<span style="color:var(--text-muted);">' + fmtTime(e.ts) + '</span>'
                 + '<span class="sev-' + sev + '">' + escapeHtml(sev) + '</span>'
@@ -672,10 +682,6 @@
         }).join('');
     }
 
-    function filterPositions() {
-        posFilterValue = document.getElementById('posSymbolFilter').value;
-        if (lastState) { renderPositions(lastState); }
-    }
     function filterLogs() {
         logFilterValue = document.getElementById('logSymbolFilter').value;
         if (lastState) { renderEvents(lastState); }
@@ -816,6 +822,17 @@
             });
     }
 
+    // ── Welcome line — populate from /api/user/me ─────────────────────────
+    function loadWelcome() {
+        fetch('/api/user/me').then(function(r){ return r.json(); }).then(function(u){
+            if (!u || !u.email) return;
+            var nm = document.getElementById('userName');
+            var id = document.getElementById('fyersIdLine');
+            if (nm) nm.textContent = (u.firstName || u.email).trim();
+            if (id) id.textContent = u.email;
+        }).catch(function(){});
+    }
+
     // ── Boot ───────────────────────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', function() {
         var yr = document.getElementById('footerYear');
@@ -831,6 +848,7 @@
         setInterval(checkConnection, 5000);
         OiBiasHeader.start();
         OiBiasChart.init();
+        loadWelcome();
     });
 </script>
 
@@ -849,12 +867,21 @@
     function applyTrendPill(bias) {
         var el = $('hdrOiTrend');
         if (!el) return;
+        // 5-tier scheme + STALE override. Legacy STRONG_*_BIAS labels (written by older
+        // tracker versions) map to the regular BEARISH/BULLISH tier for back-compat — no
+        // VERY tier for those since the older classifier never emitted them.
         var label = '—';
         var bg = 'rgba(148,163,184,0.10)', fg = 'var(--text-secondary)', bd = 'rgba(148,163,184,0.30)';
-        if (bias === 'STRONG_BEARISH_BIAS') {
-            label = 'BEARISH'; bg = 'rgba(248,113,113,0.10)'; fg = '#f87171'; bd = 'rgba(248,113,113,0.35)';
-        } else if (bias === 'STRONG_BULLISH_BIAS') {
-            label = 'BULLISH'; bg = 'rgba(52,211,153,0.10)'; fg = '#34d399'; bd = 'rgba(52,211,153,0.35)';
+        if (bias === 'STALE') {
+            label = 'STALE';
+        } else if (bias === 'VERY_BEARISH_BIAS') {
+            label = 'VERY BEARISH'; bg = 'rgba(127,29,29,0.20)';  fg = '#fca5a5'; bd = 'rgba(127,29,29,0.45)';
+        } else if (bias === 'BEARISH_BIAS' || bias === 'STRONG_BEARISH_BIAS') {
+            label = 'BEARISH';      bg = 'rgba(248,113,113,0.10)'; fg = '#f87171'; bd = 'rgba(248,113,113,0.35)';
+        } else if (bias === 'VERY_BULLISH_BIAS') {
+            label = 'VERY BULLISH'; bg = 'rgba(6,95,70,0.20)';     fg = '#86efac'; bd = 'rgba(6,95,70,0.45)';
+        } else if (bias === 'BULLISH_BIAS' || bias === 'STRONG_BULLISH_BIAS') {
+            label = 'BULLISH';      bg = 'rgba(52,211,153,0.10)';  fg = '#34d399'; bd = 'rgba(52,211,153,0.35)';
         } else if (bias === 'NEUTRAL') {
             label = 'NEUTRAL';
         }
@@ -938,6 +965,7 @@
 
 <script src="/js/common.js?v=36"></script>
 <script src="/js/ticker.js?v=36"></script>
-<script src="/js/settings-modal.js?v=36"></script>
+<script src="/js/settings-modal.js?v=40"></script>
+<script src="/js/manual-terminal-modal.js?v=40"></script>
 </body>
 </html>

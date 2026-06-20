@@ -25,13 +25,21 @@
                     '<div class="sm-field"><label>Trading Start Time (HH:mm IST)</label><input type="time" id="sm-camarillaTradingStartTime" step="60"><div class="sm-hint">New entries only fire on candle closes after this time. Default 09:30. Exits and position management run independently.</div></div>' +
                     '<div class="sm-field"><label>Trading End Time (HH:mm IST)</label><input type="time" id="sm-camarillaTradingEndTime" step="60"><div class="sm-hint">No new entries fire on candle closes after this time. Default 13:30. Existing positions keep running until target / SL / squareoff.</div></div>' +
                     '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-camarillaSquareOffTime" step="60"><div class="sm-hint">Hard exit if neither target nor SL has triggered.</div></div>' +
-                    '<div class="sm-field"><label>Max Concurrent Positions</label><input type="number" id="sm-camarillaMaxConcurrentPositions" step="1" min="1" max="20"><div class="sm-hint">Hard cap on simultaneously open shorts across all symbols. Default 4.</div></div>' +
                     '<div class="sm-field"><label><input type="checkbox" id="sm-camarillaOiBiasFilterEnabled"> &nbsp;OI Bias Filter</label><div class="sm-hint">When ON: block CE shorts in STRONG_BULLISH markets, block PE shorts in STRONG_BEARISH markets. NEUTRAL / STALE always pass through. Off by default — observe live data for 1–2 weeks before enabling.</div></div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
                     '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline used by the Home analytics page (capital growth %, equity curve, return %). Default ₹10,00,000.</div></div>' +
-                    '<div class="sm-field"><label>Portfolio Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Global kill switch trigger. When net day P&L drops below this % of Initial Capital, the strategy is flattened. 0 disables.</div></div>' +
-                    '<div class="sm-field"><label>Max Portfolio Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto-calculated from Initial Capital × Daily Risk %.</div></div>' +
+                    '<div class="sm-field"><label>Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Global kill switch trigger. When net day P&L drops below this % of Initial Capital, the strategy is flattened. 0 disables.</div></div>' +
+                    '<div class="sm-field"><label>Max Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto-calculated from Initial Capital × Daily Risk %.</div></div>' +
+                    '<div class="sm-field"><label>Weekly Expiry Day</label><select id="sm-weeklyExpiryDayOfWeek">' +
+                        '<option value="MONDAY">Monday</option>' +
+                        '<option value="TUESDAY">Tuesday</option>' +
+                        '<option value="WEDNESDAY">Wednesday</option>' +
+                        '<option value="THURSDAY">Thursday</option>' +
+                        '<option value="FRIDAY">Friday</option>' +
+                        '</select><div class="sm-hint">NIFTY weekly expiry day. Drives the Expiry vs Non-Expiry analytics split.</div></div>' +
+                    '<div class="sm-field"><label><input type="checkbox" id="sm-moveSlToBreakevenEnabled"> &nbsp;Move SL to Breakeven at 1R</label><div class="sm-hint">Once an open trade moves 1R in our favor, slide the SL to entry price so a reversal exits flat instead of at full SL loss. Fires once per position.</div></div>' +
+                    '<div class="sm-field"><label><input type="checkbox" id="sm-h4BreakoutBuyingEnabled"> &nbsp;Enable H4 Breakout Buying</label><div class="sm-hint">When ON, the bot also BUYS options on H4 breakout — CE only at VERY_BULLISH OI bias, PE only at VERY_BEARISH. Strict gate; no neutral entries. Off by default.</div></div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
                     '<div class="sm-field"><label>Brokerage per Order (₹)</label><input type="number" id="sm-brokeragePerOrder" step="1" min="0"><div class="sm-hint">Flat per-order brokerage. Drives charge estimates on every dashboard + session row.</div></div>' +
@@ -59,6 +67,14 @@
                         '<button class="sm-btn-secondary" onclick="SettingsModal.cancelUserForm()">Cancel</button>' +
                         '<button class="sm-btn-primary" onclick="SettingsModal.saveUser()">Save User</button>' +
                       '</div>' +
+                    '</div>' +
+                  '</div>' +
+                  '<div class="sm-pane" data-pane="maintenance" style="display:none;">' +
+                    '<div style="padding:18px;border:1px solid rgba(248,113,113,0.35);border-radius:8px;background:rgba(248,113,113,0.05);">' +
+                      '<div style="font-family:var(--font-mono);font-size:0.92rem;font-weight:700;color:var(--accent-red, #f87171);margin-bottom:8px;">⚠ Clear Today\'s Records</div>' +
+                      '<div class="sm-hint" style="margin:0 0 14px;">Wipes today\'s closed-trade records (both ALGO and MANUAL), today\'s event-log entries, and the corresponding DB rows. <b>Open positions are preserved</b> — they keep running at the broker and the bot continues to manage their SL / squareoff. Useful after a test session before going live. <b>Irreversible.</b></div>' +
+                      '<div id="sm-clear-today-status" style="font-family:var(--font-mono);font-size:0.78rem;margin-bottom:12px;"></div>' +
+                      '<button class="sm-btn-primary" id="sm-clear-today-btn" onclick="SettingsModal.clearToday()" style="background:rgba(248,113,113,0.15);border-color:rgba(248,113,113,0.45);color:var(--accent-red, #f87171);">Clear Today\'s Records</button>' +
                     '</div>' +
                   '</div>' +
                 '</div>' +
@@ -113,9 +129,10 @@
         if (!strip) return;
         var html = '';
         html += '<button class="sm-tab" data-tab="camarilla">CAMARILLA</button>';
-        html += '<button class="sm-tab" data-tab="portfolio-risk">PORTFOLIO RISK</button>';
+        html += '<button class="sm-tab" data-tab="portfolio-risk">RISK</button>';
         html += '<button class="sm-tab" data-tab="charges">CHARGES</button>';
         html += '<button class="sm-tab" data-tab="users">USERS</button>';
+        html += '<button class="sm-tab" data-tab="maintenance">MAINTENANCE</button>';
         strip.innerHTML = html;
         strip.querySelectorAll('.sm-tab').forEach(function(b) {
             b.addEventListener('click', function() { switchTab(b.getAttribute('data-tab')); });
@@ -140,6 +157,8 @@
         } else if (tab === 'users') {
             var p2 = modalEl.querySelector('[data-pane="users"]'); if (p2) p2.style.display = '';
             loadUsers();
+        } else if (tab === 'maintenance') {
+            var mp = modalEl.querySelector('[data-pane="maintenance"]'); if (mp) mp.style.display = '';
         }
     }
 
@@ -160,7 +179,6 @@
             if (g('sm-camarillaTradingStartTime'))  g('sm-camarillaTradingStartTime').value = d.camarillaTradingStartTime || '09:30';
             if (g('sm-camarillaTradingEndTime'))    g('sm-camarillaTradingEndTime').value = d.camarillaTradingEndTime || '13:30';
             if (g('sm-camarillaSquareOffTime'))     g('sm-camarillaSquareOffTime').value = d.camarillaSquareOffTime || '15:15';
-            if (g('sm-camarillaMaxConcurrentPositions')) g('sm-camarillaMaxConcurrentPositions').value = d.camarillaMaxConcurrentPositions != null ? d.camarillaMaxConcurrentPositions : 4;
             if (g('sm-camarillaOiBiasFilterEnabled')) g('sm-camarillaOiBiasFilterEnabled').checked = !!d.camarillaOiBiasFilterEnabled;
         }).catch(function() {});
     }
@@ -173,7 +191,6 @@
             camarillaTradingStartTime:  (g('sm-camarillaTradingStartTime').value || '').trim(),
             camarillaTradingEndTime:    (g('sm-camarillaTradingEndTime').value || '').trim(),
             camarillaSquareOffTime:     (g('sm-camarillaSquareOffTime').value || '').trim(),
-            camarillaMaxConcurrentPositions: parseInt(g('sm-camarillaMaxConcurrentPositions').value, 10) || 4,
             camarillaOiBiasFilterEnabled: !!g('sm-camarillaOiBiasFilterEnabled').checked
         };
         postSettings('/api/settings/risk', body);
@@ -181,8 +198,11 @@
 
     function savePortfolioRiskTab() {
         var body = {
-            startingCapital:     parseFloat(document.getElementById('sm-startingCapital').value) || 0,
-            portfolioMaxRiskPct: parseFloat(document.getElementById('sm-portfolioMaxRiskPct').value) || 0
+            startingCapital:          parseFloat(document.getElementById('sm-startingCapital').value) || 0,
+            portfolioMaxRiskPct:      parseFloat(document.getElementById('sm-portfolioMaxRiskPct').value) || 0,
+            moveSlToBreakevenEnabled: !!document.getElementById('sm-moveSlToBreakevenEnabled').checked,
+            h4BreakoutBuyingEnabled:  !!document.getElementById('sm-h4BreakoutBuyingEnabled').checked,
+            weeklyExpiryDayOfWeek:    (document.getElementById('sm-weeklyExpiryDayOfWeek').value || 'TUESDAY').trim().toUpperCase()
         };
         postSettings('/api/settings/risk', body);
     }
@@ -235,8 +255,14 @@
             if (!d) return;
             var capInput = document.getElementById('sm-startingCapital');
             var pctInput = document.getElementById('sm-portfolioMaxRiskPct');
+            var beChk    = document.getElementById('sm-moveSlToBreakevenEnabled');
+            var expSel   = document.getElementById('sm-weeklyExpiryDayOfWeek');
             if (capInput) capInput.value = d.startingCapital != null ? d.startingCapital : 1000000;
             if (pctInput) pctInput.value = d.portfolioMaxRiskPct != null ? d.portfolioMaxRiskPct : 0;
+            if (beChk)    beChk.checked  = !!d.moveSlToBreakevenEnabled;
+            var buyChk    = document.getElementById('sm-h4BreakoutBuyingEnabled');
+            if (buyChk)   buyChk.checked = !!d.h4BreakoutBuyingEnabled;
+            if (expSel)   expSel.value   = d.weeklyExpiryDayOfWeek || 'TUESDAY';
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {
                 updatePortfolioRiskHint(parseFloat(capInput.value) || 0, parseFloat(pctInput && pctInput.value) || 0);
@@ -376,6 +402,42 @@
         return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
+    // Maintenance — clear today's records. Confirms before posting; reports the result
+    // inline beneath the button. Open positions are NOT touched.
+    function clearToday() {
+        var ok = window.confirm('Wipe today\'s closed-trade records, event log, and DB rows?\n\nOpen positions will keep running and the bot will keep managing them.\n\nThis is irreversible.');
+        if (!ok) return;
+        var btn    = document.getElementById('sm-clear-today-btn');
+        var status = document.getElementById('sm-clear-today-status');
+        if (btn) { btn.disabled = true; btn.textContent = 'Clearing…'; }
+        if (status) { status.textContent = ''; status.style.color = ''; }
+        fetch('/api/maintenance/clear-today', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, (window.csrfHeaders ? window.csrfHeaders() : {}))
+        }).then(function(r) { return r.json(); }).then(function(d) {
+            if (d && d.ok) {
+                if (status) {
+                    status.style.color = 'var(--accent-green, #34d399)';
+                    status.textContent = '✓ Cleared — cycles=' + (d.cyclesCleared || 0)
+                        + ' events=' + (d.eventsCleared || 0)
+                        + ' dbRows=' + (d.dbCleared || 0);
+                }
+            } else {
+                if (status) {
+                    status.style.color = 'var(--accent-red, #f87171)';
+                    status.textContent = '✗ ' + ((d && d.message) || 'Clear failed');
+                }
+            }
+        }).catch(function(err) {
+            if (status) {
+                status.style.color = 'var(--accent-red, #f87171)';
+                status.textContent = '✗ Clear failed: ' + (err && err.message ? err.message : err);
+            }
+        }).finally(function() {
+            if (btn) { btn.disabled = false; btn.textContent = 'Clear Today\'s Records'; }
+        });
+    }
+
     window.SettingsModal = {
         open: openModal,
         close: closeModal,
@@ -384,6 +446,7 @@
         cancelUserForm: cancelUserForm,
         saveUser: saveUser,
         editUser: function(id, u) { showUserForm(u); },
-        deleteUser: deleteUser
+        deleteUser: deleteUser,
+        clearToday: clearToday
     };
 })();

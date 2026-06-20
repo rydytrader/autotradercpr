@@ -97,6 +97,7 @@
         <div class="nav-right">
             <button class="theme-toggle" id="settingsBtn" title="Settings" onclick="SettingsModal.open()" style="font-size:1rem;">⚙</button>
             <button class="theme-toggle" id="chainBtn" title="Options Chain" onclick="OptionChainModal.open()" style="font-size:1rem;">⊞</button>
+            <button class="theme-toggle" id="manualTerminalBtn" title="Options Terminal" onclick="ManualTerminal.open()" style="font-size:1rem;color:var(--accent-purple, #8b5cf6);">▲</button>
             <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
             <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
         </div>
@@ -277,8 +278,9 @@
 
 <script src="/js/common.js?v=23"></script>
 <script src="/js/ticker.js?v=4"></script>
-<script src="/js/settings-modal.js?v=24"></script>
+<script src="/js/settings-modal.js?v=40"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
+<script src="/js/manual-terminal-modal.js?v=40"></script>
 <script>
 (function(){
     const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -786,38 +788,44 @@
         const gross   = straddleGross + adjNet;
         const netCls  = net > 0 ? 'pnl-positive' : (net < 0 ? 'pnl-negative' : '');
 
-        // Hero block — aggregated day totals on one row.
+        // Hero block — aggregated day totals on one row, plus two trade sections:
+        // ALGO (camarilla strategy) and MANUAL (Options Terminal). Rendered side-by-side
+        // so the operator sees algo and manual P&L contribution distinctly while the
+        // hero totals already aggregate both.
         const heroHtml = '<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:14px 28px;">' +
             '<div><div class="stat-label">Net P&L</div><div class="' + netCls + '" style="font-family:var(--font-mono);font-size:1.1rem;font-weight:700;">' + fmtMoneyFull(net) + '</div></div>' +
             '<div><div class="stat-label">Gross P&L</div><div>' + fmtMoneyFull(gross) + '</div></div>' +
             '<div><div class="stat-label">Charges</div><div style="color:var(--text-muted);">' + fmtMoneyFull(straddleCharges) + '</div></div>' +
         '</div>' +
-        '<div id="calDayStraddles" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">' +
-            '<div class="stat-label" style="margin-bottom:8px;">Trades</div>' +
+        '<div id="calDayAlgo" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">' +
+            '<div class="stat-label" style="margin-bottom:8px;">Algo Trades</div>' +
             '<div style="color:var(--text-muted);">Loading…</div>' +
         '</div>' +
-        '<div id="calDayStrangles" style="display:none;"></div>';
+        '<div id="calDayManual" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">' +
+            '<div class="stat-label" style="margin-bottom:8px;">Manual Trades</div>' +
+            '<div style="color:var(--text-muted);">Loading…</div>' +
+        '</div>';
 
         document.getElementById('calModalTitle').textContent = 'Session — ' + dateStr;
         document.getElementById('calModalBody').innerHTML = heroHtml;
         document.getElementById('calDayModal').style.display = 'flex';
 
-        // Fetch the day's trades for the singleton Camarilla strategy. Commit B will populate
-        // both the "camarilla" id and the strategy itself; until then this returns an empty
-        // list and the section just shows the empty-state placeholder.
-        fetch('/api/strategies/camarilla/trades?date=' + encodeURIComponent(dateStr))
-            .then(r => r.ok ? r.json() : { trades: [] })
-            .catch(() => ({ trades: [] }))
-            .then(payload => {
-                const rows = (payload && payload.trades) || [];
-                rows.sort((a, b) => (a.closedAtMillis || 0) - (b.closedAtMillis || 0));
-                renderStrategyTradeSection(
-                    document.getElementById('calDayStraddles'),
-                    rows, 'Symbol', 'Trades');
-                // Strangle section retired — clear it so nothing dangles.
-                const strangleWrap = document.getElementById('calDayStrangles');
-                if (strangleWrap) strangleWrap.innerHTML = '';
-            });
+        // Two parallel fetches — algo and manual sit in separate strategyId buckets in the
+        // DB so each section gets its own list. Either can be empty; the section renders
+        // an empty-state placeholder when so.
+        const loadSection = (strategyId, containerId, sectionLabel) =>
+            fetch('/api/strategies/' + encodeURIComponent(strategyId) + '/trades?date=' + encodeURIComponent(dateStr))
+                .then(r => r.ok ? r.json() : { trades: [] })
+                .catch(() => ({ trades: [] }))
+                .then(payload => {
+                    const rows = (payload && payload.trades) || [];
+                    rows.sort((a, b) => (a.closedAtMillis || 0) - (b.closedAtMillis || 0));
+                    renderStrategyTradeSection(
+                        document.getElementById(containerId),
+                        rows, 'Symbol', sectionLabel);
+                });
+        loadSection('camarilla', 'calDayAlgo',    'Algo Trades');
+        loadSection('manual',    'calDayManual',  'Manual Trades');
     };
 
     // Render one strategy-type section into its container. {@code singularLabel} is the
@@ -872,7 +880,7 @@
                 '</tr>';
         });
         wrap.innerHTML =
-            '<div class="stat-label" style="margin-bottom:8px;">' + pluralLabel + ' · ' + rows.length + ' cycle' + (rows.length === 1 ? '' : 's') + '</div>' +
+            '<div class="stat-label" style="margin-bottom:8px;">' + pluralLabel + '</div>' +
             '<div style="overflow-x:auto;max-width:100%;">' +
             '<table style="width:100%;min-width:840px;border-collapse:collapse;font-family:var(--font-mono);font-size:0.74rem;table-layout:auto;white-space:nowrap;">' +
                 '<thead><tr style="color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;">' +
