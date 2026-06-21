@@ -81,6 +81,25 @@
 
         .pnl-positive { color:var(--accent-green, #34d399) !important; }
         .pnl-negative { color:var(--accent-red, #f87171) !important; }
+
+        /* Max-OI buildup chip — Live Positions section header.
+           Background tint encodes the buildup type so the operator parses it at a glance:
+             Long Buildup    → green
+             Short Buildup   → red
+             Short Covering  → cyan
+             Long Unwinding  → amber
+             Neutral / no signal → muted gray */
+        .oi-buildup-chip {
+            display:inline-flex; align-items:center; gap:6px;
+            padding:3px 8px; border:1px solid var(--border); border-radius:5px;
+            font-family:var(--font-mono); font-size:0.66rem; font-weight:600;
+            color:var(--text-muted); background:rgba(128,128,128,0.05);
+            white-space:nowrap;
+        }
+        .oi-buildup-chip.bld-lb  { color:var(--accent-green, #34d399); background:rgba(52,211,153,0.08); border-color:rgba(52,211,153,0.35); }
+        .oi-buildup-chip.bld-sb  { color:var(--accent-red,   #f87171); background:rgba(248,113,113,0.08); border-color:rgba(248,113,113,0.35); }
+        .oi-buildup-chip.bld-sc  { color:var(--accent-cyan,  #67e8f9); background:rgba(103,232,249,0.08); border-color:rgba(103,232,249,0.35); }
+        .oi-buildup-chip.bld-lu  { color:var(--accent-amber, #fbbf24); background:rgba(251,191,36,0.08);  border-color:rgba(251,191,36,0.35); }
         .event-row { display:grid; grid-template-columns:70px 60px 160px 1fr; padding:6px 10px; border-bottom:1px solid rgba(128,128,128,0.10); font-family:var(--font-mono); font-size:0.78rem; }
         .event-src   { color:var(--accent-cyan, #67e8f9); text-transform:uppercase; white-space:nowrap; }
         .event-msg   { color:var(--text-secondary); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -224,17 +243,25 @@
     <!-- ── Live Positions table ─────────────────────────────────────────── -->
     <div class="section-card fixed-card fade-in">
         <div class="section-header">
-            <div class="section-title" style="display:flex; align-items:center; gap:22px;">
+            <div class="section-title" style="display:flex; align-items:center; gap:18px; flex-wrap:wrap;">
                 <div style="display:flex; align-items:center; gap:8px;">
                     <div class="section-title-dot"></div>
                     Live Positions
                 </div>
-                <div style="display:flex; gap:18px; align-items:center; font-family:var(--font-mono); font-size:0.72rem; font-weight:normal;">
+                <!-- Vertical separator after the section title — visually delineates the
+                     market-stats cluster from the title. -->
+                <span style="border-left:1px solid var(--border); height:18px; display:inline-block;"></span>
+                <div style="display:flex; gap:14px; align-items:center; font-family:var(--font-mono); font-size:0.72rem; font-weight:normal; flex-wrap:wrap;">
                     <span style="color:var(--text-muted);">NIFTY <span id="hdrNifty" style="color:var(--text-primary);font-weight:700;">—</span>
                         <span id="hdrNiftyChg" style="margin-left:4px;font-weight:600;"></span></span>
                     <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
                         <span id="hdrVixChg" style="margin-left:4px;font-weight:600;"></span></span>
                     <span style="color:var(--text-muted);">ATM <span id="hdrAtm" style="color:var(--accent-cyan);font-weight:700;">—</span></span>
+                    <!-- Max-OI buildup chips. Populated by pollMaxBuildup() every 5 s
+                         from /api/option-oi/max-buildup. Tooltip carries the full buildup
+                         name + reference frame (ΔOI since 09:15). -->
+                    <span class="oi-buildup-chip" id="hdrMaxCe" title="Max Call OI strike (no data yet)">—</span>
+                    <span class="oi-buildup-chip" id="hdrMaxPe" title="Max Put OI strike (no data yet)">—</span>
                 </div>
             </div>
             <div style="display:flex; gap:10px; align-items:center;">
@@ -390,22 +417,36 @@
 
     // ── Squareoff ──────────────────────────────────────────────────────────
     function executeSquareOff() {
-        if (!confirm('Square off all open Camarilla positions?')) return;
-        fetch('/api/camarilla/squareoff', {
-            method: 'POST',
-            headers: csrfHeaders(),
-            body: '{}'
-        }).then(function() { setTimeout(loadState, 500); })
-          .catch(function() {});
+        AppConfirm.ask({
+            title:        'Square Off All',
+            message:      'Square off every open position?\n\nThis places market exits for both algo and manual positions.',
+            confirmLabel: 'Square Off',
+            danger:       true
+        }).then(function(ok) {
+            if (!ok) return;
+            fetch('/api/camarilla/squareoff', {
+                method: 'POST',
+                headers: csrfHeaders(),
+                body: '{}'
+            }).then(function() { setTimeout(loadState, 500); })
+              .catch(function() {});
+        });
     }
     function squareOffRow(symbol) {
-        if (!confirm('Square off ' + symbol + '?')) return;
-        fetch('/api/camarilla/squareoff', {
-            method: 'POST',
-            headers: csrfHeaders(),
-            body: JSON.stringify({ symbol: symbol })
-        }).then(function() { setTimeout(loadState, 500); })
-          .catch(function() {});
+        AppConfirm.ask({
+            title:        'Close Position',
+            message:      'Close ' + symbol + ' at market?',
+            confirmLabel: 'Close',
+            danger:       true
+        }).then(function(ok) {
+            if (!ok) return;
+            fetch('/api/camarilla/squareoff', {
+                method: 'POST',
+                headers: csrfHeaders(),
+                body: JSON.stringify({ symbol: symbol })
+            }).then(function() { setTimeout(loadState, 500); })
+              .catch(function() {});
+        });
     }
 
     // ── State refresh (SSE primary, REST poll fallback) ────────────────────
@@ -417,6 +458,13 @@
         renderPositions(d);
         renderEvents(d);
         renderKillSwitch(d);
+        // Max-OI buildup chips — embedded in dashboardState by Camarilla so the broker's
+        // 2-second heartbeat (and every event-triggered publish) refreshes them. Real-time
+        // delivery; no separate poll needed.
+        if (d.maxOiBuildup) {
+            renderBuildupChip(document.getElementById('hdrMaxCe'), d.maxOiBuildup.ce, 'CE');
+            renderBuildupChip(document.getElementById('hdrMaxPe'), d.maxOiBuildup.pe, 'PE');
+        }
         // (Market Clock card ticks independently on a 1 s interval — see updateMarketClock())
     }
 
@@ -833,6 +881,63 @@
         }).catch(function(){});
     }
 
+    // ── Max-OI buildup chips ───────────────────────────────────────────────
+    // Polls /api/option-oi/max-buildup every 5 s. Server-side handler is a pure
+    // in-memory walk over OptionOiTracker.state.latestByStrike — no Fyers REST.
+    // Updates the two chips in the Live Positions header with strike + 2-letter
+    // buildup code + ΔOI (lakhs) + ΔLTP%. Hover tooltip shows the full name +
+    // reference frame so the operator knows ΔOI is intraday (since 09:15), not
+    // vs prior day close.
+    var BUILDUP_ABBR = {
+        'Long Buildup':   { code:'LB', cls:'bld-lb' },
+        'Short Buildup':  { code:'SB', cls:'bld-sb' },
+        'Short Covering': { code:'SC', cls:'bld-sc' },
+        'Long Unwinding': { code:'LU', cls:'bld-lu' },
+        'Neutral':        { code:'—',  cls:''       }
+    };
+    function fmtOiLakhs(v) {
+        var n = Number(v || 0);
+        if (n === 0) return '0L';
+        var lakhs = n / 100000;
+        var sign  = lakhs >= 0 ? '+' : '−';
+        return sign + Math.abs(lakhs).toFixed(0) + 'L';
+    }
+    function fmtPctSigned(v) {
+        var n = Number(v || 0);
+        if (n === 0) return '0%';
+        return (n > 0 ? '+' : '−') + Math.abs(n).toFixed(1) + '%';
+    }
+    function renderBuildupChip(el, side, leg) {
+        if (!el) return;
+        if (!side || !side.strike) {
+            el.textContent = 'Max ' + leg + ' —';
+            el.className   = 'oi-buildup-chip';
+            el.title       = 'Max ' + (leg === 'CE' ? 'Call' : 'Put') + ' OI strike (no data yet)';
+            return;
+        }
+        var meta = BUILDUP_ABBR[side.buildup] || BUILDUP_ABBR['Neutral'];
+        el.textContent =
+            'Max ' + leg + ' ' + side.strike + ' [' + meta.code + '] '
+            + fmtOiLakhs(side.oiChange) + ' '
+            + fmtPctSigned(side.ltpChgPct);
+        el.className = 'oi-buildup-chip' + (meta.cls ? ' ' + meta.cls : '');
+        el.title =
+            'Max ' + (leg === 'CE' ? 'Call' : 'Put') + ' OI · ' + side.buildup + '\n'
+            + 'Strike: ' + side.strike + ' (' + (side.symbol || '—') + ')\n'
+            + 'OI: ' + Number(side.oi).toLocaleString() + ' · ΔOI (since 09:15): ' + Number(side.oiChange).toLocaleString() + '\n'
+            + 'LTP: ' + Number(side.ltp).toFixed(2) + ' · ΔLTP% (vs prior close): ' + fmtPctSigned(side.ltpChgPct);
+    }
+    function pollMaxBuildup() {
+        fetch('/api/option-oi/max-buildup', { credentials: 'same-origin' })
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(d) {
+                if (!d) return;
+                renderBuildupChip(document.getElementById('hdrMaxCe'), d.ce, 'CE');
+                renderBuildupChip(document.getElementById('hdrMaxPe'), d.pe, 'PE');
+            })
+            .catch(function() {});
+    }
+
     // ── Boot ───────────────────────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', function() {
         var yr = document.getElementById('footerYear');
@@ -849,6 +954,11 @@
         OiBiasHeader.start();
         OiBiasChart.init();
         loadWelcome();
+        // One-shot fetch primes the chips before the first SSE 'state' event arrives
+        // (which is usually within ~2 s of page load). After that, the SSE state event
+        // handler in applyState() carries the live updates from the dashboardState
+        // payload — see /api/option-oi/max-buildup remains as a REST fallback only.
+        pollMaxBuildup();
     });
 </script>
 
@@ -963,9 +1073,10 @@
 })();
 </script>
 
-<script src="/js/common.js?v=36"></script>
+<script src="/js/common.js?v=41"></script>
 <script src="/js/ticker.js?v=36"></script>
-<script src="/js/settings-modal.js?v=40"></script>
-<script src="/js/manual-terminal-modal.js?v=40"></script>
+<script src="/js/settings-modal.js?v=43"></script>
+<script src="/js/option-chain-modal.js?v=26"></script>
+<script src="/js/manual-terminal-modal.js?v=43"></script>
 </body>
 </html>

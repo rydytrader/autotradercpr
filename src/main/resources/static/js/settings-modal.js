@@ -402,40 +402,51 @@
         return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     }
 
-    // Maintenance — clear today's records. Confirms before posting; reports the result
-    // inline beneath the button. Open positions are NOT touched.
+    // Maintenance — clear today's records. Confirms via the themed AppConfirm dialog
+    // (loaded from common.js) to match the rest of the app. Reports the result inline
+    // beneath the button. Open positions are NOT touched.
     function clearToday() {
-        var ok = window.confirm('Wipe today\'s closed-trade records, event log, and DB rows?\n\nOpen positions will keep running and the bot will keep managing them.\n\nThis is irreversible.');
-        if (!ok) return;
-        var btn    = document.getElementById('sm-clear-today-btn');
-        var status = document.getElementById('sm-clear-today-status');
-        if (btn) { btn.disabled = true; btn.textContent = 'Clearing…'; }
-        if (status) { status.textContent = ''; status.style.color = ''; }
-        fetch('/api/maintenance/clear-today', {
-            method: 'POST',
-            headers: Object.assign({ 'Content-Type': 'application/json' }, (window.csrfHeaders ? window.csrfHeaders() : {}))
-        }).then(function(r) { return r.json(); }).then(function(d) {
-            if (d && d.ok) {
-                if (status) {
-                    status.style.color = 'var(--accent-green, #34d399)';
-                    status.textContent = '✓ Cleared — cycles=' + (d.cyclesCleared || 0)
-                        + ' events=' + (d.eventsCleared || 0)
-                        + ' dbRows=' + (d.dbCleared || 0);
+        var go = function() {
+            var btn    = document.getElementById('sm-clear-today-btn');
+            var status = document.getElementById('sm-clear-today-status');
+            if (btn) { btn.disabled = true; btn.textContent = 'Clearing…'; }
+            if (status) { status.textContent = ''; status.style.color = ''; }
+            fetch('/api/maintenance/clear-today', {
+                method: 'POST',
+                headers: Object.assign({ 'Content-Type': 'application/json' }, (window.csrfHeaders ? window.csrfHeaders() : {}))
+            }).then(function(r) { return r.json(); }).then(function(d) {
+                if (d && d.ok) {
+                    if (status) {
+                        status.style.color = 'var(--accent-green, #34d399)';
+                        status.textContent = '✓ Cleared — cycles=' + (d.cyclesCleared || 0)
+                            + ' events=' + (d.eventsCleared || 0)
+                            + ' dbRows=' + (d.dbCleared || 0);
+                    }
+                } else {
+                    if (status) {
+                        status.style.color = 'var(--accent-red, #f87171)';
+                        status.textContent = '✗ ' + ((d && d.message) || 'Clear failed');
+                    }
                 }
-            } else {
+            }).catch(function(err) {
                 if (status) {
                     status.style.color = 'var(--accent-red, #f87171)';
-                    status.textContent = '✗ ' + ((d && d.message) || 'Clear failed');
+                    status.textContent = '✗ Clear failed: ' + (err && err.message ? err.message : err);
                 }
-            }
-        }).catch(function(err) {
-            if (status) {
-                status.style.color = 'var(--accent-red, #f87171)';
-                status.textContent = '✗ Clear failed: ' + (err && err.message ? err.message : err);
-            }
-        }).finally(function() {
-            if (btn) { btn.disabled = false; btn.textContent = 'Clear Today\'s Records'; }
-        });
+            }).finally(function() {
+                if (btn) { btn.disabled = false; btn.textContent = 'Clear Today\'s Records'; }
+            });
+        };
+        if (window.AppConfirm) {
+            window.AppConfirm.ask({
+                title:        'Clear Today\'s Records',
+                message:      'Wipe today\'s closed-trade records, event log, and DB rows?\n\nOpen positions will keep running and the bot will keep managing them.\n\nThis is irreversible.',
+                confirmLabel: 'Clear',
+                danger:       true
+            }).then(function(ok) { if (ok) go(); });
+        } else {
+            go();
+        }
     }
 
     window.SettingsModal = {

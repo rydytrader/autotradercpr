@@ -350,6 +350,12 @@ public class OrderService {
         log.info("[ORDER] status={} | id={} | message={}", s, id, msg);
         if (!"ok".equals(s)) {
             log.error("[ORDER ERROR] Fyers rejected order: {} | Full response: {}", msg, node);
+            // Strip the id when Fyers signalled rejection. Some failure paths (market closed,
+            // margin shortage, etc.) still echo a Fyers order id in the response, which used
+            // to fool callers checking only {@code order.getId().isEmpty()} into treating
+            // the rejection as a successful placement — creating a Position for an order
+            // that never went live. Forcing an empty id makes every existing guard catch it.
+            return new OrderDTO(s, "", msg);
         }
         return new OrderDTO(s, id, msg);
     }

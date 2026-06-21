@@ -130,6 +130,7 @@ public class Camarilla implements Strategy {
     private final ObjectProvider<StrategyTradeRepository> tradeRepoProvider;
     private final ObjectProvider<CamarillaStreamBroker>   streamBrokerProvider;
     private final ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> oiTrackerProvider;
+    private final ObjectProvider<com.rydytrader.autotrader.service.OptionOiBuildupService> oiBuildupProvider;
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
 
     private volatile State state = new State();
@@ -145,7 +146,8 @@ public class Camarilla implements Strategy {
                      RiskSettingsStore riskSettings,
                      ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
                      ObjectProvider<CamarillaStreamBroker> streamBrokerProvider,
-                     ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> oiTrackerProvider) {
+                     ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> oiTrackerProvider,
+                     ObjectProvider<com.rydytrader.autotrader.service.OptionOiBuildupService> oiBuildupProvider) {
         this.camarillaService     = camarillaService;
         this.candleAggregator     = candleAggregator;
         this.atmTracker           = atmTracker;
@@ -157,6 +159,7 @@ public class Camarilla implements Strategy {
         this.tradeRepoProvider    = tradeRepoProvider;
         this.streamBrokerProvider = streamBrokerProvider;
         this.oiTrackerProvider    = oiTrackerProvider;
+        this.oiBuildupProvider    = oiBuildupProvider;
     }
 
     /** Push the latest dashboard state to every SSE-connected browser. No-op when no clients. */
@@ -519,7 +522,10 @@ public class Camarilla implements Strategy {
             // in our favor. One-shot per position. Runs BEFORE target/SL so if a single tick
             // hits 1R + target simultaneously, target still closes the trade but the
             // breakeven safety is set first in case of a same-tick reversal sequence.
-            if (riskSettings.isMoveSlToBreakevenEnabled() && !p.breakevenMoved) {
+            // MANUAL positions skip the auto-BE trigger entirely — the operator owns the SL
+            // and we don't want the UI flagging ▲ "SL moved to breakeven" on a fresh manual
+            // entry that never had a BE move. Algo trades keep the original behaviour.
+            if (riskSettings.isMoveSlToBreakevenEnabled() && !p.breakevenMoved && p.setup != ActiveSetup.MANUAL) {
                 // R distance — for SHORT, originalSL is above entry; for LONG, below.
                 // Take absolute distance so the comparison is direction-neutral.
                 double refSl = p.originalSlLevel > 0 ? p.originalSlLevel : p.slLevel;
@@ -1068,7 +1074,11 @@ public class Camarilla implements Strategy {
             p.targetLevel    = Double.NaN;          // MANUAL has no auto target — operator exits
             p.slLevel        = slPrice;             // NaN when stopLossPts=0 (no auto-SL)
             p.originalSlLevel = slPrice;
-            p.breakevenMoved  = true;               // skip the breakeven trigger entirely
+            // breakevenMoved stays false. The BE trigger in fastSlCheck explicitly skips
+            // MANUAL setup, so leaving this false means the UI's "SL moved to breakeven"
+            // ▲ indicator only renders when BE has actually fired (algo trades), not on
+            // every manual entry.
+            p.breakevenMoved  = false;
             p.isShort         = (side == -1);
 
             try {
@@ -1536,6 +1546,16 @@ public class Camarilla implements Strategy {
         m.put("currentAtm",        atmTracker.getCurrentAtm());
         m.put("watchlistSize",     state.symbolRole.size());
         m.put("watchlistRoles",    new LinkedHashMap<>(state.symbolRole));
+
+        // Max-OI buildup snapshot — feeds the two chips in the Live Positions
+        // header. Broker rebroadcasts dashboardState every ~2 s so the chips are
+        // near-real-time. The same payload is also served via the standalone
+        // GET /api/option-oi/max-buildup endpoint (used by direct REST consumers).
+        try {
+            com.rydytrader.autotrader.service.OptionOiBuildupService bs =
+                oiBuildupProvider == null ? null : oiBuildupProvider.getIfAvailable();
+            if (bs != null) m.put("maxOiBuildup", bs.currentEnriched());
+        } catch (Exception ignored) {}
 
         // Open positions list — each row carries its own LTP, MTM, target/SL levels.
         List<Map<String, Object>> rows = new ArrayList<>();

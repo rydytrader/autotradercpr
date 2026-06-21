@@ -96,18 +96,12 @@ public class OptionChainController {
         double yearsToExpiry = resolveYearsToExpiry(byStrike);
         if (yearsToExpiry > 0) fillDeltas(byStrike, spot, yearsToExpiry);
 
-        // Synthetic-futures ATM (put-call parity): F = atm + (CE − PE) at the spot-ATM
-        // strike, rounded to the nearest step. This is the strike the straddle bot will
-        // actually trade. We surface it as a *separate* marker — the slice + gold band
-        // stay anchored on the naïve spot-ATM, the synthetic strike gets its own pill.
+        // Synthetic-futures ATM (put-call parity) was used by the straddle bot to pick a
+        // strike that accounts for forward bias; the Camarilla strategy trades the plain
+        // spot-rounded ATM, so the parity pill just confuses the chain view. Disabled —
+        // syntheticAtm=0 makes every row's isSyntheticAtm=false, so the ATM pill never
+        // renders. The gold band on the spot-ATM row stays (driven by isAtm against atm).
         long syntheticAtm = 0;
-        Leg[] atmPair = byStrike.get(atm);
-        if (atmPair != null && atmPair[0] != null && atmPair[1] != null
-                && atmPair[0].ltp > 0 && atmPair[1].ltp > 0) {
-            double forward = atm + (atmPair[0].ltp - atmPair[1].ltp);
-            long synth = Math.round(forward / (double) STRIKE_STEP) * STRIKE_STEP;
-            if (byStrike.containsKey(synth)) syntheticAtm = synth;
-        }
 
         List<Map<String, Object>> outRows = sliceWindow(byStrike, atm, strikes, syntheticAtm);
 
@@ -131,7 +125,7 @@ public class OptionChainController {
         body.put("underlying",        symbol);
         body.put("spot",              round2(spot));
         body.put("atmStrike",         atm);           // naïve spot-rounded ATM — slice + gold band anchor here
-        body.put("syntheticAtmStrike", syntheticAtm); // parity-based ATM — pill marker; 0 when same as spot-ATM or unresolved
+        body.put("syntheticAtmStrike", syntheticAtm); // retired — always 0; field kept for response-shape compat
         body.put("expiry",            expiry);
         body.put("asOf",         LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")));
         body.put("maxCeOiStrikes", resistanceStrikes);

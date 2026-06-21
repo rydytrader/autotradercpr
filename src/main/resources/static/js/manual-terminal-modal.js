@@ -578,10 +578,15 @@
                 pollOnce();
             });
         };
-        if (typeof window.showConfirm === 'function') {
-            window.showConfirm({ title: 'Close position?', body: symbol + '\n\nPlaces opposite-side market order.', onConfirm: doIt });
-        } else if (confirm('Close ' + symbol + '?')) {
-            doIt();
+        if (window.AppConfirm) {
+            window.AppConfirm.ask({
+                title:        'Close Position',
+                message:      'Close ' + symbol + ' at market?\n\nPlaces an opposite-side order to flatten the position.',
+                confirmLabel: 'Close',
+                danger:       true
+            }).then(function(ok) { if (ok) doIt(); });
+        } else {
+            doIt();   // fallback when common.js hasn't loaded
         }
     }
     function closeAllPositions() {
@@ -594,9 +599,14 @@
                 pollOnce();
             });
         };
-        if (typeof window.showConfirm === 'function') {
-            window.showConfirm({ title: 'Close ALL manual positions?', body: 'Places an opposite-side market order for every open manual position. Bot legs are untouched.', onConfirm: doIt });
-        } else if (confirm('Close all manual positions?')) {
+        if (window.AppConfirm) {
+            window.AppConfirm.ask({
+                title:        'Close All Manual Positions',
+                message:      'Places an opposite-side market order for every open manual position.\n\nAlgo (Camarilla) positions are untouched.',
+                confirmLabel: 'Close All',
+                danger:       true
+            }).then(function(ok) { if (ok) doIt(); });
+        } else {
             doIt();
         }
     }
@@ -717,6 +727,17 @@
                         + 'style="margin:0 6px;cursor:pointer;">'
                         + slTrigger.toFixed(2) + '</span>')
                     : (slPts > 0 ? ('<span style="color:var(--text-muted);margin:0 6px;" title="Will compute on fill">+' + slPts.toFixed(0) + ' pts</span>') : '<span style="color:var(--text-muted);margin:0 6px;">—</span>');
+                // "→C" Move SL to Cost — rendered in the Action column (see below) since
+                // the operator wanted row-level actions grouped there. Click computes
+                // deltaPts = avg − slTrigger and POSTs to /api/manual/sl/{orderId}.
+                var costPx = Number(p.avgPrice || 0);
+                var moveToCostBtn = (slTrigger > 0 && costPx > 0 && costPx !== slTrigger)
+                    ? '<button data-sl-cost="1" data-id="' + idAttr
+                        + '" data-cost="' + costPx.toFixed(2)
+                        + '" data-current="' + slTrigger.toFixed(2)
+                        + '" title="Move SL to cost (' + costPx.toFixed(2) + ')" '
+                        + 'style="' + adjustBtn('amber') + 'margin-right:4px;width:auto;padding:0 6px;">→C</button>'
+                    : '';
                 var slAdjust = slTrigger > 0
                     ? '<button data-sl="-1" data-id="' + idAttr + '" title="Lower SL 1 pt" style="' + adjustBtn('red')   + '">−</button>' +
                       slEditableSpan +
@@ -731,7 +752,10 @@
                     '<td style="padding:8px;text-align:right;">' + (p.ltp > 0 ? Number(p.ltp).toFixed(2) : '—') + '</td>' +
                     '<td style="padding:8px;text-align:center;color:var(--accent-amber, #fbbf24);white-space:nowrap;">' + slAdjust + '</td>' +
                     '<td style="padding:8px;text-align:right;font-weight:700;' + pnlCls + '">' + fmtRs(pnl) + '</td>' +
-                    '<td style="padding:8px;text-align:center;"><button data-close="' + p.orderId + '" data-sym="' + escapeHtml(p.symbol) + '" title="Close position" style="background:transparent;border:1px solid rgba(248,113,113,0.35);color:var(--accent-red, #f87171);width:24px;height:24px;border-radius:4px;font-family:var(--font-mono);font-size:0.85rem;font-weight:700;cursor:pointer;line-height:1;padding:0;">✕</button></td>' +
+                    '<td style="padding:8px;text-align:center;white-space:nowrap;">'
+                        + moveToCostBtn
+                        + '<button data-close="' + p.orderId + '" data-sym="' + escapeHtml(p.symbol) + '" title="Close position" style="background:transparent;border:1px solid rgba(248,113,113,0.35);color:var(--accent-red, #f87171);width:24px;height:24px;border-radius:4px;font-family:var(--font-mono);font-size:0.85rem;font-weight:700;cursor:pointer;line-height:1;padding:0;">✕</button>'
+                        + '</td>' +
                 '</tr>';
             });
         }
@@ -760,6 +784,28 @@
                     pollOnce();
                 }).catch(function(err) {
                     showStatus('SL adjust failed: ' + (err && err.message ? err.message : err), 'error');
+                });
+            });
+        });
+        // "→C" Move SL to Cost — sends deltaPts = avgPrice − currentSlTrigger so the
+        // trigger lands exactly at the entry. Same backend endpoint as the +/- buttons.
+        wrap.querySelectorAll('button[data-sl-cost]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var id      = btn.getAttribute('data-id');
+                var cost    = parseFloat(btn.getAttribute('data-cost'));
+                var current = parseFloat(btn.getAttribute('data-current'));
+                if (!(cost > 0) || !(current > 0)) return;
+                var deltaPts = cost - current;
+                if (Math.abs(deltaPts) < 0.005) return;   // already at cost
+                fetch('/api/manual/sl/' + encodeURIComponent(id), {
+                    method: 'POST',
+                    headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders()),
+                    body: JSON.stringify({ deltaPts: deltaPts })
+                }).then(function(r) { return r.json(); }).then(function(resp) {
+                    if (!resp.success) showStatus(resp.message || 'Move-SL-to-cost failed', 'error');
+                    pollOnce();
+                }).catch(function(err) {
+                    showStatus('Move-SL-to-cost failed: ' + (err && err.message ? err.message : err), 'error');
                 });
             });
         });
@@ -823,12 +869,13 @@
         });
     }
 
-    /** Style for the small inline +/- buttons on the positions table. Matches the visual
-     *  weight of the existing close button but smaller, with green/red accent for add/reduce. */
+    /** Style for the small inline +/- / move-to-cost buttons on the positions table.
+     *  Matches the close button's visual weight but smaller, with tone-coded accent. */
     function adjustBtn(tone) {
         var color, border;
-        if (tone === 'green') { color = 'var(--accent-green, #34d399)'; border = 'rgba(52,211,153,0.45)'; }
-        else                  { color = 'var(--accent-red, #f87171)';    border = 'rgba(248,113,113,0.45)'; }
+        if      (tone === 'green') { color = 'var(--accent-green, #34d399)'; border = 'rgba(52,211,153,0.45)'; }
+        else if (tone === 'amber') { color = 'var(--accent-amber, #fbbf24)'; border = 'rgba(251,191,36,0.55)'; }
+        else                       { color = 'var(--accent-red, #f87171)';    border = 'rgba(248,113,113,0.45)'; }
         return 'background:transparent;border:1px solid ' + border + ';color:' + color +
                ';width:22px;height:22px;border-radius:4px;font-family:var(--font-mono);font-size:0.78rem;' +
                'font-weight:700;cursor:pointer;line-height:1;padding:0;vertical-align:middle;';
