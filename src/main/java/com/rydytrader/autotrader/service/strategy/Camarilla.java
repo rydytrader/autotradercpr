@@ -897,6 +897,28 @@ public class Camarilla implements Strategy {
         catch (Exception e) { entryLtp = entryCandle.close(); }
         if (entryLtp <= 0) entryLtp = entryCandle.close();
 
+        // ── Minimum 1R reward-to-risk filter ──
+        // Skip entries where the remaining reward (entry → target) is smaller than
+        // the risk (entry → SL). Most-bitten case: a late VWAP_BREAKDOWN where price
+        // has already dropped most of the way from L4 to L5 — target distance shrinks
+        // while SL distance (entry → L3 above) grows, dragging R:R below 1.0. No
+        // positive expectancy at any size, so reject before the budget gate runs.
+        // Bypassed when targetLevel is NaN/0 (MANUAL trades, which the operator exits
+        // on their own schedule). Hard-coded 1.0 floor; promote to a setting later
+        // if the operator wants to tune it.
+        if (!Double.isNaN(targetLevel) && targetLevel > 0) {
+            double reward = shortSetup ? (entryLtp - targetLevel) : (targetLevel - entryLtp);
+            double risk   = shortSetup ? (slLevel - entryLtp)     : (entryLtp - slLevel);
+            if (risk > 0 && reward < risk) {
+                event("[WARNING]", "Sizing", symbol + " skipped — R:R "
+                    + round2(reward / risk) + " < 1.0"
+                    + " (reward " + round2(reward) + " pts < risk " + round2(risk) + " pts,"
+                    + " entry " + round2(entryLtp) + " → target " + round2(targetLevel)
+                    + ", SL " + round2(slLevel) + ")");
+                return;
+            }
+        }
+
         // ── Risk-budget gate (best-fit shrink) ──
         // Compare (consumedRisk + exposedRisk + thisTradeRisk) against the portfolio
         // daily risk cap. If full size won't fit, shrink to the largest whole-lot
