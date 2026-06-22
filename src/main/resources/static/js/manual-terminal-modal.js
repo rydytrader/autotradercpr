@@ -120,18 +120,19 @@
             // operator can pick anything > 0 and ≤ 50. Breach (SELL → LTP ≥ entry + pts;
             // BUY → LTP ≤ entry − pts).
             '<div><label style="display:block;color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:5px;" title="Stop loss in premium points from entry. Required; max 50.">SL (pts) *</label>' +
-              '<input id="mtStopLoss" type="number" min="5" max="50" step="5" value="50" required class="mt-input"></div>' +
+              '<input id="mtStopLoss" type="number" min="5" max="50" step="5" value="25" required class="mt-input"></div>' +
             '<div><label style="display:block;color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:5px;">Qty (Lots)</label>' +
               '<input id="mtLots" type="number" min="1" value="1" class="mt-input"></div>' +
             '<div><label style="display:block;color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:5px;">Product</label>' +
               '<select id="mtProduct" class="mt-select">' +
+                '<option value="OVERNIGHT" selected>OVERNIGHT</option>' +
                 '<option value="INTRADAY">INTRADAY</option>' +
-                '<option value="MARGIN">MARGIN</option>' +
               '</select></div>' +
             // Refresh ATM — re-fetches the option chain and snaps both CE/PE strike
-            // dropdowns to the synthetic-futures ATM (the strike the straddle bot trades).
+            // dropdowns to the bot's default ATM (AtmTracker baseline, locked to the
+            // open-price strike for the session).
             '<div><label style="display:block;color:transparent;font-size:0.66rem;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:5px;">·</label>' +
-              '<button id="mtRefreshAtm" type="button" title="Recalculate the synthetic-futures ATM and reset both strike dropdowns to it" ' +
+              '<button id="mtRefreshAtm" type="button" title="Reset both strike dropdowns to the bot’s default ATM (open-price locked)" ' +
                 'style="background:transparent;border:1px solid var(--accent-purple, #8b5cf6);color:var(--accent-purple, #8b5cf6);' +
                 'padding:8px 14px;border-radius:6px;font-family:var(--font-mono);font-size:0.74rem;font-weight:700;letter-spacing:0.04em;cursor:pointer;white-space:nowrap;">' +
                 '↻ ATM</button></div>' +
@@ -230,9 +231,9 @@
             refreshSelectedSymbolLtps();
             pollOnce();
         });
-        // ↻ ATM — re-fetch the chain so the server recomputes the synthetic-futures ATM
-        // and both strike dropdowns snap to it. Brief visual feedback so the operator
-        // knows the click registered.
+        // ↻ ATM — re-fetch the chain so the dropdowns snap back to the bot's default
+        // ATM (AtmTracker baseline). Brief visual feedback so the operator knows the
+        // click registered.
         document.getElementById('mtRefreshAtm').addEventListener('click', function() {
             var btn = document.getElementById('mtRefreshAtm');
             if (btn) { btn.textContent = '↻ …'; btn.disabled = true; }
@@ -540,7 +541,7 @@
             return;
         }
         var lots        = parseInt(document.getElementById('mtLots').value, 10) || 1;
-        var product     = document.getElementById('mtProduct').value || 'INTRADAY';
+        var product     = document.getElementById('mtProduct').value || 'OVERNIGHT';
         var slRaw       = document.getElementById('mtStopLoss').value;
         var stopLossPts = parseFloat(slRaw);
         // SL is mandatory (cannot be empty) and must be > 0 and ≤ 50. Server enforces

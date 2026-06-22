@@ -10,6 +10,10 @@ public class TickData {
     private double open;
     private double high;
     private double low;
+    /** Session VWAP — Fyers' {@code avg_trade_price} field, accumulated by NSE from
+     *  market open. Strictly volume-weighted, not time-weighted. Zero until the first
+     *  full-mode tick lands; stale-day guarded the same way LTP is. */
+    private double vwap;
     private boolean hasPosition;
     private String lastTickDate; // IST trading date (yyyy-MM-dd) of most recent tick — drives stale-day check
 
@@ -45,6 +49,8 @@ public class TickData {
     public void setHigh(double v)            { this.high = v; }
     public double getLow()                   { return low; }
     public void setLow(double v)             { this.low = v; }
+    public double getVwap()                  { return vwap; }
+    public void setVwap(double v)            { this.vwap = v; }
     public boolean isHasPosition()           { return hasPosition; }
     public void setHasPosition(boolean v)    { this.hasPosition = v; }
     public String getLastTickDate()          { return lastTickDate; }

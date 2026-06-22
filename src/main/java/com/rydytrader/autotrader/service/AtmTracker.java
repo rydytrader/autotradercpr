@@ -13,22 +13,23 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 /**
- * Tracks the spot-based NIFTY ATM with V2 strike-drift discipline.
+ * Tracks the NIFTY ATM strike, locked to the session's <b>open price</b>.
  *
- * <p>Two scheduled loops:
+ * <p>The ATM is resolved once per session — on the first NIFTY tick after 09:15 IST —
+ * and held fixed for the entire trading day. There is no intraday drift check.
+ * If NIFTY moves 200 points by midday, the ATM the strategy was set up around at
+ * open stays the strategy's anchor. The watchlist, OI subscription, and Camarilla
+ * level cache all stay on that one strike pair for the whole session.
+ *
+ * <p>Lifecycle:
  * <ul>
- *   <li><b>Bootstrap</b> — runs every 30 s until the first valid ATM is resolved
- *       (typically within seconds of market open). Sets the baseline and fires
- *       the initial {@link AtmChange} so the strategy can subscribe its 6-contract
- *       watchlist.</li>
- *   <li><b>Drift check</b> — runs every 30 minutes during market hours. Computes
- *       the current ATM and compares to the baseline. Fires an {@link AtmChange}
- *       only when the new ATM differs from the baseline (i.e., NIFTY drifted past
- *       a ±1 strike boundary). Strategy re-subscribes around the new ATM.</li>
+ *   <li><b>Bootstrap</b> — runs every 30 s after boot until the first ATM is
+ *       resolved from the live NIFTY LTP. Fires the single {@link AtmChange}
+ *       (oldAtm = -1 → newAtm = open-derived) to every registered listener.</li>
+ *   <li><b>End-of-day reset</b> — at 15:31 IST, clears the baseline so the
+ *       dashboard reads "—" overnight and the next morning's bootstrap fires
+ *       fresh against tomorrow's actual day-open NIFTY.</li>
  * </ul>
- *
- * <p>This matches the V2 spec's "30-Minute Check Loop": stable watchlist for half-
- * hour windows, no constant churn on minor 50-point oscillations.
  */
 @Service
 public class AtmTracker {
@@ -48,10 +49,10 @@ public class AtmTracker {
         this.atmSelector       = atmSelector;
     }
 
-    /** Register an ATM-change listener. The first successful resolution fires an
-     *  {@link AtmChange} with {@code oldAtm = -1} to every registered listener — signals
-     *  bootstrap. Multiple consumers (Camarilla, OptionOiSubscriber, …) can subscribe
-     *  independently; each receives every event. */
+    /** Register an ATM-change listener. The single session-open resolution fires an
+     *  {@link AtmChange} with {@code oldAtm = -1} to every registered listener.
+     *  Multiple consumers (Camarilla, OptionOiSubscriber, …) can subscribe
+     *  independently; each receives the bootstrap event. */
     public void addListener(Consumer<AtmChange> l) {
         if (l != null) listeners.add(l);
     }
@@ -65,25 +66,12 @@ public class AtmTracker {
     public long getCurrentAtm() { return baselineAtm; }
 
     /** Bootstrap loop — fires every 30 s until the first ATM resolution lands.
-     *  After baseline is set, this becomes a no-op. */
+     *  After the baseline is set, this becomes a no-op for the rest of the session. */
     @Scheduled(fixedDelay = 30_000, initialDelay = 10_000)
     public void bootstrap() {
         if (baselineAtm > 0) return;
         if (listeners.isEmpty()) return;
-        tryUpdate();
-    }
-
-    /** Drift check — fires at every 15-min wall-clock boundary (09:00, 09:15, 09:30,
-     *  09:45, …, 15:45 IST) on weekdays. Cron-aligned (not fixed-delay) so the checks
-     *  land exactly on the candle aggregator's 15-min landmarks (every 5th 3-min bar
-     *  close) — when that bar closes and evaluates L4/H4 patterns, the watchlist is
-     *  already on the freshest ATM. Fires AtmChange only when the resolved ATM has
-     *  moved past the baseline. */
-    @Scheduled(cron = "0 0/15 9-15 * * MON-FRI", zone = "Asia/Kolkata")
-    public void driftCheck() {
-        if (baselineAtm <= 0) return;        // wait for bootstrap to complete
-        if (listeners.isEmpty()) return;
-        tryUpdate();
+        tryResolveOnce();
     }
 
     /** End-of-day reset. Clears the baseline at 15:31 IST every weekday so the
@@ -98,7 +86,11 @@ public class AtmTracker {
         }
     }
 
-    private void tryUpdate() {
+    /** Resolve the ATM from the current NIFTY LTP and fire the bootstrap event.
+     *  No-op when already baselined (the lock is intentional — no drift), outside
+     *  market hours, or when the spot can't be read yet. */
+    private void tryResolveOnce() {
+        if (baselineAtm > 0) return;
         LocalTime t = ZonedDateTime.now(IST).toLocalTime();
         if (t.isBefore(LocalTime.of(9, 15)) || t.isAfter(LocalTime.of(15, 30))) return;
 
@@ -109,19 +101,12 @@ public class AtmTracker {
 
         BalancedAtmSelector.AtmSelection sel = atmSelector.select(spot);
         if (sel == null) return;
-        long newAtm = sel.chosenAtm();
-        if (newAtm == baselineAtm) {
-            // No drift — fire a status-only AtmChange (oldAtm == newAtm) so listeners can
-            // log a heartbeat. Confirms drift checks are running even when ATM doesn't move.
-            fireAtmChange(new AtmChange(baselineAtm, baselineAtm));
-            return;
-        }
+        long openAtm = sel.chosenAtm();
 
-        AtmChange ev = new AtmChange(baselineAtm, newAtm);
-        baselineAtm = newAtm;
-        log.info("[AtmTracker] ATM {} → {} (drift rebalance)",
-            ev.oldAtm() < 0 ? "(boot)" : String.valueOf(ev.oldAtm()),
-            ev.newAtm());
+        AtmChange ev = new AtmChange(baselineAtm, openAtm);
+        baselineAtm = openAtm;
+        log.info("[AtmTracker] ATM locked at {} (open-price derived; no drift checks this session)",
+            openAtm);
         fireAtmChange(ev);
     }
 
@@ -132,8 +117,9 @@ public class AtmTracker {
         }
     }
 
-    /** ATM transition event. {@code oldAtm = -1} signals initial bootstrap.
-     *  The listener resolves the 6-contract watchlist (ATM, ITM ±1, OTM ±1) from
-     *  the numeric ATM via its own {@link BalancedAtmSelector} usage. */
+    /** ATM transition event. {@code oldAtm = -1} signals the session-open bootstrap.
+     *  With drift checks removed, this is the only AtmChange a listener will see
+     *  per session — listeners that maintain watchlists / subscriptions should treat
+     *  it as a one-shot setup, not a rebalance trigger. */
     public record AtmChange(long oldAtm, long newAtm) {}
 }

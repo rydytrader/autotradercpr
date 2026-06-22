@@ -26,7 +26,7 @@ import java.util.*;
  * "adjustments" path or {@code store/manual/} persistence anymore.
  *
  * <ul>
- *   <li>{@code GET  /api/manual/strikes}     — ATM ± N option-chain slice with synthetic-futures ATM</li>
+ *   <li>{@code GET  /api/manual/strikes}     — ATM ± N option-chain slice anchored on the bot's default ATM (AtmTracker baseline)</li>
  *   <li>{@code POST /api/manual/order}       — place a MANUAL order via {@link Camarilla#placeManual}</li>
  *   <li>{@code POST /api/manual/close/{id}}  — close one MANUAL position by entry order ID</li>
  *   <li>{@code POST /api/manual/close-all}   — flatten every open MANUAL position</li>
@@ -170,10 +170,13 @@ public class ManualTerminalController {
         String side    = asString(body.get("side"));
         String symbol  = asString(body.get("symbol"));
         int    lots    = asInt(body.get("lots"), 1);
-        double slPts   = asDouble(body.get("stopLossPts"), 50);
-        // 'product' is accepted from the JSON for back-compat with the original modal but
-        // ignored — the strategy's configured Camarilla product type is reused so manual
-        // and algo positions can net at Fyers without confusion.
+        double slPts   = asDouble(body.get("stopLossPts"), 25);
+        // 'product' from the modal dropdown — INTRADAY or OVERNIGHT (Fyers' MARGIN).
+        // Default OVERNIGHT when omitted/blank so missing-field requests follow the
+        // operator's stated preference. Translation to Fyers' product token happens
+        // inside OrderService.normalizeProductType.
+        String product = asString(body.get("product"));
+        if (product == null || product.isBlank()) product = "OVERNIGHT";
         if (symbol == null || symbol.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of(
                 "success", false, "message", "symbol required"));
@@ -186,7 +189,7 @@ public class ManualTerminalController {
 
         int qty = Math.max(1, lots) * com.rydytrader.autotrader.service.strategy.Camarilla.lotSize();
 
-        Camarilla.ManualPlaceResult r = strategy.placeManual(symbol, sideCode, qty, 2, 0, slPts);
+        Camarilla.ManualPlaceResult r = strategy.placeManual(symbol, sideCode, qty, 2, 0, slPts, product);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("success", r.ok());
         out.put("orderId", r.orderId());
@@ -255,7 +258,12 @@ public class ManualTerminalController {
         double slPts = Double.isNaN(p.slLevel) || p.entryPrice <= 0
             ? 1   // placeholder > 0 to pass the mandatory-SL gate for reduce flows
             : Math.abs(p.slLevel - p.entryPrice);
-        Camarilla.ManualPlaceResult r = strategy.placeManual(p.symbol, side, qty, 2, 0, slPts);
+        // Qty-adjust hits the merge path inside placeManual which reuses the existing
+        // position's productType. Passing "" here is safe — placeManual's resolver
+        // would fall back to the strategy default for the new-position branch, but
+        // the merge branch fires first whenever the symbol already has an open MANUAL
+        // position (which is the only state findOpenManualByOrderId returns).
+        Camarilla.ManualPlaceResult r = strategy.placeManual(p.symbol, side, qty, 2, 0, slPts, "");
         return ResponseEntity.ok(toBody(r));
     }
 
@@ -387,7 +395,16 @@ public class ManualTerminalController {
             charges     += asDouble(t.get("charges"), 0);
         }
 
-        double netPnl = totalMtm + realisedPnl;   // charges already netted into per-trade netPnl
+        // Add the projected close-cycle charges for currently-open MANUAL positions so
+        // the header reflects a live cost-to-exit estimate (entry brokerage + STT/GST +
+        // projected exit fees), not just the realised total from closed cycles. Without
+        // this the chip reads ₹0 between session start and the first close — misleading
+        // because real charges are already accruing the moment the entry fills.
+        double projectedOpenCharges = strategy.projectedManualChargesForOpen();
+        charges += projectedOpenCharges;
+        double netPnl = totalMtm + realisedPnl - projectedOpenCharges;
+        // ^ realisedPnl already has its charges netted in. We subtract ONLY the projected
+        // open-leg charges so MTM is shown net of the cost of closing here-and-now.
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("niftyLtp",       round2(niftyLtp));

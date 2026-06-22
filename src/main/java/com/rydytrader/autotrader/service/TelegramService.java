@@ -120,8 +120,8 @@ public class TelegramService {
             + "CPR levels: " + cprLoaded + "/" + watchlistCount
             + " | ATR: " + atrLoaded + "/" + watchlistCount
             + " | Weekly trend: " + weeklyLevels + "/" + watchlistCount + "\n"
-            + "3m EMA 20: " + ema20 + "/" + watchlistCount + "\n"
-            + "Trading TF: 3 min | Higher TF: " + higherTfMinutes + " min\n"
+            + "5m EMA 20: " + ema20 + "/" + watchlistCount + "\n"
+            + "Trading TF: 5 min | Higher TF: " + higherTfMinutes + " min\n"
             + "System ready for trading");
     }
 

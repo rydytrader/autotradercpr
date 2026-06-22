@@ -118,7 +118,8 @@ public class OptionOiSubscriber {
 
     /** Retry loop — runs every minute during market hours. If the initial subscription attempt
      *  at 09:15 failed (typical: Fyers chain endpoint is empty for the first few seconds after
-     *  market open), this catches up so we don't sit idle until the 30-min ATM drift check. */
+     *  market open), this catches up so we don't sit idle for the whole session. The ATM
+     *  itself is locked at open by AtmTracker and never drifts. */
     @Scheduled(fixedDelay = 60_000, initialDelay = 60_000)
     public void retryIfSubscriptionsMissing() {
         if (subscriptionsHealthy) return;

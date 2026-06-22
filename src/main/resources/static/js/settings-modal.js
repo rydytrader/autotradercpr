@@ -39,7 +39,6 @@
                         '<option value="FRIDAY">Friday</option>' +
                         '</select><div class="sm-hint">NIFTY weekly expiry day. Drives the Expiry vs Non-Expiry analytics split.</div></div>' +
                     '<div class="sm-field"><label><input type="checkbox" id="sm-moveSlToBreakevenEnabled"> &nbsp;Move SL to Breakeven at 1R</label><div class="sm-hint">Once an open trade moves 1R in our favor, slide the SL to entry price so a reversal exits flat instead of at full SL loss. Fires once per position.</div></div>' +
-                    '<div class="sm-field"><label><input type="checkbox" id="sm-h4BreakoutBuyingEnabled"> &nbsp;Enable H4 Breakout Buying</label><div class="sm-hint">When ON, the bot also BUYS options on H4 breakout — CE only at VERY_BULLISH OI bias, PE only at VERY_BEARISH. Strict gate; no neutral entries. Off by default.</div></div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
                     '<div class="sm-field"><label>Brokerage per Order (₹)</label><input type="number" id="sm-brokeragePerOrder" step="1" min="0"><div class="sm-hint">Flat per-order brokerage. Drives charge estimates on every dashboard + session row.</div></div>' +
@@ -201,7 +200,6 @@
             startingCapital:          parseFloat(document.getElementById('sm-startingCapital').value) || 0,
             portfolioMaxRiskPct:      parseFloat(document.getElementById('sm-portfolioMaxRiskPct').value) || 0,
             moveSlToBreakevenEnabled: !!document.getElementById('sm-moveSlToBreakevenEnabled').checked,
-            h4BreakoutBuyingEnabled:  !!document.getElementById('sm-h4BreakoutBuyingEnabled').checked,
             weeklyExpiryDayOfWeek:    (document.getElementById('sm-weeklyExpiryDayOfWeek').value || 'TUESDAY').trim().toUpperCase()
         };
         postSettings('/api/settings/risk', body);
@@ -260,8 +258,6 @@
             if (capInput) capInput.value = d.startingCapital != null ? d.startingCapital : 1000000;
             if (pctInput) pctInput.value = d.portfolioMaxRiskPct != null ? d.portfolioMaxRiskPct : 0;
             if (beChk)    beChk.checked  = !!d.moveSlToBreakevenEnabled;
-            var buyChk    = document.getElementById('sm-h4BreakoutBuyingEnabled');
-            if (buyChk)   buyChk.checked = !!d.h4BreakoutBuyingEnabled;
             if (expSel)   expSel.value   = d.weeklyExpiryDayOfWeek || 'TUESDAY';
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {

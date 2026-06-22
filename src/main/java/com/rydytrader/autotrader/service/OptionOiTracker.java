@@ -270,46 +270,6 @@ public class OptionOiTracker {
         return new History(state.baselineTakenAt, new ArrayList<>(state.samples));
     }
 
-    /** Walks the live per-strike OI map and returns the strike with the highest CE OI
-     *  and the strike with the highest PE OI. Each side carries: the resolved Fyers
-     *  option symbol (from {@code state.windowSymbols}), the absolute OI, and the
-     *  intraday {@code ΔOI = latest − 09:15-baseline}. Caller enriches with live LTP +
-     *  ΔLTP% and runs the buildup classification. Returns {@code null} when the live
-     *  map is empty (pre-market, fresh boot before first tick). */
-    public synchronized MaxOiBuildup currentMaxOi() {
-        if (state.latestByStrike == null || state.latestByStrike.isEmpty()) return null;
-        long maxCeOi = 0, ceStrike = 0;
-        long maxPeOi = 0, peStrike = 0;
-        for (Map.Entry<Long, long[]> e : state.latestByStrike.entrySet()) {
-            long[] latest = e.getValue();
-            if (latest == null) continue;
-            if (latest[0] > maxCeOi) { maxCeOi = latest[0]; ceStrike = e.getKey(); }
-            if (latest[1] > maxPeOi) { maxPeOi = latest[1]; peStrike = e.getKey(); }
-        }
-        return new MaxOiBuildup(buildSideMaxOi(ceStrike, true, maxCeOi),
-                                buildSideMaxOi(peStrike, false, maxPeOi));
-    }
-
-    private SideMaxOi buildSideMaxOi(long strike, boolean ce, long oi) {
-        if (strike == 0) return null;
-        long[] base = state.baselineByStrike == null ? null : state.baselineByStrike.get(strike);
-        long baseOi = base == null ? 0 : (ce ? base[0] : base[1]);
-        // baseOi=0 means baseline wasn't recorded yet for this side — leave ΔOI=0 so
-        // the controller renders it as "no signal" rather than the misleading full
-        // absolute OI as if it were today's change.
-        long oiChange = baseOi == 0 ? 0 : oi - baseOi;
-        String symbol = null;
-        if (state.windowSymbols != null) {
-            for (StrikeSymbols ss : state.windowSymbols) {
-                if (ss.strike() == strike) {
-                    symbol = ce ? ss.ceSymbol() : ss.peSymbol();
-                    break;
-                }
-            }
-        }
-        return new SideMaxOi(strike, symbol, oi, oiChange);
-    }
-
     public synchronized String biasLogLine() {
         if (state.baselineTakenAt == null) return "no-baseline-yet";
         String b = isStale() ? "STALE" : state.bias;
@@ -436,15 +396,6 @@ public class OptionOiTracker {
     }
 
     public record SampleRecord(String t, long cumCe, long cumPe, double ratio, String bias) {}
-
-    /** Per-side max-OI snapshot: the strike whose CE or PE OI tops the active window,
-     *  with its symbol + absolute OI + intraday ΔOI since 09:15. Controller adds the
-     *  LTP / ΔLTP% / buildup tag on read. */
-    public record SideMaxOi(long strike, String symbol, long oi, long oiChange) {}
-
-    /** Composite — both sides packaged together for one endpoint call. Either side
-     *  may be {@code null} if no OI ticks have been seen for that side yet. */
-    public record MaxOiBuildup(SideMaxOi ce, SideMaxOi pe) {}
 
     public record Snapshot(LocalDateTime baselineTakenAt,
                            LocalDateTime lastSampleAt,

@@ -53,7 +53,6 @@ public class SettingsController {
         result.put("portfolioMaxRiskPct",   riskSettings.getPortfolioMaxRiskPct(effectiveMode));
         result.put("portfolioMaxDailyLoss", riskSettings.getPortfolioMaxDailyLoss()); // derived ₹ for display
         result.put("moveSlToBreakevenEnabled", riskSettings.isMoveSlToBreakevenEnabled(effectiveMode));
-        result.put("h4BreakoutBuyingEnabled",  riskSettings.isH4BreakoutBuyingEnabled(effectiveMode));
         result.put("weeklyExpiryDayOfWeek",    riskSettings.getWeeklyExpiryDayOfWeek(effectiveMode));
         // Charges
         result.put("brokeragePerOrder",   riskSettings.getBrokeragePerOrder(effectiveMode));
@@ -99,7 +98,6 @@ public class SettingsController {
             if (body.containsKey("startingCapital"))     riskSettings.setStartingCapital(effectiveMode, Double.parseDouble(body.get("startingCapital").toString()));
             if (body.containsKey("portfolioMaxRiskPct")) riskSettings.setPortfolioMaxRiskPct(effectiveMode, Double.parseDouble(body.get("portfolioMaxRiskPct").toString()));
             if (body.containsKey("moveSlToBreakevenEnabled")) riskSettings.setMoveSlToBreakevenEnabled(effectiveMode, Boolean.parseBoolean(body.get("moveSlToBreakevenEnabled").toString()));
-            if (body.containsKey("h4BreakoutBuyingEnabled"))  riskSettings.setH4BreakoutBuyingEnabled(effectiveMode, Boolean.parseBoolean(body.get("h4BreakoutBuyingEnabled").toString()));
             if (body.containsKey("weeklyExpiryDayOfWeek"))    riskSettings.setWeeklyExpiryDayOfWeek(effectiveMode, body.get("weeklyExpiryDayOfWeek").toString());
             // Charges
             if (body.containsKey("brokeragePerOrder")) riskSettings.setBrokeragePerOrder(effectiveMode, Double.parseDouble(body.get("brokeragePerOrder").toString()));

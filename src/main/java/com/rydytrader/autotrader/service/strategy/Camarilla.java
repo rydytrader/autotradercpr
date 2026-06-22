@@ -92,15 +92,18 @@ public class Camarilla implements Strategy {
 
     public enum ActiveSetup {
         H3_REVERSAL,       // legacy SHORT setup (retired but enum value retained for DB compat)
-        L4_BREAKDOWN,      // SHORT — premium broke below L4
-        H4_BREAKOUT,       // LONG  — premium broke above H4 (V3 buying setup)
+        L4_BREAKDOWN,      // SHORT — bar crossed L4 downward (VWAP-confirmed)
+        H4_BREAKOUT,       // LONG  — retired buying setup (enum retained for DB compat)
+        VWAP_BREAKDOWN,    // SHORT — bar crossed VWAP downward (L4 was already broken earlier)
         MANUAL             // user-placed via Options Scalper Terminal — direction comes from caller
     }
 
     /** True for setups that take a SHORT (sell) position on entry. MANUAL is intentionally
      *  excluded — its direction is supplied by the caller, not derived from the setup tag. */
     private static boolean isShortSetup(ActiveSetup s) {
-        return s == ActiveSetup.L4_BREAKDOWN || s == ActiveSetup.H3_REVERSAL;
+        return s == ActiveSetup.L4_BREAKDOWN
+            || s == ActiveSetup.VWAP_BREAKDOWN
+            || s == ActiveSetup.H3_REVERSAL;
     }
 
     /** V2 watchlist role for each monitored option contract. ATM and ITM strikes only check
@@ -130,7 +133,6 @@ public class Camarilla implements Strategy {
     private final ObjectProvider<StrategyTradeRepository> tradeRepoProvider;
     private final ObjectProvider<CamarillaStreamBroker>   streamBrokerProvider;
     private final ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> oiTrackerProvider;
-    private final ObjectProvider<com.rydytrader.autotrader.service.OptionOiBuildupService> oiBuildupProvider;
     private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
 
     private volatile State state = new State();
@@ -146,8 +148,7 @@ public class Camarilla implements Strategy {
                      RiskSettingsStore riskSettings,
                      ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
                      ObjectProvider<CamarillaStreamBroker> streamBrokerProvider,
-                     ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> oiTrackerProvider,
-                     ObjectProvider<com.rydytrader.autotrader.service.OptionOiBuildupService> oiBuildupProvider) {
+                     ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> oiTrackerProvider) {
         this.camarillaService     = camarillaService;
         this.candleAggregator     = candleAggregator;
         this.atmTracker           = atmTracker;
@@ -159,7 +160,6 @@ public class Camarilla implements Strategy {
         this.tradeRepoProvider    = tradeRepoProvider;
         this.streamBrokerProvider = streamBrokerProvider;
         this.oiTrackerProvider    = oiTrackerProvider;
-        this.oiBuildupProvider    = oiBuildupProvider;
     }
 
     /** Push the latest dashboard state to every SSE-connected browser. No-op when no clients. */
@@ -360,6 +360,29 @@ public class Camarilla implements Strategy {
             }
             return out;
         }
+    }
+
+    /** Projected charges for currently-open MANUAL positions if the operator squared
+     *  off right now at the live LTP. Computed with the same brokerage / STT / GST /
+     *  SEBI / stamp formula as a real close cycle, so the Options Terminal header can
+     *  display a live cost-to-exit estimate while trades are still open (instead of
+     *  showing ₹0 until the first close lands). Skips positions where the entry price
+     *  or LTP isn't yet available — a fresh entry whose fill hasn't resolved still
+     *  shows ₹0 until both prices are known. */
+    public synchronized double projectedManualChargesForOpen() {
+        double total = 0;
+        for (Position p : state.openPositions.values()) {
+            if (p == null || p.setup != ActiveSetup.MANUAL) continue;
+            if (p.entryPrice <= 0 || p.qty <= 0) continue;
+            double ltp = 0;
+            try { ltp = marketDataService.getLtp(p.symbol); }
+            catch (Exception ignored) {}
+            if (ltp <= 0) continue;
+            double sellTurnover = (p.isShort ? p.entryPrice : ltp) * p.qty;
+            double buyTurnover  = (p.isShort ? ltp : p.entryPrice) * p.qty;
+            total += perCycleCharges(sellTurnover, buyTurnover);
+        }
+        return total;
     }
 
     /** Today's closed-trade ring filtered to {@code setup == MANUAL}. Returns deep copies
@@ -615,12 +638,15 @@ public class Camarilla implements Strategy {
     }
 
     private void processBar(List<EntryCandidate> bar) {
-        // V3: each (side × setup) cell holds at most one candidate — L4 breakdown shorts
-        // and H4 breakout longs are mutually exclusive on the same bar.
-        fireIfPresent(selectBySetup(bar, ActiveSetup.L4_BREAKDOWN, true));
-        fireIfPresent(selectBySetup(bar, ActiveSetup.L4_BREAKDOWN, false));
-        fireIfPresent(selectBySetup(bar, ActiveSetup.H4_BREAKOUT,  true));
-        fireIfPresent(selectBySetup(bar, ActiveSetup.H4_BREAKOUT,  false));
+        // Sell-only: at most one short per (setup × side). L4_BREAKDOWN and
+        // VWAP_BREAKDOWN are mutually exclusive on the same bar (the onCandleClose
+        // detector picks one based on which level was crossed), so a bar produces
+        // at most one candidate per side. Dispatching all four cells keeps the
+        // selector code uniform.
+        fireIfPresent(selectBySetup(bar, ActiveSetup.L4_BREAKDOWN,   true));
+        fireIfPresent(selectBySetup(bar, ActiveSetup.L4_BREAKDOWN,   false));
+        fireIfPresent(selectBySetup(bar, ActiveSetup.VWAP_BREAKDOWN, true));
+        fireIfPresent(selectBySetup(bar, ActiveSetup.VWAP_BREAKDOWN, false));
     }
 
     private EntryCandidate selectBySetup(List<EntryCandidate> bar, ActiveSetup setup, boolean ceSide) {
@@ -644,18 +670,14 @@ public class Camarilla implements Strategy {
         }
     }
 
-    // ── ATM change handler — V2 watchlist rebalance ─────────────────────────
+    // ── ATM change handler — session-open watchlist setup ─────────────────────
+    // With drift checks removed, this fires exactly once per session — on the
+    // open-price bootstrap from AtmTracker. The heartbeat path (oldAtm == newAtm)
+    // is gone with the drift loop.
 
     public synchronized void onAtmChange(AtmTracker.AtmChange ev) {
         long atm = ev.newAtm();
         if (atm <= 0) return;
-
-        // Drift-check heartbeat — AtmTracker fires this when the 30-min check ran but ATM did
-        // not move (oldAtm == newAtm). Log to confirm the system is alive, then skip rebalance.
-        if (ev.oldAtm() == ev.newAtm() && ev.oldAtm() > 0) {
-            event("[INFO]", "ATM", "Drift check — ATM unchanged at " + atm);
-            return;
-        }
 
         // V3 watchlist — L4-breakdown-only on the ATM strikes:
         //   ATM CE → ATM_L4 (L4 breakdown signals premium collapse on the call side)
@@ -733,19 +755,38 @@ public class Camarilla implements Strategy {
             // bar (a candle can't close both above H4 and below L4), so the if/else-if is
             // mathematically safe.
             if (role != WatchRole.ATM_L4) return;
+            // Algo strategy is sell-only — L4 breakdown short on the ATM CE/PE pair.
+            // Entry now requires confirmation from BOTH Camarilla L4 and the per-option
+            // session VWAP (Fyers avg_trade_price since 09:15 IST). Two trigger
+            // geometries, same regime, same setup tag / target / SL:
+            //   Scenario 1 — VWAP-cross: bar crossed VWAP downward (high >= VWAP &&
+            //                close < VWAP), L4 was already broken (close < L4).
+            //   Scenario 2 — L4-cross:   bar crossed L4 downward (high >= L4 && close
+            //                < L4), VWAP was above LTP (close < VWAP).
+            // VWAP=0 (no full-mode tick yet) blocks all entries — fail-safe.
+            double vwap = 0;
+            try { vwap = marketDataService.getVwap(symbol); }
+            catch (Exception ignored) {}
+
             EntryCandidate candidate = null;
-            // L4 breakdown: red bar touches L4 from above and closes back below.
-            if (c.isRed() && c.high() >= lv.l4() && c.close() < lv.l4()) {
-                candidate = new EntryCandidate(symbol, role, ActiveSetup.L4_BREAKDOWN,
-                    lv.l5(), lv.l3(), c);
-            }
-            // H4 breakout (V3 BUYING setup): green bar touches H4 from below and closes
-            // back above. Target = H5 (momentum extension), SL = H3 (one level below entry).
-            // Gated by the operator flag — when buying is disabled, this branch never fires.
-            else if (riskSettings.isH4BreakoutBuyingEnabled()
-                  && c.isGreen() && c.low() <= lv.h4() && c.close() > lv.h4()) {
-                candidate = new EntryCandidate(symbol, role, ActiveSetup.H4_BREAKOUT,
-                    lv.h5(), lv.h3(), c);
+            boolean baseRegime = c.isRed()
+                && c.close() < lv.l4()
+                && vwap > 0
+                && c.close() < vwap;
+            if (baseRegime) {
+                boolean crossedL4   = c.high() >= lv.l4();
+                boolean crossedVwap = c.high() >= vwap;
+                // L4 cross is the stronger Camarilla signal — when the bar crosses both
+                // L4 and VWAP in the same period, label it L4_BREAKDOWN. VWAP_BREAKDOWN
+                // fires only when L4 was broken earlier (close < L4 but bar didn't touch
+                // L4 this period) and VWAP gave way this bar.
+                if (crossedL4) {
+                    candidate = new EntryCandidate(symbol, role, ActiveSetup.L4_BREAKDOWN,
+                        lv.l5(), lv.l3(), c);
+                } else if (crossedVwap) {
+                    candidate = new EntryCandidate(symbol, role, ActiveSetup.VWAP_BREAKDOWN,
+                        lv.l5(), lv.l3(), c);
+                }
             }
             if (candidate == null) return;
 
@@ -825,35 +866,24 @@ public class Camarilla implements Strategy {
         try {
             com.rydytrader.autotrader.service.OptionOiTracker oiCheck = oiTrackerProvider == null ? null
                 : oiTrackerProvider.getIfAvailable();
-            if (oiCheck != null) {
+            // Sell-only algo: only the label-tolerant SHORT gate remains. The strict
+            // VERY_BULLISH / VERY_BEARISH gates that protected H4 buying are gone with
+            // the buying setup.
+            if (oiCheck != null && shortSetup && riskSettings.isCamarillaOiBiasFilterEnabled()) {
                 String bias = oiCheck.snapshot().bias();
-                if (shortSetup && riskSettings.isCamarillaOiBiasFilterEnabled()) {
-                    boolean bearishFamily = "BEARISH_BIAS".equals(bias)
-                        || "VERY_BEARISH_BIAS".equals(bias)
-                        || "STRONG_BEARISH_BIAS".equals(bias);   // legacy
-                    boolean bullishFamily = "BULLISH_BIAS".equals(bias)
-                        || "VERY_BULLISH_BIAS".equals(bias)
-                        || "STRONG_BULLISH_BIAS".equals(bias);   // legacy
-                    if (isCe && bullishFamily) {
-                        event("[WARNING]", "OiBias", "skipping CE short on " + symbol + " — bias=" + bias);
-                        return;
-                    }
-                    if (isPe && bearishFamily) {
-                        event("[WARNING]", "OiBias", "skipping PE short on " + symbol + " — bias=" + bias);
-                        return;
-                    }
+                boolean bearishFamily = "BEARISH_BIAS".equals(bias)
+                    || "VERY_BEARISH_BIAS".equals(bias)
+                    || "STRONG_BEARISH_BIAS".equals(bias);   // legacy
+                boolean bullishFamily = "BULLISH_BIAS".equals(bias)
+                    || "VERY_BULLISH_BIAS".equals(bias)
+                    || "STRONG_BULLISH_BIAS".equals(bias);   // legacy
+                if (isCe && bullishFamily) {
+                    event("[WARNING]", "OiBias", "skipping CE short on " + symbol + " — bias=" + bias);
+                    return;
                 }
-                if (!shortSetup) {
-                    if (isCe && !"VERY_BULLISH_BIAS".equals(bias)) {
-                        event("[WARNING]", "OiBias", symbol + " H4 BUY blocked — bias=" + bias
-                            + " (need VERY_BULLISH)");
-                        return;
-                    }
-                    if (isPe && !"VERY_BEARISH_BIAS".equals(bias)) {
-                        event("[WARNING]", "OiBias", symbol + " H4 BUY blocked — bias=" + bias
-                            + " (need VERY_BEARISH)");
-                        return;
-                    }
+                if (isPe && bearishFamily) {
+                    event("[WARNING]", "OiBias", "skipping PE short on " + symbol + " — bias=" + bias);
+                    return;
                 }
             }
         } catch (Exception ignored) {}
@@ -940,6 +970,7 @@ public class Camarilla implements Strategy {
         p.originalSlLevel = slLevel;     // frozen R reference for breakeven trigger
         p.breakevenMoved  = false;
         p.isShort         = shortSetup;
+        p.productType     = productType;   // algo entries: configured Camarilla product
         // Freeze the OI bias at entry — the analytics page splits trades by Strong
         // (with-trend) vs Weak (NEUTRAL/STALE/against) confirmation using this value.
         try {
@@ -982,7 +1013,8 @@ public class Camarilla implements Strategy {
      * @param stopLossPts  auto-SL distance in premium points; {@code 0} disables auto-SL
      */
     public ManualPlaceResult placeManual(String symbol, int side, int qty,
-                                         int orderType, double limitPrice, double stopLossPts) {
+                                         int orderType, double limitPrice, double stopLossPts,
+                                         String productType) {
         if (symbol == null || symbol.isBlank()) return ManualPlaceResult.err("symbol required");
         if (side != 1 && side != -1)            return ManualPlaceResult.err("side must be +1 or -1");
         if (qty <= 0)                           return ManualPlaceResult.err("qty must be > 0");
@@ -991,6 +1023,13 @@ public class Camarilla implements Strategy {
         if (!(stopLossPts > 0))                  return ManualPlaceResult.err("SL is required and must be greater than 0");
         if (stopLossPts > 50)                    return ManualPlaceResult.err("SL cannot exceed 50 points");
         if (!isEnabled())                       return ManualPlaceResult.err("trading kill switch is OFF");
+        // Normalize the product type from the JS dropdown ("OVERNIGHT"/"INTRADAY")
+        // into the Fyers token OrderService understands. Blank/unknown values fall
+        // back to the strategy default — never raise here, since the controller has
+        // already defaulted; this is a belt-and-braces guard.
+        String resolvedProductType = (productType == null || productType.isBlank())
+            ? riskSettings.getCamarillaOrderType()
+            : productType.trim();
 
         Object lock = symbolLocks.computeIfAbsent(symbol, k -> new Object());
         synchronized (lock) {
@@ -1010,6 +1049,10 @@ public class Camarilla implements Strategy {
                 } else {
                     return mergeReduce(existing, qty, orderType, limitPrice);
                 }
+                // Note: mergeAdd / mergeReduce intentionally reuse the EXISTING position's
+                // productType — Fyers nets legs only when the product matches the entry.
+                // The dropdown selection on the second order is ignored to avoid an
+                // accidental split into two separate positions at Fyers.
             }
 
             double entryLtp;
@@ -1025,23 +1068,18 @@ public class Camarilla implements Strategy {
                 return ManualPlaceResult.err("symbol LTP unavailable — wait for the feed and retry");
             }
 
-            String productType = riskSettings.getCamarillaOrderType();
             String sideWord = side == -1 ? "sell" : "buy";
 
             // OrderService.placeOrder treats stoploss=0 + orderType=2 as MARKET. For LMT we
-            // need to invoke the limit-order path. Inspect existing placeLimitOrder helper
-            // signatures during integration; if absent, fall back to placeOrder with a tagged
-            // payload. The simplest cross-version-safe path used by Camarilla today is
-            // placeOrder(symbol, qty, side, 0, productType) which posts MARKET; the LMT path
-            // is wired via the same OrderService method using the broker's order-type code.
+            // need to invoke the limit-order path. The product type came from the modal's
+            // INTRADAY / OVERNIGHT dropdown (resolved above) and is the same value persisted
+            // onto the Position for downstream add/reduce/close to reuse — required for
+            // Fyers to net the legs into one position.
             OrderDTO order;
             if (orderType == 2) {
-                order = orderService.placeOrder(symbol, qty, side, 0, productType);
+                order = orderService.placeOrder(symbol, qty, side, 0, resolvedProductType);
             } else {
-                // LMT — reuse the limit-order helper exposed by OrderService for trailing/
-                // bracket SL paths. If not available on this branch, the controller layer
-                // returns a descriptive error rather than silently posting a MARKET.
-                order = orderService.placeLimitOrder(symbol, qty, side, limitPrice, productType);
+                order = orderService.placeLimitOrder(symbol, qty, side, limitPrice, resolvedProductType);
             }
             if (order == null || order.getId() == null || order.getId().isEmpty()) {
                 event("[ERROR]", "MANUAL ENTRY", "order rejected for " + symbol
@@ -1080,6 +1118,7 @@ public class Camarilla implements Strategy {
             // every manual entry.
             p.breakevenMoved  = false;
             p.isShort         = (side == -1);
+            p.productType     = resolvedProductType;   // reused by mergeAdd/mergeReduce/closePosition
 
             try {
                 com.rydytrader.autotrader.service.OptionOiTracker oiAtEntry = oiTrackerProvider == null ? null
@@ -1120,7 +1159,12 @@ public class Camarilla implements Strategy {
         if (!(addEstimate > 0)) {
             return ManualPlaceResult.err("symbol LTP unavailable — wait for the feed and retry");
         }
-        String productType = riskSettings.getCamarillaOrderType();
+        // Reuse the entry's product type so Fyers nets the add-on into the same position.
+        // Falls back to the strategy default for legacy state files where productType
+        // is blank (predates the field).
+        String productType = (existing.productType == null || existing.productType.isBlank())
+            ? riskSettings.getCamarillaOrderType()
+            : existing.productType;
         OrderDTO order = (orderType == 2)
             ? orderService.placeOrder     (existing.symbol, addQty, side, 0, productType)
             : orderService.placeLimitOrder(existing.symbol, addQty, side, limitPrice, productType);
@@ -1165,7 +1209,11 @@ public class Camarilla implements Strategy {
             return ManualPlaceResult.err("reduce qty exceeds open qty — close + reopen to flip");
         }
         int closeSide = existing.isShort ? +1 : -1;   // SHORT closes via BUY, LONG via SELL
-        String productType = riskSettings.getCamarillaOrderType();
+        // Same product as the entry — required for Fyers to net the reduce against
+        // the original position rather than open a fresh opposing leg.
+        String productType = (existing.productType == null || existing.productType.isBlank())
+            ? riskSettings.getCamarillaOrderType()
+            : existing.productType;
         OrderDTO order = (orderType == 2)
             ? orderService.placeOrder     (existing.symbol, reduceQty, closeSide, 0, productType)
             : orderService.placeLimitOrder(existing.symbol, reduceQty, closeSide, limitPrice, productType);
@@ -1329,8 +1377,12 @@ public class Camarilla implements Strategy {
         // SHORT closes with a BUY (+1); LONG closes with a SELL (-1). CRITICAL: pass the
         // SAME productType used for the entry so Fyers nets the two legs. A MARGIN buy
         // against an INTRADAY short does NOT square off — they're treated as separate
-        // positions and the original entry stays open.
-        String productType = riskSettings.getCamarillaOrderType();
+        // positions and the original entry stays open. MANUAL trades carry their own
+        // productType (chosen from the modal dropdown); algo trades and legacy positions
+        // fall back to the strategy's configured Camarilla order type.
+        String productType = (p.productType == null || p.productType.isBlank())
+            ? riskSettings.getCamarillaOrderType()
+            : p.productType;
         int closeSide = p.isShort ? +1 : -1;
         OrderDTO close = orderService.placeExitOrder(symbol, p.qty, closeSide, productType);
         double exitPrice = 0;
@@ -1547,15 +1599,27 @@ public class Camarilla implements Strategy {
         m.put("watchlistSize",     state.symbolRole.size());
         m.put("watchlistRoles",    new LinkedHashMap<>(state.symbolRole));
 
-        // Max-OI buildup snapshot — feeds the two chips in the Live Positions
-        // header. Broker rebroadcasts dashboardState every ~2 s so the chips are
-        // near-real-time. The same payload is also served via the standalone
-        // GET /api/option-oi/max-buildup endpoint (used by direct REST consumers).
-        try {
-            com.rydytrader.autotrader.service.OptionOiBuildupService bs =
-                oiBuildupProvider == null ? null : oiBuildupProvider.getIfAvailable();
-            if (bs != null) m.put("maxOiBuildup", bs.currentEnriched());
-        } catch (Exception ignored) {}
+        // ATM CE + PE session VWAP — Fyers' avg_trade_price field, accumulated by NSE
+        // from 09:15. Feeds two chips next to the Max-OI ones in the Live Positions
+        // header so the operator can read each leg's session-average price at a glance.
+        // Walks the current watchlist roles (set up once at session open by the bootstrap
+        // ATM event) to find the CE and PE symbols.
+        Map<String, Object> vwap = new LinkedHashMap<>();
+        String ceSym = null, peSym = null;
+        for (Map.Entry<String, WatchRole> e : state.symbolRole.entrySet()) {
+            String sym = e.getKey();
+            if (sym == null) continue;
+            if (sym.endsWith("CE") && ceSym == null) ceSym = sym;
+            else if (sym.endsWith("PE") && peSym == null) peSym = sym;
+        }
+        vwap.put("ceSymbol", ceSym == null ? "" : ceSym);
+        vwap.put("peSymbol", peSym == null ? "" : peSym);
+        double ceVwap = 0, peVwap = 0;
+        try { if (ceSym != null) ceVwap = marketDataService.getVwap(ceSym); } catch (Exception ignored) {}
+        try { if (peSym != null) peVwap = marketDataService.getVwap(peSym); } catch (Exception ignored) {}
+        vwap.put("ceVwap", round2(ceVwap));
+        vwap.put("peVwap", round2(peVwap));
+        m.put("atmVwap", vwap);
 
         // Open positions list — each row carries its own LTP, MTM, target/SL levels.
         List<Map<String, Object>> rows = new ArrayList<>();
@@ -1676,6 +1740,13 @@ public class Camarilla implements Strategy {
          *  refreshUnresolvedFills then falls back to the fresh-entry overwrite path. */
         public int    preAddQty;
         public double preAddEntry;
+        /** Fyers product type used for the entry order ("INTRADAY" / "MARGIN" / "CNC").
+         *  Persisted so subsequent top-ups, reduces, and the auto-close use the SAME
+         *  product — required for Fyers to net the legs into one position. Defaults
+         *  to empty (""), and the close/adjust paths fall back to the strategy's
+         *  configured Camarilla order type when this is blank (covers algo positions
+         *  and legacy state files predating this field). */
+        public String productType = "";
     }
 
     /** Backward-compat overload — defaults source to "Strategy". */

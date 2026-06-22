@@ -286,6 +286,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         if (raw.high > 0) tick.setHigh(raw.high);
         if (raw.low > 0) tick.setLow(raw.low);
         if (raw.prevClose > 0) tick.setPrevClose(raw.prevClose);
+        // Fyers' avg_trade_price = session VWAP since market open. Stored as-is for the
+        // UI's per-strike VWAP display; no client-side accumulation needed.
+        if (raw.atp > 0) tick.setVwap(raw.atp);
         tick.setLastTickDate(today);
         tick.recalcChange();
         dirty = true;
@@ -636,6 +639,17 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
     public double getDisplayChangePct(String fyersSymbol) {
         TickData tick = currentTicks.get(fyersSymbol);
         return tick == null ? 0 : tick.getChangePercent();
+    }
+
+    /** Session VWAP for a symbol — Fyers' {@code avg_trade_price} field accumulated
+     *  by NSE from market open. Returns 0 when no full-mode tick has populated it
+     *  yet, or when the cached tick is from a prior session. */
+    public double getVwap(String fyersSymbol) {
+        TickData tick = currentTicks.get(fyersSymbol);
+        if (tick == null || tick.getVwap() <= 0) return 0;
+        String today = LocalDate.now(ZoneId.of("Asia/Kolkata")).toString();
+        if (tick.getLastTickDate() != null && !today.equals(tick.getLastTickDate())) return 0;
+        return tick.getVwap();
     }
 
     /** Seed prev-close + LTP for a symbol the WS hasn't ticked yet. Used by strategies to
