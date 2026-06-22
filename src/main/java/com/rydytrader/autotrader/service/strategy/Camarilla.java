@@ -897,11 +897,13 @@ public class Camarilla implements Strategy {
         catch (Exception e) { entryLtp = entryCandle.close(); }
         if (entryLtp <= 0) entryLtp = entryCandle.close();
 
-        // ── Risk-budget gate ──
-        // Compare (consumedRisk + exposedRisk + thisTradeRisk) against the portfolio daily
-        // risk cap. If full size won't fit, try halving the lot count once. If half still
-        // exceeds budget, skip the trade entirely. Bypassed when portfolio risk is disabled
-        // (maxRisk = 0) — operator hasn't opted in. R-per-share flips by direction.
+        // ── Risk-budget gate (best-fit shrink) ──
+        // Compare (consumedRisk + exposedRisk + thisTradeRisk) against the portfolio
+        // daily risk cap. If full size won't fit, shrink to the largest whole-lot
+        // count that DOES fit. Skip only when even 1 lot is over budget. Bypassed
+        // when maxRisk = 0 (operator hasn't opted in) or rPerShare ≤ 0 (Camarilla
+        // levels degenerate). R-per-share flips by direction. Max-lots is already
+        // baked in by construction — qty starts at camarillaLotsPerLeg × LOT_SIZE.
         double maxRisk = riskSettings.getPortfolioMaxDailyLoss();
         if (maxRisk > 0) {
             double rPerShare = shortSetup ? (slLevel - entryLtp) : (entryLtp - slLevel);
@@ -914,21 +916,22 @@ public class Camarilla implements Strategy {
                         + round2(fullRisk) + " ≤ headroom ₹" + round2(headroom)
                         + " (budget=₹" + round2(budget) + ", max=₹" + round2(maxRisk) + ")");
                 } else {
-                    int halvedLots = lots / 2;
-                    int halvedQty  = halvedLots * LOT_SIZE;
-                    double halvedRisk = rPerShare * halvedQty;
-                    if (halvedLots >= 1 && halvedRisk <= headroom) {
-                        qty = halvedQty;
-                        event("[WARNING]", "Sizing", symbol + " full risk ₹"
-                            + round2(fullRisk) + " > headroom ₹" + round2(headroom)
-                            + " — halving lots " + lots + " → " + halvedLots
-                            + " (new risk ₹" + round2(halvedRisk) + ")");
-                    } else {
-                        event("[ERROR]", "Sizing", symbol + " skipped — even halved risk ₹"
-                            + round2(halvedRisk) + " exceeds headroom ₹" + round2(headroom)
-                            + " (budget=₹" + round2(budget) + ", max=₹" + round2(maxRisk) + ")");
+                    long maxAffordableShares = (long) Math.floor(headroom / rPerShare);
+                    int  bestLots            = (int) (maxAffordableShares / LOT_SIZE);
+                    if (bestLots < 1) {
+                        event("[ERROR]", "Sizing", symbol + " skipped — 1 lot risk ₹"
+                            + round2(rPerShare * LOT_SIZE) + " > headroom ₹"
+                            + round2(headroom) + " (budget=₹" + round2(budget)
+                            + ", max=₹" + round2(maxRisk) + ")");
                         return;
                     }
+                    int  newQty  = bestLots * LOT_SIZE;
+                    double newRisk = rPerShare * newQty;
+                    event("[WARNING]", "Sizing", symbol + " downsized " + lots + "→" + bestLots
+                        + " lots — full risk ₹" + round2(fullRisk)
+                        + " > headroom ₹" + round2(headroom)
+                        + ", new risk ₹" + round2(newRisk));
+                    qty = newQty;
                 }
             }
         }
@@ -1068,6 +1071,60 @@ public class Camarilla implements Strategy {
                 return ManualPlaceResult.err("symbol LTP unavailable — wait for the feed and retry");
             }
 
+            // ── Stage 1: max-lots hard cap from settings ──
+            // camarillaLotsPerLeg is the single source of truth for "lots per trade"
+            // (the algo path already derives qty from it). Cap modal-requested lots
+            // to this ceiling — independent of budget. Defensive >0 guard treats a
+            // zero/unset value as "no cap" (the setter floors at 1 today, but the
+            // guard documents intent).
+            int maxLots = riskSettings.getCamarillaLotsPerLeg();
+            if (maxLots > 0) {
+                int requestedLots = qty / LOT_SIZE;
+                if (requestedLots > maxLots) {
+                    event("[WARNING]", "MANUAL ENTRY",
+                        symbol + " capped " + requestedLots + "→" + maxLots
+                        + " lots — maxLots setting (camarillaLotsPerLeg=" + maxLots + ")");
+                    qty = maxLots * LOT_SIZE;
+                }
+            }
+
+            // ── Stage 2: portfolio risk-budget shrink (best-fit) ──
+            // If the trade's R-at-risk (stopLossPts × qty) would push consumed+exposed
+            // risk past the cap, shrink to the largest whole-lot count that fits.
+            // Reject only when even 1 lot doesn't fit. Bypassed when maxRisk=0 (not
+            // opted in). The shrink output is bounded by Stage 1's cap by construction
+            // (shrink only decreases), so the placed qty is always ≤ maxLots.
+            double maxRisk = riskSettings.getPortfolioMaxDailyLoss();
+            if (maxRisk > 0) {
+                double consumed  = consumedRiskNow();
+                double exposed   = exposedRiskNow();
+                double headroom  = maxRisk - consumed - exposed;
+                double tradeRisk = stopLossPts * qty;
+                if (tradeRisk > headroom) {
+                    long maxAffordableShares = (long) Math.floor(headroom / stopLossPts);
+                    int  bestLots            = (int) (maxAffordableShares / LOT_SIZE);
+                    if (bestLots < 1) {
+                        event("[ERROR]", "MANUAL ENTRY",
+                            symbol + " rejected — 1 lot risk ₹"
+                            + round2(stopLossPts * LOT_SIZE) + " > headroom ₹"
+                            + round2(headroom) + " (consumed=₹" + round2(consumed)
+                            + ", exposed=₹" + round2(exposed) + ", max=₹" + round2(maxRisk) + ")");
+                        return ManualPlaceResult.err("even 1 lot (₹"
+                            + round2(stopLossPts * LOT_SIZE) + " risk) exceeds portfolio headroom ₹"
+                            + round2(headroom) + " — raise the daily loss cap or wait for losses to roll off");
+                    }
+                    int currentLots = qty / LOT_SIZE;
+                    if (bestLots < currentLots) {
+                        event("[WARNING]", "MANUAL ENTRY",
+                            symbol + " downsized " + currentLots + "→" + bestLots
+                            + " lots — full risk ₹" + round2(tradeRisk)
+                            + " > headroom ₹" + round2(headroom)
+                            + ", new risk ₹" + round2(stopLossPts * bestLots * LOT_SIZE));
+                        qty = bestLots * LOT_SIZE;
+                    }
+                }
+            }
+
             String sideWord = side == -1 ? "sell" : "buy";
 
             // OrderService.placeOrder treats stoploss=0 + orderType=2 as MARKET. For LMT we
@@ -1159,6 +1216,71 @@ public class Camarilla implements Strategy {
         if (!(addEstimate > 0)) {
             return ManualPlaceResult.err("symbol LTP unavailable — wait for the feed and retry");
         }
+
+        // ── Stage 1: total-position max-lots cap ──
+        // The cap is on TOTAL lots after the add (existing + add ≤ maxLots), not just
+        // the add itself — otherwise an operator could tap +1 lot indefinitely past
+        // the ceiling. When the requested add would exceed the total cap, shrink it
+        // to whatever capacity remains. If no capacity remains, reject.
+        int maxLots = riskSettings.getCamarillaLotsPerLeg();
+        if (maxLots > 0) {
+            int existingLots     = existing.qty / LOT_SIZE;
+            int requestedAddLots = addQty / LOT_SIZE;
+            if (existingLots + requestedAddLots > maxLots) {
+                int allowedAddLots = Math.max(0, maxLots - existingLots);
+                if (allowedAddLots == 0) {
+                    event("[ERROR]", "MANUAL ENTRY",
+                        existing.symbol + " add rejected — already at maxLots ("
+                        + existingLots + "/" + maxLots + ")");
+                    return ManualPlaceResult.err("position already at maxLots ("
+                        + existingLots + "/" + maxLots + ") — raise the setting or close first");
+                }
+                event("[WARNING]", "MANUAL ENTRY",
+                    existing.symbol + " add capped " + requestedAddLots + "→" + allowedAddLots
+                    + " lots — total would exceed maxLots (" + existingLots + " open + "
+                    + requestedAddLots + " requested > " + maxLots + ")");
+                addQty = allowedAddLots * LOT_SIZE;
+            }
+        }
+
+        // ── Stage 2: portfolio risk-budget shrink (best-fit) ──
+        // Marginal new risk = existing position's SL-distance × addQty (the new shares
+        // face the same SL trigger that's already set). exposedRiskNow already counts
+        // the existing position's risk, so the headroom comparison is just the delta.
+        // Shrink to best-fit instead of outright reject; reject only when even 1 added
+        // lot doesn't fit.
+        double existingRPerShare = (!Double.isNaN(existing.slLevel) && existing.entryPrice > 0)
+            ? Math.abs(existing.slLevel - existing.entryPrice) : 0;
+        double maxRisk = riskSettings.getPortfolioMaxDailyLoss();
+        if (maxRisk > 0 && existingRPerShare > 0) {
+            double consumed = consumedRiskNow();
+            double exposed  = exposedRiskNow();
+            double headroom = maxRisk - consumed - exposed;
+            double addRisk  = existingRPerShare * addQty;
+            if (addRisk > headroom) {
+                long maxAffordableShares = (long) Math.floor(headroom / existingRPerShare);
+                int  bestLots            = (int) (maxAffordableShares / LOT_SIZE);
+                if (bestLots < 1) {
+                    event("[ERROR]", "MANUAL ENTRY",
+                        existing.symbol + " add rejected — 1 lot add-risk ₹"
+                        + round2(existingRPerShare * LOT_SIZE) + " > headroom ₹"
+                        + round2(headroom) + " (consumed=₹" + round2(consumed)
+                        + ", exposed=₹" + round2(exposed) + ", max=₹" + round2(maxRisk) + ")");
+                    return ManualPlaceResult.err("even 1 lot add (₹"
+                        + round2(existingRPerShare * LOT_SIZE) + " risk) exceeds portfolio headroom ₹"
+                        + round2(headroom) + " — raise the daily loss cap or close existing first");
+                }
+                int currentAddLots = addQty / LOT_SIZE;
+                if (bestLots < currentAddLots) {
+                    event("[WARNING]", "MANUAL ENTRY",
+                        existing.symbol + " add downsized " + currentAddLots + "→" + bestLots
+                        + " lots — full add-risk ₹" + round2(addRisk)
+                        + " > headroom ₹" + round2(headroom));
+                    addQty = bestLots * LOT_SIZE;
+                }
+            }
+        }
+
         // Reuse the entry's product type so Fyers nets the add-on into the same position.
         // Falls back to the strategy default for legacy state files where productType
         // is blank (predates the field).
