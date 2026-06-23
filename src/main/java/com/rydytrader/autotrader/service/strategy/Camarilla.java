@@ -344,8 +344,12 @@ public class Camarilla implements Strategy {
         try {
             StrategyTradeRepository repo = tradeRepoProvider == null ? null : tradeRepoProvider.getIfAvailable();
             if (repo != null) {
-                dbCleared = repo.count();
-                repo.deleteAllInBatch();
+                // Use the explicit JPQL @Modifying + @Transactional delete (deleteAllRows)
+                // instead of deleteAllInBatch() — the explicit version reliably opens its own
+                // transaction when called from this non-@Transactional service method, while
+                // deleteAllInBatch was silently no-op'ing without a wrapping tx.
+                dbCleared = repo.deleteAllRows();
+                log.warn("[Camarilla] clearAllRecords — DB deleteAllRows wiped {} rows", dbCleared);
             }
         } catch (Exception e) {
             log.warn("[Camarilla] clearAllRecords DB wipe failed: {}", e.getMessage());
