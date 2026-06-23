@@ -96,6 +96,13 @@ public class Camarilla implements Strategy {
      *  so this constant never drifts from the aggregator's actual cadence. */
     private static final long BAR_LENGTH_MS =
         com.rydytrader.autotrader.service.CandleAggregator.BUCKET_MINUTES * 60_000L;
+    /** v2 two-candle entry — maximum bars a pending confirmation may sit in its
+     *  slot without a trigger or invalidation. Six bars × 5 min ≈ 30 min: by
+     *  that point the confirmation candle's geometry no longer reflects current
+     *  market structure, so the pending is nullified and we hunt for a fresh
+     *  confirmation on subsequent bars. Tuneable via {@link #MAX_PENDING_BARS}
+     *  if signal noise warrants a different window. */
+    private static final int MAX_PENDING_BARS = 6;
 
     public enum ActiveSetup {
         // v2 setups — all triggered on the NIFTY near-month FUTURES 5-min bar close,
@@ -129,16 +136,7 @@ public class Camarilla implements Strategy {
      *  {@link State#symbolRole} so re-subscribed positions inherit it across restarts. */
     public enum WatchRole { ATM_L4, ITM_L4, OTM_H3 }
 
-    /** A buffered entry candidate waiting for end-of-bar tiebreaker selection. */
-    private record EntryCandidate(String symbol, WatchRole role, ActiveSetup setup,
-                                  double targetLevel, double slLevel, Candle candle) {
-        boolean isCe() { return symbol != null && symbol.endsWith("CE"); }
-        boolean isPe() { return symbol != null && symbol.endsWith("PE"); }
-    }
 
-    /** Per-bar candidate buffer. Key = candle.startMillis (the bar's opening tick timestamp).
-     *  Drained by the fast-tick scheduler after {@link #BAR_PROCESSING_GRACE_MS}. */
-    private final Map<Long, List<EntryCandidate>> pendingByBar = new ConcurrentHashMap<>();
 
     private final CamarillaService      camarillaService;
     private final CandleAggregator      candleAggregator;
@@ -163,8 +161,6 @@ public class Camarilla implements Strategy {
     private volatile State state = new State();
     private final Map<String, Object> symbolLocks = new ConcurrentHashMap<>();
 
-    private final com.rydytrader.autotrader.service.FuturesSymbolResolver futuresSymbolResolver;
-
     public Camarilla(CamarillaService camarillaService,
                      CandleAggregator candleAggregator,
                      AtmTracker atmTracker,
@@ -173,7 +169,6 @@ public class Camarilla implements Strategy {
                      OrderService orderService,
                      EventService eventService,
                      RiskSettingsStore riskSettings,
-                     com.rydytrader.autotrader.service.FuturesSymbolResolver futuresSymbolResolver,
                      ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
                      ObjectProvider<CamarillaStreamBroker> streamBrokerProvider,
                      ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> oiTrackerProvider) {
@@ -185,7 +180,6 @@ public class Camarilla implements Strategy {
         this.orderService         = orderService;
         this.eventService         = eventService;
         this.riskSettings         = riskSettings;
-        this.futuresSymbolResolver = futuresSymbolResolver;
         this.tradeRepoProvider    = tradeRepoProvider;
         this.streamBrokerProvider = streamBrokerProvider;
         this.oiTrackerProvider    = oiTrackerProvider;
@@ -323,6 +317,56 @@ public class Camarilla implements Strategy {
      *  <p>Open positions are deliberately left running — they're still live at the broker;
      *  the bot needs to keep managing their SL / squareoff. Use this only to reset
      *  reporting/analytics state, typically after a test session before going live. */
+    /** Wipe ALL recorded trades + ALL event-log entries + EVERY DB row. Open
+     *  positions are preserved (same convention as {@link #clearTodayRecords}).
+     *  Used by Settings → Maintenance → Clear ALL Records for a hard reset after
+     *  a test run. Irreversible. */
+    public synchronized Map<String, Object> clearAllRecords() {
+        int cyclesCleared = state.todayClosedTrades.size();
+        state.todayClosedTrades.clear();
+
+        int prevTradesToday      = state.tradesToday;
+        int prevConsecutiveLoss  = state.consecutiveLosses;
+        state.tradesToday        = 0;
+        state.consecutiveLosses  = 0;
+
+        int eventsCleared = state.recentEvents.size();
+        state.recentEvents.clear();
+
+        // Also drop pending two-candle confirmations — without trades or events
+        // backing them up, surviving pendings are misleading.
+        state.pendingBullish = null;
+        state.pendingBearish = null;
+
+        saveToDisk();
+
+        long dbCleared = 0;
+        try {
+            StrategyTradeRepository repo = tradeRepoProvider == null ? null : tradeRepoProvider.getIfAvailable();
+            if (repo != null) {
+                dbCleared = repo.count();
+                repo.deleteAllInBatch();
+            }
+        } catch (Exception e) {
+            log.warn("[Camarilla] clearAllRecords DB wipe failed: {}", e.getMessage());
+        }
+
+        event("[WARNING]", "Maintenance",
+            "Cleared ALL records — cycles=" + cyclesCleared
+            + " events=" + eventsCleared
+            + " dbRows=" + dbCleared
+            + " (open positions preserved)");
+        log.warn("[Camarilla] clearAllRecords — cycles={} events={} dbRows={} prevTradesToday={} prevConsLoss={}",
+            cyclesCleared, eventsCleared, dbCleared, prevTradesToday, prevConsecutiveLoss);
+        publishStream();
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("cyclesCleared", cyclesCleared);
+        out.put("eventsCleared", eventsCleared);
+        out.put("dbCleared",     dbCleared);
+        return out;
+    }
+
     public synchronized Map<String, Object> clearTodayRecords() {
         int cyclesCleared = state.todayClosedTrades.size();
         state.todayClosedTrades.clear();
@@ -569,7 +613,7 @@ public class Camarilla implements Strategy {
         if (state.openPositions.isEmpty()) return;
 
         // ── v2 risk gate: exposed > maxRisk → force-close everything ──
-        double maxRisk = riskSettings.getCamarillaMaxRisk();
+        double maxRisk = riskSettings.getPortfolioMaxDailyLoss();
         if (maxRisk > 0 && !state.dailyLossLockout) {
             double exposed = exposedRiskNow();
             if (exposed > maxRisk) {
@@ -598,48 +642,6 @@ public class Camarilla implements Strategy {
             try { triggerLtp = marketDataService.getLtp(triggerSrc); }
             catch (Exception e) { continue; }
             if (triggerLtp <= 0) continue;
-
-            // BREAKEVEN trigger.
-            // v2: 1R favorable on futures → slFutures = entryFutures (and mirror to slLevel
-            //     for downstream display + risk math).
-            // v1: 1R favorable on option premium → slLevel = entryPrice (legacy behaviour).
-            if (riskSettings.isMoveSlToBreakevenEnabled() && !p.breakevenMoved && p.setup != ActiveSetup.MANUAL) {
-                double refSl, refEntry, favorMove, r;
-                if (v2) {
-                    refSl    = p.slFutures;
-                    refEntry = p.entryFutures;
-                    r        = Math.abs(refSl - refEntry);
-                    favorMove = p.isShort ? (refEntry - triggerLtp) : (triggerLtp - refEntry);
-                } else {
-                    refSl    = p.originalSlLevel > 0 ? p.originalSlLevel : p.slLevel;
-                    refEntry = p.entryPrice;
-                    r        = Math.abs(refSl - refEntry);
-                    favorMove = p.isShort ? (refEntry - triggerLtp) : (triggerLtp - refEntry);
-                }
-                if (r > 0 && favorMove >= r) {
-                    Object beLock = symbolLocks.computeIfAbsent(symbol, k -> new Object());
-                    synchronized (beLock) {
-                        Position p2 = state.openPositions.get(symbol);
-                        if (p2 != null && !p2.breakevenMoved) {
-                            double oldSl = v2 ? p2.slFutures : p2.slLevel;
-                            if (v2) {
-                                p2.slFutures = p2.entryFutures;
-                                p2.slLevel   = p2.entryFutures;   // mirror for display + exposed-risk math
-                            } else {
-                                p2.slLevel = p2.entryPrice;
-                            }
-                            p2.breakevenMoved = true;
-                            p2.slBreachStreak = 0;
-                            event("[INFO]", "AUTO SL", symbol + " " + p2.setup
-                                + " SL → breakeven — trigger=" + round2(triggerLtp)
-                                + (v2 ? " entryFut=" : " entry=") + round2(refEntry)
-                                + " R=" + round2(r)
-                                + " (was " + round2(oldSl) + ")");
-                            saveToDisk();
-                        }
-                    }
-                }
-            }
 
             // Direction-aware comparisons. SHORT: target BELOW, SL ABOVE. LONG: flipped.
             double targetRef = v2 ? p.targetFutures : p.targetLevel;
@@ -683,44 +685,11 @@ public class Camarilla implements Strategy {
         }
     }
 
-    // ── V2 bar-candidate drain + tiebreaker ─────────────────────────────────
-
-    /** Process any bar whose grace window has elapsed. For each bar, group candidates by side
-     *  (CE/PE) and setup, apply the L4 tiebreaker (ATM_L4 preferred over ITM_L4), and fire the
-     *  selected candidate(s). Fired bar entries are removed from the buffer. */
-    private void drainPendingBars() {
-        if (pendingByBar.isEmpty()) return;
-        long now = System.currentTimeMillis();
-        // Iterate via snapshot to allow safe removal.
-        for (Long barStart : new ArrayList<>(pendingByBar.keySet())) {
-            long barCloseDeadline = barStart + BAR_LENGTH_MS + BAR_PROCESSING_GRACE_MS;
-            if (now < barCloseDeadline) continue;
-            List<EntryCandidate> bar = pendingByBar.remove(barStart);
-            if (bar == null || bar.isEmpty()) continue;
-            processBar(bar);
-        }
-    }
-
-    private void processBar(List<EntryCandidate> bar) {
-        // v2: detectFuturesSetup returns at most one candidate per bar, so the buffer
-        // typically has a single entry. Walk it and fire the first eligible candidate —
-        // no per-side / per-setup dispatch needed (the four setups are mutually
-        // exclusive on the futures bar by construction).
-        for (EntryCandidate cand : bar) {
-            fireIfPresent(cand);
-        }
-    }
-
-    private void fireIfPresent(EntryCandidate cand) {
-        if (cand == null) return;
-        // Lock on the FUTURES trigger symbol — the position itself will be keyed on the
-        // option leg, but the lock prevents two same-bar candidates from racing.
-        Object lock = symbolLocks.computeIfAbsent(cand.symbol(), k -> new Object());
-        synchronized (lock) {
-            if (!canFireNewEntry()) return;
-            fire(cand.symbol(), cand.setup(), cand.targetLevel(), cand.slLevel(), cand.candle());
-        }
-    }
+    // ── V2 two-candle entry — no buffering needed ──────────────────────────
+    // The new model evaluates trigger/invalidation/detection inline inside
+    // onCandleClose. The fast-tick scheduler still calls drainPendingBars()
+    // every poll, so this stays as a no-op for back-compat.
+    private void drainPendingBars() { /* retired in v2 two-candle entry */ }
 
     // ── ATM change handler — session-open watchlist setup ─────────────────────
     // With drift checks removed, this fires exactly once per session — on the
@@ -732,17 +701,19 @@ public class Camarilla implements Strategy {
         if (atm <= 0) return;
 
         // v2 watchlist —
-        //   1. NIFTY near-month FUTURE: subscribed for the 5-min candle trigger feed.
+        //   1. NIFTY SPOT INDEX: subscribed for the 5-min candle trigger feed.
         //   2. ATM−50 PUT + ATM+50 CALL: subscribed for live LTPs so the trade legs
         //      are quote-ready the instant a setup fires. We don't aggregate candles
         //      on them — they're trade targets only.
         // The previous v1 per-strike ATM CE/PE watchlist is fully retired.
-        String futuresSym = futuresSymbolResolver.nearMonthNiftyFuture();
-        state.futuresSymbol = futuresSym;
-        candleAggregator.subscribe(futuresSym, c -> onCandleClose(futuresSym, c));
+        // Field names kept (futuresSymbol, entryFutures, slFutures, …) for state-file
+        // compatibility; the values they hold are SPOT prices now, not futures.
+        String triggerSym = NIFTY_SYMBOL;   // "NSE:NIFTY50-INDEX"
+        state.futuresSymbol = triggerSym;
+        candleAggregator.subscribe(triggerSym, c -> onCandleClose(triggerSym, c));
 
         Map<String, WatchRole> newRoles = new LinkedHashMap<>();
-        newRoles.put(futuresSym, WatchRole.ATM_L4);   // re-uses existing enum value, semantics changed
+        newRoles.put(triggerSym, WatchRole.ATM_L4);   // re-uses existing enum value, semantics changed
 
         // Pre-subscribe the two OTM trade legs so live LTPs are warm before fire().
         BalancedAtmSelector.StrikeAtLevel putRow  = atmSelector.resolveStrikeAtLevel(atm - STRIKE_STEP);
@@ -754,7 +725,7 @@ public class Camarilla implements Strategy {
             try { marketDataService.subscribeAdditional(tradeLegs); }
             catch (Exception ignored) {}
         }
-        try { marketDataService.subscribeAdditional(java.util.Collections.singletonList(futuresSym)); }
+        try { marketDataService.subscribeAdditional(java.util.Collections.singletonList(triggerSym)); }
         catch (Exception ignored) {}
 
         // Retire any contract from a previous v1 watchlist that's not in the new one
@@ -768,13 +739,13 @@ public class Camarilla implements Strategy {
         state.symbolRole.clear();
         state.symbolRole.putAll(newRoles);
 
-        // Fetch Camarilla levels for the futures symbol itself (its own prior-day OHLC).
+        // Fetch Camarilla levels for the spot symbol's prior-day OHLC.
         // getLevels triggers an async refresh on cache-miss; the first call returns null,
         // but the detector tolerates that (skips bar until levels arrive).
-        camarillaService.getLevels(futuresSym);
+        camarillaService.getLevels(triggerSym);
 
         String tag = ev.oldAtm() < 0 ? "boot" : String.valueOf(ev.oldAtm());
-        event("[INFO]", "ATM", "ATM " + tag + " → " + atm + " | future=" + futuresSym
+        event("[INFO]", "ATM", "ATM " + tag + " → " + atm + " | trigger=" + triggerSym
             + " | PUT leg=" + (tradeLegs.isEmpty() ? "—" : tradeLegs.get(0))
             + " | CALL leg=" + (tradeLegs.size() > 1 ? tradeLegs.get(1) : "—"));
         saveToDisk();
@@ -789,100 +760,146 @@ public class Camarilla implements Strategy {
             rolloverIfNewDay();
             if (state.doneForDay) return;
 
-            // v2: bar arrives from the NIFTY near-month futures subscription. Entry detection
-            // ignores any other symbol — option-leg subscriptions only feed live LTP, not bars.
-            String futuresSym = state.futuresSymbol;
-            if (futuresSym == null || futuresSym.isBlank()) return;
-            if (!futuresSym.equals(symbol)) return;
+            // v2: bar arrives from the NIFTY spot subscription. Entry detection
+            // ignores any other symbol — option-leg subscriptions only feed live LTP.
+            String triggerSym = state.futuresSymbol;
+            if (triggerSym == null || triggerSym.isBlank()) return;
+            if (!triggerSym.equals(symbol)) return;
 
-            // Session lockout from the v2 risk gate — once consumed or exposed risk crosses
-            // camarillaMaxRisk, no new entries fire for the rest of the day.
+            // Session lockout from the v2 risk gate.
             if (state.dailyLossLockout) return;
-
-            // ── Entry check ──
             if (!canFireNewEntry()) return;
-            CamarillaLevels lv = camarillaService.getLevels(futuresSym);
-            if (lv == null) {
-                // Warm-up in progress — skip; we'll try again next bar.
-                return;
+            CamarillaLevels lv = camarillaService.getLevels(triggerSym);
+            if (lv == null) return;   // levels warming up
+
+            // ── Two-candle entry model — three-phase walk on the current bar ──
+            // 0) staleness expiry (any pending older than MAX_PENDING_BARS clears)
+            // 1) trigger check (against any pending confirmation in either slot)
+            // 2) invalidation check (only if nothing triggered in that slot)
+            // 3) new-confirmation detection (only if no trade fired this bar)
+            // Then persist. Order matters: trigger before invalidate (prevents a
+            // bar that breaks the far extreme from being dropped); detect last so
+            // a strong same-bar can't immediately replace a triggered pending.
+
+            // --- Phase 0: STALENESS EXPIRY ---
+            // A pending that's been sitting in its slot for more than
+            // MAX_PENDING_BARS bars without a trigger or invalidation is
+            // geometrically obsolete — the structural levels it captured no
+            // longer reflect current market state. Clear it before evaluating
+            // triggers so a stale-and-suddenly-valid bar can't fire a stale
+            // trade. Six bars get a full chance to trigger / invalidate; on the
+            // 7th, the pending expires.
+            long maxPendingAgeMs = MAX_PENDING_BARS * BAR_LENGTH_MS;
+            if (state.pendingBullish != null
+                && c.startMillis() - state.pendingBullish.barStartMs > maxPendingAgeMs) {
+                event("[INFO]", "Setup", state.pendingBullish.setup
+                    + " confirmation expired — " + MAX_PENDING_BARS
+                    + " bars without trigger or invalidation");
+                state.pendingBullish = null;
+            }
+            if (state.pendingBearish != null
+                && c.startMillis() - state.pendingBearish.barStartMs > maxPendingAgeMs) {
+                event("[INFO]", "Setup", state.pendingBearish.setup
+                    + " confirmation expired — " + MAX_PENDING_BARS
+                    + " bars without trigger or invalidation");
+                state.pendingBearish = null;
             }
 
-            // VWAP for the futures contract. Same Fyers atp source as v1 used for
-            // options. When the operator turns the VWAP filter off in settings, we
-            // skip the "must have a full-mode tick" gate and pass vwap=0 through so
-            // the detector treats setups as direction-agnostic.
-            double vwap = 0;
-            try { vwap = marketDataService.getVwap(futuresSym); }
-            catch (Exception ignored) {}
-            boolean vwapFilterOn = riskSettings.isCamarillaVwapFilterEnabled();
-            if (vwapFilterOn && vwap <= 0) return;   // fail-safe — pre-tick gap
+            boolean firedThisBar = false;
 
-            EntryCandidate candidate = detectFuturesSetup(futuresSym, c, lv, vwap, vwapFilterOn);
-            if (candidate == null) return;
+            // --- Phase 1: TRIGGER ---
+            PendingConfirmation pb = state.pendingBullish;
+            if (pb != null && c.isGreen() && c.close() > pb.confirmHigh) {
+                event("[INFO]", "Setup", pb.setup + " trigger — green close "
+                    + round2(c.close()) + " > confirmHigh " + round2(pb.confirmHigh)
+                    + " (SL=" + round2(pb.confirmLow) + ", target=" + round2(pb.targetLevel) + ")");
+                fire(triggerSym, pb.setup, pb.targetLevel, pb.confirmLow, c);
+                state.pendingBullish = null;
+                firedThisBar = true;
+            }
+            PendingConfirmation pr = state.pendingBearish;
+            if (pr != null && c.isRed() && c.close() < pr.confirmLow) {
+                event("[INFO]", "Setup", pr.setup + " trigger — red close "
+                    + round2(c.close()) + " < confirmLow " + round2(pr.confirmLow)
+                    + " (SL=" + round2(pr.confirmHigh) + ", target=" + round2(pr.targetLevel) + ")");
+                fire(triggerSym, pr.setup, pr.targetLevel, pr.confirmHigh, c);
+                state.pendingBearish = null;
+                firedThisBar = true;
+            }
 
-            // Buffer the candidate — fast scheduler drains after BAR_PROCESSING_GRACE_MS.
-            pendingByBar
-                .computeIfAbsent(c.startMillis(), k -> new CopyOnWriteArrayList<>())
-                .add(candidate);
+            // --- Phase 2: INVALIDATION ---
+            // Only check on slots that didn't trigger above. Bullish invalidates
+            // when close < confirmLow; bearish invalidates when close > confirmHigh.
+            if (state.pendingBullish != null && c.close() < state.pendingBullish.confirmLow) {
+                event("[INFO]", "Setup", state.pendingBullish.setup
+                    + " confirmation nullified — close " + round2(c.close())
+                    + " < confirmLow " + round2(state.pendingBullish.confirmLow));
+                state.pendingBullish = null;
+            }
+            if (state.pendingBearish != null && c.close() > state.pendingBearish.confirmHigh) {
+                event("[INFO]", "Setup", state.pendingBearish.setup
+                    + " confirmation nullified — close " + round2(c.close())
+                    + " > confirmHigh " + round2(state.pendingBearish.confirmHigh));
+                state.pendingBearish = null;
+            }
+
+            // --- Phase 3: NEW CONFIRMATION ---
+            // Skip if we already fired a trade this bar (don't seed a fresh pending
+            // immediately after a fill — the existing skip-if-open guard would
+            // suppress any same-bar trigger anyway).
+            if (!firedThisBar) {
+                PendingConfirmation fresh = detectConfirmation(c, lv);
+                if (fresh != null) {
+                    boolean bullish = isBullishBet(fresh.setup);
+                    PendingConfirmation prev = bullish ? state.pendingBullish : state.pendingBearish;
+                    if (prev != null && prev.setup != fresh.setup) {
+                        event("[INFO]", "Setup", prev.setup + " replaced by " + fresh.setup
+                            + " (same direction, fresher level)");
+                    }
+                    String tag = bullish ? "BULLISH" : "BEARISH";
+                    event("[INFO]", "Setup", fresh.setup + " confirmation recorded — "
+                        + tag + " bar [H=" + round2(fresh.confirmHigh)
+                        + ", L=" + round2(fresh.confirmLow) + "], target=" + round2(fresh.targetLevel));
+                    if (bullish) state.pendingBullish = fresh;
+                    else         state.pendingBearish = fresh;
+                }
+            }
+
+            saveToDisk();
         }
     }
 
-    /** v2 — Four-setup detector on a single NIFTY-futures bar close.
-     *
-     *  <p>Reversal precedence over breakout: a green bar that wicks below L3 AND
-     *  closes above H4 in the same bar will be tagged L3_REVERSAL (the rarer
-     *  structural signal). Same for the mirror case on the bearish side.
-     *
-     *  <p>Returns null when no setup matches OR the VWAP direction gate fails.
-     *  {@code targetLevel} and {@code slLevel} on the returned candidate are
-     *  FUTURES PRICES — fire() copies them to the Position's
-     *  {@code targetFutures} / {@code slFutures} fields. */
-    private EntryCandidate detectFuturesSetup(String futuresSym, Candle c,
-                                              CamarillaLevels lv, double vwap,
-                                              boolean vwapFilterOn) {
+    /** v2 two-candle entry — detect whether the bar c is a CONFIRMATION candle for
+     *  one of the four setups. Returns null if no setup's confirmation geometry
+     *  matches. Reversal precedence over breakout (rarer structural signal). */
+    private PendingConfirmation detectConfirmation(Candle c, CamarillaLevels lv) {
         if (lv == null) return null;
-        WatchRole role = state.symbolRole.get(futuresSym);
-        if (role == null) role = WatchRole.ATM_L4;   // defensive — futures is always the trigger
 
-        // VWAP direction gates. When the operator turned the filter off, treat each
-        // half as unconditionally allowed — geometry alone decides which setup fires.
-        boolean bullishOk = !vwapFilterOn || (vwap > 0 && c.close() > vwap);
-        boolean bearishOk = !vwapFilterOn || (vwap > 0 && c.close() < vwap);
-
-        if (bullishOk) {
-            // L3_REVERSAL: green bar wicks below L3, closes back above.
-            if (c.isGreen() && c.low() <= lv.l3() && c.close() > lv.l3()) {
-                return new EntryCandidate(futuresSym, role, ActiveSetup.L3_REVERSAL,
-                    /*target*/ lv.h3(),
-                    /*sl*/     lv.l4() - 3 * TICK_FUTURES,
-                    c);
-            }
-            // H4_BREAKOUT: futures closes above H4.
-            if (c.close() > lv.h4()) {
-                return new EntryCandidate(futuresSym, role, ActiveSetup.H4_BREAKOUT,
-                    /*target*/ lv.h5(),
-                    /*sl*/     lv.h3() - 3 * TICK_FUTURES,
-                    c);
-            }
+        // Bullish — reversal then breakout.
+        if (c.isGreen() && c.low() <= lv.l3() && c.close() > lv.l3()) {
+            return mkConfirmation(ActiveSetup.L3_REVERSAL, c, lv.h3());
         }
-
-        if (bearishOk) {
-            // H3_REVERSAL: red bar wicks above H3, closes back below.
-            if (c.isRed() && c.high() >= lv.h3() && c.close() < lv.h3()) {
-                return new EntryCandidate(futuresSym, role, ActiveSetup.H3_REVERSAL,
-                    /*target*/ lv.l3(),
-                    /*sl*/     lv.h4() + 3 * TICK_FUTURES,
-                    c);
-            }
-            // L4_BREAKDOWN: futures closes below L4.
-            if (c.close() < lv.l4()) {
-                return new EntryCandidate(futuresSym, role, ActiveSetup.L4_BREAKDOWN,
-                    /*target*/ lv.l5(),
-                    /*sl*/     lv.l3() + 3 * TICK_FUTURES,
-                    c);
-            }
+        if (c.close() > lv.h4()) {
+            return mkConfirmation(ActiveSetup.H4_BREAKOUT, c, lv.h5());
+        }
+        // Bearish — reversal then breakdown.
+        if (c.isRed() && c.high() >= lv.h3() && c.close() < lv.h3()) {
+            return mkConfirmation(ActiveSetup.H3_REVERSAL, c, lv.l3());
+        }
+        if (c.close() < lv.l4()) {
+            return mkConfirmation(ActiveSetup.L4_BREAKDOWN, c, lv.l5());
         }
         return null;
+    }
+
+    private static PendingConfirmation mkConfirmation(ActiveSetup setup, Candle c, double target) {
+        PendingConfirmation pc = new PendingConfirmation();
+        pc.setup       = setup;
+        pc.barStartMs  = c.startMillis();
+        pc.confirmHigh = c.high();
+        pc.confirmLow  = c.low();
+        pc.targetLevel = target;
+        return pc;
     }
 
     private boolean canFireNewEntry() {
@@ -985,7 +1002,7 @@ public class Camarilla implements Strategy {
         if (state.openPositions.containsKey(optionSym)) return;
 
         // ── Risk gates: consumed > maxRisk locks out the day ──
-        double maxRisk = riskSettings.getCamarillaMaxRisk();
+        double maxRisk = riskSettings.getPortfolioMaxDailyLoss();
         if (maxRisk > 0 && consumedRiskNow() > maxRisk) {
             event("[ERROR]", "Risk", setup + " skipped — consumed ₹"
                 + round2(consumedRiskNow()) + " > maxRisk ₹" + round2(maxRisk)
@@ -1668,6 +1685,24 @@ public class Camarilla implements Strategy {
             candleAggregator.unsubscribe(symbol);
         }
 
+        // v2 two-candle entry — clear any pending confirmations when a trade
+        // closes on TARGET_HIT or TIMED_EXIT.
+        //   TARGET_HIT — market moved through the thesis; old pendings are stale.
+        //   TIMED_EXIT — squareoff fired; the session window for this thesis is
+        //                done, the pending shouldn't seed a new trade post-cutoff.
+        // SL_HIT, RISK_BREACH, and MANUAL closes do NOT clear pendings — those
+        // exits don't validate the prior thesis and the opposite-side setup may
+        // still be relevant.
+        if ("TARGET_HIT".equals(reason) || "TIMED_EXIT".equals(reason)) {
+            boolean had = state.pendingBullish != null || state.pendingBearish != null;
+            state.pendingBullish = null;
+            state.pendingBearish = null;
+            if (had) {
+                event("[INFO]", "Setup",
+                    "pending confirmations reset — trade closed on " + reason);
+            }
+        }
+
         saveToDisk();
         return true;
     }
@@ -1739,7 +1774,9 @@ public class Camarilla implements Strategy {
         }
         state.openPositions.clear();
         state.symbolRole.clear();
-        pendingByBar.clear();
+        // v2 two-candle entry — drop any pending confirmations on day rollover / reset.
+        state.pendingBullish = null;
+        state.pendingBearish = null;
         saveToDisk();
         publishStream();
     }
@@ -1765,7 +1802,9 @@ public class Camarilla implements Strategy {
             state.openPositions.clear();
             // V2: reset the watchlist roles so the new day's first ATM resolution rebuilds them.
             state.symbolRole.clear();
-            pendingByBar.clear();
+            // v2 two-candle entry — drop any pending confirmations on day rollover / reset.
+        state.pendingBullish = null;
+        state.pendingBearish = null;
             saveToDisk();
         }
     }
@@ -1832,10 +1871,9 @@ public class Camarilla implements Strategy {
         // missing keys — they'll just render '—' until the page is updated.
         Map<String, Object> vwap = new LinkedHashMap<>();
         String futSym = state.futuresSymbol == null ? "" : state.futuresSymbol;
-        double futLtp = 0, futVwap = 0, futChange = 0, futChangePct = 0;
+        double futLtp = 0, futChange = 0, futChangePct = 0;
         if (!futSym.isBlank()) {
             try { futLtp        = marketDataService.getLtp(futSym); }              catch (Exception ignored) {}
-            try { futVwap       = marketDataService.getVwap(futSym); }             catch (Exception ignored) {}
             try { futChange     = marketDataService.getDisplayChange(futSym); }    catch (Exception ignored) {}
             try { futChangePct  = marketDataService.getDisplayChangePct(futSym); } catch (Exception ignored) {}
         }
@@ -1854,7 +1892,6 @@ public class Camarilla implements Strategy {
         vwap.put("futLtp",       round2(futLtp));
         vwap.put("futChange",    round2(futChange));
         vwap.put("futChangePct", round2(futChangePct));
-        vwap.put("futVwap",      round2(futVwap));
         vwap.put("putSymbol",    putSym);
         vwap.put("putStrike",    atm > 0 ? (atm - STRIKE_STEP) : 0);
         vwap.put("putLtp",       round2(putLtp));
@@ -1961,10 +1998,33 @@ public class Camarilla implements Strategy {
          *  feed for this session. Set when the AtmChange bootstrap fires;
          *  persisted so a restart can re-subscribe without re-resolving. */
         public String futuresSymbol = "";
+        /** v2 two-candle entry — pending bullish setup confirmation candle, waiting
+         *  for a trigger bar (green close above {@code confirmHigh}) to fire the
+         *  trade, OR for an invalidation bar (close below {@code confirmLow}) to
+         *  nullify it. Replaced when a new bullish confirmation arrives; cleared
+         *  on day rollover. null means no pending bullish setup. */
+        public PendingConfirmation pendingBullish;
+        /** v2 two-candle entry — pending bearish setup confirmation. Symmetric to
+         *  pendingBullish. Trigger = red close below {@code confirmLow}; invalidation =
+         *  close above {@code confirmHigh}. */
+        public PendingConfirmation pendingBearish;
 
         // ── V2 watchlist ──────────────────────────────────────────────────────
         /** Current monitored 6-contract matrix (ATM, ±1 strike, CE+PE) → role mapping. */
         public Map<String, WatchRole> symbolRole = new ConcurrentHashMap<>();
+    }
+
+    /** v2 two-candle entry — a bar that met the confirmation geometry of one of the
+     *  four setups, captured so a subsequent trigger bar (same-direction close
+     *  through the relevant extreme) can fire the trade. SL is read from the
+     *  confirmation bar's far extreme; target is the Camarilla level captured at
+     *  confirmation time. */
+    public static class PendingConfirmation {
+        public ActiveSetup setup;
+        public long   barStartMs;
+        public double confirmHigh;
+        public double confirmLow;
+        public double targetLevel;
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

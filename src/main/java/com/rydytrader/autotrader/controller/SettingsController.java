@@ -42,8 +42,6 @@ public class SettingsController {
         result.put("camarillaMaxConcurrentPositions", riskSettings.getCamarillaMaxConcurrentPositions(effectiveMode));
         result.put("camarillaOiBiasFilterEnabled", riskSettings.isCamarillaOiBiasFilterEnabled(effectiveMode));
         result.put("camarillaMinRRCheckEnabled",   riskSettings.isCamarillaMinRRCheckEnabled(effectiveMode));
-        result.put("camarillaMaxRisk",             riskSettings.getCamarillaMaxRisk(effectiveMode));
-        result.put("camarillaVwapFilterEnabled",   riskSettings.isCamarillaVwapFilterEnabled(effectiveMode));
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
         result.put("maxRiskPerDayPct",    riskSettings.getMaxRiskPerDayPct(effectiveMode));
@@ -55,7 +53,6 @@ public class SettingsController {
         result.put("startingCapital",       riskSettings.getStartingCapital(effectiveMode));
         result.put("portfolioMaxRiskPct",   riskSettings.getPortfolioMaxRiskPct(effectiveMode));
         result.put("portfolioMaxDailyLoss", riskSettings.getPortfolioMaxDailyLoss()); // derived ₹ for display
-        result.put("moveSlToBreakevenEnabled", riskSettings.isMoveSlToBreakevenEnabled(effectiveMode));
         result.put("weeklyExpiryDayOfWeek",    riskSettings.getWeeklyExpiryDayOfWeek(effectiveMode));
         // Charges
         result.put("brokeragePerOrder",   riskSettings.getBrokeragePerOrder(effectiveMode));
@@ -92,8 +89,6 @@ public class SettingsController {
             if (body.containsKey("camarillaMaxConcurrentPositions")) riskSettings.setCamarillaMaxConcurrentPositions(effectiveMode, Integer.parseInt(body.get("camarillaMaxConcurrentPositions").toString()));
             if (body.containsKey("camarillaOiBiasFilterEnabled"))    riskSettings.setCamarillaOiBiasFilterEnabled(effectiveMode, Boolean.parseBoolean(body.get("camarillaOiBiasFilterEnabled").toString()));
             if (body.containsKey("camarillaMinRRCheckEnabled"))      riskSettings.setCamarillaMinRRCheckEnabled(effectiveMode, Boolean.parseBoolean(body.get("camarillaMinRRCheckEnabled").toString()));
-            if (body.containsKey("camarillaMaxRisk"))                riskSettings.setCamarillaMaxRisk(effectiveMode, Double.parseDouble(body.get("camarillaMaxRisk").toString()));
-            if (body.containsKey("camarillaVwapFilterEnabled"))      riskSettings.setCamarillaVwapFilterEnabled(effectiveMode, Boolean.parseBoolean(body.get("camarillaVwapFilterEnabled").toString()));
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
             if (body.containsKey("maxRiskPerDayPct"))  riskSettings.setMaxRiskPerDayPct(effectiveMode, Double.parseDouble(body.get("maxRiskPerDayPct").toString()));
@@ -103,7 +98,6 @@ public class SettingsController {
             // Portfolio Risk (global)
             if (body.containsKey("startingCapital"))     riskSettings.setStartingCapital(effectiveMode, Double.parseDouble(body.get("startingCapital").toString()));
             if (body.containsKey("portfolioMaxRiskPct")) riskSettings.setPortfolioMaxRiskPct(effectiveMode, Double.parseDouble(body.get("portfolioMaxRiskPct").toString()));
-            if (body.containsKey("moveSlToBreakevenEnabled")) riskSettings.setMoveSlToBreakevenEnabled(effectiveMode, Boolean.parseBoolean(body.get("moveSlToBreakevenEnabled").toString()));
             if (body.containsKey("weeklyExpiryDayOfWeek"))    riskSettings.setWeeklyExpiryDayOfWeek(effectiveMode, body.get("weeklyExpiryDayOfWeek").toString());
             // Charges
             if (body.containsKey("brokeragePerOrder")) riskSettings.setBrokeragePerOrder(effectiveMode, Double.parseDouble(body.get("brokeragePerOrder").toString()));

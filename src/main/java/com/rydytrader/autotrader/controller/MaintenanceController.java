@@ -32,4 +32,16 @@ public class MaintenanceController {
         out.putAll(result);
         return out;
     }
+
+    /** Wipe EVERY closed trade in the database + every event in the in-memory
+     *  ring + all in-flight pending confirmations. Open positions stay running.
+     *  Hard reset for a clean post-test baseline. Irreversible. */
+    @PostMapping("/api/maintenance/clear-all")
+    public Map<String, Object> clearAll() {
+        Map<String, Object> result = strategy.clearAllRecords();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("ok", true);
+        out.putAll(result);
+        return out;
+    }
 }

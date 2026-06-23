@@ -244,11 +244,10 @@
                      market-stats cluster from the title. -->
                 <span style="border-left:1px solid var(--border); height:18px; display:inline-block;"></span>
                 <div style="display:flex; gap:14px; align-items:center; font-family:var(--font-mono); font-size:0.72rem; font-weight:normal; flex-wrap:wrap;">
-                    <!-- v2: NIFTY near-month future replaces the spot NIFTY display.
-                         Futures change/%change render inline next to the LTP. VWAP folds
-                         into the LTP cell's tooltip (hover to see) — keeps the header
-                         compact and the VWAP visible when needed. -->
-                    <span style="color:var(--text-muted);">FUTURES <span id="hdrFut" style="color:var(--text-primary);font-weight:700;cursor:help;">—</span>
+                    <!-- v2: NIFTY spot index — trigger feed for the four Camarilla
+                         setups. Change/%change render inline. Element IDs keep
+                         the legacy 'Fut' naming for back-compat with the JS. -->
+                    <span style="color:var(--text-muted);">NIFTY <span id="hdrFut" style="color:var(--text-primary);font-weight:700;cursor:help;">—</span>
                         <span id="hdrFutChg" style="margin-left:4px;font-weight:600;"></span></span>
                     <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
                         <span id="hdrVixChg" style="margin-left:4px;font-weight:600;"></span></span>
@@ -463,11 +462,11 @@
         renderPositions(d);
         renderEvents(d);
         renderKillSwitch(d);
-        // v2 header — futures LTP + change + %change replaces the v1 NIFTY display.
-        // VWAP folds into the LTP tooltip (hover the futures price to see it).
+        // v2 header — NIFTY spot LTP + change + %change. No VWAP (index doesn't
+        // have a meaningful VWAP; the gate was retired).
         if (d.atmVwap) {
             renderFutTickerCells(d.atmVwap.futLtp, d.atmVwap.futChange,
-                d.atmVwap.futChangePct, d.atmVwap.futSymbol, d.atmVwap.futVwap);
+                d.atmVwap.futChangePct, d.atmVwap.futSymbol);
         }
         // (Market Clock card ticks independently on a 1 s interval — see updateMarketClock())
     }
@@ -874,23 +873,20 @@
     // ── v2 header chips ────────────────────────────────────────────────────
     // Futures-driven feed (LTP, VWAP) + the two SHORT option trade-leg LTPs.
 
-    /** Render the FUTURES ticker (LTP + signed change + signed %change) into the
-     *  hdrFut / hdrFutChg cells next to VIX. Color-codes change green/red. The LTP
-     *  cell's tooltip carries the session VWAP — operator hovers the price to see it. */
-    function renderFutTickerCells(ltp, chg, pct, symbol, vwap) {
+    /** Render the NIFTY spot ticker (LTP + signed change + signed %change) into
+     *  the hdrFut / hdrFutChg cells next to VIX. Color-codes change green/red.
+     *  Tooltip shows the underlying symbol. (Header still uses #hdrFut /
+     *  #hdrFutChg element IDs from the original futures-version of this code
+     *  — renaming would require an HTML edit and isn't worth it.) */
+    function renderFutTickerCells(ltp, chg, pct, symbol) {
         var v   = Number(ltp  || 0);
         var c   = Number(chg  || 0);
         var p   = Number(pct  || 0);
-        var w   = Number(vwap || 0);
         var ltpEl = document.getElementById('hdrFut');
         var chgEl = document.getElementById('hdrFutChg');
         if (ltpEl) {
             ltpEl.textContent = v > 0 ? v.toFixed(2) : '—';
-            var tip = symbol || 'NIFTY near-month future';
-            tip += w > 0
-                ? '\nVWAP: ' + w.toFixed(2) + ' (session avg since 09:15)'
-                : '\nVWAP: — (no full-mode tick yet)';
-            ltpEl.title = tip;
+            ltpEl.title = symbol || 'NIFTY spot index';
         }
         if (chgEl) {
             if (v <= 0 || (c === 0 && p === 0)) {
@@ -1038,7 +1034,7 @@
 
 <script src="/js/common.js?v=41"></script>
 <script src="/js/ticker.js?v=36"></script>
-<script src="/js/settings-modal.js?v=46"></script>
+<script src="/js/settings-modal.js?v=49"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
 <script src="/js/manual-terminal-modal.js?v=45"></script>
 </body>
