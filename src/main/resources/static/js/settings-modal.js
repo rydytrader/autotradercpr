@@ -27,6 +27,8 @@
                     '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-camarillaSquareOffTime" step="60"><div class="sm-hint">Hard exit if neither target nor SL has triggered.</div></div>' +
                     '<div class="sm-field"><label><input type="checkbox" id="sm-camarillaOiBiasFilterEnabled"> &nbsp;OI Bias Filter</label><div class="sm-hint">When ON: block CE shorts in STRONG_BULLISH markets, block PE shorts in STRONG_BEARISH markets. NEUTRAL / STALE always pass through. Off by default — observe live data for 1–2 weeks before enabling.</div></div>' +
                     '<div class="sm-field"><label><input type="checkbox" id="sm-camarillaMinRRCheckEnabled"> &nbsp;Min 1:1 R:R Check</label><div class="sm-hint">When ON: skip algo entries whose reward (entry → target, with L5 clamped at 0 on expiry) is smaller than risk (entry → SL). Filters out late VWAP breakdowns where most of the move is already done. Off bypasses the geometry check — only budget sizing applies.</div></div>' +
+                    '<div class="sm-field"><label>Max Risk (₹) — v2 single knob</label><input type="number" id="sm-camarillaMaxRisk" step="500" min="0"><div class="sm-hint">Two independent triggers: consumed losses &gt; this → block new entries; exposed risk &gt; this → force-close every open position. 0 disables both checks. Replaces v1\'s portfolioMaxDailyLoss.</div></div>' +
+                    '<div class="sm-field"><label><input type="checkbox" id="sm-camarillaVwapFilterEnabled"> &nbsp;VWAP Direction Filter (v2)</label><div class="sm-hint">When ON: bullish bets (L3_REVERSAL, H4_BREAKOUT) require futures close ABOVE VWAP; bearish bets (H3_REVERSAL, L4_BREAKDOWN) require futures close BELOW VWAP. Also gates entries until the first full-mode VWAP tick lands. When OFF: setups fire on candle geometry alone.</div></div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
                     '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline used by the Home analytics page (capital growth %, equity curve, return %). Default ₹10,00,000.</div></div>' +
@@ -181,6 +183,8 @@
             if (g('sm-camarillaSquareOffTime'))     g('sm-camarillaSquareOffTime').value = d.camarillaSquareOffTime || '15:15';
             if (g('sm-camarillaOiBiasFilterEnabled')) g('sm-camarillaOiBiasFilterEnabled').checked = !!d.camarillaOiBiasFilterEnabled;
             if (g('sm-camarillaMinRRCheckEnabled')) g('sm-camarillaMinRRCheckEnabled').checked = d.camarillaMinRRCheckEnabled !== false;
+            if (g('sm-camarillaMaxRisk')) g('sm-camarillaMaxRisk').value = d.camarillaMaxRisk || 0;
+            if (g('sm-camarillaVwapFilterEnabled')) g('sm-camarillaVwapFilterEnabled').checked = d.camarillaVwapFilterEnabled !== false;
         }).catch(function() {});
     }
 
@@ -193,7 +197,9 @@
             camarillaTradingEndTime:    (g('sm-camarillaTradingEndTime').value || '').trim(),
             camarillaSquareOffTime:     (g('sm-camarillaSquareOffTime').value || '').trim(),
             camarillaOiBiasFilterEnabled: !!g('sm-camarillaOiBiasFilterEnabled').checked,
-            camarillaMinRRCheckEnabled:   !!g('sm-camarillaMinRRCheckEnabled').checked
+            camarillaMinRRCheckEnabled:   !!g('sm-camarillaMinRRCheckEnabled').checked,
+            camarillaMaxRisk:             Number(g('sm-camarillaMaxRisk').value) || 0,
+            camarillaVwapFilterEnabled:   !!g('sm-camarillaVwapFilterEnabled').checked
         };
         postSettings('/api/settings/risk', body);
     }

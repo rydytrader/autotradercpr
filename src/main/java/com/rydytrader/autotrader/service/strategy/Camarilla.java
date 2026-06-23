@@ -85,6 +85,9 @@ public class Camarilla implements Strategy {
     private static final int SL_BREACH_CONFIRM_TICKS = 3;
     /** NIFTY strike interval — 50 points. */
     private static final long STRIKE_STEP = 50L;
+    /** NIFTY futures tick size — 0.05. Used for the "3 ticks" SL margin around
+     *  Camarilla levels (e.g. {@code slFutures = L4 − 3 × TICK_FUTURES}). */
+    private static final double TICK_FUTURES = 0.05;
     /** Grace window after a bar close before we resolve the buffer for that bar. All six
      *  symbols' candles emit inside a single 1-second sample tick at the boundary; 1.5 s gives
      *  every candidate a chance to land before the tiebreaker runs. */
@@ -95,19 +98,30 @@ public class Camarilla implements Strategy {
         com.rydytrader.autotrader.service.CandleAggregator.BUCKET_MINUTES * 60_000L;
 
     public enum ActiveSetup {
-        H3_REVERSAL,       // legacy SHORT setup (retired but enum value retained for DB compat)
-        L4_BREAKDOWN,      // SHORT — bar crossed L4 downward (VWAP-confirmed)
-        H4_BREAKOUT,       // LONG  — retired buying setup (enum retained for DB compat)
-        VWAP_BREAKDOWN,    // SHORT — bar crossed VWAP downward (L4 was already broken earlier)
+        // v2 setups — all triggered on the NIFTY near-month FUTURES 5-min bar close,
+        // all sell a SHORT OTM option. The trade leg's symbol is picked at fire time.
+        L3_REVERSAL,       // bullish: green futures bar wicks below L3, closes above → sell ATM−50 PUT
+        H3_REVERSAL,       // bearish: red futures bar wicks above H3, closes below → sell ATM+50 CALL
+        H4_BREAKOUT,       // bullish: futures bar closes above H4 → sell ATM−50 PUT
+        L4_BREAKDOWN,      // bearish: futures bar closes below L4 → sell ATM+50 CALL
+        VWAP_BREAKDOWN,    // v1 legacy (retired) — kept for old DB row deserialisation only
         MANUAL             // user-placed via Options Scalper Terminal — direction comes from caller
     }
 
     /** True for setups that take a SHORT (sell) position on entry. MANUAL is intentionally
      *  excluded — its direction is supplied by the caller, not derived from the setup tag. */
     private static boolean isShortSetup(ActiveSetup s) {
-        return s == ActiveSetup.L4_BREAKDOWN
-            || s == ActiveSetup.VWAP_BREAKDOWN
-            || s == ActiveSetup.H3_REVERSAL;
+        return s == ActiveSetup.L3_REVERSAL
+            || s == ActiveSetup.H3_REVERSAL
+            || s == ActiveSetup.H4_BREAKOUT
+            || s == ActiveSetup.L4_BREAKDOWN
+            || s == ActiveSetup.VWAP_BREAKDOWN;
+    }
+
+    /** True for the bullish-bet setups (sell PUT). Used by fire() to pick the ATM−50
+     *  PUT vs ATM+50 CALL trade leg. */
+    private static boolean isBullishBet(ActiveSetup s) {
+        return s == ActiveSetup.L3_REVERSAL || s == ActiveSetup.H4_BREAKOUT;
     }
 
     /** V2 watchlist role for each monitored option contract. ATM and ITM strikes only check
@@ -142,6 +156,8 @@ public class Camarilla implements Strategy {
     private volatile State state = new State();
     private final Map<String, Object> symbolLocks = new ConcurrentHashMap<>();
 
+    private final com.rydytrader.autotrader.service.FuturesSymbolResolver futuresSymbolResolver;
+
     public Camarilla(CamarillaService camarillaService,
                      CandleAggregator candleAggregator,
                      AtmTracker atmTracker,
@@ -150,6 +166,7 @@ public class Camarilla implements Strategy {
                      OrderService orderService,
                      EventService eventService,
                      RiskSettingsStore riskSettings,
+                     com.rydytrader.autotrader.service.FuturesSymbolResolver futuresSymbolResolver,
                      ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
                      ObjectProvider<CamarillaStreamBroker> streamBrokerProvider,
                      ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> oiTrackerProvider) {
@@ -161,6 +178,7 @@ public class Camarilla implements Strategy {
         this.orderService         = orderService;
         this.eventService         = eventService;
         this.riskSettings         = riskSettings;
+        this.futuresSymbolResolver = futuresSymbolResolver;
         this.tradeRepoProvider    = tradeRepoProvider;
         this.streamBrokerProvider = streamBrokerProvider;
         this.oiTrackerProvider    = oiTrackerProvider;
@@ -188,10 +206,15 @@ public class Camarilla implements Strategy {
         // rolloverIfNewDay()} short-circuits and yesterday's events bleed into today's
         // Positions Event Log. This timestamp filter always runs on boot.
         pruneStaleEventsBeforeToday();
-        // Re-subscribe candle listeners for any positions restored from disk so we keep
-        // evaluating their exit conditions after a restart.
-        for (String sym : state.openPositions.keySet()) {
-            candleAggregator.subscribe(sym, c -> onCandleClose(sym, c));
+        // v2: re-subscribe the futures trigger feed restored from disk. The trigger
+        // symbol is the same across all positions (we always trade the near-month
+        // future), so a single subscribe is enough.
+        if (state.futuresSymbol != null && !state.futuresSymbol.isBlank()) {
+            String fut = state.futuresSymbol;
+            candleAggregator.subscribe(fut, c -> onCandleClose(fut, c));
+            try { marketDataService.subscribeAdditional(java.util.Collections.singletonList(fut)); }
+            catch (Exception ignored) {}
+            log.info("[Camarilla] restored futures subscription on boot: {}", fut);
         }
         atmTracker.setListener(this::onAtmChange);
         log.info("[Camarilla] booted — enabled={}, lots={}, squareoff={}, restoredPositions={}",
@@ -528,51 +551,81 @@ public class Camarilla implements Strategy {
         drainPendingBars();
 
         // Fast-tick TARGET + SL watcher — fires on the live LTP, not on candle close.
-        //   • TARGET: single-tick. As soon as ltp <= targetLevel, close immediately.
-        //   • SL:     confirmed over SL_BREACH_CONFIRM_TICKS consecutive polls (~1.5 s) to
-        //             reject single-tick spikes. The breach counter resets the moment ltp
-        //             drops back below slLevel.
+        //   • TARGET: single-tick. As soon as triggerLtp crosses targetLevel, close.
+        //   • SL:     confirmed over SL_BREACH_CONFIRM_TICKS consecutive polls (~1.5 s)
+        //             to reject single-tick spikes.
+        //
+        // v2: when p.triggerSymbol is set, target/SL comparisons read the FUTURES LTP
+        // (the trigger symbol) instead of the option's own premium. Breakeven also uses
+        // the futures move from entryFutures. v1 positions (triggerSymbol blank) keep
+        // the legacy option-premium-based behaviour.
         if (state.openPositions.isEmpty()) return;
+
+        // ── v2 risk gate: exposed > maxRisk → force-close everything ──
+        double maxRisk = riskSettings.getCamarillaMaxRisk();
+        if (maxRisk > 0 && !state.dailyLossLockout) {
+            double exposed = exposedRiskNow();
+            if (exposed > maxRisk) {
+                event("[ERROR]", "Risk", "exposed ₹" + round2(exposed)
+                    + " > maxRisk ₹" + round2(maxRisk)
+                    + " — force-closing all positions and locking session");
+                state.dailyLossLockout = true;
+                for (String sym : new ArrayList<>(state.openPositions.keySet())) {
+                    closePosition(sym, "RISK_BREACH");
+                }
+                saveToDisk();
+                return;
+            }
+        }
+
         for (String symbol : new ArrayList<>(state.openPositions.keySet())) {
             Position p = state.openPositions.get(symbol);
             if (p == null) continue;
-            // MANUAL positions: targetLevel is NaN (so target compares always return false),
-            // breakevenMoved is pre-set true (skips breakeven). slLevel is honoured when set
-            // by the operator's stopLossPts choice — NaN comparisons are also always false,
-            // so a MANUAL position with stopLossPts=0 simply never fires SL.
-            double ltp;
-            try { ltp = marketDataService.getLtp(symbol); }
-            catch (Exception e) { continue; }
-            if (ltp <= 0) continue;
 
-            // BREAKEVEN trigger — slide slLevel to entryPrice once premium has dropped by 1R
-            // in our favor. One-shot per position. Runs BEFORE target/SL so if a single tick
-            // hits 1R + target simultaneously, target still closes the trade but the
-            // breakeven safety is set first in case of a same-tick reversal sequence.
-            // MANUAL positions skip the auto-BE trigger entirely — the operator owns the SL
-            // and we don't want the UI flagging ▲ "SL moved to breakeven" on a fresh manual
-            // entry that never had a BE move. Algo trades keep the original behaviour.
+            // Resolve the LTP that drives target/SL decisions for THIS position.
+            // v2 = futures LTP, v1 = option premium LTP.
+            boolean v2 = p.triggerSymbol != null && !p.triggerSymbol.isBlank()
+                       && !Double.isNaN(p.targetFutures) && !Double.isNaN(p.slFutures);
+            String triggerSrc = v2 ? p.triggerSymbol : symbol;
+            double triggerLtp;
+            try { triggerLtp = marketDataService.getLtp(triggerSrc); }
+            catch (Exception e) { continue; }
+            if (triggerLtp <= 0) continue;
+
+            // BREAKEVEN trigger.
+            // v2: 1R favorable on futures → slFutures = entryFutures (and mirror to slLevel
+            //     for downstream display + risk math).
+            // v1: 1R favorable on option premium → slLevel = entryPrice (legacy behaviour).
             if (riskSettings.isMoveSlToBreakevenEnabled() && !p.breakevenMoved && p.setup != ActiveSetup.MANUAL) {
-                // R distance — for SHORT, originalSL is above entry; for LONG, below.
-                // Take absolute distance so the comparison is direction-neutral.
-                double refSl = p.originalSlLevel > 0 ? p.originalSlLevel : p.slLevel;
-                double r = Math.abs(refSl - p.entryPrice);
-                // Favorable move from entry: SHORT wants ltp DOWN, LONG wants ltp UP.
-                double favorMove = p.isShort ? (p.entryPrice - ltp) : (ltp - p.entryPrice);
+                double refSl, refEntry, favorMove, r;
+                if (v2) {
+                    refSl    = p.slFutures;
+                    refEntry = p.entryFutures;
+                    r        = Math.abs(refSl - refEntry);
+                    favorMove = p.isShort ? (refEntry - triggerLtp) : (triggerLtp - refEntry);
+                } else {
+                    refSl    = p.originalSlLevel > 0 ? p.originalSlLevel : p.slLevel;
+                    refEntry = p.entryPrice;
+                    r        = Math.abs(refSl - refEntry);
+                    favorMove = p.isShort ? (refEntry - triggerLtp) : (triggerLtp - refEntry);
+                }
                 if (r > 0 && favorMove >= r) {
                     Object beLock = symbolLocks.computeIfAbsent(symbol, k -> new Object());
                     synchronized (beLock) {
                         Position p2 = state.openPositions.get(symbol);
                         if (p2 != null && !p2.breakevenMoved) {
-                            double oldSl  = p2.slLevel;
-                            p2.slLevel        = p2.entryPrice;
+                            double oldSl = v2 ? p2.slFutures : p2.slLevel;
+                            if (v2) {
+                                p2.slFutures = p2.entryFutures;
+                                p2.slLevel   = p2.entryFutures;   // mirror for display + exposed-risk math
+                            } else {
+                                p2.slLevel = p2.entryPrice;
+                            }
                             p2.breakevenMoved = true;
-                            // Reset partial SL-breach streak — fresh 3-tick confirmation
-                            // must apply to the new tighter level.
                             p2.slBreachStreak = 0;
                             event("[INFO]", "AUTO SL", symbol + " " + p2.setup
-                                + " SL → breakeven — ltp=" + round2(ltp)
-                                + " entry=" + round2(p2.entryPrice)
+                                + " SL → breakeven — trigger=" + round2(triggerLtp)
+                                + (v2 ? " entryFut=" : " entry=") + round2(refEntry)
                                 + " R=" + round2(r)
                                 + " (was " + round2(oldSl) + ")");
                             saveToDisk();
@@ -582,26 +635,27 @@ public class Camarilla implements Strategy {
             }
 
             // Direction-aware comparisons. SHORT: target BELOW, SL ABOVE. LONG: flipped.
-            boolean targetHit = p.isShort ? (ltp <= p.targetLevel) : (ltp >= p.targetLevel);
-            boolean slBreach  = p.isShort ? (ltp >= p.slLevel)     : (ltp <= p.slLevel);
+            double targetRef = v2 ? p.targetFutures : p.targetLevel;
+            double slRef     = v2 ? p.slFutures     : p.slLevel;
+            boolean targetHit = p.isShort ? (triggerLtp <= targetRef) : (triggerLtp >= targetRef);
+            boolean slBreach  = p.isShort ? (triggerLtp >= slRef)     : (triggerLtp <= slRef);
 
-            // TARGET first — if both fire on the same tick the win takes precedence.
             if (targetHit) {
                 Object lock = symbolLocks.computeIfAbsent(symbol, k -> new Object());
                 synchronized (lock) {
                     Position p2 = state.openPositions.get(symbol);
                     if (p2 == null) continue;
-                    boolean stillHit = p2.isShort ? (ltp <= p2.targetLevel) : (ltp >= p2.targetLevel);
+                    double tgt2 = v2 ? p2.targetFutures : p2.targetLevel;
+                    boolean stillHit = p2.isShort ? (triggerLtp <= tgt2) : (triggerLtp >= tgt2);
                     if (!stillHit) continue;
                     String cmp = p2.isShort ? " <= target=" : " >= target=";
-                    event("[SUCCESS]", "Exit", symbol + " " + p2.setup + " TARGET_HIT — ltp=" + round2(ltp)
-                        + cmp + round2(p2.targetLevel));
+                    event("[SUCCESS]", "Exit", symbol + " " + p2.setup + " TARGET_HIT — "
+                        + (v2 ? "fut=" : "ltp=") + round2(triggerLtp) + cmp + round2(tgt2));
                     closePosition(symbol, "TARGET_HIT");
                 }
                 continue;
             }
 
-            // SL: counted, confirmed.
             if (slBreach) {
                 p.slBreachStreak++;
                 if (p.slBreachStreak >= SL_BREACH_CONFIRM_TICKS) {
@@ -610,14 +664,13 @@ public class Camarilla implements Strategy {
                         Position p2 = state.openPositions.get(symbol);
                         if (p2 == null) continue;
                         String cmp = p2.isShort ? " >= SL=" : " <= SL=";
-                        event("[WARNING]", "Exit", symbol + " " + p2.setup + " SL_HIT — ltp=" + round2(ltp)
-                            + cmp + round2(p2.slLevel)
+                        event("[WARNING]", "Exit", symbol + " " + p2.setup + " SL_HIT — "
+                            + (v2 ? "fut=" : "ltp=") + round2(triggerLtp) + cmp + round2(slRef)
                             + " confirmed over " + SL_BREACH_CONFIRM_TICKS + " ticks");
                         closePosition(symbol, "SL_HIT");
                     }
                 }
             } else if (p.slBreachStreak > 0) {
-                // Price retreated to the favorable side of SL — reset the streak.
                 p.slBreachStreak = 0;
             }
         }
@@ -642,34 +695,22 @@ public class Camarilla implements Strategy {
     }
 
     private void processBar(List<EntryCandidate> bar) {
-        // Sell-only: at most one short per (setup × side). L4_BREAKDOWN and
-        // VWAP_BREAKDOWN are mutually exclusive on the same bar (the onCandleClose
-        // detector picks one based on which level was crossed), so a bar produces
-        // at most one candidate per side. Dispatching all four cells keeps the
-        // selector code uniform.
-        fireIfPresent(selectBySetup(bar, ActiveSetup.L4_BREAKDOWN,   true));
-        fireIfPresent(selectBySetup(bar, ActiveSetup.L4_BREAKDOWN,   false));
-        fireIfPresent(selectBySetup(bar, ActiveSetup.VWAP_BREAKDOWN, true));
-        fireIfPresent(selectBySetup(bar, ActiveSetup.VWAP_BREAKDOWN, false));
-    }
-
-    private EntryCandidate selectBySetup(List<EntryCandidate> bar, ActiveSetup setup, boolean ceSide) {
+        // v2: detectFuturesSetup returns at most one candidate per bar, so the buffer
+        // typically has a single entry. Walk it and fire the first eligible candidate —
+        // no per-side / per-setup dispatch needed (the four setups are mutually
+        // exclusive on the futures bar by construction).
         for (EntryCandidate cand : bar) {
-            if (cand.setup() != setup) continue;
-            if (cand.role() != WatchRole.ATM_L4) continue;
-            if (ceSide && !cand.isCe()) continue;
-            if (!ceSide && !cand.isPe()) continue;
-            return cand;
+            fireIfPresent(cand);
         }
-        return null;
     }
 
     private void fireIfPresent(EntryCandidate cand) {
         if (cand == null) return;
+        // Lock on the FUTURES trigger symbol — the position itself will be keyed on the
+        // option leg, but the lock prevents two same-bar candidates from racing.
         Object lock = symbolLocks.computeIfAbsent(cand.symbol(), k -> new Object());
         synchronized (lock) {
-            if (state.openPositions.containsKey(cand.symbol())) return;  // raced — already in trade
-            if (!canFireNewEntry()) return;                              // cap or gate hit
+            if (!canFireNewEntry()) return;
             fire(cand.symbol(), cand.setup(), cand.targetLevel(), cand.slLevel(), cand.candle());
         }
     }
@@ -683,32 +724,35 @@ public class Camarilla implements Strategy {
         long atm = ev.newAtm();
         if (atm <= 0) return;
 
-        // V3 watchlist — L4-breakdown-only on the ATM strikes:
-        //   ATM CE → ATM_L4 (L4 breakdown signals premium collapse on the call side)
-        //   ATM PE → ATM_L4 (L4 breakdown signals premium collapse on the put side)
-        // H3 reversal and ITM/OTM neighbour strikes are intentionally dropped — H3 had higher
-        // false-signal risk after strike drift, and ITM L4 fallback rarely fired without ATM
-        // also breaking (per operator analysis). Net: 2-contract watchlist, single setup,
-        // simpler dispatch, cleaner signal quality.
-        Map<String, WatchRole> newRoles = new LinkedHashMap<>();
-        BalancedAtmSelector.StrikeAtLevel atmRow = atmSelector.resolveStrikeAtLevel(atm);
-        if (atmRow != null) {
-            if (atmRow.ceSymbol() != null && !atmRow.ceSymbol().isBlank()) newRoles.put(atmRow.ceSymbol(), WatchRole.ATM_L4);
-            if (atmRow.peSymbol() != null && !atmRow.peSymbol().isBlank()) newRoles.put(atmRow.peSymbol(), WatchRole.ATM_L4);
-        }
-        if (newRoles.isEmpty()) {
-            log.warn("[Camarilla] watchlist resolution returned 0 symbols around ATM={}; skipping rebalance", atm);
-            return;
-        }
+        // v2 watchlist —
+        //   1. NIFTY near-month FUTURE: subscribed for the 5-min candle trigger feed.
+        //   2. ATM−50 PUT + ATM+50 CALL: subscribed for live LTPs so the trade legs
+        //      are quote-ready the instant a setup fires. We don't aggregate candles
+        //      on them — they're trade targets only.
+        // The previous v1 per-strike ATM CE/PE watchlist is fully retired.
+        String futuresSym = futuresSymbolResolver.nearMonthNiftyFuture();
+        state.futuresSymbol = futuresSym;
+        candleAggregator.subscribe(futuresSym, c -> onCandleClose(futuresSym, c));
 
-        // Subscribe every new contract — CandleAggregator.subscribe is idempotent per symbol.
-        for (String sym : newRoles.keySet()) {
-            candleAggregator.subscribe(sym, c -> onCandleClose(sym, c));
+        Map<String, WatchRole> newRoles = new LinkedHashMap<>();
+        newRoles.put(futuresSym, WatchRole.ATM_L4);   // re-uses existing enum value, semantics changed
+
+        // Pre-subscribe the two OTM trade legs so live LTPs are warm before fire().
+        BalancedAtmSelector.StrikeAtLevel putRow  = atmSelector.resolveStrikeAtLevel(atm - STRIKE_STEP);
+        BalancedAtmSelector.StrikeAtLevel callRow = atmSelector.resolveStrikeAtLevel(atm + STRIKE_STEP);
+        java.util.List<String> tradeLegs = new java.util.ArrayList<>();
+        if (putRow  != null && putRow.peSymbol()  != null && !putRow.peSymbol().isBlank())  tradeLegs.add(putRow.peSymbol());
+        if (callRow != null && callRow.ceSymbol() != null && !callRow.ceSymbol().isBlank()) tradeLegs.add(callRow.ceSymbol());
+        if (!tradeLegs.isEmpty()) {
+            try { marketDataService.subscribeAdditional(tradeLegs); }
+            catch (Exception ignored) {}
         }
-        // Retire any contract from the previous watchlist that's not in the new one AND has no
-        // open position parked on it. Position-bearing symbols stay subscribed so the exit
-        // monitor keeps firing on their candles.
-        Set<String> toRetire = new HashSet<>(state.symbolRole.keySet());
+        try { marketDataService.subscribeAdditional(java.util.Collections.singletonList(futuresSym)); }
+        catch (Exception ignored) {}
+
+        // Retire any contract from a previous v1 watchlist that's not in the new one
+        // AND has no open position parked on it.
+        java.util.Set<String> toRetire = new HashSet<>(state.symbolRole.keySet());
         toRetire.removeAll(newRoles.keySet());
         for (String oldSym : toRetire) {
             if (state.openPositions.containsKey(oldSym)) continue;
@@ -717,13 +761,15 @@ public class Camarilla implements Strategy {
         state.symbolRole.clear();
         state.symbolRole.putAll(newRoles);
 
-        // Trigger level warm-up around the new ATM (no-op if already in-flight).
-        camarillaService.warmUpAroundAtm(atm);
+        // Fetch Camarilla levels for the futures symbol itself (its own prior-day OHLC).
+        // getLevels triggers an async refresh on cache-miss; the first call returns null,
+        // but the detector tolerates that (skips bar until levels arrive).
+        camarillaService.getLevels(futuresSym);
 
         String tag = ev.oldAtm() < 0 ? "boot" : String.valueOf(ev.oldAtm());
-        event("[INFO]", "ATM", "ATM " + tag + " → " + atm
-            + " — CE: " + (atmRow != null ? atmRow.resolvedStrike() + "(ATM_L4)" : "—")
-            + " | PE: " + (atmRow != null ? atmRow.resolvedStrike() + "(ATM_L4)" : "—"));
+        event("[INFO]", "ATM", "ATM " + tag + " → " + atm + " | future=" + futuresSym
+            + " | PUT leg=" + (tradeLegs.isEmpty() ? "—" : tradeLegs.get(0))
+            + " | CALL leg=" + (tradeLegs.size() > 1 ? tradeLegs.get(1) : "—"));
         saveToDisk();
     }
 
@@ -736,71 +782,100 @@ public class Camarilla implements Strategy {
             rolloverIfNewDay();
             if (state.doneForDay) return;
 
-            // ── Exit check on existing position at this symbol ──
-            // SL and target exits fire from the fast-tick scheduler (fastSlCheck) — single-tick
-            // target + 3-tick-confirmed SL. The candle-close path is entry-only when a position
-            // is already open: nothing to do here, return.
-            if (state.openPositions.containsKey(symbol)) return;
+            // v2: bar arrives from the NIFTY near-month futures subscription. Entry detection
+            // ignores any other symbol — option-leg subscriptions only feed live LTP, not bars.
+            String futuresSym = state.futuresSymbol;
+            if (futuresSym == null || futuresSym.isBlank()) return;
+            if (!futuresSym.equals(symbol)) return;
 
-            // ── Entry check at idle on THIS symbol ──
+            // Session lockout from the v2 risk gate — once consumed or exposed risk crosses
+            // camarillaMaxRisk, no new entries fire for the rest of the day.
+            if (state.dailyLossLockout) return;
+
+            // ── Entry check ──
             if (!canFireNewEntry()) return;
-            CamarillaLevels lv = camarillaService.getLevels(symbol);
+            CamarillaLevels lv = camarillaService.getLevels(futuresSym);
             if (lv == null) {
                 // Warm-up in progress — skip; we'll try again next bar.
                 return;
             }
 
-            // V2 setup-by-moneyness routing: each symbol only checks the role-assigned setup.
-            WatchRole role = state.symbolRole.get(symbol);
-            if (role == null) return;  // not in current watchlist; ignore
-
-            // V3 setup: ATM L4 breakdown (SHORT) + optional H4 breakout (LONG). Both check
-            // only the ATM_L4 role. Premium chart can't satisfy both conditions in the same
-            // bar (a candle can't close both above H4 and below L4), so the if/else-if is
-            // mathematically safe.
-            if (role != WatchRole.ATM_L4) return;
-            // Algo strategy is sell-only — L4 breakdown short on the ATM CE/PE pair.
-            // Entry now requires confirmation from BOTH Camarilla L4 and the per-option
-            // session VWAP (Fyers avg_trade_price since 09:15 IST). Two trigger
-            // geometries, same regime, same setup tag / target / SL:
-            //   Scenario 1 — VWAP-cross: bar crossed VWAP downward (high >= VWAP &&
-            //                close < VWAP), L4 was already broken (close < L4).
-            //   Scenario 2 — L4-cross:   bar crossed L4 downward (high >= L4 && close
-            //                < L4), VWAP was above LTP (close < VWAP).
-            // VWAP=0 (no full-mode tick yet) blocks all entries — fail-safe.
+            // VWAP for the futures contract. Same Fyers atp source as v1 used for
+            // options. When the operator turns the VWAP filter off in settings, we
+            // skip the "must have a full-mode tick" gate and pass vwap=0 through so
+            // the detector treats setups as direction-agnostic.
             double vwap = 0;
-            try { vwap = marketDataService.getVwap(symbol); }
+            try { vwap = marketDataService.getVwap(futuresSym); }
             catch (Exception ignored) {}
+            boolean vwapFilterOn = riskSettings.isCamarillaVwapFilterEnabled();
+            if (vwapFilterOn && vwap <= 0) return;   // fail-safe — pre-tick gap
 
-            EntryCandidate candidate = null;
-            boolean baseRegime = c.isRed()
-                && c.close() < lv.l4()
-                && vwap > 0
-                && c.close() < vwap;
-            if (baseRegime) {
-                boolean crossedL4   = c.high() >= lv.l4();
-                boolean crossedVwap = c.high() >= vwap;
-                // L4 cross is the stronger Camarilla signal — when the bar crosses both
-                // L4 and VWAP in the same period, label it L4_BREAKDOWN. VWAP_BREAKDOWN
-                // fires only when L4 was broken earlier (close < L4 but bar didn't touch
-                // L4 this period) and VWAP gave way this bar.
-                if (crossedL4) {
-                    candidate = new EntryCandidate(symbol, role, ActiveSetup.L4_BREAKDOWN,
-                        lv.l5(), lv.l3(), c);
-                } else if (crossedVwap) {
-                    candidate = new EntryCandidate(symbol, role, ActiveSetup.VWAP_BREAKDOWN,
-                        lv.l5(), lv.l3(), c);
-                }
-            }
+            EntryCandidate candidate = detectFuturesSetup(futuresSym, c, lv, vwap, vwapFilterOn);
             if (candidate == null) return;
 
-            // Buffer this candidate — the fast scheduler will process the bar's full buffer
-            // after BAR_PROCESSING_GRACE_MS, apply the L4 tiebreaker (prefer ATM over ITM),
-            // and fire the selected candidate(s) per side.
+            // Buffer the candidate — fast scheduler drains after BAR_PROCESSING_GRACE_MS.
             pendingByBar
                 .computeIfAbsent(c.startMillis(), k -> new CopyOnWriteArrayList<>())
                 .add(candidate);
         }
+    }
+
+    /** v2 — Four-setup detector on a single NIFTY-futures bar close.
+     *
+     *  <p>Reversal precedence over breakout: a green bar that wicks below L3 AND
+     *  closes above H4 in the same bar will be tagged L3_REVERSAL (the rarer
+     *  structural signal). Same for the mirror case on the bearish side.
+     *
+     *  <p>Returns null when no setup matches OR the VWAP direction gate fails.
+     *  {@code targetLevel} and {@code slLevel} on the returned candidate are
+     *  FUTURES PRICES — fire() copies them to the Position's
+     *  {@code targetFutures} / {@code slFutures} fields. */
+    private EntryCandidate detectFuturesSetup(String futuresSym, Candle c,
+                                              CamarillaLevels lv, double vwap,
+                                              boolean vwapFilterOn) {
+        if (lv == null) return null;
+        WatchRole role = state.symbolRole.get(futuresSym);
+        if (role == null) role = WatchRole.ATM_L4;   // defensive — futures is always the trigger
+
+        // VWAP direction gates. When the operator turned the filter off, treat each
+        // half as unconditionally allowed — geometry alone decides which setup fires.
+        boolean bullishOk = !vwapFilterOn || (vwap > 0 && c.close() > vwap);
+        boolean bearishOk = !vwapFilterOn || (vwap > 0 && c.close() < vwap);
+
+        if (bullishOk) {
+            // L3_REVERSAL: green bar wicks below L3, closes back above.
+            if (c.isGreen() && c.low() <= lv.l3() && c.close() > lv.l3()) {
+                return new EntryCandidate(futuresSym, role, ActiveSetup.L3_REVERSAL,
+                    /*target*/ lv.h3(),
+                    /*sl*/     lv.l4() - 3 * TICK_FUTURES,
+                    c);
+            }
+            // H4_BREAKOUT: futures closes above H4.
+            if (c.close() > lv.h4()) {
+                return new EntryCandidate(futuresSym, role, ActiveSetup.H4_BREAKOUT,
+                    /*target*/ lv.h5(),
+                    /*sl*/     lv.h3() - 3 * TICK_FUTURES,
+                    c);
+            }
+        }
+
+        if (bearishOk) {
+            // H3_REVERSAL: red bar wicks above H3, closes back below.
+            if (c.isRed() && c.high() >= lv.h3() && c.close() < lv.h3()) {
+                return new EntryCandidate(futuresSym, role, ActiveSetup.H3_REVERSAL,
+                    /*target*/ lv.l3(),
+                    /*sl*/     lv.h4() + 3 * TICK_FUTURES,
+                    c);
+            }
+            // L4_BREAKDOWN: futures closes below L4.
+            if (c.close() < lv.l4()) {
+                return new EntryCandidate(futuresSym, role, ActiveSetup.L4_BREAKDOWN,
+                    /*target*/ lv.l5(),
+                    /*sl*/     lv.l3() + 3 * TICK_FUTURES,
+                    c);
+            }
+        }
+        return null;
     }
 
     private boolean canFireNewEntry() {
@@ -837,9 +912,18 @@ public class Camarilla implements Strategy {
     private double exposedRiskNow() {
         double total = 0;
         for (Position p : state.openPositions.values()) {
-            double perShare = p.isShort
-                ? Math.max(0, p.slLevel - p.entryPrice)
-                : Math.max(0, p.entryPrice - p.slLevel);
+            // v2 positions: futures-distance proxy (entryFutures vs slFutures).
+            // v1 positions: option-price distance (entryPrice vs slLevel).
+            boolean v2 = p.triggerSymbol != null && !p.triggerSymbol.isBlank()
+                       && p.entryFutures > 0 && !Double.isNaN(p.slFutures);
+            double perShare;
+            if (v2) {
+                perShare = Math.abs(p.slFutures - p.entryFutures);
+            } else {
+                perShare = p.isShort
+                    ? Math.max(0, p.slLevel - p.entryPrice)
+                    : Math.max(0, p.entryPrice - p.slLevel);
+            }
             total += perShare * p.qty;
         }
         return total;
@@ -856,165 +940,131 @@ public class Camarilla implements Strategy {
         return total;
     }
 
-    private void fire(String symbol, ActiveSetup setup, double targetLevel, double slLevel, Candle entryCandle) {
+    /** v2 — Fire a new SHORT option entry triggered by a futures bar setup.
+     *
+     *  @param triggerSymbol the NIFTY future the trigger fired on (also the SL/target reference)
+     *  @param setup         which of the four v2 setups fired
+     *  @param targetFutures futures price for the target trigger
+     *  @param slFutures     futures price for the SL trigger
+     *  @param entryCandle   the futures bar that fired the setup (used for entry futures price)
+     */
+    private void fire(String triggerSymbol, ActiveSetup setup,
+                      double targetFutures, double slFutures, Candle entryCandle) {
         boolean shortSetup = isShortSetup(setup);
-        String  sideWord   = shortSetup ? "sell"  : "buy";
-        boolean isCe = symbol != null && symbol.endsWith("CE");
-        boolean isPe = symbol != null && symbol.endsWith("PE");
+        if (!shortSetup) return;   // v2 is sell-only by design
+        boolean bullishBet = isBullishBet(setup);
 
-        // ── OI bias gate ──
-        //   SHORT (existing behavior, label-tolerant): when the filter is enabled, block CE
-        //   in any bullish-family bias, PE in any bearish-family bias. NEUTRAL passes.
-        //   LONG (V3, always strict when buying is enabled): require VERY_BULLISH for CE buy,
-        //   VERY_BEARISH for PE buy. Anything else blocks.
+        // ── Pick the OTM option leg ──
+        // bullish bet  → sell ATM−50 PUT
+        // bearish bet  → sell ATM+50 CALL
+        long atm = atmTracker.getCurrentAtm();
+        if (atm <= 0) {
+            event("[ERROR]", "AUTO ENTRY", setup + " — ATM not yet locked, skipping");
+            return;
+        }
+        long strike = bullishBet ? (atm - STRIKE_STEP) : (atm + STRIKE_STEP);
+        BalancedAtmSelector.StrikeAtLevel row = atmSelector.resolveStrikeAtLevel(strike);
+        String optionSym = null;
+        if (row != null) {
+            optionSym = bullishBet ? row.peSymbol() : row.ceSymbol();
+        }
+        if (optionSym == null || optionSym.isBlank()) {
+            event("[ERROR]", "AUTO ENTRY",
+                setup + " — couldn't resolve " + (bullishBet ? "PUT" : "CALL")
+                + " symbol at strike " + strike);
+            return;
+        }
+        // Avoid double-entry on the same option leg if a prior trade is still open on it.
+        if (state.openPositions.containsKey(optionSym)) return;
+
+        // ── Risk gates: consumed > maxRisk locks out the day ──
+        double maxRisk = riskSettings.getCamarillaMaxRisk();
+        if (maxRisk > 0 && consumedRiskNow() > maxRisk) {
+            event("[ERROR]", "Risk", setup + " skipped — consumed ₹"
+                + round2(consumedRiskNow()) + " > maxRisk ₹" + round2(maxRisk)
+                + ", locking session");
+            state.dailyLossLockout = true;
+            saveToDisk();
+            return;
+        }
+
+        // ── Futures-price-based R:R floor (toggle) ──
+        // For futures-driven entries the candle close approximates the entry futures price.
+        // reward = |entryFut − targetFut|, risk = |slFut − entryFut|.
+        double entryFutures = entryCandle.close();
         try {
-            com.rydytrader.autotrader.service.OptionOiTracker oiCheck = oiTrackerProvider == null ? null
-                : oiTrackerProvider.getIfAvailable();
-            // Sell-only algo: only the label-tolerant SHORT gate remains. The strict
-            // VERY_BULLISH / VERY_BEARISH gates that protected H4 buying are gone with
-            // the buying setup.
-            if (oiCheck != null && shortSetup && riskSettings.isCamarillaOiBiasFilterEnabled()) {
-                String bias = oiCheck.snapshot().bias();
-                boolean bearishFamily = "BEARISH_BIAS".equals(bias)
-                    || "VERY_BEARISH_BIAS".equals(bias)
-                    || "STRONG_BEARISH_BIAS".equals(bias);   // legacy
-                boolean bullishFamily = "BULLISH_BIAS".equals(bias)
-                    || "VERY_BULLISH_BIAS".equals(bias)
-                    || "STRONG_BULLISH_BIAS".equals(bias);   // legacy
-                if (isCe && bullishFamily) {
-                    event("[WARNING]", "OiBias", "skipping CE short on " + symbol + " — bias=" + bias);
-                    return;
-                }
-                if (isPe && bearishFamily) {
-                    event("[WARNING]", "OiBias", "skipping PE short on " + symbol + " — bias=" + bias);
-                    return;
-                }
-            }
+            double live = marketDataService.getLtp(triggerSymbol);
+            if (live > 0) entryFutures = live;
         } catch (Exception ignored) {}
-
-        int lots = riskSettings.getCamarillaLotsPerLeg();
-        int qty = lots * LOT_SIZE;
-        String productType = riskSettings.getCamarillaOrderType();
-
-        double entryLtp;
-        try { entryLtp = marketDataService.getLtp(symbol); }
-        catch (Exception e) { entryLtp = entryCandle.close(); }
-        if (entryLtp <= 0) entryLtp = entryCandle.close();
-
-        // ── Minimum 1R reward-to-risk filter ──
-        // Skip entries where the remaining reward (entry → effective target) is
-        // smaller than the risk (entry → SL). Most-bitten case: a late
-        // VWAP_BREAKDOWN where price has already dropped most of the way from L4
-        // to L5 — target distance shrinks while SL distance (entry → L3 above)
-        // grows, dragging R:R below 1.0. No positive expectancy at any size, so
-        // reject before the budget gate runs.
-        //
-        // Expiry-day clamp: on expiry day, Camarilla L5 for a far-OTM short can
-        // compute < 0. Option premium can't go below zero, so the EFFECTIVE
-        // target for a SHORT is max(0, targetLevel) — the realistic best-case
-        // reward is the full premium decaying to zero. Without this clamp the
-        // R:R math overstates reward (entry − negative target) and lets through
-        // trades whose target is mathematically unreachable.
-        //
-        // Bypassed only for NaN target (MANUAL trades — operator picks exits) or
-        // when the operator has turned off the check in Settings → Risk → Min 1:1
-        // R:R Check. With the check off, only the budget gate sizes the trade.
-        // Hard-coded 1.0 floor when ON; promote to a numeric setting later if
-        // operators want to tune the threshold.
-        if (!Double.isNaN(targetLevel) && riskSettings.isCamarillaMinRRCheckEnabled()) {
-            double effectiveTarget = shortSetup ? Math.max(0, targetLevel) : targetLevel;
-            double reward = shortSetup ? (entryLtp - effectiveTarget) : (effectiveTarget - entryLtp);
-            double risk   = shortSetup ? (slLevel - entryLtp)         : (entryLtp - slLevel);
+        if (riskSettings.isCamarillaMinRRCheckEnabled()) {
+            double reward = Math.abs(entryFutures - targetFutures);
+            double risk   = Math.abs(slFutures - entryFutures);
             if (risk > 0 && reward < risk) {
-                event("[WARNING]", "Sizing", symbol + " skipped — R:R "
+                event("[WARNING]", "Sizing", setup + " skipped — R:R "
                     + round2(reward / risk) + " < 1.0"
-                    + " (reward " + round2(reward) + " pts < risk " + round2(risk) + " pts,"
-                    + " entry " + round2(entryLtp) + " → target " + round2(effectiveTarget)
-                    + (targetLevel < 0 ? " [L5=" + round2(targetLevel) + " clamped to 0]" : "")
-                    + ", SL " + round2(slLevel) + ")");
+                    + " (reward " + round2(reward) + " < risk " + round2(risk)
+                    + ", entryFut " + round2(entryFutures)
+                    + ", target " + round2(targetFutures)
+                    + ", SL " + round2(slFutures) + ")");
                 return;
             }
         }
 
-        // ── Risk-budget gate (best-fit shrink) ──
-        // Compare (consumedRisk + exposedRisk + thisTradeRisk) against the portfolio
-        // daily risk cap. If full size won't fit, shrink to the largest whole-lot
-        // count that DOES fit. Skip only when even 1 lot is over budget. Bypassed
-        // when maxRisk = 0 (operator hasn't opted in) or rPerShare ≤ 0 (Camarilla
-        // levels degenerate). R-per-share flips by direction. Max-lots is already
-        // baked in by construction — qty starts at camarillaLotsPerLeg × LOT_SIZE.
-        double maxRisk = riskSettings.getPortfolioMaxDailyLoss();
-        if (maxRisk > 0) {
-            double rPerShare = shortSetup ? (slLevel - entryLtp) : (entryLtp - slLevel);
-            if (rPerShare > 0) {
-                double budget   = exposedRiskNow() + consumedRiskNow();
-                double headroom = maxRisk - budget;
-                double fullRisk = rPerShare * qty;
-                if (fullRisk <= headroom) {
-                    event("[INFO]", "Sizing", symbol + " budget OK — risk ₹"
-                        + round2(fullRisk) + " ≤ headroom ₹" + round2(headroom)
-                        + " (budget=₹" + round2(budget) + ", max=₹" + round2(maxRisk) + ")");
-                } else {
-                    long maxAffordableShares = (long) Math.floor(headroom / rPerShare);
-                    int  bestLots            = (int) (maxAffordableShares / LOT_SIZE);
-                    if (bestLots < 1) {
-                        event("[ERROR]", "Sizing", symbol + " skipped — 1 lot risk ₹"
-                            + round2(rPerShare * LOT_SIZE) + " > headroom ₹"
-                            + round2(headroom) + " (budget=₹" + round2(budget)
-                            + ", max=₹" + round2(maxRisk) + ")");
-                        return;
-                    }
-                    int  newQty  = bestLots * LOT_SIZE;
-                    double newRisk = rPerShare * newQty;
-                    event("[WARNING]", "Sizing", symbol + " downsized " + lots + "→" + bestLots
-                        + " lots — full risk ₹" + round2(fullRisk)
-                        + " > headroom ₹" + round2(headroom)
-                        + ", new risk ₹" + round2(newRisk));
-                    qty = newQty;
-                }
-            }
-        }
-
-        log.info("[Camarilla] {} fired — {} {} qty={} entryLtp={} target={} sl={}",
-            setup, sideWord, symbol, qty, entryLtp, targetLevel, slLevel);
-        event("[INFO]", "AUTO ENTRY", setup + " fired — " + sideWord + " " + symbol + " qty " + qty
-            + " entry≈" + round2(entryLtp) + " target=" + round2(targetLevel) + " SL=" + round2(slLevel));
-
-        // OI bias context line so the operator can see what gate state allowed the trade.
-        try {
-            com.rydytrader.autotrader.service.OptionOiTracker oi = oiTrackerProvider == null ? null
-                : oiTrackerProvider.getIfAvailable();
-            if (oi != null) event("[INFO]", "OiBias", oi.biasLogLine());
-        } catch (Exception ignored) {}
-
-        // Side: -1 = sell (SHORT setups), +1 = buy (LONG H4_BREAKOUT).
-        int orderSide = shortSetup ? -1 : +1;
-        OrderDTO order = orderService.placeOrder(symbol, qty, orderSide, 0, productType);
-        if (order == null || order.getId() == null || order.getId().isEmpty()) {
-            log.warn("[Camarilla] entry order rejected for {} — staying idle", symbol);
-            event("[ERROR]", "AUTO ENTRY", "entry order rejected for " + symbol);
+        // ── Project exposed-risk after this entry; block if it would exceed maxRisk ──
+        // Per-position futures-equivalent risk = |entryFut − slFut| × qty.
+        int qty = riskSettings.getCamarillaLotsPerLeg() * LOT_SIZE;
+        double newExposureDelta = Math.abs(entryFutures - slFutures) * qty;
+        if (maxRisk > 0 && (exposedRiskNow() + newExposureDelta) > maxRisk) {
+            event("[WARNING]", "Risk", setup + " skipped — projected exposed ₹"
+                + round2(exposedRiskNow() + newExposureDelta) + " > maxRisk ₹"
+                + round2(maxRisk));
             return;
         }
 
-        try { marketDataService.subscribeAdditional(Collections.singletonList(symbol)); }
+        // ── Place the SELL (SHORT) order on the option leg ──
+        String productType = riskSettings.getCamarillaOrderType();
+        int orderSide = -1;
+        double optionEntryLtp = 0;
+        try { optionEntryLtp = marketDataService.getLtp(optionSym); }
+        catch (Exception ignored) {}
+        // optionEntryLtp may be 0 if the option hasn't ticked yet — leave it 0, the fill
+        // resolver will overwrite with the real broker fill price.
+
+        log.info("[Camarilla v2] {} fired — sell {} qty={} (triggerFut={}, entryFut={}, target={}, sl={})",
+            setup, optionSym, qty, triggerSymbol, entryFutures, targetFutures, slFutures);
+        event("[INFO]", "AUTO ENTRY", setup + " — sell " + optionSym + " qty " + qty
+            + " (futEntry≈" + round2(entryFutures) + ", target=" + round2(targetFutures)
+            + ", SL=" + round2(slFutures) + ")");
+
+        OrderDTO order = orderService.placeOrder(optionSym, qty, orderSide, 0, productType);
+        if (order == null || order.getId() == null || order.getId().isEmpty()) {
+            log.warn("[Camarilla v2] entry order rejected for {} — staying idle", optionSym);
+            event("[ERROR]", "AUTO ENTRY", "entry order rejected for " + optionSym);
+            return;
+        }
+        try { marketDataService.subscribeAdditional(Collections.singletonList(optionSym)); }
         catch (Exception ignored) {}
 
         Position p = new Position();
-        p.symbol       = symbol;
-        p.setup        = setup;
-        p.qty          = qty;
-        p.entryPrice   = entryLtp;       // LTP estimate — refreshUnresolvedFills() overwrites with the broker fill
-        p.fillResolved = false;
-        p.entryOrderId = order.getId();
-        p.openMillis   = System.currentTimeMillis();
-        p.targetLevel    = targetLevel;
-        p.slLevel        = slLevel;
-        p.originalSlLevel = slLevel;     // frozen R reference for breakeven trigger
+        p.symbol        = optionSym;          // the leg being traded
+        p.triggerSymbol = triggerSymbol;      // futures — fastSlCheck reads its LTP
+        p.setup         = setup;
+        p.qty           = qty;
+        p.entryPrice    = optionEntryLtp;     // option premium estimate; fill resolver overwrites
+        p.entryFutures  = entryFutures;       // futures price at entry
+        p.fillResolved  = false;
+        p.entryOrderId  = order.getId();
+        p.openMillis    = System.currentTimeMillis();
+        p.targetFutures = targetFutures;
+        p.slFutures     = slFutures;
+        // Legacy targetLevel / slLevel kept = futures values too, so dashboard JSON
+        // continues to show the right numbers and v1-shaped consumers don't NPE.
+        p.targetLevel   = targetFutures;
+        p.slLevel       = slFutures;
+        p.originalSlLevel = slFutures;
         p.breakevenMoved  = false;
-        p.isShort         = shortSetup;
-        p.productType     = productType;   // algo entries: configured Camarilla product
-        // Freeze the OI bias at entry — the analytics page splits trades by Strong
-        // (with-trend) vs Weak (NEUTRAL/STALE/against) confirmation using this value.
+        p.isShort         = true;
+        p.productType     = productType;
         try {
             com.rydytrader.autotrader.service.OptionOiTracker oiAtEntry = oiTrackerProvider == null ? null
                 : oiTrackerProvider.getIfAvailable();
@@ -1023,8 +1073,13 @@ public class Camarilla implements Strategy {
                 p.entryOiBias = b == null ? "" : b;
             }
         } catch (Exception ignored) {}
-        state.openPositions.put(symbol, p);
+        state.openPositions.put(optionSym, p);
         state.tradesToday++;
+        // Re-subscribe candle listener on the option symbol too — needed so the existing
+        // candle-close skip-if-open path correctly short-circuits if any leftover code
+        // routes option candles through onCandleClose.
+        final String optSym = optionSym;
+        candleAggregator.subscribe(optSym, c -> onCandleClose(optSym, c));
         saveToDisk();
     }
 
@@ -1760,26 +1815,50 @@ public class Camarilla implements Strategy {
         m.put("watchlistSize",     state.symbolRole.size());
         m.put("watchlistRoles",    new LinkedHashMap<>(state.symbolRole));
 
-        // ATM CE + PE session VWAP — Fyers' avg_trade_price field, accumulated by NSE
-        // from 09:15. Feeds two chips next to the Max-OI ones in the Live Positions
-        // header so the operator can read each leg's session-average price at a glance.
-        // Walks the current watchlist roles (set up once at session open by the bootstrap
-        // ATM event) to find the CE and PE symbols.
+        // v2 header chips — the v1 VWAP-CE / VWAP-PE option-premium chips are replaced
+        // by FUTURES-driven chips that reflect what the triggers actually read:
+        //   • futSymbol  / futLtp  / futVwap — near-month NIFTY future feed
+        //   • putSymbol  / putLtp           — ATM−50 PUT (bullish trade leg)
+        //   • callSymbol / callLtp          — ATM+50 CALL (bearish trade leg)
+        // The legacy {ceSymbol, peSymbol, ceVwap, peVwap} fields are still emitted
+        // (zero-value) so v1-era frontends that haven't been rebuilt don't NPE on
+        // missing keys — they'll just render '—' until the page is updated.
         Map<String, Object> vwap = new LinkedHashMap<>();
-        String ceSym = null, peSym = null;
-        for (Map.Entry<String, WatchRole> e : state.symbolRole.entrySet()) {
-            String sym = e.getKey();
-            if (sym == null) continue;
-            if (sym.endsWith("CE") && ceSym == null) ceSym = sym;
-            else if (sym.endsWith("PE") && peSym == null) peSym = sym;
+        String futSym = state.futuresSymbol == null ? "" : state.futuresSymbol;
+        double futLtp = 0, futVwap = 0, futChange = 0, futChangePct = 0;
+        if (!futSym.isBlank()) {
+            try { futLtp        = marketDataService.getLtp(futSym); }              catch (Exception ignored) {}
+            try { futVwap       = marketDataService.getVwap(futSym); }             catch (Exception ignored) {}
+            try { futChange     = marketDataService.getDisplayChange(futSym); }    catch (Exception ignored) {}
+            try { futChangePct  = marketDataService.getDisplayChangePct(futSym); } catch (Exception ignored) {}
         }
-        vwap.put("ceSymbol", ceSym == null ? "" : ceSym);
-        vwap.put("peSymbol", peSym == null ? "" : peSym);
-        double ceVwap = 0, peVwap = 0;
-        try { if (ceSym != null) ceVwap = marketDataService.getVwap(ceSym); } catch (Exception ignored) {}
-        try { if (peSym != null) peVwap = marketDataService.getVwap(peSym); } catch (Exception ignored) {}
-        vwap.put("ceVwap", round2(ceVwap));
-        vwap.put("peVwap", round2(peVwap));
+        long atm = atmTracker.getCurrentAtm();
+        String putSym = "", callSym = "";
+        double putLtp = 0, callLtp = 0;
+        if (atm > 0) {
+            BalancedAtmSelector.StrikeAtLevel putRow  = atmSelector.resolveStrikeAtLevel(atm - STRIKE_STEP);
+            BalancedAtmSelector.StrikeAtLevel callRow = atmSelector.resolveStrikeAtLevel(atm + STRIKE_STEP);
+            if (putRow  != null && putRow.peSymbol()  != null)  putSym  = putRow.peSymbol();
+            if (callRow != null && callRow.ceSymbol() != null) callSym = callRow.ceSymbol();
+            if (!putSym.isBlank())  { try { putLtp  = marketDataService.getLtp(putSym);  } catch (Exception ignored) {} }
+            if (!callSym.isBlank()) { try { callLtp = marketDataService.getLtp(callSym); } catch (Exception ignored) {} }
+        }
+        vwap.put("futSymbol",    futSym);
+        vwap.put("futLtp",       round2(futLtp));
+        vwap.put("futChange",    round2(futChange));
+        vwap.put("futChangePct", round2(futChangePct));
+        vwap.put("futVwap",      round2(futVwap));
+        vwap.put("putSymbol",    putSym);
+        vwap.put("putStrike",    atm > 0 ? (atm - STRIKE_STEP) : 0);
+        vwap.put("putLtp",       round2(putLtp));
+        vwap.put("callSymbol",   callSym);
+        vwap.put("callStrike",   atm > 0 ? (atm + STRIKE_STEP) : 0);
+        vwap.put("callLtp",      round2(callLtp));
+        // Back-compat shims (v1 keys, always 0 now) so the old chip helpers don't break.
+        vwap.put("ceSymbol", "");
+        vwap.put("peSymbol", "");
+        vwap.put("ceVwap",   0);
+        vwap.put("peVwap",   0);
         m.put("atmVwap", vwap);
 
         // Open positions list — each row carries its own LTP, MTM, target/SL levels.
@@ -1795,15 +1874,12 @@ public class Camarilla implements Strategy {
             row.put("entryPrice",  round2(p.entryPrice));
             row.put("ltp",         round2(ltp));
             row.put("mtm",         round2(mtm));
-            // Display floor for SHORT targets — Camarilla L5 can compute negative
-            // for far-OTM expiry-day strikes, but NSE option premium has a 0.05
-            // tick floor. Showing a negative target on the positions card is
-            // confusing; clamp the DISPLAYED value to 0.05 while leaving the
-            // raw p.targetLevel untouched (the target-hit detector uses the raw
-            // value and naturally never fires on negative — the position rides
-            // to timed exit, which is the intended behaviour).
+            // v2 positions report futures-price target/SL. v1 positions report
+            // option-premium target/SL with the 0.05 tick floor clamp for negative
+            // L5 expiry-day cases.
+            boolean v2 = p.triggerSymbol != null && !p.triggerSymbol.isBlank();
             double displayedTarget = p.targetLevel;
-            if (p.isShort && !Double.isNaN(displayedTarget) && displayedTarget < OPTION_TICK_SIZE) {
+            if (!v2 && p.isShort && !Double.isNaN(displayedTarget) && displayedTarget < OPTION_TICK_SIZE) {
                 displayedTarget = OPTION_TICK_SIZE;
             }
             row.put("targetLevel",   round2(displayedTarget));
@@ -1811,6 +1887,12 @@ public class Camarilla implements Strategy {
             row.put("breakevenMoved", p.breakevenMoved);
             row.put("isShort",       p.isShort);
             row.put("openMillis",    p.openMillis);
+            // v2 metadata for the Live Positions table: triggerSymbol presence flips
+            // the target/SL formatter to render '24580.00 FUT' instead of '₹24580.00'.
+            row.put("triggerSymbol", p.triggerSymbol == null ? "" : p.triggerSymbol);
+            row.put("entryFutures",  round2(p.entryFutures));
+            row.put("targetFutures", round2(p.targetFutures));
+            row.put("slFutures",     round2(p.slFutures));
             rows.add(row);
         }
         m.put("openPositions", rows);
@@ -1863,6 +1945,15 @@ public class Camarilla implements Strategy {
         public Map<String, Position> openPositions = new ConcurrentHashMap<>();
         public List<Map<String, Object>> todayClosedTrades = new ArrayList<>();
         public List<Map<String, Object>> recentEvents      = new ArrayList<>();
+        /** v2 — set when consumedRisk OR exposedRisk crosses camarillaMaxRisk
+         *  during the session. Once true, no new algo entries fire for the
+         *  rest of the day. Persisted so a mid-day restart preserves it.
+         *  Cleared on the day-key flip (next session). */
+        public boolean dailyLossLockout;
+        /** v2 — the resolved NIFTY near-month future symbol used as the trigger
+         *  feed for this session. Set when the AtmChange bootstrap fires;
+         *  persisted so a restart can re-subscribe without re-resolving. */
+        public String futuresSymbol = "";
 
         // ── V2 watchlist ──────────────────────────────────────────────────────
         /** Current monitored 6-contract matrix (ATM, ±1 strike, CE+PE) → role mapping. */
@@ -1919,6 +2010,23 @@ public class Camarilla implements Strategy {
          *  configured Camarilla order type when this is blank (covers algo positions
          *  and legacy state files predating this field). */
         public String productType = "";
+        // ── v2 fields (futures-driven triggers, option trade leg) ──
+        /** Fyers symbol of the NIFTY future used as the trigger feed (e.g.
+         *  {@code NSE:NIFTY26JUNFUT}). {@code symbol} stays the OPTION the trade
+         *  was placed on; this field tells fastSlCheck which symbol's LTP drives
+         *  SL/target comparison. Empty for v1 positions — fastSlCheck falls
+         *  back to {@code symbol} (option premium) when blank. */
+        public String triggerSymbol = "";
+        /** Futures price at entry. Used for breakeven move math and exposed-risk
+         *  proxy. 0 for v1 positions. */
+        public double entryFutures;
+        /** Target futures price — when futures LTP crosses this, close the option
+         *  at market. {@code Double.NaN} disables the auto-target. */
+        public double targetFutures = Double.NaN;
+        /** SL futures price — when futures LTP crosses this for SL_BREACH_CONFIRM_TICKS
+         *  consecutive polls, close the option at market. {@code Double.NaN}
+         *  disables the auto-SL. */
+        public double slFutures = Double.NaN;
     }
 
     /** Backward-compat overload — defaults source to "Strategy". */

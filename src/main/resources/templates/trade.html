@@ -244,16 +244,15 @@
                      market-stats cluster from the title. -->
                 <span style="border-left:1px solid var(--border); height:18px; display:inline-block;"></span>
                 <div style="display:flex; gap:14px; align-items:center; font-family:var(--font-mono); font-size:0.72rem; font-weight:normal; flex-wrap:wrap;">
-                    <span style="color:var(--text-muted);">NIFTY <span id="hdrNifty" style="color:var(--text-primary);font-weight:700;">—</span>
-                        <span id="hdrNiftyChg" style="margin-left:4px;font-weight:600;"></span></span>
+                    <!-- v2: NIFTY near-month future replaces the spot NIFTY display.
+                         Futures change/%change render inline next to the LTP. VWAP folds
+                         into the LTP cell's tooltip (hover to see) — keeps the header
+                         compact and the VWAP visible when needed. -->
+                    <span style="color:var(--text-muted);">FUTURES <span id="hdrFut" style="color:var(--text-primary);font-weight:700;cursor:help;">—</span>
+                        <span id="hdrFutChg" style="margin-left:4px;font-weight:600;"></span></span>
                     <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
                         <span id="hdrVixChg" style="margin-left:4px;font-weight:600;"></span></span>
                     <span style="color:var(--text-muted);">ATM <span id="hdrAtm" style="color:var(--accent-cyan);font-weight:700;">—</span></span>
-                    <!-- Session VWAP for the locked ATM CE + PE. Pulled from Fyers'
-                         avg_trade_price field (accumulated by NSE since 09:15). Driven
-                         off the Camarilla SSE state event. -->
-                    <span class="oi-buildup-chip" id="hdrVwapCe" title="VWAP of the ATM CE contract — session avg since 09:15">VWAP CE —</span>
-                    <span class="oi-buildup-chip" id="hdrVwapPe" title="VWAP of the ATM PE contract — session avg since 09:15">VWAP PE —</span>
                 </div>
             </div>
             <div style="display:flex; gap:10px; align-items:center;">
@@ -378,6 +377,20 @@
             maximumFractionDigits: 2
         });
     }
+    /** Target / SL level cell formatter — v2 positions render the futures price
+     *  with a 'FUT' suffix (no ₹ sign — these are index points, not currency).
+     *  v1 positions keep the legacy ₹-prefixed option-premium format. The
+     *  position payload carries triggerSymbol; presence = v2 row. */
+    function fmtLevel(p, v) {
+        var n = Number(v);
+        if (!isFinite(n)) return '—';
+        if (p && p.triggerSymbol) {
+            // Futures point value — fixed 2dp, separator-grouped, FUT tag.
+            return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                 + ' <span style="font-size:0.6rem;color:var(--text-muted);letter-spacing:0.05em;margin-left:4px;">FUT</span>';
+        }
+        return fmtRs(v);
+    }
     function fmtTime(ms) {
         if (!ms) return '—';
         var d = new Date(Number(ms));
@@ -450,23 +463,22 @@
         renderPositions(d);
         renderEvents(d);
         renderKillSwitch(d);
-        // VWAP chips for the locked ATM CE + PE — embedded in dashboardState by
-        // Camarilla so the broker's 2-second heartbeat refreshes them. Server sends
-        // 0 until the first full-mode tick lands; render '—' in that case.
+        // v2 header — futures LTP + change + %change replaces the v1 NIFTY display.
+        // VWAP folds into the LTP tooltip (hover the futures price to see it).
         if (d.atmVwap) {
-            renderVwapChip(document.getElementById('hdrVwapCe'), 'CE', d.atmVwap.ceVwap, d.atmVwap.ceSymbol);
-            renderVwapChip(document.getElementById('hdrVwapPe'), 'PE', d.atmVwap.peVwap, d.atmVwap.peSymbol);
+            renderFutTickerCells(d.atmVwap.futLtp, d.atmVwap.futChange,
+                d.atmVwap.futChangePct, d.atmVwap.futSymbol, d.atmVwap.futVwap);
         }
         // (Market Clock card ticks independently on a 1 s interval — see updateMarketClock())
     }
 
     function renderHeader(d) {
         // Initial / fallback render from the camarilla state stream (2 s heartbeat).
-        // After this, the ticker SSE listener takes over for sub-second updates.
-        var nfEl  = document.getElementById('hdrNifty');
+        // VIX still rides the per-tick ticker SSE; ATM is owned by the backend.
+        // Futures cells are populated by renderFutTickerCells() in applyState() —
+        // no separate ticker-SSE writer needed since futures isn't in the ticker feed.
         var vxEl  = document.getElementById('hdrVix');
         var atmEl = document.getElementById('hdrAtm');
-        if (nfEl)  nfEl.textContent  = d.niftySpot != null ? Number(d.niftySpot).toFixed(2) : '—';
         if (vxEl)  vxEl.textContent  = d.indiaVix  != null ? Number(d.indiaVix).toFixed(2)  : '—';
         if (atmEl) atmEl.textContent = d.currentAtm != null && d.currentAtm > 0 ? String(d.currentAtm) : '—';
     }
@@ -480,19 +492,6 @@
     function chgColor(ch) {
         if (typeof ch !== 'number' || !isFinite(ch)) return 'var(--text-muted)';
         return ch >= 0 ? 'var(--accent-green,#34d399)' : 'var(--accent-red,#f87171)';
-    }
-    function setNiftyHeader(lp, ch, chp) {
-        // ATM is owned by the backend (AtmTracker baseline). We DON'T derive it from NIFTY
-        // here — two writers updating the same span would ping-pong as price drifts across
-        // strike midpoints. Backend is single source of truth.
-        var nfEl  = document.getElementById('hdrNifty');
-        var chgEl = document.getElementById('hdrNiftyChg');
-        if (nfEl && typeof lp === 'number')  nfEl.textContent = Number(lp).toFixed(2);
-        if (chgEl) {
-            var txt = fmtChg(ch, chp);
-            chgEl.textContent = txt || '';
-            chgEl.style.color = chgColor(ch);
-        }
     }
     function setVixHeader(lp, ch, chp) {
         var vxEl  = document.getElementById('hdrVix');
@@ -513,13 +512,12 @@
                 if (!arr || !arr.length) return;
                 for (var i = 0; i < arr.length; i++) {
                     var t = arr[i];
-                    // MarketDataService.buildTickerPayload uses `fyers` for the full Fyers symbol
-                    // (NOT `fullSymbol`). Match on either fyers or the short display name.
+                    // Only VIX rides the per-tick ticker SSE now — the v2 header replaced
+                    // NIFTY spot with the near-month future, which lands via the Camarilla
+                    // state event (2 s heartbeat) since it isn't part of the ticker feed.
                     var full = t.fyers || t.fullSymbol || '';
                     var shrt = t.symbol || '';
-                    if (full === 'NSE:NIFTY50-INDEX' || shrt === 'Nifty 50' || shrt === 'NIFTY 50') {
-                        setNiftyHeader(t.lp, t.ch, t.chp);
-                    } else if (full === 'NSE:INDIAVIX-INDEX' || shrt === 'India VIX' || shrt === 'INDIA VIX') {
+                    if (full === 'NSE:INDIAVIX-INDEX' || shrt === 'India VIX' || shrt === 'INDIA VIX') {
                         setVixHeader(t.lp, t.ch, t.chp);
                     }
                 }
@@ -641,12 +639,12 @@
                       + '</td>'
                     + '<td class="text-center">' + escapeHtml(p.setup) + '</td>'
                     + '<td class="text-right">' + fmtRs(p.entryPrice) + '</td>'
-                    + '<td class="text-right pnl-negative">' + fmtRs(p.slLevel)
+                    + '<td class="text-right pnl-negative">' + fmtLevel(p, p.slLevel)
                         + (p.breakevenMoved
                             ? ' <span title="SL moved to breakeven" style="color:#fbbf24;font-size:0.7rem;margin-left:6px;cursor:help;">▲</span>'
                             : '')
                         + '</td>'
-                    + '<td class="text-right pnl-positive">' + fmtRs(p.targetLevel) + '</td>'
+                    + '<td class="text-right pnl-positive">' + fmtLevel(p, p.targetLevel) + '</td>'
                     + '<td class="text-right">' + fmtRs(p.ltp) + '</td>'
                     + '<td class="text-right ' + pnlClass(pnl) + '" style="font-weight:700;">' + fmtRs(pnl) + '</td>'
                     + '<td class="text-center"><button class="squareoff-btn" style="padding:4px 10px;font-size:0.65rem;" onclick="squareOffRow(\'' + escapeHtml(p.symbol).replace(/'/g, "&#39;") + '\')">×</button></td>'
@@ -873,19 +871,39 @@
         }).catch(function(){});
     }
 
-    // ── ATM VWAP chips ─────────────────────────────────────────────────────
-    // Renders 'VWAP CE 142.40' / 'VWAP PE 78.30' for the locked ATM contracts.
-    // Server sends 0 until Fyers has emitted a full-mode tick with avg_trade_price.
-    function renderVwapChip(el, leg, vwap, symbol) {
-        if (!el) return;
-        var v = Number(vwap || 0);
-        if (!(v > 0)) {
-            el.textContent = 'VWAP ' + leg + ' —';
-            el.title = 'VWAP of the ATM ' + leg + ' contract — no tick yet';
-            return;
+    // ── v2 header chips ────────────────────────────────────────────────────
+    // Futures-driven feed (LTP, VWAP) + the two SHORT option trade-leg LTPs.
+
+    /** Render the FUTURES ticker (LTP + signed change + signed %change) into the
+     *  hdrFut / hdrFutChg cells next to VIX. Color-codes change green/red. The LTP
+     *  cell's tooltip carries the session VWAP — operator hovers the price to see it. */
+    function renderFutTickerCells(ltp, chg, pct, symbol, vwap) {
+        var v   = Number(ltp  || 0);
+        var c   = Number(chg  || 0);
+        var p   = Number(pct  || 0);
+        var w   = Number(vwap || 0);
+        var ltpEl = document.getElementById('hdrFut');
+        var chgEl = document.getElementById('hdrFutChg');
+        if (ltpEl) {
+            ltpEl.textContent = v > 0 ? v.toFixed(2) : '—';
+            var tip = symbol || 'NIFTY near-month future';
+            tip += w > 0
+                ? '\nVWAP: ' + w.toFixed(2) + ' (session avg since 09:15)'
+                : '\nVWAP: — (no full-mode tick yet)';
+            ltpEl.title = tip;
         }
-        el.textContent = 'VWAP ' + leg + ' ' + v.toFixed(2);
-        el.title = 'Session VWAP since 09:15' + (symbol ? ' · ' + symbol : '');
+        if (chgEl) {
+            if (v <= 0 || (c === 0 && p === 0)) {
+                chgEl.textContent = '';
+                chgEl.style.color = '';
+                return;
+            }
+            var sign = c > 0 ? '+' : (c < 0 ? '−' : '');
+            var pctStr = p === 0 ? '' : ' (' + sign + Math.abs(p).toFixed(2) + '%)';
+            chgEl.textContent = sign + Math.abs(c).toFixed(2) + pctStr;
+            chgEl.style.color = c > 0 ? 'var(--accent-green, #34d399)'
+                : (c < 0 ? 'var(--accent-red, #f87171)' : 'var(--text-muted)');
+        }
     }
 
     // ── Boot ───────────────────────────────────────────────────────────────
@@ -1020,7 +1038,7 @@
 
 <script src="/js/common.js?v=41"></script>
 <script src="/js/ticker.js?v=36"></script>
-<script src="/js/settings-modal.js?v=45"></script>
+<script src="/js/settings-modal.js?v=46"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
 <script src="/js/manual-terminal-modal.js?v=45"></script>
 </body>
