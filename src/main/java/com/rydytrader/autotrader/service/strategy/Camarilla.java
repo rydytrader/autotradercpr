@@ -151,7 +151,14 @@ public class Camarilla implements Strategy {
     private final ObjectProvider<StrategyTradeRepository> tradeRepoProvider;
     private final ObjectProvider<CamarillaStreamBroker>   streamBrokerProvider;
     private final ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> oiTrackerProvider;
-    private final ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
+    // Tolerate unknown fields on read so a state file written by a different
+    // branch (e.g. a future v3 or v1's older shape) doesn't wipe today's
+    // in-memory ring on boot. Without this guard Jackson throws
+    // UnrecognizedPropertyException, loadFromDisk falls into the catch block,
+    // and we silently lose today's recentEvents + todayClosedTrades.
+    private final ObjectMapper mapper = new ObjectMapper()
+        .findAndRegisterModules()
+        .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private volatile State state = new State();
     private final Map<String, Object> symbolLocks = new ConcurrentHashMap<>();
