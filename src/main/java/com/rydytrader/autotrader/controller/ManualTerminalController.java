@@ -68,14 +68,19 @@ public class ManualTerminalController {
     // ── Option-chain slice ──────────────────────────────────────────────────────
 
     @GetMapping("/strikes")
-    public ResponseEntity<?> strikes(@RequestParam(defaultValue = "10") int strikes) {
+    public ResponseEntity<?> strikes(@RequestParam(defaultValue = "10") int strikes,
+                                     @RequestParam(required = false) String expiryTs) {
         if (!tokenStore.isTokenAvailable()) {
             return ResponseEntity.status(401).body(Map.of("error", "not_logged_in"));
         }
         try {
             String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
             int fetchCount = Math.max(30, strikes * 2 + 5);
-            JsonNode root = fyersClient.getOptionChain(NIFTY_SYMBOL, fetchCount, auth);
+            // expiryTs is the Fyers epoch-seconds timestamp for the desired weekly.
+            // Blank/missing → nearest expiry (current week). The frontend uses
+            // expiryOptions (returned below) to learn what the next-week timestamp is.
+            JsonNode root = fyersClient.getOptionChain(NIFTY_SYMBOL, fetchCount,
+                expiryTs == null ? "" : expiryTs, auth);
             if (root == null) {
                 return ResponseEntity.status(502).body(Map.of("error", "empty_response"));
             }
@@ -145,11 +150,36 @@ public class ManualTerminalController {
                 }
             }
 
+            // Fyers v3 chain response includes a `data.expiryData` array listing
+            // every upcoming weekly with {date, expiry (epoch s)}. Surface the first
+            // two (current + next week) so the modal dropdown can let the operator
+            // switch between expiries — on change the frontend refetches /strikes
+            // with the selected expiryTs.
+            List<Map<String, Object>> expiryOptions = new ArrayList<>();
+            JsonNode expiryData = data.has("expiryData") ? data.get("expiryData")
+                : (root.has("expiryData") ? root.get("expiryData") : null);
+            if (expiryData != null && expiryData.isArray()) {
+                int taken = 0;
+                for (JsonNode e : expiryData) {
+                    if (taken >= 2) break;
+                    String date = textField(e, "date");
+                    String ts   = textField(e, "expiry");
+                    if (date.isEmpty() || ts.isEmpty()) continue;
+                    Map<String, Object> opt = new LinkedHashMap<>();
+                    opt.put("date", date);
+                    opt.put("ts",   ts);
+                    expiryOptions.add(opt);
+                    taken++;
+                }
+            }
+
             Map<String, Object> out = new LinkedHashMap<>();
             out.put("niftyLtp",      round2(spot));
             out.put("atmStrike",     atm);
             out.put("spotAtmStrike", spotAtm);
-            out.put("expiries",      new ArrayList<>(expirySet));
+            out.put("expiries",      new ArrayList<>(expirySet));   // back-compat
+            out.put("expiryOptions", expiryOptions);                // [{date, ts}, …]
+            out.put("selectedExpiryTs", expiryTs == null ? "" : expiryTs);
             out.put("strikes",       rows);
             return ResponseEntity.ok(out);
         } catch (Exception e) {

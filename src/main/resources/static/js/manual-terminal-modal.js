@@ -237,20 +237,33 @@
         document.getElementById('mtRefreshAtm').addEventListener('click', function() {
             var btn = document.getElementById('mtRefreshAtm');
             if (btn) { btn.textContent = '↻ …'; btn.disabled = true; }
-            fetch('/api/manual/strikes', { credentials: 'same-origin' })
+            // Preserve the currently selected expiry on refresh — operator may
+            // be on next-week and clicking ↻ ATM shouldn't pop them back to
+            // current. Falls back to nearest when nothing is picked yet.
+            var currentTs = (document.getElementById('mtExpiry') || {}).value || '';
+            var url = '/api/manual/strikes' + (currentTs ? ('?expiryTs=' + encodeURIComponent(currentTs)) : '');
+            fetch(url, { credentials: 'same-origin' })
                 .then(function(r) { return r.json(); })
                 .then(function(payload) {
                     chainCache = payload;
-                    populateExpiry(payload.expiries || []);
+                    var opts = (payload.expiryOptions && payload.expiryOptions.length)
+                        ? payload.expiryOptions : (payload.expiries || []);
+                    populateExpiry(opts, payload.selectedExpiryTs || currentTs || '');
                     populateStrikes(payload.strikes || [], payload.atmStrike);
                     refreshSelectedSymbolLtps(payload);
-                    // Silent on success — the dropdowns snapping to the new ATM is the
-                    // visible feedback. Operator only sees the banner if something failed.
                 })
                 .catch(function() { showStatus('Refresh failed', 'error'); })
                 .finally(function() {
                     if (btn) { btn.textContent = '↻ ATM'; btn.disabled = false; }
                 });
+        });
+        // Expiry dropdown change → refetch strikes for the picked weekly. The
+        // strike grid swaps to that expiry's symbols; any subsequent order placement
+        // uses those symbols (so the operator can trade next-week from the same modal).
+        var expEl = document.getElementById('mtExpiry');
+        if (expEl) expEl.addEventListener('change', function() {
+            var ts = expEl.value || '';
+            loadChain(ts);
         });
     }
     function wireActionButtons() {
@@ -459,23 +472,42 @@
     }
 
     // ── Strike chain loading + LTP refresh ───────────────────────────────────
-    function loadChain() {
-        fetch('/api/manual/strikes', { credentials: 'same-origin' })
+    // expiryTs is optional. Blank/null = nearest (current week). When the operator
+    // picks "next" in the dropdown the change-handler calls loadChain(ts) with
+    // the epoch-second timestamp from expiryOptions.
+    function loadChain(expiryTs) {
+        var url = '/api/manual/strikes' + (expiryTs ? ('?expiryTs=' + encodeURIComponent(expiryTs)) : '');
+        fetch(url, { credentials: 'same-origin' })
             .then(function(r) { return r.json(); })
             .then(function(payload) {
                 chainCache = payload;
-                populateExpiry(payload.expiries || []);
+                var opts = (payload.expiryOptions && payload.expiryOptions.length)
+                    ? payload.expiryOptions : (payload.expiries || []);
+                populateExpiry(opts, payload.selectedExpiryTs || expiryTs || '');
                 populateStrikes(payload.strikes || [], payload.atmStrike);
                 refreshSelectedSymbolLtps(payload);
             })
             .catch(function() { /* leave dropdowns empty */ });
     }
-    function populateExpiry(expiries) {
+    // Populate the expiry dropdown. New shape (preferred): expiryOptions = [{date, ts}, …]
+    // Each option's value carries the epoch-second timestamp so a change-handler
+    // can refetch the strikes for that specific expiry. Falls back to the legacy
+    // expiries string list when expiryOptions isn't provided (older backend).
+    function populateExpiry(opts, selectedTs) {
         var sel = document.getElementById('mtExpiry');
         if (!sel) return;
-        sel.innerHTML = expiries.length === 0
-            ? '<option>—</option>'
-            : expiries.map(function(e) { return '<option value="' + e + '">' + e + '</option>'; }).join('');
+        if (!opts || opts.length === 0) { sel.innerHTML = '<option>—</option>'; return; }
+        if (typeof opts[0] === 'string') {
+            // back-compat path
+            sel.innerHTML = opts.map(function(e) { return '<option value="' + e + '">' + e + '</option>'; }).join('');
+            return;
+        }
+        sel.innerHTML = opts.map(function(o, i) {
+            var ts = o.ts || '';
+            var label = o.date + (i === 0 ? ' · current' : ' · next');
+            var isSel = selectedTs ? (selectedTs === ts) : (i === 0);
+            return '<option value="' + ts + '"' + (isSel ? ' selected' : '') + '>' + label + '</option>';
+        }).join('');
     }
     function populateStrikes(strikes, atmStrike) {
         var ce = document.getElementById('mtCeStrike');

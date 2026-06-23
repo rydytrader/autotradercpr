@@ -26,6 +26,7 @@
                     '<div class="sm-field"><label>Trading End Time (HH:mm IST)</label><input type="time" id="sm-camarillaTradingEndTime" step="60"><div class="sm-hint">No new entries fire on candle closes after this time. Default 13:30. Existing positions keep running until target / SL / squareoff.</div></div>' +
                     '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-camarillaSquareOffTime" step="60"><div class="sm-hint">Hard exit if neither target nor SL has triggered.</div></div>' +
                     '<div class="sm-field"><label><input type="checkbox" id="sm-camarillaOiBiasFilterEnabled"> &nbsp;OI Bias Filter</label><div class="sm-hint">When ON: block CE shorts in STRONG_BULLISH markets, block PE shorts in STRONG_BEARISH markets. NEUTRAL / STALE always pass through. Off by default — observe live data for 1–2 weeks before enabling.</div></div>' +
+                    '<div class="sm-field"><label><input type="checkbox" id="sm-camarillaMinRRCheckEnabled"> &nbsp;Min 1:1 R:R Check</label><div class="sm-hint">When ON: skip algo entries whose reward (entry → target, with L5 clamped at 0 on expiry) is smaller than risk (entry → SL). Filters out late VWAP breakdowns where most of the move is already done. Off bypasses the geometry check — only budget sizing applies.</div></div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
                     '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline used by the Home analytics page (capital growth %, equity curve, return %). Default ₹10,00,000.</div></div>' +
@@ -179,6 +180,7 @@
             if (g('sm-camarillaTradingEndTime'))    g('sm-camarillaTradingEndTime').value = d.camarillaTradingEndTime || '13:30';
             if (g('sm-camarillaSquareOffTime'))     g('sm-camarillaSquareOffTime').value = d.camarillaSquareOffTime || '15:15';
             if (g('sm-camarillaOiBiasFilterEnabled')) g('sm-camarillaOiBiasFilterEnabled').checked = !!d.camarillaOiBiasFilterEnabled;
+            if (g('sm-camarillaMinRRCheckEnabled')) g('sm-camarillaMinRRCheckEnabled').checked = d.camarillaMinRRCheckEnabled !== false;
         }).catch(function() {});
     }
 
@@ -190,7 +192,8 @@
             camarillaTradingStartTime:  (g('sm-camarillaTradingStartTime').value || '').trim(),
             camarillaTradingEndTime:    (g('sm-camarillaTradingEndTime').value || '').trim(),
             camarillaSquareOffTime:     (g('sm-camarillaSquareOffTime').value || '').trim(),
-            camarillaOiBiasFilterEnabled: !!g('sm-camarillaOiBiasFilterEnabled').checked
+            camarillaOiBiasFilterEnabled: !!g('sm-camarillaOiBiasFilterEnabled').checked,
+            camarillaMinRRCheckEnabled:   !!g('sm-camarillaMinRRCheckEnabled').checked
         };
         postSettings('/api/settings/risk', body);
     }

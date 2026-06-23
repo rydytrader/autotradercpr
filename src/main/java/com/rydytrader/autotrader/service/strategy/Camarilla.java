@@ -68,6 +68,10 @@ public class Camarilla implements Strategy {
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final String STATE_FILE = "../store/data/camarilla-state.json";
     private static final int LOT_SIZE = 65;
+    /** NSE NIFTY option premium tick size — the minimum tradable price. Used to
+     *  clamp negative Camarilla L5 targets to a meaningful display floor on the
+     *  positions card. */
+    private static final double OPTION_TICK_SIZE = 0.05;
 
     /** NIFTY contract lot size — used by the Manual Terminal controller to translate
      *  the operator's "lots" input into a contract count. Public so the controller
@@ -898,22 +902,35 @@ public class Camarilla implements Strategy {
         if (entryLtp <= 0) entryLtp = entryCandle.close();
 
         // ── Minimum 1R reward-to-risk filter ──
-        // Skip entries where the remaining reward (entry → target) is smaller than
-        // the risk (entry → SL). Most-bitten case: a late VWAP_BREAKDOWN where price
-        // has already dropped most of the way from L4 to L5 — target distance shrinks
-        // while SL distance (entry → L3 above) grows, dragging R:R below 1.0. No
-        // positive expectancy at any size, so reject before the budget gate runs.
-        // Bypassed when targetLevel is NaN/0 (MANUAL trades, which the operator exits
-        // on their own schedule). Hard-coded 1.0 floor; promote to a setting later
-        // if the operator wants to tune it.
-        if (!Double.isNaN(targetLevel) && targetLevel > 0) {
-            double reward = shortSetup ? (entryLtp - targetLevel) : (targetLevel - entryLtp);
-            double risk   = shortSetup ? (slLevel - entryLtp)     : (entryLtp - slLevel);
+        // Skip entries where the remaining reward (entry → effective target) is
+        // smaller than the risk (entry → SL). Most-bitten case: a late
+        // VWAP_BREAKDOWN where price has already dropped most of the way from L4
+        // to L5 — target distance shrinks while SL distance (entry → L3 above)
+        // grows, dragging R:R below 1.0. No positive expectancy at any size, so
+        // reject before the budget gate runs.
+        //
+        // Expiry-day clamp: on expiry day, Camarilla L5 for a far-OTM short can
+        // compute < 0. Option premium can't go below zero, so the EFFECTIVE
+        // target for a SHORT is max(0, targetLevel) — the realistic best-case
+        // reward is the full premium decaying to zero. Without this clamp the
+        // R:R math overstates reward (entry − negative target) and lets through
+        // trades whose target is mathematically unreachable.
+        //
+        // Bypassed only for NaN target (MANUAL trades — operator picks exits) or
+        // when the operator has turned off the check in Settings → Risk → Min 1:1
+        // R:R Check. With the check off, only the budget gate sizes the trade.
+        // Hard-coded 1.0 floor when ON; promote to a numeric setting later if
+        // operators want to tune the threshold.
+        if (!Double.isNaN(targetLevel) && riskSettings.isCamarillaMinRRCheckEnabled()) {
+            double effectiveTarget = shortSetup ? Math.max(0, targetLevel) : targetLevel;
+            double reward = shortSetup ? (entryLtp - effectiveTarget) : (effectiveTarget - entryLtp);
+            double risk   = shortSetup ? (slLevel - entryLtp)         : (entryLtp - slLevel);
             if (risk > 0 && reward < risk) {
                 event("[WARNING]", "Sizing", symbol + " skipped — R:R "
                     + round2(reward / risk) + " < 1.0"
                     + " (reward " + round2(reward) + " pts < risk " + round2(risk) + " pts,"
-                    + " entry " + round2(entryLtp) + " → target " + round2(targetLevel)
+                    + " entry " + round2(entryLtp) + " → target " + round2(effectiveTarget)
+                    + (targetLevel < 0 ? " [L5=" + round2(targetLevel) + " clamped to 0]" : "")
                     + ", SL " + round2(slLevel) + ")");
                 return;
             }
@@ -1778,7 +1795,18 @@ public class Camarilla implements Strategy {
             row.put("entryPrice",  round2(p.entryPrice));
             row.put("ltp",         round2(ltp));
             row.put("mtm",         round2(mtm));
-            row.put("targetLevel",   round2(p.targetLevel));
+            // Display floor for SHORT targets — Camarilla L5 can compute negative
+            // for far-OTM expiry-day strikes, but NSE option premium has a 0.05
+            // tick floor. Showing a negative target on the positions card is
+            // confusing; clamp the DISPLAYED value to 0.05 while leaving the
+            // raw p.targetLevel untouched (the target-hit detector uses the raw
+            // value and naturally never fires on negative — the position rides
+            // to timed exit, which is the intended behaviour).
+            double displayedTarget = p.targetLevel;
+            if (p.isShort && !Double.isNaN(displayedTarget) && displayedTarget < OPTION_TICK_SIZE) {
+                displayedTarget = OPTION_TICK_SIZE;
+            }
+            row.put("targetLevel",   round2(displayedTarget));
             row.put("slLevel",       round2(p.slLevel));
             row.put("breakevenMoved", p.breakevenMoved);
             row.put("isShort",       p.isShort);

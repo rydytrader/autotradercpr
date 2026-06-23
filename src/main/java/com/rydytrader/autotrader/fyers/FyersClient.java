@@ -29,8 +29,12 @@ public interface FyersClient {
     /** POST /api/v3/validate-authcode — exchange auth code for token */
     JsonNode validateAuthCode(String requestBody) throws Exception;
 
-    /** GET /api/v3/optionChain — get option chain with OI data */
+    /** GET /api/v3/optionChain — get option chain with OI data (nearest expiry). */
     JsonNode getOptionChain(String symbol, int strikeCount, String authHeader) throws Exception;
+
+    /** GET /api/v3/optionChain — get option chain for a specific expiry. {@code expiryTs}
+     *  is the Fyers epoch-second timestamp; blank/null means nearest. */
+    JsonNode getOptionChain(String symbol, int strikeCount, String expiryTs, String authHeader) throws Exception;
 
     /** GET /data/quotes — get quotes for a comma-separated list of symbols */
     JsonNode getQuotes(String symbols, String authHeader) throws Exception;

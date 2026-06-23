@@ -52,7 +52,18 @@ public class LiveFyersClient implements FyersClient {
 
     @Override
     public JsonNode getOptionChain(String symbol, int strikeCount, String authHeader) throws Exception {
-        String url = "https://api-t1.fyers.in/data/options-chain-v3?symbol=" + java.net.URLEncoder.encode(symbol, java.nio.charset.StandardCharsets.UTF_8) + "&strikecount=" + strikeCount + "&timestamp=";
+        return getOptionChain(symbol, strikeCount, "", authHeader);
+    }
+
+    /** Same as {@link #getOptionChain(String, int, String)} but lets the caller
+     *  pass a Fyers expiry timestamp (epoch seconds, as a string) to fetch a
+     *  specific weekly's chain instead of the nearest one. Empty {@code expiryTs}
+     *  means "nearest expiry" — same behaviour as the single-arg overload. */
+    public JsonNode getOptionChain(String symbol, int strikeCount, String expiryTs, String authHeader) throws Exception {
+        String url = "https://api-t1.fyers.in/data/options-chain-v3?symbol="
+            + java.net.URLEncoder.encode(symbol, java.nio.charset.StandardCharsets.UTF_8)
+            + "&strikecount=" + strikeCount
+            + "&timestamp="   + (expiryTs == null ? "" : expiryTs.trim());
         return get(url, authHeader);
     }
 

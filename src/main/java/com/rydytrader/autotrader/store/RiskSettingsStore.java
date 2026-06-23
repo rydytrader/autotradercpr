@@ -45,6 +45,13 @@ public class RiskSettingsStore {
          *  direction. NEUTRAL and STALE pass through (no signal = no block). Off by default
          *  for the first 1–2 weeks of live observation; flip in settings when confident. */
         volatile boolean camarillaOiBiasFilterEnabled = false;
+        /** Minimum 1:1 reward-to-risk check on algo entries. When true, fire() skips
+         *  a trade whose reward (entry → effective target, with L5 clamped at 0 on
+         *  expiry) is smaller than its risk (entry → SL). When false, the geometry
+         *  filter is bypassed and only the budget gate sizes the trade. Default ON
+         *  — safer baseline; flip OFF for the rare case the operator wants every
+         *  geometrically-valid entry to fire and rely solely on the budget gate. */
+        volatile boolean camarillaMinRRCheckEnabled = true;
         /** When true, the strategy slides slLevel to entryPrice the instant the option's
          *  premium has moved 1R in our favor (R = original SL distance from entry). One-shot
          *  per position; never trails further. Default off so the operator can validate the
@@ -415,6 +422,7 @@ public class RiskSettingsStore {
     public String  getCamarillaSquareOffTime()    { return cfg().camarillaSquareOffTime; }
     public int     getCamarillaMaxConcurrentPositions() { return cfg().camarillaMaxConcurrentPositions; }
     public boolean isCamarillaOiBiasFilterEnabled()     { return cfg().camarillaOiBiasFilterEnabled; }
+    public boolean isCamarillaMinRRCheckEnabled()       { return cfg().camarillaMinRRCheckEnabled; }
     public boolean isMoveSlToBreakevenEnabled()         { return cfg().moveSlToBreakevenEnabled; }
     public String  getWeeklyExpiryDayOfWeek()           { return cfg().weeklyExpiryDayOfWeek; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
@@ -609,6 +617,7 @@ public class RiskSettingsStore {
     public void setCamarillaSquareOffTime(String v)       { cfg().camarillaSquareOffTime = v == null ? "" : v.trim(); }
     public void setCamarillaMaxConcurrentPositions(int v) { cfg().camarillaMaxConcurrentPositions = Math.max(1, v); }
     public void setCamarillaOiBiasFilterEnabled(boolean v) { cfg().camarillaOiBiasFilterEnabled = v; }
+    public void setCamarillaMinRRCheckEnabled(boolean v)   { cfg().camarillaMinRRCheckEnabled = v; }
     public void setMoveSlToBreakevenEnabled(boolean v)     { cfg().moveSlToBreakevenEnabled = v; }
     public void setWeeklyExpiryDayOfWeek(String v) {
         if (v == null || v.isBlank()) { cfg().weeklyExpiryDayOfWeek = "TUESDAY"; return; }
@@ -720,6 +729,7 @@ public class RiskSettingsStore {
     public String  getCamarillaSquareOffTime(String mode)     { return cfgFor(mode).camarillaSquareOffTime; }
     public int     getCamarillaMaxConcurrentPositions(String mode) { return cfgFor(mode).camarillaMaxConcurrentPositions; }
     public boolean isCamarillaOiBiasFilterEnabled(String mode)     { return cfgFor(mode).camarillaOiBiasFilterEnabled; }
+    public boolean isCamarillaMinRRCheckEnabled(String mode)       { return cfgFor(mode).camarillaMinRRCheckEnabled; }
     public boolean isMoveSlToBreakevenEnabled(String mode)         { return cfgFor(mode).moveSlToBreakevenEnabled; }
     public String  getWeeklyExpiryDayOfWeek(String mode)           { return cfgFor(mode).weeklyExpiryDayOfWeek; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
@@ -753,6 +763,7 @@ public class RiskSettingsStore {
     public void setCamarillaSquareOffTime(String mode, String v)       { cfgFor(mode).camarillaSquareOffTime = v == null ? "" : v.trim(); }
     public void setCamarillaMaxConcurrentPositions(String mode, int v) { cfgFor(mode).camarillaMaxConcurrentPositions = Math.max(1, v); }
     public void setCamarillaOiBiasFilterEnabled(String mode, boolean v) { cfgFor(mode).camarillaOiBiasFilterEnabled = v; }
+    public void setCamarillaMinRRCheckEnabled(String mode, boolean v)   { cfgFor(mode).camarillaMinRRCheckEnabled = v; }
     public void setMoveSlToBreakevenEnabled(String mode, boolean v)     { cfgFor(mode).moveSlToBreakevenEnabled = v; }
     public void setWeeklyExpiryDayOfWeek(String mode, String v) {
         if (v == null || v.isBlank()) { cfgFor(mode).weeklyExpiryDayOfWeek = "TUESDAY"; return; }
@@ -799,6 +810,7 @@ public class RiskSettingsStore {
             upsert("camarillaSquareOffTime",     c.camarillaSquareOffTime);
             upsert("camarillaMaxConcurrentPositions", String.valueOf(c.camarillaMaxConcurrentPositions));
             upsert("camarillaOiBiasFilterEnabled", String.valueOf(c.camarillaOiBiasFilterEnabled));
+            upsert("camarillaMinRRCheckEnabled",   String.valueOf(c.camarillaMinRRCheckEnabled));
             upsert("moveSlToBreakevenEnabled",     String.valueOf(c.moveSlToBreakevenEnabled));
             upsert("weeklyExpiryDayOfWeek", c.weeklyExpiryDayOfWeek);
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
@@ -970,6 +982,7 @@ public class RiskSettingsStore {
                     case "camarillaL4BdEnabled"            -> { /* retired — both setups always on */ }
                     case "camarillaMaxConcurrentPositions" -> c.camarillaMaxConcurrentPositions = Integer.parseInt(v);
                     case "camarillaOiBiasFilterEnabled" -> c.camarillaOiBiasFilterEnabled = Boolean.parseBoolean(v);
+                    case "camarillaMinRRCheckEnabled"   -> c.camarillaMinRRCheckEnabled   = Boolean.parseBoolean(v);
                     case "moveSlToBreakevenEnabled"     -> c.moveSlToBreakevenEnabled = Boolean.parseBoolean(v);
                     case "h4BreakoutBuyingEnabled"      -> { /* retired — H4 buying setup removed */ }
                     case "weeklyExpiryDayOfWeek" -> c.weeklyExpiryDayOfWeek = (v == null || v.isBlank()) ? "TUESDAY" : v.trim().toUpperCase();

@@ -23,6 +23,7 @@ public class FyersClientRouter implements FyersClient {
     @Override public JsonNode getTradebook(String auth) throws Exception               { return live.getTradebook(auth); }
     @Override public JsonNode validateAuthCode(String body) throws Exception           { return live.validateAuthCode(body); }
     @Override public JsonNode getOptionChain(String sym, int strikes, String auth) throws Exception { return live.getOptionChain(sym, strikes, auth); }
+    @Override public JsonNode getOptionChain(String sym, int strikes, String expiryTs, String auth) throws Exception { return live.getOptionChain(sym, strikes, expiryTs, auth); }
     @Override public JsonNode getQuotes(String symbols, String auth) throws Exception { return live.getQuotes(symbols, auth); }
     @Override public JsonNode getProfile(String auth) throws Exception { return live.getProfile(auth); }
     @Override public JsonNode modifyOrder(String orderJson, String auth) throws Exception { return live.modifyOrder(orderJson, auth); }
