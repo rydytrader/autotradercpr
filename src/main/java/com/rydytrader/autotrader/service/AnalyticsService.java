@@ -157,7 +157,8 @@ public class AnalyticsService {
      *  reported for symmetry, though daily summing already gets that right. */
     private Map<String, Object> byMonth(List<Trade> trades, List<Trade> closed) {
         java.util.NavigableMap<String, int[]>    winLossByKey = new java.util.TreeMap<>();
-        java.util.NavigableMap<String, double[]> netByKey     = new java.util.TreeMap<>();
+        java.util.NavigableMap<String, double[]> sumsByKey    = new java.util.TreeMap<>();
+        //  sumsByKey[0] = netPnl, [1] = grossPnl, [2] = charges
         // Win/loss counters — only closed straddles count as outcomes.
         for (Trade t : closed) {
             String date = t.sessionDate();
@@ -168,22 +169,28 @@ public class AnalyticsService {
             if      (pnl > 0) wl[0]++;
             else if (pnl < 0) wl[1]++;
         }
-        // NetPnl — sum across ALL trades (including OPEN_POSITION_MTM) so the month's
-        // net P&L includes today's open MTM and matches the home page hero exactly.
+        // Net / Gross / Charges — sum across ALL trades (including OPEN_POSITION_MTM)
+        // so the month's totals include today's open MTM and match the home page hero
+        // exactly. The calendar year cards read these to populate per-month stat
+        // cells without relying on the strategy-history endpoint (which can return
+        // empty rows for dates where a legacy session entity exists alongside real
+        // Camarilla trades).
         for (Trade t : trades) {
             String date = t.sessionDate();
             if (date == null || date.length() < 7) continue;
             String key  = date.substring(0, 7);
-            double[] ns = netByKey.computeIfAbsent(key, k -> new double[1]);
-            ns[0] += t.netPnl();
+            double[] sums = sumsByKey.computeIfAbsent(key, k -> new double[3]);
+            sums[0] += t.netPnl();
+            sums[1] += t.grossPnl();
+            sums[2] += t.charges();
         }
         Map<String, Object> out = new LinkedHashMap<>();
         java.util.Set<String> allKeys = new java.util.TreeSet<>();
         allKeys.addAll(winLossByKey.keySet());
-        allKeys.addAll(netByKey.keySet());
+        allKeys.addAll(sumsByKey.keySet());
         for (String key : allKeys) {
             int[] wl = winLossByKey.getOrDefault(key, new int[2]);
-            double[] ns = netByKey.getOrDefault(key, new double[1]);
+            double[] sums = sumsByKey.getOrDefault(key, new double[3]);
             int total = wl[0] + wl[1];
             double winRate = total > 0 ? (wl[0] * 100.0 / total) : 0;
             Map<String, Object> m = new LinkedHashMap<>();
@@ -191,7 +198,9 @@ public class AnalyticsService {
             m.put("wins",      wl[0]);
             m.put("losses",    wl[1]);
             m.put("winRate",   round2(winRate));
-            m.put("netPnl",    round2(ns[0]));
+            m.put("netPnl",    round2(sums[0]));
+            m.put("grossPnl",  round2(sums[1]));
+            m.put("charges",   round2(sums[2]));
             out.put(key, m);
         }
         return out;

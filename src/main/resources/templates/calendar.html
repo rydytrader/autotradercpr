@@ -568,18 +568,45 @@
             // pick up the freshest per-straddle numbers. Year view doesn't use day cells.
             analyticsByDate = d.byDate || {};
             if (view === 'month') renderMonthGrid();
-            // Year-grid month cards — patch each card's Win % cell using per-straddle byMonth
-            // data. Cards in month view don't have these elements (querySelectorAll = []).
+            // Year-grid month cards — patch Win % / Gross / Charges / Trades cells
+            // from the per-month analytics aggregate. The strategy-history endpoint
+            // can return empty sessions when a legacy session row coexists with
+            // real Camarilla trades for the same date (legacy row wins, blocks
+            // trade aggregation), so we override here with the source of truth.
             const byMonth = d.byMonth || {};
             document.querySelectorAll('.cal-month-card[data-ym]').forEach(function(card) {
                 const ym = card.getAttribute('data-ym');
                 const stats = byMonth[ym];
-                const wrEl = card.querySelector('.cal-month-winrate');
-                if (!wrEl) return;
-                if (stats && (stats.wins + stats.losses) > 0) {
-                    wrEl.textContent = Number(stats.winRate || 0).toFixed(1) + '%';
-                } else {
-                    wrEl.textContent = '—';
+                const wrEl    = card.querySelector('.cal-month-winrate');
+                const grossEl = card.querySelector('.cal-month-gross');
+                const chgEl   = card.querySelector('.cal-month-charges');
+                const trdEl   = card.querySelector('.cal-month-trades');
+                const netEl   = card.querySelector('.cal-month-net');
+                const subEl   = card.querySelector('.cal-month-trades-sub');
+                if (!stats) return;
+                const total = (stats.wins || 0) + (stats.losses || 0);
+                if (wrEl) wrEl.textContent = total > 0
+                    ? Number(stats.winRate || 0).toFixed(1) + '%'
+                    : '—';
+                if (grossEl && stats.grossPnl != null) grossEl.textContent = fmtMoney(stats.grossPnl);
+                if (chgEl   && stats.charges  != null) chgEl.textContent   = fmtMoney(stats.charges);
+                if (trdEl   && total > 0)              trdEl.textContent   = String(total);
+                // Big Net P&L + card border colour — repaint from analytics so a
+                // month whose strategy-history rows came back zero (legacy-row
+                // suppression) doesn't show ₹0.00 / no colour despite having
+                // real trades that the analytics endpoint can see.
+                if (netEl && stats.netPnl != null) {
+                    const n = Number(stats.netPnl);
+                    netEl.textContent = fmtMoney(n);
+                    netEl.classList.remove('profit', 'loss');
+                    if (n > 0) netEl.classList.add('profit');
+                    else if (n < 0) netEl.classList.add('loss');
+                    card.classList.remove('profit', 'loss');
+                    if (n > 0) card.classList.add('profit');
+                    else if (n < 0) card.classList.add('loss');
+                }
+                if (subEl && total > 0) {
+                    subEl.textContent = total + ' trade' + (total === 1 ? '' : 's');
                 }
             });
         }).catch(() => {});
@@ -697,7 +724,12 @@
             const y = m >= 4 ? curFyStart : curFyStart + 1;
             const monthSessions = filterSessions(y, m);
             const agg = aggregate(monthSessions);
-            const has = agg.trades > 0;
+            // Old legacy session rows (pre-Camarilla straddle/strangle days)
+            // sometimes carry real grossPnl / charges / netPnl with entries=0
+            // — treat the month as "having data" whenever ANY non-zero numeric
+            // shows up, not just a positive trade count.
+            const has = agg.trades > 0 || agg.grossPnl !== 0
+                     || agg.netPnl !== 0 || agg.charges > 0;
             const net = agg.netPnl || 0;
             const clsBase = ['cal-month-card'];
             if (has && net > 0) clsBase.push('profit');
@@ -712,14 +744,14 @@
             html += '<div class="' + clsBase.join(' ') + '" data-ym="' + ymKey + '" onclick="jumpToMonth(' + m + ',' + y + ')">' +
                 '<div class="cal-month-name">' + MONTH_NAMES[m - 1] + ' ' + y + '</div>' +
                 '<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:12px;">' +
-                    '<div class="' + pnlCls.join(' ') + '">' + (has ? fmtMoney(net) : '—') + '</div>' +
-                    '<div style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-muted);">' + (has ? agg.trades + ' trade' + (agg.trades === 1 ? '' : 's') : '') + '</div>' +
+                    '<div class="' + pnlCls.join(' ') + ' cal-month-net">' + (has ? fmtMoney(net) : '—') + '</div>' +
+                    '<div class="cal-month-trades-sub" style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-muted);">' + (has ? agg.trades + ' trade' + (agg.trades === 1 ? '' : 's') : '') + '</div>' +
                 '</div>' +
                 '<div class="cal-month-stats">' +
                     '<div class="cal-month-stat-label">Win %</div><div class="cal-month-stat-value cal-month-winrate">—</div>' +
-                    '<div class="cal-month-stat-label">Gross</div><div class="cal-month-stat-value">' + (has ? fmtMoney(agg.grossPnl) : '—') + '</div>' +
-                    '<div class="cal-month-stat-label">Charges</div><div class="cal-month-stat-value">' + (has ? fmtMoney(agg.charges) : '—') + '</div>' +
-                    '<div class="cal-month-stat-label">Trades</div><div class="cal-month-stat-value">' + (has ? agg.trades : '—') + '</div>' +
+                    '<div class="cal-month-stat-label">Gross</div><div class="cal-month-stat-value cal-month-gross">' + (has ? fmtMoney(agg.grossPnl) : '—') + '</div>' +
+                    '<div class="cal-month-stat-label">Charges</div><div class="cal-month-stat-value cal-month-charges">' + (has ? fmtMoney(agg.charges) : '—') + '</div>' +
+                    '<div class="cal-month-stat-label">Trades</div><div class="cal-month-stat-value cal-month-trades">' + (has ? agg.trades : '—') + '</div>' +
                 '</div>' +
             '</div>';
         });
