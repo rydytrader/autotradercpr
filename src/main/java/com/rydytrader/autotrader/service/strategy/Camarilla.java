@@ -207,16 +207,21 @@ public class Camarilla implements Strategy {
         // rolloverIfNewDay()} short-circuits and yesterday's events bleed into today's
         // Positions Event Log. This timestamp filter always runs on boot.
         pruneStaleEventsBeforeToday();
-        // v2: re-subscribe the futures trigger feed restored from disk. The trigger
-        // symbol is the same across all positions (we always trade the near-month
-        // future), so a single subscribe is enough.
-        if (state.futuresSymbol != null && !state.futuresSymbol.isBlank()) {
-            String fut = state.futuresSymbol;
-            candleAggregator.subscribe(fut, c -> onCandleClose(fut, c));
-            try { marketDataService.subscribeAdditional(java.util.Collections.singletonList(fut)); }
-            catch (Exception ignored) {}
-            log.info("[Camarilla] restored futures subscription on boot: {}", fut);
-        }
+        // v2: subscribe the NIFTY spot trigger feed at boot — independent of
+        // AtmTracker. The trigger symbol is the spot index (constant), so we no
+        // longer need an AtmChange event to know which symbol to subscribe.
+        // The ATM strike is computed live at fire time from the current spot LTP.
+        final String triggerSym = NIFTY_SYMBOL;
+        state.futuresSymbol = triggerSym;
+        state.symbolRole.put(triggerSym, WatchRole.ATM_L4);
+        candleAggregator.subscribe(triggerSym, c -> onCandleClose(triggerSym, c));
+        try { marketDataService.subscribeAdditional(java.util.Collections.singletonList(triggerSym)); }
+        catch (Exception ignored) {}
+        log.info("[Camarilla] v2 boot — trigger feed subscribed: {}", triggerSym);
+
+        // AtmTracker listener kept for any consumers that still need the locked
+        // AtmChange event (OptionOiSubscriber). Camarilla no longer depends on it
+        // for strike resolution — fire() reads live spot at trade time.
         atmTracker.setListener(this::onAtmChange);
         log.info("[Camarilla] booted — enabled={}, lots={}, squareoff={}, restoredPositions={}",
             riskSettings.isCamarillaEnabled(), riskSettings.getCamarillaLotsPerLeg(),
@@ -700,58 +705,16 @@ public class Camarilla implements Strategy {
     // open-price bootstrap from AtmTracker. The heartbeat path (oldAtm == newAtm)
     // is gone with the drift loop.
 
+    /** v2 — no-op. The trigger feed (NIFTY spot) is subscribed at boot, and the
+     *  ATM strike is computed live from spot LTP at fire() time. The
+     *  AtmTracker listener registration in boot() is retained only so any other
+     *  consumers (OptionOiSubscriber, ManualTerminalController) still see the
+     *  session-locked AtmChange event. Camarilla itself ignores the payload. */
     public synchronized void onAtmChange(AtmTracker.AtmChange ev) {
         long atm = ev.newAtm();
-        if (atm <= 0) return;
-
-        // v2 watchlist —
-        //   1. NIFTY SPOT INDEX: subscribed for the 5-min candle trigger feed.
-        //   2. ATM PUT + ATM CALL: subscribed for live LTPs so the trade legs are
-        //      quote-ready the instant a setup fires. We don't aggregate candles on
-        //      them — they're trade targets only.
-        // The previous v1 per-strike ATM CE/PE watchlist is fully retired.
-        // Field names kept (futuresSymbol, entryFutures, slFutures, …) for state-file
-        // compatibility; the values they hold are SPOT prices now, not futures.
-        String triggerSym = NIFTY_SYMBOL;   // "NSE:NIFTY50-INDEX"
-        state.futuresSymbol = triggerSym;
-        candleAggregator.subscribe(triggerSym, c -> onCandleClose(triggerSym, c));
-
-        Map<String, WatchRole> newRoles = new LinkedHashMap<>();
-        newRoles.put(triggerSym, WatchRole.ATM_L4);   // re-uses existing enum value, semantics changed
-
-        // Pre-subscribe the two OTM trade legs so live LTPs are warm before fire().
-        BalancedAtmSelector.StrikeAtLevel atmRow = atmSelector.resolveStrikeAtLevel(atm);
-        java.util.List<String> tradeLegs = new java.util.ArrayList<>();
-        if (atmRow != null && atmRow.peSymbol() != null && !atmRow.peSymbol().isBlank()) tradeLegs.add(atmRow.peSymbol());
-        if (atmRow != null && atmRow.ceSymbol() != null && !atmRow.ceSymbol().isBlank()) tradeLegs.add(atmRow.ceSymbol());
-        if (!tradeLegs.isEmpty()) {
-            try { marketDataService.subscribeAdditional(tradeLegs); }
-            catch (Exception ignored) {}
-        }
-        try { marketDataService.subscribeAdditional(java.util.Collections.singletonList(triggerSym)); }
-        catch (Exception ignored) {}
-
-        // Retire any contract from a previous v1 watchlist that's not in the new one
-        // AND has no open position parked on it.
-        java.util.Set<String> toRetire = new HashSet<>(state.symbolRole.keySet());
-        toRetire.removeAll(newRoles.keySet());
-        for (String oldSym : toRetire) {
-            if (state.openPositions.containsKey(oldSym)) continue;
-            candleAggregator.unsubscribe(oldSym);
-        }
-        state.symbolRole.clear();
-        state.symbolRole.putAll(newRoles);
-
-        // Fetch Camarilla levels for the spot symbol's prior-day OHLC.
-        // getLevels triggers an async refresh on cache-miss; the first call returns null,
-        // but the detector tolerates that (skips bar until levels arrive).
-        camarillaService.getLevels(triggerSym);
-
         String tag = ev.oldAtm() < 0 ? "boot" : String.valueOf(ev.oldAtm());
-        event("[INFO]", "ATM", "ATM " + tag + " → " + atm + " | trigger=" + triggerSym
-            + " | PUT leg=" + (tradeLegs.isEmpty() ? "—" : tradeLegs.get(0))
-            + " | CALL leg=" + (tradeLegs.size() > 1 ? tradeLegs.get(1) : "—"));
-        saveToDisk();
+        event("[INFO]", "ATM", "AtmTracker resolved " + tag + " → " + atm
+            + " (informational — Camarilla uses live spot at fire time)");
     }
 
     // ── Candle close handler — entries + exits, per symbol ──────────────────
@@ -981,15 +944,21 @@ public class Camarilla implements Strategy {
         if (!shortSetup) return;   // v2 is sell-only by design
         boolean bullishBet = isBullishBet(setup);
 
-        // ── Pick the ATM option leg ──
+        // ── Pick the ATM option leg — LIVE ATM at fire time ──
         // bullish bet  → sell ATM PUT  (max premium decay at the money)
         // bearish bet  → sell ATM CALL
-        long atm = atmTracker.getCurrentAtm();
-        if (atm <= 0) {
-            event("[ERROR]", "AUTO ENTRY", setup + " — ATM not yet locked, skipping");
+        // ATM is computed from current spot LTP rounded to STRIKE_STEP (50) —
+        // no session-locked baseline. If the spot LTP isn't available yet
+        // (extremely rare post-09:15), skip the trade.
+        double spot = 0;
+        try { spot = marketDataService.getLtp(NIFTY_SYMBOL); }
+        catch (Exception ignored) {}
+        if (spot <= 0) {
+            event("[ERROR]", "AUTO ENTRY", setup
+                + " — NIFTY spot LTP not available, skipping");
             return;
         }
-        long strike = atm;
+        long strike = Math.round(spot / (double) STRIKE_STEP) * STRIKE_STEP;
         BalancedAtmSelector.StrikeAtLevel row = atmSelector.resolveStrikeAtLevel(strike);
         String optionSym = null;
         if (row != null) {
@@ -998,11 +967,15 @@ public class Camarilla implements Strategy {
         if (optionSym == null || optionSym.isBlank()) {
             event("[ERROR]", "AUTO ENTRY",
                 setup + " — couldn't resolve " + (bullishBet ? "PUT" : "CALL")
-                + " symbol at strike " + strike);
+                + " symbol at strike " + strike + " (spot=" + round2(spot) + ")");
             return;
         }
         // Avoid double-entry on the same option leg if a prior trade is still open on it.
         if (state.openPositions.containsKey(optionSym)) return;
+        // On-demand subscription for the option leg — needed so the LTP cache
+        // starts warming for fastSlCheck / fill resolution. Idempotent.
+        try { marketDataService.subscribeAdditional(java.util.Collections.singletonList(optionSym)); }
+        catch (Exception ignored) {}
 
         // ── Risk gates: consumed > maxRisk locks out the day ──
         double maxRisk = riskSettings.getPortfolioMaxDailyLoss();
@@ -1860,7 +1833,15 @@ public class Camarilla implements Strategy {
         m.put("dayKey",            state.dayKey);
         m.put("tradesToday",       state.tradesToday);
         m.put("consecutiveLosses", state.consecutiveLosses);
-        m.put("currentAtm",        atmTracker.getCurrentAtm());
+        // v2 — live ATM: round current NIFTY spot to the nearest STRIKE_STEP.
+        // Falls back to 0 when spot LTP isn't available yet (pre-market or
+        // before first tick).
+        long liveAtm = 0;
+        try {
+            double spotLtp = marketDataService.getLtp(NIFTY_SYMBOL);
+            if (spotLtp > 0) liveAtm = Math.round(spotLtp / (double) STRIKE_STEP) * STRIKE_STEP;
+        } catch (Exception ignored) {}
+        m.put("currentAtm",        liveAtm);
         m.put("watchlistSize",     state.symbolRole.size());
         m.put("watchlistRoles",    new LinkedHashMap<>(state.symbolRole));
 
@@ -1880,7 +1861,9 @@ public class Camarilla implements Strategy {
             try { futChange     = marketDataService.getDisplayChange(futSym); }    catch (Exception ignored) {}
             try { futChangePct  = marketDataService.getDisplayChangePct(futSym); } catch (Exception ignored) {}
         }
-        long atm = atmTracker.getCurrentAtm();
+        // Header chips for the LIVE ATM PUT + CALL — re-resolve every state event
+        // so the chips drift naturally with NIFTY spot through the session.
+        long atm = liveAtm;
         String putSym = "", callSym = "";
         double putLtp = 0, callLtp = 0;
         if (atm > 0) {

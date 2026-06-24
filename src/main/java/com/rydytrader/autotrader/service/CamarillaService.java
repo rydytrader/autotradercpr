@@ -49,6 +49,10 @@ public class CamarillaService {
     private static final String STATE_FILE = "../store/data/camarilla-levels.json";
     private static final long   STRIKE_STEP = 50L;
     private static final int    STRIKES_PER_SIDE = 10;
+    /** NIFTY spot index symbol — used as the v2 trigger feed for setup detection.
+     *  Camarilla levels for this symbol need to be ready before the first 5-min
+     *  spot bar of the new session closes. Pre-fetched on boot and at 08:00 IST. */
+    private static final String NIFTY_SPOT_SYMBOL = "NSE:NIFTY50-INDEX";
 
     private final FyersClientRouter   fyersClient;
     private final TokenStore          tokenStore;
@@ -80,14 +84,21 @@ public class CamarillaService {
             if (e.getValue() != null && e.getValue().sessionDate().equals(todayIst())) kept++;
         }
         log.info("[CamarillaService] booted — {} cached level entries valid for today", kept);
+        // v2 — fetch NIFTY spot levels at boot so the trend tooltip + setup detector
+        // are armed before the first 5-min bar closes, regardless of when the server
+        // came up (post-09:30 restart still gets levels populated within ~1 second).
+        // Runs async so boot isn't blocked on Fyers REST.
+        triggerAsyncRefresh(NIFTY_SPOT_SYMBOL);
     }
 
-    /** Cron daily at 09:05 IST. NSE pre-open completes at 09:00 so by 09:05 the prior-day
-     *  daily candle is settled. Re-fetches around current ATM. */
-    @Scheduled(cron = "0 5 9 * * MON-FRI", zone = "Asia/Kolkata")
+    /** Cron daily at 08:00 IST — well before AtmTracker's 09:30 resolve. Prior-day daily
+     *  candle is settled long before this point. Refreshes the NIFTY spot levels so
+     *  by the time AtmChange fires at 09:30, the cache is already warm and the first
+     *  trigger bar at 09:35 can evaluate immediately. */
+    @Scheduled(cron = "0 0 8 * * MON-FRI", zone = "Asia/Kolkata")
     public void scheduledRefresh() {
-        log.info("[CamarillaService] daily refresh fired");
-        // strategy will re-trigger warmUpAroundAtm when ATM is resolved
+        log.info("[CamarillaService] daily refresh fired — priming NIFTY spot levels for today");
+        triggerAsyncRefresh(NIFTY_SPOT_SYMBOL);
     }
 
     /** Returns cached levels for {@code symbol}, possibly null if not yet warmed. On miss,

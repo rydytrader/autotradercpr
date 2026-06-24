@@ -26,7 +26,6 @@
                     '<div class="sm-field"><label>Trading End Time (HH:mm IST)</label><input type="time" id="sm-camarillaTradingEndTime" step="60"><div class="sm-hint">No new entries fire on candle closes after this time. Default 13:30. Existing positions keep running until target / SL / squareoff.</div></div>' +
                     '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-camarillaSquareOffTime" step="60"><div class="sm-hint">Hard exit if neither target nor SL has triggered.</div></div>' +
                     '<div class="sm-field"><label><input type="checkbox" id="sm-camarillaOiBiasFilterEnabled"> &nbsp;OI Bias Filter</label><div class="sm-hint">When ON: block CE shorts in STRONG_BULLISH markets, block PE shorts in STRONG_BEARISH markets. NEUTRAL / STALE always pass through. Off by default — observe live data for 1–2 weeks before enabling.</div></div>' +
-                    '<div class="sm-field"><label><input type="checkbox" id="sm-camarillaMinRRCheckEnabled"> &nbsp;Min 1:1 R:R Check</label><div class="sm-hint">When ON: skip algo entries whose reward (entry → target, with L5 clamped at 0 on expiry) is smaller than risk (entry → SL). Filters out late VWAP breakdowns where most of the move is already done. Off bypasses the geometry check — only budget sizing applies.</div></div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
                     '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline used by the Home analytics page (capital growth %, equity curve, return %). Default ₹10,00,000.</div></div>' +
@@ -39,6 +38,7 @@
                         '<option value="THURSDAY">Thursday</option>' +
                         '<option value="FRIDAY">Friday</option>' +
                         '</select><div class="sm-hint">NIFTY weekly expiry day. Drives the Expiry vs Non-Expiry analytics split.</div></div>' +
+                    '<div class="sm-field"><label><input type="checkbox" id="sm-camarillaMinRRCheckEnabled"> &nbsp;Min 1:1 R:R Check</label><div class="sm-hint">When ON: skip algo entries whose reward (entry → target) is smaller than risk (entry → SL). Filters out late entries where most of the move is already done. Off bypasses the geometry check — only the daily-risk gate applies.</div></div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
                     '<div class="sm-field"><label>Brokerage per Order (₹)</label><input type="number" id="sm-brokeragePerOrder" step="1" min="0"><div class="sm-hint">Flat per-order brokerage. Drives charge estimates on every dashboard + session row.</div></div>' +
@@ -185,7 +185,7 @@
             if (g('sm-camarillaTradingEndTime'))    g('sm-camarillaTradingEndTime').value = d.camarillaTradingEndTime || '13:30';
             if (g('sm-camarillaSquareOffTime'))     g('sm-camarillaSquareOffTime').value = d.camarillaSquareOffTime || '15:15';
             if (g('sm-camarillaOiBiasFilterEnabled')) g('sm-camarillaOiBiasFilterEnabled').checked = !!d.camarillaOiBiasFilterEnabled;
-            if (g('sm-camarillaMinRRCheckEnabled')) g('sm-camarillaMinRRCheckEnabled').checked = d.camarillaMinRRCheckEnabled !== false;
+            // sm-camarillaMinRRCheckEnabled now lives in the Risk pane — loaded by loadPortfolioRiskValues().
         }).catch(function() {});
     }
 
@@ -197,8 +197,7 @@
             camarillaTradingStartTime:  (g('sm-camarillaTradingStartTime').value || '').trim(),
             camarillaTradingEndTime:    (g('sm-camarillaTradingEndTime').value || '').trim(),
             camarillaSquareOffTime:     (g('sm-camarillaSquareOffTime').value || '').trim(),
-            camarillaOiBiasFilterEnabled: !!g('sm-camarillaOiBiasFilterEnabled').checked,
-            camarillaMinRRCheckEnabled:   !!g('sm-camarillaMinRRCheckEnabled').checked
+            camarillaOiBiasFilterEnabled: !!g('sm-camarillaOiBiasFilterEnabled').checked
         };
         postSettings('/api/settings/risk', body);
     }
@@ -207,7 +206,8 @@
         var body = {
             startingCapital:          parseFloat(document.getElementById('sm-startingCapital').value) || 0,
             portfolioMaxRiskPct:      parseFloat(document.getElementById('sm-portfolioMaxRiskPct').value) || 0,
-            weeklyExpiryDayOfWeek:    (document.getElementById('sm-weeklyExpiryDayOfWeek').value || 'TUESDAY').trim().toUpperCase()
+            weeklyExpiryDayOfWeek:    (document.getElementById('sm-weeklyExpiryDayOfWeek').value || 'TUESDAY').trim().toUpperCase(),
+            camarillaMinRRCheckEnabled: !!document.getElementById('sm-camarillaMinRRCheckEnabled').checked
         };
         postSettings('/api/settings/risk', body);
     }
@@ -264,6 +264,8 @@
             if (capInput) capInput.value = d.startingCapital != null ? d.startingCapital : 1000000;
             if (pctInput) pctInput.value = d.portfolioMaxRiskPct != null ? d.portfolioMaxRiskPct : 0;
             if (expSel)   expSel.value   = d.weeklyExpiryDayOfWeek || 'TUESDAY';
+            var rrChk = document.getElementById('sm-camarillaMinRRCheckEnabled');
+            if (rrChk) rrChk.checked = d.camarillaMinRRCheckEnabled !== false;
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {
                 updatePortfolioRiskHint(parseFloat(capInput.value) || 0, parseFloat(pctInput && pctInput.value) || 0);
