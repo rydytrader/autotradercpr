@@ -761,17 +761,23 @@ public class Camarilla implements Strategy {
             if (state.pendingBullish != null
                 && c.startMillis() - state.pendingBullish.barStartMs > maxPendingAgeMs) {
                 event("[INFO]", "Setup", state.pendingBullish.setup + " expired (" + MAX_PENDING_BARS + " bars)");
+                releaseOptionLegs(state.pendingBullish);
                 state.pendingBullish = null;
             }
             if (state.pendingBearish != null
                 && c.startMillis() - state.pendingBearish.barStartMs > maxPendingAgeMs) {
                 event("[INFO]", "Setup", state.pendingBearish.setup + " expired (" + MAX_PENDING_BARS + " bars)");
+                releaseOptionLegs(state.pendingBearish);
                 state.pendingBearish = null;
             }
 
             boolean firedThisBar = false;
 
             // --- Phase 1: TRIGGER ---
+            // Trigger consumes the pending — we DON'T release the leg here, fire()
+            // is about to open a position on the traded side and the watcher needs
+            // its LTP feed alive. The untraded leg stays subscribed too (cheap;
+            // releases on next reconnect via the deferred-unsubscribe contract).
             PendingConfirmation pb = state.pendingBullish;
             if (pb != null && c.isGreen() && c.close() > pb.confirmHigh) {
                 event("[INFO]", "Setup", pb.setup + " trigger @ " + round2(c.close())
@@ -792,10 +798,12 @@ public class Camarilla implements Strategy {
             // --- Phase 2: INVALIDATION ---
             if (state.pendingBullish != null && c.close() < state.pendingBullish.confirmLow) {
                 event("[INFO]", "Setup", state.pendingBullish.setup + " nullified @ " + round2(c.close()));
+                releaseOptionLegs(state.pendingBullish);
                 state.pendingBullish = null;
             }
             if (state.pendingBearish != null && c.close() > state.pendingBearish.confirmHigh) {
                 event("[INFO]", "Setup", state.pendingBearish.setup + " nullified @ " + round2(c.close()));
+                releaseOptionLegs(state.pendingBearish);
                 state.pendingBearish = null;
             }
 
@@ -807,6 +815,10 @@ public class Camarilla implements Strategy {
                     PendingConfirmation prev = bullish ? state.pendingBullish : state.pendingBearish;
                     if (prev != null && prev.setup != fresh.setup) {
                         event("[INFO]", "Setup", prev.setup + " → " + fresh.setup);
+                        // Same-side replacement — release the old strike's legs.
+                        // If the new lockedAtm ends up identical, preSubscribeOptionLegs
+                        // will re-subscribe via the idempotent adHocSymbols set.
+                        releaseOptionLegs(prev);
                     }
                     event("[INFO]", "Setup", fresh.setup + " confirmed (H "
                         + round2(fresh.confirmHigh) + ", L " + round2(fresh.confirmLow)
@@ -822,12 +834,14 @@ public class Camarilla implements Strategy {
                     }
                     if (bullish) state.pendingBullish = fresh;
                     else         state.pendingBearish = fresh;
-                    // Pre-subscribe the single ATM option leg fire() will trade
-                    // (PUT for bullish, CALL for bearish) so its LTP is warm by
-                    // the trigger bar 5+ min later. Fixes the entry-price = 0
-                    // cascade where on-demand subscribe at fire missed the first
-                    // tick. lockedAtm pins exactly the strike fire() reads.
-                    preSubscribeOptionLeg(bullish, fresh.lockedAtm);
+                    // Pre-subscribe BOTH legs (CE + PE) at the locked ATM strike.
+                    // The traded side (PUT for bullish, CALL for bearish) needs
+                    // its LTP warm by trigger time — fixes the p.entryPrice = 0
+                    // cascade. The opposite side is subscribed too so the header
+                    // chip can show both legs' LTP/VWAP while the pending sits
+                    // active. Symbols cached on the pending so invalidation /
+                    // expiry knows what to unsubscribe.
+                    preSubscribeOptionLegs(fresh);
                 }
             }
 
@@ -867,28 +881,52 @@ public class Camarilla implements Strategy {
         return null;
     }
 
-    /** Pre-subscribe the single option leg fire() will trade at the locked ATM.
-     *  Bullish setups sell the PUT, bearish setups sell the CALL — only that one
-     *  contract gets subscribed. Since lockedAtm is the strike fire() reads
-     *  later (no live recompute), there's no drift to hedge against with extra
-     *  strikes. Subscribe runs at confirmation time so the leg has 5+ minutes to
-     *  tick before the trigger bar fires — fixes the {@code p.entryPrice = 0}
-     *  cascade where on-demand subscribe at fire missed the first tick. */
-    private void preSubscribeOptionLeg(boolean bullish, long lockedAtm) {
-        if (lockedAtm <= 0) {
+    /** Pre-subscribe BOTH the CE and PE leg at the locked ATM strike. The side
+     *  fire() will trade (PUT for bullish, CALL for bearish) needs to be warm so
+     *  the entry-price tick lands before the trigger bar; the opposite side is
+     *  subscribed too so the operator can see both legs' LTP/VWAP in the header
+     *  chip alongside ATM. Both symbols are stored on the pending so
+     *  releaseOptionLegs() can unsubscribe them when the confirmation invalidates
+     *  or expires. */
+    private void preSubscribeOptionLegs(PendingConfirmation pending) {
+        if (pending == null || pending.lockedAtm <= 0) {
             event("[INFO]", "Setup", "pre-sub skipped — no ATM lock");
             return;
         }
-        BalancedAtmSelector.StrikeAtLevel row = atmSelector.resolveStrikeAtLevel(lockedAtm);
-        String sym = (row == null) ? null : (bullish ? row.peSymbol() : row.ceSymbol());
-        if (sym == null || sym.isBlank()) {
-            event("[INFO]", "Setup", "pre-sub failed — no " + (bullish ? "PUT" : "CALL")
-                + " symbol at " + lockedAtm);
+        BalancedAtmSelector.StrikeAtLevel row = atmSelector.resolveStrikeAtLevel(pending.lockedAtm);
+        if (row == null) {
+            event("[INFO]", "Setup", "pre-sub failed — no chain row at " + pending.lockedAtm);
             return;
         }
-        try { marketDataService.subscribeAdditional(java.util.Collections.singletonList(sym)); }
+        pending.ceSymbol = row.ceSymbol();
+        pending.peSymbol = row.peSymbol();
+        java.util.List<String> legs = new java.util.ArrayList<>(2);
+        if (pending.ceSymbol != null && !pending.ceSymbol.isBlank()) legs.add(pending.ceSymbol);
+        if (pending.peSymbol != null && !pending.peSymbol.isBlank()) legs.add(pending.peSymbol);
+        if (legs.isEmpty()) return;
+        try { marketDataService.subscribeAdditional(legs); }
         catch (Exception ignored) {}
-        event("[INFO]", "Setup", "pre-sub " + sym);
+        event("[INFO]", "Setup", "pre-sub CE+PE @ " + pending.lockedAtm);
+    }
+
+    /** Release pre-subscribed CE/PE legs when a pending invalidates or expires.
+     *  Safe to call even when neither symbol is set (no-op). We DON'T release the
+     *  leg if a position is currently open on it — the fast-tick watcher and
+     *  fastSlCheck need the LTP feed to keep flowing. */
+    private void releaseOptionLegs(PendingConfirmation pending) {
+        if (pending == null) return;
+        java.util.List<String> legs = new java.util.ArrayList<>(2);
+        if (pending.ceSymbol != null && !pending.ceSymbol.isBlank()
+            && !state.openPositions.containsKey(pending.ceSymbol)) {
+            legs.add(pending.ceSymbol);
+        }
+        if (pending.peSymbol != null && !pending.peSymbol.isBlank()
+            && !state.openPositions.containsKey(pending.peSymbol)) {
+            legs.add(pending.peSymbol);
+        }
+        if (legs.isEmpty()) return;
+        try { marketDataService.unsubscribeAdditional(legs); }
+        catch (Exception ignored) {}
     }
 
     private static PendingConfirmation mkConfirmation(ActiveSetup setup, Candle c, double target) {
@@ -1902,6 +1940,28 @@ public class Camarilla implements Strategy {
             if (spotLtp > 0) liveAtm = Math.round(spotLtp / (double) STRIKE_STEP) * STRIKE_STEP;
         } catch (Exception ignored) {}
         m.put("currentAtm",        liveAtm);
+        // Locked-ATM CE/PE pricing — populated only when a pending confirmation is
+        // sitting on the books with pre-subscribed legs. Header chip on the trade
+        // page renders this next to ATM so the operator sees both legs' LTP/VWAP
+        // for whichever strike the next trigger would fire on. Bullish pending
+        // wins the chip slot if both directions are pending (rare; happens when
+        // a bullish and bearish setup confirm on different bars without one
+        // triggering or invalidating the other yet).
+        PendingConfirmation chipPending = state.pendingBullish != null
+            ? state.pendingBullish
+            : state.pendingBearish;
+        if (chipPending != null && chipPending.lockedAtm > 0) {
+            Map<String, Object> chip = new LinkedHashMap<>();
+            chip.put("strike",   chipPending.lockedAtm);
+            chip.put("setup",    chipPending.setup == null ? "" : chipPending.setup.toString());
+            chip.put("ceSymbol", chipPending.ceSymbol == null ? "" : chipPending.ceSymbol);
+            chip.put("peSymbol", chipPending.peSymbol == null ? "" : chipPending.peSymbol);
+            chip.put("ceLtp",    safeLtp(chipPending.ceSymbol));
+            chip.put("peLtp",    safeLtp(chipPending.peSymbol));
+            chip.put("ceVwap",   safeVwap(chipPending.ceSymbol));
+            chip.put("peVwap",   safeVwap(chipPending.peSymbol));
+            m.put("lockedStrike", chip);
+        }
         m.put("watchlistSize",     state.symbolRole.size());
         m.put("watchlistRoles",    new LinkedHashMap<>(state.symbolRole));
 
@@ -2073,6 +2133,11 @@ public class Camarilla implements Strategy {
          *  so the strike we pre-subscribe is guaranteed to be the strike we trade.
          *  0 on legacy pendings from disk — fire() falls back to live ATM in that case. */
         public long lockedAtm;
+        /** v2 — both CE and PE Fyers symbols for the locked-ATM strike, captured at
+         *  confirmation time. Stored so the watcher can show LTP/VWAP for both legs
+         *  in the header chip and so invalidation/expiry knows what to unsubscribe. */
+        public String ceSymbol;
+        public String peSymbol;
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -2208,6 +2273,23 @@ public class Camarilla implements Strategy {
     // ── Misc utility ────────────────────────────────────────────────────────
 
     private static double round2(double v) { return Math.round(v * 100.0) / 100.0; }
+
+    /** Defensive LTP lookup — returns 0 on null/blank symbol or any LTP cache miss
+     *  so the dashboard payload never throws on pre-tick option legs. */
+    private double safeLtp(String sym) {
+        if (sym == null || sym.isBlank()) return 0;
+        try { return round2(marketDataService.getLtp(sym)); }
+        catch (Exception e) { return 0; }
+    }
+
+    /** Defensive VWAP lookup — same contract as {@link #safeLtp(String)} but reads
+     *  the session VWAP cache. Returns 0 until at least one full-mode tick lands
+     *  for the symbol in the current trading session. */
+    private double safeVwap(String sym) {
+        if (sym == null || sym.isBlank()) return 0;
+        try { return round2(marketDataService.getVwap(sym)); }
+        catch (Exception e) { return 0; }
+    }
 
     /** Compact rendering of a Fyers option symbol for the event log:
      *  {@code NSE:NIFTY2562624650CE} → {@code 24650CE}. Falls back to the symbol's

@@ -257,6 +257,13 @@
                     <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
                         <span id="hdrVixChg" style="margin-left:4px;font-weight:600;"></span></span>
                     <span style="color:var(--text-muted);">ATM <span id="hdrAtm" style="color:var(--accent-cyan);font-weight:700;">—</span></span>
+                    <span id="hdrLockedStrike" style="display:none;color:var(--text-muted);font-size:0.72rem;">
+                        <span id="hdrLockedTag" style="color:var(--accent-cyan);font-weight:700;letter-spacing:0.04em;">LOCK 0</span>
+                        <span style="margin-left:6px;">CE <span id="hdrLockedCeLtp" style="color:#f87171;font-weight:700;">—</span>
+                            <span style="color:var(--text-muted);font-size:0.66rem;margin-left:2px;">vwap <span id="hdrLockedCeVwap">—</span></span></span>
+                        <span style="margin-left:8px;">PE <span id="hdrLockedPeLtp" style="color:#34d399;font-weight:700;">—</span>
+                            <span style="color:var(--text-muted);font-size:0.66rem;margin-left:2px;">vwap <span id="hdrLockedPeVwap">—</span></span></span>
+                    </span>
                 </div>
             </div>
             <div style="display:flex; gap:10px; align-items:center;">
@@ -389,9 +396,15 @@
         var n = Number(v);
         if (!isFinite(n)) return '—';
         if (p && p.triggerSymbol) {
-            // Futures point value — fixed 2dp, separator-grouped, FUT tag.
-            return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                 + ' <span style="font-size:0.6rem;color:var(--text-muted);letter-spacing:0.05em;margin-left:4px;">FUT</span>';
+            // Spot/futures point value — fixed 2dp, separator-grouped, FUT tag.
+            // Rendered muted so the operator visually distinguishes it from
+            // option-premium values shown on manual trades (which stay coloured
+            // via the parent td's pnl-negative / pnl-positive class). Inline
+            // colour wins over the td class via specificity.
+            return '<span style="color:var(--text-muted);font-weight:500;">'
+                 + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                 + ' <span style="font-size:0.6rem;letter-spacing:0.05em;margin-left:4px;">FUT</span>'
+                 + '</span>';
         }
         return fmtRs(v);
     }
@@ -490,6 +503,30 @@
         var atmEl = document.getElementById('hdrAtm');
         if (vxEl)  vxEl.textContent  = d.indiaVix  != null ? Number(d.indiaVix).toFixed(2)  : '—';
         if (atmEl) atmEl.textContent = d.currentAtm != null && d.currentAtm > 0 ? String(d.currentAtm) : '—';
+        renderLockedStrikeChip(d.lockedStrike);
+    }
+
+    // ── Locked-strike chip — visible only while a pending confirmation owns the
+    //    pre-subscribed CE+PE legs at a specific ATM. Hides when no pending. ───
+    function renderLockedStrikeChip(lk) {
+        var wrap = document.getElementById('hdrLockedStrike');
+        if (!wrap) return;
+        if (!lk || !lk.strike) { wrap.style.display = 'none'; return; }
+        wrap.style.display = 'inline';
+        var fmt = function(v) {
+            var n = Number(v);
+            return (isFinite(n) && n > 0) ? n.toFixed(2) : '—';
+        };
+        var tag = document.getElementById('hdrLockedTag');
+        if (tag) tag.textContent = 'LOCK ' + lk.strike;
+        var ceLtp = document.getElementById('hdrLockedCeLtp');
+        if (ceLtp) ceLtp.textContent = fmt(lk.ceLtp);
+        var peLtp = document.getElementById('hdrLockedPeLtp');
+        if (peLtp) peLtp.textContent = fmt(lk.peLtp);
+        var ceVwap = document.getElementById('hdrLockedCeVwap');
+        if (ceVwap) ceVwap.textContent = fmt(lk.ceVwap);
+        var peVwap = document.getElementById('hdrLockedPeVwap');
+        if (peVwap) peVwap.textContent = fmt(lk.peVwap);
     }
 
     // ── Tick-level NIFTY / VIX / ATM updates via the shared ticker SSE ─────
