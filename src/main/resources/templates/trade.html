@@ -500,12 +500,20 @@
     function setVixHeader(lp, ch, chp) {
         var vxEl  = document.getElementById('hdrVix');
         var chgEl = document.getElementById('hdrVixChg');
-        if (vxEl && typeof lp === 'number') vxEl.textContent = Number(lp).toFixed(2);
-        if (chgEl) {
-            var txt = fmtChg(ch, chp);
-            chgEl.textContent = txt || '';
-            chgEl.style.color = chgColor(ch);
+        var v = Number(lp || 0), c = Number(ch || 0), p = Number(chp || 0);
+        if (vxEl) vxEl.textContent = v > 0 ? v.toFixed(2) : '—';
+        if (!chgEl) return;
+        // Match NIFTY's pre-market behaviour: blank cell when no LTP or when both
+        // change values are 0 (Fyers hasn't sent a tick with prev_close yet, so
+        // displaying "▲ 0.00 (0.00%)" is misleading).
+        if (v <= 0 || (c === 0 && p === 0)) {
+            chgEl.textContent = '';
+            chgEl.style.color = '';
+            return;
         }
+        var txt = fmtChg(c, p);
+        chgEl.textContent = txt || '';
+        chgEl.style.color = chgColor(c);
     }
     function attachTickerHeaderUpdates() {
         var src = window.__tickerSSE;

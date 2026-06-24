@@ -48,7 +48,7 @@ import java.util.function.Consumer;
  * </ul>
  *
  * <p>Crash / restart recovery: once resolved, the baseline ATM is persisted to
- * {@code ../store/data/atm-baseline.json} along with the IST session date. A
+ * {@code ../store/cache/atm-baseline.json} along with the IST session date. A
  * mid-day JVM restart reads that file in {@code @PostConstruct}; if the date
  * matches today's IST date, the same ATM is restored and a single
  * {@link AtmChange} fires to listeners (replacing the live NIFTY-LTP resolve).
@@ -72,7 +72,8 @@ public class AtmTracker {
     private static final Logger log = LoggerFactory.getLogger(AtmTracker.class);
     private static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    private static final String STATE_FILE = "../store/data/atm-baseline.json";
+    private static final String STATE_FILE = "../store/cache/atm-baseline.json";
+    private static final String LEGACY_STATE_FILE = "../store/data/atm-baseline.json";
 
     private final MarketDataService    marketDataService;
     private final BalancedAtmSelector  atmSelector;
@@ -118,7 +119,18 @@ public class AtmTracker {
     public void restoreFromDisk() {
         try {
             Path p = Path.of(STATE_FILE);
-            if (!Files.exists(p)) return;
+            // One-time migration — move legacy ../store/data/ file to ../store/cache/.
+            if (!Files.exists(p)) {
+                Path legacy = Path.of(LEGACY_STATE_FILE);
+                if (Files.exists(legacy)) {
+                    java.io.File parent = p.toFile().getParentFile();
+                    if (parent != null && !parent.exists()) parent.mkdirs();
+                    Files.move(legacy, p);
+                    log.info("[AtmTracker] migrated {} → {}", legacy, p);
+                } else {
+                    return;
+                }
+            }
             Map<?, ?> raw = mapper.readValue(Files.readString(p), Map.class);
             if (raw == null) return;
             Object dateObj = raw.get("date");

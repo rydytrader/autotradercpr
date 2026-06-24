@@ -48,7 +48,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li>{@code cumPE ≤ 0} edge: BEARISH if cumCE &gt; 0, else NEUTRAL.</li>
  * </ul>
  *
- * <p>State persists to {@code ../store/data/option-oi-state.json}. A mid-day restart
+ * <p>State persists to {@code ../store/cache/option-oi-state.json}. A mid-day restart
  * restores the per-strike 09:15 baselines, the sample ring, and the last cumulative
  * snapshot; on the first post-restart OI tick the running totals are recomputed live
  * against the disk baselines, so nothing is lost.
@@ -63,7 +63,8 @@ public class OptionOiTracker {
 
     private static final Logger log = LoggerFactory.getLogger(OptionOiTracker.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    private static final String STATE_FILE = "../store/data/option-oi-state.json";
+    private static final String STATE_FILE = "../store/cache/option-oi-state.json";
+    private static final String LEGACY_STATE_FILE = "../store/data/option-oi-state.json";
     private static final int    MAX_SAMPLES = 400;        // 1-min cadence × ~6h15m session = 375 + headroom
     private static final long   STALE_THRESHOLD_MS = 5 * 60_000L;
     // 5-tier bias classifier — strong selling regimes vs neutral vs strong buying regimes.
@@ -342,7 +343,18 @@ public class OptionOiTracker {
     private void loadFromDisk() {
         try {
             Path p = Path.of(STATE_FILE);
-            if (!Files.exists(p)) return;
+            // One-time migration — move legacy ../store/data/ file to ../store/cache/.
+            if (!Files.exists(p)) {
+                Path legacy = Path.of(LEGACY_STATE_FILE);
+                if (Files.exists(legacy)) {
+                    File parent = p.toFile().getParentFile();
+                    if (parent != null && !parent.exists()) parent.mkdirs();
+                    Files.move(legacy, p);
+                    log.info("[OptionOi] migrated {} → {}", legacy, p);
+                } else {
+                    return;
+                }
+            }
             State s = mapper.readValue(Files.readString(p), State.class);
             if (s != null) {
                 state = s;

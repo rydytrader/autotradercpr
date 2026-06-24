@@ -53,7 +53,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
  *
  * <p>Position state is keyed by option symbol. Multiple symbols can hold concurrent shorts
  * (hard cap = 4) — useful when intraday ATM shift creates new candidate symbols while older
- * strikes still have running trades. State persists to {@code ../store/data/camarilla-state.json}.
+ * strikes still have running trades. State persists to {@code ../store/cache/camarilla-state.json}.
  */
 @Service
 public class Camarilla implements Strategy {
@@ -66,7 +66,8 @@ public class Camarilla implements Strategy {
     public  static final String MANUAL_STRATEGY_ID = "manual";
     private static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    private static final String STATE_FILE = "../store/data/camarilla-state.json";
+    private static final String STATE_FILE = "../store/cache/camarilla-state.json";
+    private static final String LEGACY_STATE_FILE = "../store/data/camarilla-state.json";
     private static final int LOT_SIZE = 65;
     /** NSE NIFTY option premium tick size — the minimum tradable price. Used to
      *  clamp negative Camarilla L5 targets to a meaningful display floor on the
@@ -599,10 +600,10 @@ public class Camarilla implements Strategy {
         rolloverIfNewDay();
         watchSquareoff();
         refreshUnresolvedFills();
-        // Ensure ATM-around warm-up is at least requested once an ATM is known.
-        if (atmTracker.getCurrentAtm() > 0 && camarillaService.snapshot().isEmpty()) {
-            camarillaService.warmUpAroundAtm(atmTracker.getCurrentAtm());
-        }
+        // v1 vestigial: warmUpAroundAtm fan-out fetched levels for ~20 option strikes
+        // around ATM. v2 only needs NIFTY spot levels (fetched at boot + 08:00 cron),
+        // so the call is removed. Leaving this in spammed the levels cache with
+        // option entries on every restart.
     }
 
     @Override
@@ -1927,16 +1928,14 @@ public class Camarilla implements Strategy {
         m.put("openPositions", rows);
         double exposedRisk = exposedRiskNow();
 
-        // Per-symbol levels for the V2 6-contract watchlist + any open-position symbols.
+        // v2 — only NIFTY spot has meaningful Camarilla levels (option-strike levels
+        // were a v1 concept). Open positions are option symbols whose target/SL are
+        // ALREADY spot prices, so per-option levels aren't useful here either.
+        // Emit only the trigger symbol's levels — the trade.html LTP tooltip uses this.
         Map<String, CamarillaLevels> perSymbolLevels = new LinkedHashMap<>();
-        for (String sym : state.symbolRole.keySet()) {
-            CamarillaLevels lv = camarillaService.getLevels(sym);
-            if (lv != null) perSymbolLevels.put(sym, lv);
-        }
-        for (String sym : state.openPositions.keySet()) {
-            if (perSymbolLevels.containsKey(sym)) continue;
-            CamarillaLevels lv = camarillaService.getLevels(sym);
-            if (lv != null) perSymbolLevels.put(sym, lv);
+        if (futSym != null && !futSym.isBlank()) {
+            CamarillaLevels lv = camarillaService.getLevels(futSym);
+            if (lv != null) perSymbolLevels.put(futSym, lv);
         }
         m.put("perSymbolLevels", perSymbolLevels);
 
@@ -2104,7 +2103,18 @@ public class Camarilla implements Strategy {
     private synchronized void loadFromDisk() {
         try {
             Path p = Path.of(STATE_FILE);
-            if (!Files.exists(p)) return;
+            // One-time migration — move legacy ../store/data/ file to ../store/cache/.
+            if (!Files.exists(p)) {
+                Path legacy = Path.of(LEGACY_STATE_FILE);
+                if (Files.exists(legacy)) {
+                    java.io.File parent = p.toFile().getParentFile();
+                    if (parent != null && !parent.exists()) parent.mkdirs();
+                    Files.move(legacy, p);
+                    log.info("[Camarilla] migrated {} → {}", legacy, p);
+                } else {
+                    return;
+                }
+            }
             State s = mapper.readValue(Files.readString(p), State.class);
             if (s != null) {
                 state = s;

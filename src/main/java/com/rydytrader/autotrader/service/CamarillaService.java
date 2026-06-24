@@ -39,14 +39,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *       null) and triggers an async per-symbol refresh on miss.</li>
  * </ul>
  *
- * <p>Disk cache: {@code ../store/data/camarilla-levels.json} — JSON map of symbol → levels.
+ * <p>Disk cache: {@code ../store/cache/camarilla-levels.json} — JSON map of symbol → levels.
  */
 @Service
 public class CamarillaService {
 
     private static final Logger log = LoggerFactory.getLogger(CamarillaService.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    private static final String STATE_FILE = "../store/data/camarilla-levels.json";
+    private static final String STATE_FILE = "../store/cache/camarilla-levels.json";
+    private static final String LEGACY_STATE_FILE = "../store/data/camarilla-levels.json";
     private static final long   STRIKE_STEP = 50L;
     private static final int    STRIKES_PER_SIDE = 10;
     /** NIFTY spot index symbol — used as the v2 trigger feed for setup detection.
@@ -58,6 +59,7 @@ public class CamarillaService {
     private final TokenStore          tokenStore;
     private final FyersProperties     fyersProperties;
     private final BalancedAtmSelector atmSelector;
+    private final NseIndicesBhavcopyService nseBhavcopy;
     private final ObjectMapper        mapper = new ObjectMapper()
         .registerModule(new JavaTimeModule())
         .findAndRegisterModules();
@@ -69,11 +71,13 @@ public class CamarillaService {
     public CamarillaService(FyersClientRouter fyersClient,
                             TokenStore tokenStore,
                             FyersProperties fyersProperties,
-                            BalancedAtmSelector atmSelector) {
+                            BalancedAtmSelector atmSelector,
+                            NseIndicesBhavcopyService nseBhavcopy) {
         this.fyersClient     = fyersClient;
         this.tokenStore      = tokenStore;
         this.fyersProperties = fyersProperties;
         this.atmSelector     = atmSelector;
+        this.nseBhavcopy     = nseBhavcopy;
     }
 
     @PostConstruct
@@ -84,10 +88,30 @@ public class CamarillaService {
             if (e.getValue() != null && e.getValue().sessionDate().equals(todayIst())) kept++;
         }
         log.info("[CamarillaService] booted — {} cached level entries valid for today", kept);
-        // v2 — fetch NIFTY spot levels at boot so the trend tooltip + setup detector
+        // v2 cleanup — drop any non-NIFTY entries that leaked in from v1's
+        // warmUpAroundAtm fan-out fetch. Only NIFTY spot levels are meaningful in
+        // v2; the rest are dead weight on disk + memory.
+        int dropped = 0;
+        for (String sym : new java.util.ArrayList<>(bySymbol.keySet())) {
+            if (!NIFTY_SPOT_SYMBOL.equals(sym)) {
+                bySymbol.remove(sym);
+                dropped++;
+            }
+        }
+        if (dropped > 0) {
+            log.info("[CamarillaService] cleaned {} legacy option-strike entries from cache", dropped);
+            try { saveToDisk(); } catch (Exception ignored) {}
+        }
+        // Invalidate any cached NIFTY entry at boot so the bhavcopy-preferred
+        // refresh path always runs. Without this, an entry cached from a previous
+        // boot (which used Fyers history) would short-circuit the bhavcopy fetch
+        // for today's session and we'd never see the higher-fidelity OHLC.
+        if (bySymbol.remove(NIFTY_SPOT_SYMBOL) != null) {
+            log.info("[CamarillaService] invalidated cached NIFTY entry at boot to force bhavcopy refresh");
+        }
+        // Fetch NIFTY spot levels at boot so the trend tooltip + setup detector
         // are armed before the first 5-min bar closes, regardless of when the server
-        // came up (post-09:30 restart still gets levels populated within ~1 second).
-        // Runs async so boot isn't blocked on Fyers REST.
+        // came up. Runs async so boot isn't blocked on Fyers REST.
         triggerAsyncRefresh(NIFTY_SPOT_SYMBOL);
     }
 
@@ -192,6 +216,27 @@ public class CamarillaService {
         // never re-fetch history for a symbol whose levels are still valid for this session.
         CamarillaLevels cached = bySymbol.get(symbol);
         if (cached != null && today.equals(cached.sessionDate())) return true;
+
+        // ── NIFTY spot: prefer NSE indices bhavcopy ──
+        // Fyers history "D" close for index symbols is the NSE settlement WAP which
+        // can differ a few points from TradingView's last-tick close. The NSE
+        // archives publish the official OHLC for "Nifty 50" by ~17:00 IST same day —
+        // that's what TradingView's cash chart sources from, so using the bhavcopy
+        // keeps our pivots aligned with what the operator sees on TV.
+        if ("NSE:NIFTY50-INDEX".equals(symbol)) {
+            NseIndicesBhavcopyService.Ohlc bhav = nseBhavcopy.fetchPriorDayOhlc("Nifty 50", today);
+            if (bhav != null && bhav.high() > 0 && bhav.low() > 0 && bhav.close() > 0) {
+                CamarillaLevels fresh = CamarillaLevels.compute(today, bhav.date(),
+                    bhav.high(), bhav.low(), bhav.close());
+                bySymbol.put(symbol, fresh);
+                log.info("[CamarillaService] NIFTY levels from NSE bhavcopy ({}) — H={} L={} C={} → H3={} L3={}",
+                    bhav.date(), bhav.high(), bhav.low(), bhav.close(),
+                    fresh.h3(), fresh.l3());
+                return true;
+            }
+            log.warn("[CamarillaService] NSE bhavcopy unavailable for NIFTY — falling back to Fyers history");
+        }
+
         // Pull 10 calendar days of daily candles so we always have a settled session.
         LocalDate from = today.minusDays(10);
         String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
@@ -245,7 +290,20 @@ public class CamarillaService {
     private synchronized void loadFromDisk() {
         try {
             Path p = Path.of(STATE_FILE);
-            if (!Files.exists(p)) return;
+            // One-time migration — relocate legacy file from ../store/data/ to
+            // ../store/cache/ if the cache copy doesn't exist yet. Keeps state
+            // continuity across the layout change without operator intervention.
+            if (!Files.exists(p)) {
+                Path legacy = Path.of(LEGACY_STATE_FILE);
+                if (Files.exists(legacy)) {
+                    java.io.File parent = p.toFile().getParentFile();
+                    if (parent != null && !parent.exists()) parent.mkdirs();
+                    Files.move(legacy, p);
+                    log.info("[CamarillaService] migrated {} → {}", legacy, p);
+                } else {
+                    return;
+                }
+            }
             String json = Files.readString(p);
             Map<String, CamarillaLevels> map = mapper.readValue(json,
                 mapper.getTypeFactory().constructMapType(java.util.LinkedHashMap.class,
