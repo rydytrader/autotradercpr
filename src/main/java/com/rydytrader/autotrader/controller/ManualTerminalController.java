@@ -3,7 +3,6 @@ package com.rydytrader.autotrader.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
-import com.rydytrader.autotrader.service.AtmTracker;
 import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.strategy.Camarilla;
 import com.rydytrader.autotrader.store.TokenStore;
@@ -49,20 +48,17 @@ public class ManualTerminalController {
     private final TokenStore           tokenStore;
     private final FyersProperties      fyersProperties;
     private final MarketDataService    marketDataService;
-    private final AtmTracker           atmTracker;
 
     public ManualTerminalController(Camarilla strategy,
                                     FyersClientRouter fyersClient,
                                     TokenStore tokenStore,
                                     FyersProperties fyersProperties,
-                                    MarketDataService marketDataService,
-                                    AtmTracker atmTracker) {
+                                    MarketDataService marketDataService) {
         this.strategy          = strategy;
         this.fyersClient       = fyersClient;
         this.tokenStore        = tokenStore;
         this.fyersProperties   = fyersProperties;
         this.marketDataService = marketDataService;
-        this.atmTracker        = atmTracker;
     }
 
     // ── Option-chain slice ──────────────────────────────────────────────────────
@@ -127,14 +123,13 @@ public class ManualTerminalController {
                 if (!exp.isEmpty()) expirySet.add(exp);
             }
 
-            // ATM = the bot's baseline ATM (AtmTracker spot-rounded). The scalper has to
-            // match the bot's ATM so the operator sees a single, consistent strike across
-            // the Positions header, the OI bias tracker, and the terminal. When AtmTracker
-            // hasn't baselined yet (pre-market, fresh boot before first resolution), fall
-            // back to the spot-rounded ATM derived from the chain. The original synthetic-
-            // futures ATM (put-call parity) was for the straddle bot — irrelevant here.
-            long botAtm = atmTracker.getCurrentAtm();
-            long atm = (botAtm > 0 && byStrike.containsKey(botAtm)) ? botAtm : spotAtm;
+            // ATM = live spot rounded to STRIKE_STEP, recomputed every dashboard
+            // refresh. v2 dropped the AtmTracker session baseline (it locked at
+            // 09:30 first tick and never updated, so the terminal showed a stale
+            // morning strike for the rest of the day). The Camarilla strategy
+            // itself locks ATM at confirmation time on the strategy side; for the
+            // manual terminal we want whatever strike is closest to NIFTY *now*.
+            long atm = spotAtm;
 
             List<Map<String, Object>> rows = new ArrayList<>();
             if (atm > 0) {

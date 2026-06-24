@@ -73,6 +73,13 @@ public class Camarilla implements Strategy {
      *  clamp negative Camarilla L5 targets to a meaningful display floor on the
      *  positions card. */
     private static final double OPTION_TICK_SIZE = 0.05;
+    /** Approximate delta of an ATM NIFTY option used to translate spot SL distance
+     *  into projected option-premium loss. ATM options track the underlying at
+     *  roughly half pace — a 100-pt NIFTY move on an ATM CE shifts premium by
+     *  ~50 pts. The exposed-risk gate uses this to project realistic option loss
+     *  rather than the raw 1:1 spot-distance proxy. Empirical 0.5 is good enough
+     *  for the gate's purpose — we don't need Black-Scholes precision here. */
+    private static final double ATM_DELTA = 0.5;
 
     /** NIFTY contract lot size — used by the Manual Terminal controller to translate
      *  the operator's "lots" input into a contract count. Public so the controller
@@ -769,7 +776,7 @@ public class Camarilla implements Strategy {
             if (pb != null && c.isGreen() && c.close() > pb.confirmHigh) {
                 event("[INFO]", "Setup", pb.setup + " trigger @ " + round2(c.close())
                     + " (SL " + round2(pb.confirmLow) + ", TGT " + round2(pb.targetLevel) + ")");
-                fire(triggerSym, pb.setup, pb.targetLevel, pb.confirmLow, c);
+                fire(triggerSym, pb.setup, pb.targetLevel, pb.confirmLow, c, pb.lockedAtm);
                 state.pendingBullish = null;
                 firedThisBar = true;
             }
@@ -777,7 +784,7 @@ public class Camarilla implements Strategy {
             if (pr != null && c.isRed() && c.close() < pr.confirmLow) {
                 event("[INFO]", "Setup", pr.setup + " trigger @ " + round2(c.close())
                     + " (SL " + round2(pr.confirmHigh) + ", TGT " + round2(pr.targetLevel) + ")");
-                fire(triggerSym, pr.setup, pr.targetLevel, pr.confirmHigh, c);
+                fire(triggerSym, pr.setup, pr.targetLevel, pr.confirmHigh, c, pr.lockedAtm);
                 state.pendingBearish = null;
                 firedThisBar = true;
             }
@@ -804,8 +811,23 @@ public class Camarilla implements Strategy {
                     event("[INFO]", "Setup", fresh.setup + " confirmed (H "
                         + round2(fresh.confirmHigh) + ", L " + round2(fresh.confirmLow)
                         + ", TGT " + round2(fresh.targetLevel) + ")");
+                    // Lock ATM at confirmation time — fire() uses fresh.lockedAtm at
+                    // trigger time instead of recomputing live ATM. Guarantees the
+                    // strike we pre-subscribe is the strike we trade.
+                    double spot = 0;
+                    try { spot = marketDataService.getLtp(NIFTY_SYMBOL); }
+                    catch (Exception ignored) {}
+                    if (spot > 0) {
+                        fresh.lockedAtm = Math.round(spot / (double) STRIKE_STEP) * STRIKE_STEP;
+                    }
                     if (bullish) state.pendingBullish = fresh;
                     else         state.pendingBearish = fresh;
+                    // Pre-subscribe the single ATM option leg fire() will trade
+                    // (PUT for bullish, CALL for bearish) so its LTP is warm by
+                    // the trigger bar 5+ min later. Fixes the entry-price = 0
+                    // cascade where on-demand subscribe at fire missed the first
+                    // tick. lockedAtm pins exactly the strike fire() reads.
+                    preSubscribeOptionLeg(bullish, fresh.lockedAtm);
                 }
             }
 
@@ -815,25 +837,58 @@ public class Camarilla implements Strategy {
 
     /** v2 two-candle entry — detect whether the bar c is a CONFIRMATION candle for
      *  one of the four setups. Returns null if no setup's confirmation geometry
-     *  matches. Reversal precedence over breakout (rarer structural signal). */
+     *  matches. Reversal precedence over breakout (rarer structural signal).
+     *
+     *  <p>Breakout/breakdown require the bar to actually CROSS the level — bar low
+     *  ≤ H4 with close above (or bar high ≥ L4 with close below). A bar that
+     *  sits entirely above H4 (low > H4) is not a fresh breakout — the breakout
+     *  already happened on a prior bar; firing again would be a duplicate setup. */
     private PendingConfirmation detectConfirmation(Candle c, CamarillaLevels lv) {
         if (lv == null) return null;
 
-        // Bullish — reversal then breakout.
+        // Bullish — reversal then breakout. Both require a GREEN bar (buy
+        // pressure into the close); a red bar that closes above the level is
+        // mechanical drift, not a directional breakout.
         if (c.isGreen() && c.low() <= lv.l3() && c.close() > lv.l3()) {
             return mkConfirmation(ActiveSetup.L3_REVERSAL, c, lv.h3());
         }
-        if (c.close() > lv.h4()) {
+        if (c.isGreen() && c.low() <= lv.h4() && c.close() > lv.h4()) {
             return mkConfirmation(ActiveSetup.H4_BREAKOUT, c, lv.h5());
         }
-        // Bearish — reversal then breakdown.
+        // Bearish — reversal then breakdown. Both require a RED bar (sell
+        // pressure into the close); a green bar that closes below the level is
+        // mechanical drift, not a directional breakdown.
         if (c.isRed() && c.high() >= lv.h3() && c.close() < lv.h3()) {
             return mkConfirmation(ActiveSetup.H3_REVERSAL, c, lv.l3());
         }
-        if (c.close() < lv.l4()) {
+        if (c.isRed() && c.high() >= lv.l4() && c.close() < lv.l4()) {
             return mkConfirmation(ActiveSetup.L4_BREAKDOWN, c, lv.l5());
         }
         return null;
+    }
+
+    /** Pre-subscribe the single option leg fire() will trade at the locked ATM.
+     *  Bullish setups sell the PUT, bearish setups sell the CALL — only that one
+     *  contract gets subscribed. Since lockedAtm is the strike fire() reads
+     *  later (no live recompute), there's no drift to hedge against with extra
+     *  strikes. Subscribe runs at confirmation time so the leg has 5+ minutes to
+     *  tick before the trigger bar fires — fixes the {@code p.entryPrice = 0}
+     *  cascade where on-demand subscribe at fire missed the first tick. */
+    private void preSubscribeOptionLeg(boolean bullish, long lockedAtm) {
+        if (lockedAtm <= 0) {
+            event("[INFO]", "Setup", "pre-sub skipped — no ATM lock");
+            return;
+        }
+        BalancedAtmSelector.StrikeAtLevel row = atmSelector.resolveStrikeAtLevel(lockedAtm);
+        String sym = (row == null) ? null : (bullish ? row.peSymbol() : row.ceSymbol());
+        if (sym == null || sym.isBlank()) {
+            event("[INFO]", "Setup", "pre-sub failed — no " + (bullish ? "PUT" : "CALL")
+                + " symbol at " + lockedAtm);
+            return;
+        }
+        try { marketDataService.subscribeAdditional(java.util.Collections.singletonList(sym)); }
+        catch (Exception ignored) {}
+        event("[INFO]", "Setup", "pre-sub " + sym);
     }
 
     private static PendingConfirmation mkConfirmation(ActiveSetup setup, Candle c, double target) {
@@ -880,13 +935,16 @@ public class Camarilla implements Strategy {
     private double exposedRiskNow() {
         double total = 0;
         for (Position p : state.openPositions.values()) {
-            // v2 positions: futures-distance proxy (entryFutures vs slFutures).
-            // v1 positions: option-price distance (entryPrice vs slLevel).
+            // v2 positions: futures-distance proxy (entryFutures vs slFutures),
+            // scaled by ATM_DELTA so the projection reflects actual option premium
+            // loss rather than the raw 1:1 spot move. v1 positions: option-price
+            // distance (entryPrice vs slLevel) — no delta scaling needed since
+            // the math is already in option-premium space.
             boolean v2 = p.triggerSymbol != null && !p.triggerSymbol.isBlank()
                        && p.entryFutures > 0 && !Double.isNaN(p.slFutures);
             double perShare;
             if (v2) {
-                perShare = Math.abs(p.slFutures - p.entryFutures);
+                perShare = Math.abs(p.slFutures - p.entryFutures) * ATM_DELTA;
             } else {
                 perShare = p.isShort
                     ? Math.max(0, p.slLevel - p.entryPrice)
@@ -917,26 +975,29 @@ public class Camarilla implements Strategy {
      *  @param entryCandle   the futures bar that fired the setup (used for entry futures price)
      */
     private void fire(String triggerSymbol, ActiveSetup setup,
-                      double targetFutures, double slFutures, Candle entryCandle) {
+                      double targetFutures, double slFutures, Candle entryCandle,
+                      long lockedAtm) {
         boolean shortSetup = isShortSetup(setup);
         if (!shortSetup) return;   // v2 is sell-only by design
         boolean bullishBet = isBullishBet(setup);
 
-        // ── Pick the ATM option leg — LIVE ATM at fire time ──
-        // bullish bet  → sell ATM PUT  (max premium decay at the money)
-        // bearish bet  → sell ATM CALL
-        // ATM is computed from current spot LTP rounded to STRIKE_STEP (50) —
-        // no session-locked baseline. If the spot LTP isn't available yet
-        // (extremely rare post-09:15), skip the trade.
-        double spot = 0;
-        try { spot = marketDataService.getLtp(NIFTY_SYMBOL); }
-        catch (Exception ignored) {}
-        if (spot <= 0) {
-            event("[ERROR]", "AUTO ENTRY", setup
-                + " — NIFTY spot LTP not available, skipping");
-            return;
+        // ── Pick the ATM option leg ──
+        // The strike was locked at confirmation time and pre-subscribed; reuse it
+        // so the option leg we trade is the same one we warmed up. lockedAtm = 0
+        // is the back-compat path for pendings restored from disk before this
+        // change shipped — fall through to a live recompute.
+        long strike = lockedAtm;
+        if (strike <= 0) {
+            double spot = 0;
+            try { spot = marketDataService.getLtp(NIFTY_SYMBOL); }
+            catch (Exception ignored) {}
+            if (spot <= 0) {
+                event("[ERROR]", "AUTO ENTRY", setup
+                    + " — NIFTY spot LTP not available, skipping");
+                return;
+            }
+            strike = Math.round(spot / (double) STRIKE_STEP) * STRIKE_STEP;
         }
-        long strike = Math.round(spot / (double) STRIKE_STEP) * STRIKE_STEP;
         BalancedAtmSelector.StrikeAtLevel row = atmSelector.resolveStrikeAtLevel(strike);
         String optionSym = null;
         if (row != null) {
@@ -945,7 +1006,7 @@ public class Camarilla implements Strategy {
         if (optionSym == null || optionSym.isBlank()) {
             event("[ERROR]", "AUTO ENTRY",
                 setup + " — couldn't resolve " + (bullishBet ? "PUT" : "CALL")
-                + " symbol at strike " + strike + " (spot=" + round2(spot) + ")");
+                + " symbol at strike " + strike);
             return;
         }
         // Avoid double-entry on the same option leg if a prior trade is still open on it.
@@ -1011,7 +1072,10 @@ public class Camarilla implements Strategy {
         // ── Project exposed-risk after this entry; block if it would exceed maxRisk ──
         // Per-position futures-equivalent risk = |entryFut − slFut| × qty.
         int qty = riskSettings.getCamarillaLotsPerLeg() * LOT_SIZE;
-        double newExposureDelta = Math.abs(entryFutures - slFutures) * qty;
+        // Project the proposed trade's option-premium loss at SL: spot SL distance
+        // × ATM_DELTA (≈ 0.5) × qty. A raw 1:1 spot×qty projection would overstate
+        // option loss by ~2× and gate trades that wouldn't actually breach maxRisk.
+        double newExposureDelta = Math.abs(entryFutures - slFutures) * ATM_DELTA * qty;
         if (maxRisk > 0 && (exposedRiskNow() + newExposureDelta) > maxRisk) {
             event("[WARNING]", "Risk", setup + " skip — exposed ₹"
                 + round2(exposedRiskNow() + newExposureDelta) + " > ₹" + round2(maxRisk));
@@ -2004,6 +2068,11 @@ public class Camarilla implements Strategy {
         public double confirmHigh;
         public double confirmLow;
         public double targetLevel;
+        /** v2 — ATM strike locked at the moment the confirmation candle was recorded.
+         *  fire() uses this at trigger time instead of recomputing from live spot,
+         *  so the strike we pre-subscribe is guaranteed to be the strike we trade.
+         *  0 on legacy pendings from disk — fire() falls back to live ATM in that case. */
+        public long lockedAtm;
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
