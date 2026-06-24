@@ -45,11 +45,12 @@ public class OptionOiSubscriber {
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final String NIFTY_SYMBOL  = "NSE:NIFTY50-INDEX";
     private static final long   STRIKE_STEP   = 50L;
-    private static final int    STRIKES_PER_SIDE = 10;
-    private static final int    CHAIN_FETCH_STRIKES = 25;
-    /** A successful subscription places at least this many strike pairs into the active window
-     *  (some far-edge strikes may be missing legs near boot, so we don't require all 21). */
-    private static final int    HEALTHY_WINDOW_MIN_STRIKES = 15;
+    private static final int    STRIKES_PER_SIDE = 15;
+    private static final int    CHAIN_FETCH_STRIKES = 35;
+    /** A successful subscription places at least this many strike pairs into the active window.
+     *  Full window is 2 × STRIKES_PER_SIDE + 1 = 31 pairs at STRIKES_PER_SIDE=15; some
+     *  far-edge strikes may be missing legs near boot, so we accept ~70% as healthy. */
+    private static final int    HEALTHY_WINDOW_MIN_STRIKES = 22;
 
     private volatile boolean subscriptionsHealthy = false;
 

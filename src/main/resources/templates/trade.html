@@ -92,7 +92,12 @@
             color:var(--text-muted); background:rgba(128,128,128,0.05);
             white-space:nowrap;
         }
-        .event-row { display:grid; grid-template-columns:70px 60px 160px 1fr; padding:6px 10px; border-bottom:1px solid rgba(128,128,128,0.10); font-family:var(--font-mono); font-size:0.78rem; }
+        /* Event-log row grid: timestamp | severity | source | message.
+           Source column was 160px which left a big gap before short labels like
+           [ATM]; tightened to 110px to fit the longest real label
+           ([MANUAL ENTRY] = 14 chars at ~0.78rem mono ≈ 100px) with a small
+           breathing margin. */
+        .event-row { display:grid; grid-template-columns:70px 60px 110px 1fr; gap:6px; padding:6px 10px; border-bottom:1px solid rgba(128,128,128,0.10); font-family:var(--font-mono); font-size:0.78rem; }
         .event-src   { color:var(--accent-cyan, #67e8f9); text-transform:uppercase; white-space:nowrap; }
         .event-msg   { color:var(--text-secondary); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .sev-INFO    { color:var(--accent-blue, #63b3ed); }
@@ -1064,7 +1069,7 @@
 
 <script src="/js/common.js?v=41"></script>
 <script src="/js/ticker.js?v=36"></script>
-<script src="/js/settings-modal.js?v=50"></script>
+<script src="/js/settings-modal.js?v=52"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
 <script src="/js/manual-terminal-modal.js?v=45"></script>
 </body>

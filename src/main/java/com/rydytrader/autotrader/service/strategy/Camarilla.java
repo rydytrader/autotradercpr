@@ -667,9 +667,7 @@ public class Camarilla implements Strategy {
                     double tgt2 = v2 ? p2.targetFutures : p2.targetLevel;
                     boolean stillHit = p2.isShort ? (triggerLtp <= tgt2) : (triggerLtp >= tgt2);
                     if (!stillHit) continue;
-                    String cmp = p2.isShort ? " <= target=" : " >= target=";
-                    event("[SUCCESS]", "Exit", symbol + " " + p2.setup + " TARGET_HIT — "
-                        + (v2 ? "fut=" : "ltp=") + round2(triggerLtp) + cmp + round2(tgt2));
+                    event("[SUCCESS]", "Exit", "TARGET — " + shortSym(symbol) + " @ " + round2(triggerLtp));
                     closePosition(symbol, "TARGET_HIT");
                 }
                 continue;
@@ -682,10 +680,7 @@ public class Camarilla implements Strategy {
                     synchronized (lock) {
                         Position p2 = state.openPositions.get(symbol);
                         if (p2 == null) continue;
-                        String cmp = p2.isShort ? " >= SL=" : " <= SL=";
-                        event("[WARNING]", "Exit", symbol + " " + p2.setup + " SL_HIT — "
-                            + (v2 ? "fut=" : "ltp=") + round2(triggerLtp) + cmp + round2(slRef)
-                            + " confirmed over " + SL_BREACH_CONFIRM_TICKS + " ticks");
+                        event("[WARNING]", "Exit", "SL — " + shortSym(symbol) + " @ " + round2(triggerLtp));
                         closePosition(symbol, "SL_HIT");
                     }
                 }
@@ -706,16 +701,15 @@ public class Camarilla implements Strategy {
     // open-price bootstrap from AtmTracker. The heartbeat path (oldAtm == newAtm)
     // is gone with the drift loop.
 
-    /** v2 — no-op. The trigger feed (NIFTY spot) is subscribed at boot, and the
-     *  ATM strike is computed live from spot LTP at fire() time. The
-     *  AtmTracker listener registration in boot() is retained only so any other
-     *  consumers (OptionOiSubscriber, ManualTerminalController) still see the
-     *  session-locked AtmChange event. Camarilla itself ignores the payload. */
+    /** v2 — true no-op. The trigger feed (NIFTY spot) is subscribed at boot, and
+     *  the ATM strike is computed live from spot LTP at fire() time. AtmTracker's
+     *  session-locked baseline is irrelevant to Camarilla; the listener
+     *  registration in boot() is retained only so OptionOiSubscriber and other
+     *  consumers still receive the AtmChange event. Camarilla emits nothing —
+     *  posting "resolved → N" was misleading since the value never gates a
+     *  trade decision. */
     public synchronized void onAtmChange(AtmTracker.AtmChange ev) {
-        long atm = ev.newAtm();
-        String tag = ev.oldAtm() < 0 ? "boot" : String.valueOf(ev.oldAtm());
-        event("[INFO]", "ATM", "AtmTracker resolved " + tag + " → " + atm
-            + " (informational — Camarilla uses live spot at fire time)");
+        // intentionally empty
     }
 
     // ── Candle close handler — entries + exits, per symbol ──────────────────
@@ -759,16 +753,12 @@ public class Camarilla implements Strategy {
             long maxPendingAgeMs = MAX_PENDING_BARS * BAR_LENGTH_MS;
             if (state.pendingBullish != null
                 && c.startMillis() - state.pendingBullish.barStartMs > maxPendingAgeMs) {
-                event("[INFO]", "Setup", state.pendingBullish.setup
-                    + " confirmation expired — " + MAX_PENDING_BARS
-                    + " bars without trigger or invalidation");
+                event("[INFO]", "Setup", state.pendingBullish.setup + " expired (" + MAX_PENDING_BARS + " bars)");
                 state.pendingBullish = null;
             }
             if (state.pendingBearish != null
                 && c.startMillis() - state.pendingBearish.barStartMs > maxPendingAgeMs) {
-                event("[INFO]", "Setup", state.pendingBearish.setup
-                    + " confirmation expired — " + MAX_PENDING_BARS
-                    + " bars without trigger or invalidation");
+                event("[INFO]", "Setup", state.pendingBearish.setup + " expired (" + MAX_PENDING_BARS + " bars)");
                 state.pendingBearish = null;
             }
 
@@ -777,56 +767,43 @@ public class Camarilla implements Strategy {
             // --- Phase 1: TRIGGER ---
             PendingConfirmation pb = state.pendingBullish;
             if (pb != null && c.isGreen() && c.close() > pb.confirmHigh) {
-                event("[INFO]", "Setup", pb.setup + " trigger — green close "
-                    + round2(c.close()) + " > confirmHigh " + round2(pb.confirmHigh)
-                    + " (SL=" + round2(pb.confirmLow) + ", target=" + round2(pb.targetLevel) + ")");
+                event("[INFO]", "Setup", pb.setup + " trigger @ " + round2(c.close())
+                    + " (SL " + round2(pb.confirmLow) + ", TGT " + round2(pb.targetLevel) + ")");
                 fire(triggerSym, pb.setup, pb.targetLevel, pb.confirmLow, c);
                 state.pendingBullish = null;
                 firedThisBar = true;
             }
             PendingConfirmation pr = state.pendingBearish;
             if (pr != null && c.isRed() && c.close() < pr.confirmLow) {
-                event("[INFO]", "Setup", pr.setup + " trigger — red close "
-                    + round2(c.close()) + " < confirmLow " + round2(pr.confirmLow)
-                    + " (SL=" + round2(pr.confirmHigh) + ", target=" + round2(pr.targetLevel) + ")");
+                event("[INFO]", "Setup", pr.setup + " trigger @ " + round2(c.close())
+                    + " (SL " + round2(pr.confirmHigh) + ", TGT " + round2(pr.targetLevel) + ")");
                 fire(triggerSym, pr.setup, pr.targetLevel, pr.confirmHigh, c);
                 state.pendingBearish = null;
                 firedThisBar = true;
             }
 
             // --- Phase 2: INVALIDATION ---
-            // Only check on slots that didn't trigger above. Bullish invalidates
-            // when close < confirmLow; bearish invalidates when close > confirmHigh.
             if (state.pendingBullish != null && c.close() < state.pendingBullish.confirmLow) {
-                event("[INFO]", "Setup", state.pendingBullish.setup
-                    + " confirmation nullified — close " + round2(c.close())
-                    + " < confirmLow " + round2(state.pendingBullish.confirmLow));
+                event("[INFO]", "Setup", state.pendingBullish.setup + " nullified @ " + round2(c.close()));
                 state.pendingBullish = null;
             }
             if (state.pendingBearish != null && c.close() > state.pendingBearish.confirmHigh) {
-                event("[INFO]", "Setup", state.pendingBearish.setup
-                    + " confirmation nullified — close " + round2(c.close())
-                    + " > confirmHigh " + round2(state.pendingBearish.confirmHigh));
+                event("[INFO]", "Setup", state.pendingBearish.setup + " nullified @ " + round2(c.close()));
                 state.pendingBearish = null;
             }
 
             // --- Phase 3: NEW CONFIRMATION ---
-            // Skip if we already fired a trade this bar (don't seed a fresh pending
-            // immediately after a fill — the existing skip-if-open guard would
-            // suppress any same-bar trigger anyway).
             if (!firedThisBar) {
                 PendingConfirmation fresh = detectConfirmation(c, lv);
                 if (fresh != null) {
                     boolean bullish = isBullishBet(fresh.setup);
                     PendingConfirmation prev = bullish ? state.pendingBullish : state.pendingBearish;
                     if (prev != null && prev.setup != fresh.setup) {
-                        event("[INFO]", "Setup", prev.setup + " replaced by " + fresh.setup
-                            + " (same direction, fresher level)");
+                        event("[INFO]", "Setup", prev.setup + " → " + fresh.setup);
                     }
-                    String tag = bullish ? "BULLISH" : "BEARISH";
-                    event("[INFO]", "Setup", fresh.setup + " confirmation recorded — "
-                        + tag + " bar [H=" + round2(fresh.confirmHigh)
-                        + ", L=" + round2(fresh.confirmLow) + "], target=" + round2(fresh.targetLevel));
+                    event("[INFO]", "Setup", fresh.setup + " confirmed (H "
+                        + round2(fresh.confirmHigh) + ", L " + round2(fresh.confirmLow)
+                        + ", TGT " + round2(fresh.targetLevel) + ")");
                     if (bullish) state.pendingBullish = fresh;
                     else         state.pendingBearish = fresh;
                 }
@@ -978,12 +955,36 @@ public class Camarilla implements Strategy {
         try { marketDataService.subscribeAdditional(java.util.Collections.singletonList(optionSym)); }
         catch (Exception ignored) {}
 
+        // ── OI bias gate ──
+        // Block only when the OI tracker reads a STRONG bias (VERY_BULLISH or
+        // VERY_BEARISH). Mild BULLISH / BEARISH and NEUTRAL / STALE always pass
+        // through — the moderate forms aren't conclusive enough to fade.
+        // Toggle: camarillaOiBiasFilterEnabled (Settings → Camarilla pane).
+        if (riskSettings.isCamarillaOiBiasFilterEnabled()) {
+            try {
+                com.rydytrader.autotrader.service.OptionOiTracker oiCheck = oiTrackerProvider == null ? null
+                    : oiTrackerProvider.getIfAvailable();
+                if (oiCheck != null) {
+                    String bias = oiCheck.snapshot().bias();
+                    boolean veryBullish = "VERY_BULLISH_BIAS".equals(bias);
+                    boolean veryBearish = "VERY_BEARISH_BIAS".equals(bias);
+                    if (bullishBet && veryBearish) {
+                        event("[WARNING]", "OiBias", setup + " skip — " + bias);
+                        return;
+                    }
+                    if (!bullishBet && veryBullish) {
+                        event("[WARNING]", "OiBias", setup + " skip — " + bias);
+                        return;
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+
         // ── Risk gates: consumed > maxRisk locks out the day ──
         double maxRisk = riskSettings.getPortfolioMaxDailyLoss();
         if (maxRisk > 0 && consumedRiskNow() > maxRisk) {
-            event("[ERROR]", "Risk", setup + " skipped — consumed ₹"
-                + round2(consumedRiskNow()) + " > maxRisk ₹" + round2(maxRisk)
-                + ", locking session");
+            event("[ERROR]", "Risk", "lockout — consumed ₹"
+                + round2(consumedRiskNow()) + " > ₹" + round2(maxRisk));
             state.dailyLossLockout = true;
             saveToDisk();
             return;
@@ -1001,12 +1002,8 @@ public class Camarilla implements Strategy {
             double reward = Math.abs(entryFutures - targetFutures);
             double risk   = Math.abs(slFutures - entryFutures);
             if (risk > 0 && reward < risk) {
-                event("[WARNING]", "Sizing", setup + " skipped — R:R "
-                    + round2(reward / risk) + " < 1.0"
-                    + " (reward " + round2(reward) + " < risk " + round2(risk)
-                    + ", entryFut " + round2(entryFutures)
-                    + ", target " + round2(targetFutures)
-                    + ", SL " + round2(slFutures) + ")");
+                event("[WARNING]", "Sizing", setup + " skip — R:R "
+                    + round2(reward / risk) + " < 1.0");
                 return;
             }
         }
@@ -1016,9 +1013,8 @@ public class Camarilla implements Strategy {
         int qty = riskSettings.getCamarillaLotsPerLeg() * LOT_SIZE;
         double newExposureDelta = Math.abs(entryFutures - slFutures) * qty;
         if (maxRisk > 0 && (exposedRiskNow() + newExposureDelta) > maxRisk) {
-            event("[WARNING]", "Risk", setup + " skipped — projected exposed ₹"
-                + round2(exposedRiskNow() + newExposureDelta) + " > maxRisk ₹"
-                + round2(maxRisk));
+            event("[WARNING]", "Risk", setup + " skip — exposed ₹"
+                + round2(exposedRiskNow() + newExposureDelta) + " > ₹" + round2(maxRisk));
             return;
         }
 
@@ -1033,9 +1029,8 @@ public class Camarilla implements Strategy {
 
         log.info("[Camarilla v2] {} fired — sell {} qty={} (triggerFut={}, entryFut={}, target={}, sl={})",
             setup, optionSym, qty, triggerSymbol, entryFutures, targetFutures, slFutures);
-        event("[INFO]", "AUTO ENTRY", setup + " — sell " + optionSym + " qty " + qty
-            + " (futEntry≈" + round2(entryFutures) + ", target=" + round2(targetFutures)
-            + ", SL=" + round2(slFutures) + ")");
+        event("[INFO]", "AUTO ENTRY", "sell " + optionSym + " ×" + (qty / LOT_SIZE)
+            + "L (TGT " + round2(targetFutures) + ", SL " + round2(slFutures) + ")");
 
         OrderDTO order = orderService.placeOrder(optionSym, qty, orderSide, 0, productType);
         if (order == null || order.getId() == null || order.getId().isEmpty()) {
@@ -2144,6 +2139,22 @@ public class Camarilla implements Strategy {
     // ── Misc utility ────────────────────────────────────────────────────────
 
     private static double round2(double v) { return Math.round(v * 100.0) / 100.0; }
+
+    /** Compact rendering of a Fyers option symbol for the event log:
+     *  {@code NSE:NIFTY2562624650CE} → {@code 24650CE}. Falls back to the symbol's
+     *  last 8 chars when it doesn't match the expected suffix pattern. */
+    private static String shortSym(String s) {
+        if (s == null || s.isBlank()) return "";
+        if (s.endsWith("CE") || s.endsWith("PE")) {
+            int len = s.length();
+            // Strike is the last 4–5 digits before CE/PE
+            int strikeEnd = len - 2;
+            int strikeStart = strikeEnd;
+            while (strikeStart > 0 && Character.isDigit(s.charAt(strikeStart - 1))) strikeStart--;
+            if (strikeEnd - strikeStart >= 4) return s.substring(strikeStart);
+        }
+        return s.length() > 12 ? s.substring(s.length() - 12) : s;
+    }
     private static double asDouble(Object o) {
         if (o instanceof Number) return ((Number) o).doubleValue();
         if (o == null) return 0;
