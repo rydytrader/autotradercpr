@@ -107,10 +107,10 @@ public class Camarilla implements Strategy {
     public enum ActiveSetup {
         // v2 setups — all triggered on the NIFTY near-month FUTURES 5-min bar close,
         // all sell a SHORT OTM option. The trade leg's symbol is picked at fire time.
-        L3_REVERSAL,       // bullish: green futures bar wicks below L3, closes above → sell ATM−50 PUT
-        H3_REVERSAL,       // bearish: red futures bar wicks above H3, closes below → sell ATM+50 CALL
-        H4_BREAKOUT,       // bullish: futures bar closes above H4 → sell ATM−50 PUT
-        L4_BREAKDOWN,      // bearish: futures bar closes below L4 → sell ATM+50 CALL
+        L3_REVERSAL,       // bullish: green spot bar wicks below L3, closes above → sell ATM PUT
+        H3_REVERSAL,       // bearish: red spot bar wicks above H3, closes below → sell ATM CALL
+        H4_BREAKOUT,       // bullish: spot bar closes above H4 → sell ATM PUT
+        L4_BREAKDOWN,      // bearish: spot bar closes below L4 → sell ATM CALL
         VWAP_BREAKDOWN,    // v1 legacy (retired) — kept for old DB row deserialisation only
         MANUAL             // user-placed via Options Scalper Terminal — direction comes from caller
     }
@@ -125,8 +125,8 @@ public class Camarilla implements Strategy {
             || s == ActiveSetup.VWAP_BREAKDOWN;
     }
 
-    /** True for the bullish-bet setups (sell PUT). Used by fire() to pick the ATM−50
-     *  PUT vs ATM+50 CALL trade leg. */
+    /** True for the bullish-bet setups (sell PUT). Used by fire() to pick the ATM
+     *  PUT vs ATM CALL trade leg. */
     private static boolean isBullishBet(ActiveSetup s) {
         return s == ActiveSetup.L3_REVERSAL || s == ActiveSetup.H4_BREAKOUT;
     }
@@ -706,9 +706,9 @@ public class Camarilla implements Strategy {
 
         // v2 watchlist —
         //   1. NIFTY SPOT INDEX: subscribed for the 5-min candle trigger feed.
-        //   2. ATM−50 PUT + ATM+50 CALL: subscribed for live LTPs so the trade legs
-        //      are quote-ready the instant a setup fires. We don't aggregate candles
-        //      on them — they're trade targets only.
+        //   2. ATM PUT + ATM CALL: subscribed for live LTPs so the trade legs are
+        //      quote-ready the instant a setup fires. We don't aggregate candles on
+        //      them — they're trade targets only.
         // The previous v1 per-strike ATM CE/PE watchlist is fully retired.
         // Field names kept (futuresSymbol, entryFutures, slFutures, …) for state-file
         // compatibility; the values they hold are SPOT prices now, not futures.
@@ -720,11 +720,10 @@ public class Camarilla implements Strategy {
         newRoles.put(triggerSym, WatchRole.ATM_L4);   // re-uses existing enum value, semantics changed
 
         // Pre-subscribe the two OTM trade legs so live LTPs are warm before fire().
-        BalancedAtmSelector.StrikeAtLevel putRow  = atmSelector.resolveStrikeAtLevel(atm - STRIKE_STEP);
-        BalancedAtmSelector.StrikeAtLevel callRow = atmSelector.resolveStrikeAtLevel(atm + STRIKE_STEP);
+        BalancedAtmSelector.StrikeAtLevel atmRow = atmSelector.resolveStrikeAtLevel(atm);
         java.util.List<String> tradeLegs = new java.util.ArrayList<>();
-        if (putRow  != null && putRow.peSymbol()  != null && !putRow.peSymbol().isBlank())  tradeLegs.add(putRow.peSymbol());
-        if (callRow != null && callRow.ceSymbol() != null && !callRow.ceSymbol().isBlank()) tradeLegs.add(callRow.ceSymbol());
+        if (atmRow != null && atmRow.peSymbol() != null && !atmRow.peSymbol().isBlank()) tradeLegs.add(atmRow.peSymbol());
+        if (atmRow != null && atmRow.ceSymbol() != null && !atmRow.ceSymbol().isBlank()) tradeLegs.add(atmRow.ceSymbol());
         if (!tradeLegs.isEmpty()) {
             try { marketDataService.subscribeAdditional(tradeLegs); }
             catch (Exception ignored) {}
@@ -982,15 +981,15 @@ public class Camarilla implements Strategy {
         if (!shortSetup) return;   // v2 is sell-only by design
         boolean bullishBet = isBullishBet(setup);
 
-        // ── Pick the OTM option leg ──
-        // bullish bet  → sell ATM−50 PUT
-        // bearish bet  → sell ATM+50 CALL
+        // ── Pick the ATM option leg ──
+        // bullish bet  → sell ATM PUT  (max premium decay at the money)
+        // bearish bet  → sell ATM CALL
         long atm = atmTracker.getCurrentAtm();
         if (atm <= 0) {
             event("[ERROR]", "AUTO ENTRY", setup + " — ATM not yet locked, skipping");
             return;
         }
-        long strike = bullishBet ? (atm - STRIKE_STEP) : (atm + STRIKE_STEP);
+        long strike = atm;
         BalancedAtmSelector.StrikeAtLevel row = atmSelector.resolveStrikeAtLevel(strike);
         String optionSym = null;
         if (row != null) {
@@ -1868,8 +1867,8 @@ public class Camarilla implements Strategy {
         // v2 header chips — the v1 VWAP-CE / VWAP-PE option-premium chips are replaced
         // by FUTURES-driven chips that reflect what the triggers actually read:
         //   • futSymbol  / futLtp  / futVwap — near-month NIFTY future feed
-        //   • putSymbol  / putLtp           — ATM−50 PUT (bullish trade leg)
-        //   • callSymbol / callLtp          — ATM+50 CALL (bearish trade leg)
+        //   • putSymbol  / putLtp           — ATM PUT (bullish trade leg)
+        //   • callSymbol / callLtp          — ATM CALL (bearish trade leg)
         // The legacy {ceSymbol, peSymbol, ceVwap, peVwap} fields are still emitted
         // (zero-value) so v1-era frontends that haven't been rebuilt don't NPE on
         // missing keys — they'll just render '—' until the page is updated.
@@ -1885,10 +1884,9 @@ public class Camarilla implements Strategy {
         String putSym = "", callSym = "";
         double putLtp = 0, callLtp = 0;
         if (atm > 0) {
-            BalancedAtmSelector.StrikeAtLevel putRow  = atmSelector.resolveStrikeAtLevel(atm - STRIKE_STEP);
-            BalancedAtmSelector.StrikeAtLevel callRow = atmSelector.resolveStrikeAtLevel(atm + STRIKE_STEP);
-            if (putRow  != null && putRow.peSymbol()  != null)  putSym  = putRow.peSymbol();
-            if (callRow != null && callRow.ceSymbol() != null) callSym = callRow.ceSymbol();
+            BalancedAtmSelector.StrikeAtLevel atmRow = atmSelector.resolveStrikeAtLevel(atm);
+            if (atmRow != null && atmRow.peSymbol() != null) putSym  = atmRow.peSymbol();
+            if (atmRow != null && atmRow.ceSymbol() != null) callSym = atmRow.ceSymbol();
             if (!putSym.isBlank())  { try { putLtp  = marketDataService.getLtp(putSym);  } catch (Exception ignored) {} }
             if (!callSym.isBlank()) { try { callLtp = marketDataService.getLtp(callSym); } catch (Exception ignored) {} }
         }
@@ -1897,10 +1895,10 @@ public class Camarilla implements Strategy {
         vwap.put("futChange",    round2(futChange));
         vwap.put("futChangePct", round2(futChangePct));
         vwap.put("putSymbol",    putSym);
-        vwap.put("putStrike",    atm > 0 ? (atm - STRIKE_STEP) : 0);
+        vwap.put("putStrike",    atm);
         vwap.put("putLtp",       round2(putLtp));
         vwap.put("callSymbol",   callSym);
-        vwap.put("callStrike",   atm > 0 ? (atm + STRIKE_STEP) : 0);
+        vwap.put("callStrike",   atm);
         vwap.put("callLtp",      round2(callLtp));
         // Back-compat shims (v1 keys, always 0 now) so the old chip helpers don't break.
         vwap.put("ceSymbol", "");

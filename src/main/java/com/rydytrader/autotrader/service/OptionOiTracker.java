@@ -252,6 +252,9 @@ public class OptionOiTracker {
     // ── Read API ────────────────────────────────────────────────────────────────
 
     public synchronized Snapshot snapshot() {
+        // Same day-rollover guard as history() — keeps the header tiles + bias pill
+        // from displaying yesterday's values into the new session.
+        rolloverIfNewDay();
         String bias = state.bias;
         if (isStale()) bias = "STALE";
         return new Snapshot(
@@ -267,6 +270,11 @@ public class OptionOiTracker {
     }
 
     public synchronized History history() {
+        // Force a day-rollover check on read so a chart loaded before 09:15 (or after
+        // a missed end-of-day reset) never returns yesterday's samples. Without this,
+        // the trend chart on /trade can show stale data until the first OI tick of
+        // the new session arrives.
+        rolloverIfNewDay();
         return new History(state.baselineTakenAt, new ArrayList<>(state.samples));
     }
 
