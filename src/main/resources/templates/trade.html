@@ -311,7 +311,7 @@
     </div>
 
 
-    <!-- ── OI Bias chart + Event Log (side-by-side) ─────────────────────── -->
+    <!-- ── Trend (OI bias) + NIFTY RSI charts (side-by-side) ────────────── -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px;">
         <!-- OI Bias chart panel -->
         <div class="section-card fixed-card-log fade-in" style="margin:0;">
@@ -340,7 +340,35 @@
             </div>
         </div>
 
-        <!-- Event Log -->
+        <!-- NIFTY RSI(14) chart panel — display-only indicator, 5-min closes from 09:15 IST -->
+        <div class="section-card fixed-card-log fade-in" style="margin:0;">
+            <div class="section-header">
+                <div class="section-title">
+                    <div class="section-title-dot" style="background: var(--accent-cyan)"></div>
+                    Momentum
+                </div>
+                <div style="display:flex;align-items:center;gap:14px;margin-left:auto;font-family:var(--font-mono);font-size:0.72rem;">
+                    <span style="color:var(--text-muted);">RSI <span id="hdrNiftyRsi"
+                          style="color:var(--text-primary);font-weight:700;">—</span></span>
+                    <span id="hdrNiftyRsiMomentum"
+                          style="padding:2px 10px;border-radius:999px;font-weight:700;font-size:0.62rem;letter-spacing:0.05em;
+                                 background:rgba(148,163,184,0.10);color:var(--text-secondary);border:1px solid rgba(148,163,184,0.30);">— MOMENTUM</span>
+                    <button onclick="NiftyRsiChart.refresh()" title="Refresh"
+                            style="background:rgba(99,179,237,0.10);border:1px solid rgba(99,179,237,0.30);color:var(--accent-blue);
+                                   padding:4px 10px;border-radius:6px;font-family:var(--font-mono);font-size:0.66rem;font-weight:700;
+                                   letter-spacing:0.05em;cursor:pointer;">⟳</button>
+                </div>
+            </div>
+            <div style="padding:14px 18px;height:100%;display:flex;flex-direction:column;">
+                <div style="position:relative;flex:1;width:100%;min-height:260px;">
+                    <canvas id="niftyRsiChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Event Log (full width, below the chart row) ──────────────────── -->
+    <div style="margin-top:18px;">
         <div class="section-card fixed-card-log fade-in" style="margin:0;">
             <div class="section-header">
                 <div class="section-title">
@@ -989,6 +1017,7 @@
         setInterval(checkConnection, 5000);
         OiBiasHeader.start();
         OiBiasChart.init();
+        NiftyRsiChart.init();
         loadWelcome();
     });
 </script>
@@ -1101,12 +1130,115 @@
             }).catch(() => {});
         }
     };
+
+    // ── NIFTY RSI(14) chart ─────────────────────────────────────────────
+    // Display-only indicator: 5-min closes of NSE:NIFTY50-INDEX, Wilder smoothing.
+    // Three dotted horizontal reference lines drawn as flat-value datasets — no
+    // dependency on the Chart.js annotation plugin so this works with the base
+    // CDN build the OiBiasChart already uses.
+    //
+    // Momentum classifier (trend-following interpretation):
+    //   RSI > 60  → BULLISH (green)  — sustained buying pressure
+    //   RSI < 40  → BEARISH (red)    — sustained selling pressure
+    //   40 ≤ x ≤ 60 → NEUTRAL (grey)  — chop / no directional edge
+    function rsiMomentum(v) {
+        if (!isFinite(v))   return { label:'— MOMENTUM', bg:'rgba(148,163,184,0.10)', fg:'var(--text-secondary)', bd:'rgba(148,163,184,0.30)', valueColor:'var(--text-primary)' };
+        if (v > 60)         return { label:'MOMENTUM BULLISH', bg:'rgba(52,211,153,0.10)',  fg:'#34d399', bd:'rgba(52,211,153,0.35)',  valueColor:'#34d399' };
+        if (v < 40)         return { label:'MOMENTUM BEARISH', bg:'rgba(248,113,113,0.10)', fg:'#f87171', bd:'rgba(248,113,113,0.35)', valueColor:'#f87171' };
+        return                { label:'MOMENTUM NEUTRAL', bg:'rgba(148,163,184,0.10)', fg:'var(--text-secondary)', bd:'rgba(148,163,184,0.30)', valueColor:'var(--text-primary)' };
+    }
+    let rsiChart = null;
+    window.NiftyRsiChart = {
+        init() {
+            this.refresh();
+            setInterval(() => this.refresh(), 30000);
+        },
+        refresh() {
+            fetch('/api/nifty-rsi/history').then(r => r.ok ? r.json() : null).then(d => {
+                if (!d) return;
+                var samples = d.samples || [];
+                var labels, rsiData;
+                if (samples.length === 0) {
+                    // No data yet (pre-market, or first boot before 09:15) — render
+                    // a placeholder x-axis spanning the trading session so the
+                    // 60/50/40 dotted reference lines are still visible. RSI series
+                    // is all null → Chart.js renders nothing for it.
+                    labels  = ['09:15','10:30','12:00','13:30','15:00','15:30'];
+                    rsiData = [null, null, null, null, null, null];
+                } else {
+                    labels  = samples.map(s => s.t);
+                    rsiData = samples.map(s => s.rsi);
+                }
+                // Constant-value series for the 60/50/40 reference lines, length-
+                // matched to the labels axis so Chart.js renders them as straight
+                // horizontals across the visible x-axis — visible even when there
+                // is no RSI data yet.
+                var n = labels.length;
+                var line60 = new Array(n).fill(60);
+                var line50 = new Array(n).fill(50);
+                var line40 = new Array(n).fill(40);
+                // Header — RSI value (band-coloured) + momentum pill.
+                var chip = $('hdrNiftyRsi');
+                var pill = $('hdrNiftyRsiMomentum');
+                var lr = (d.lastRsi != null && isFinite(d.lastRsi)) ? Number(d.lastRsi) : NaN;
+                var m  = rsiMomentum(lr);
+                if (chip) {
+                    chip.textContent = isFinite(lr) ? lr.toFixed(1) : '—';
+                    chip.style.color = m.valueColor;
+                }
+                if (pill) {
+                    pill.textContent       = m.label;
+                    pill.style.background  = m.bg;
+                    pill.style.color       = m.fg;
+                    pill.style.borderColor = m.bd;
+                }
+                var ctx = $('niftyRsiChart').getContext('2d');
+                if (rsiChart) rsiChart.destroy();
+                rsiChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [
+                            { label: 'RSI(14)', data: rsiData, borderColor: 'rgb(125,211,252)', backgroundColor: 'rgba(125,211,252,0.10)', tension: 0.25, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2 },
+                            { label: '60',      data: line60,  borderColor: '#34d399', borderDash: [4,4], borderWidth: 1, pointRadius: 0, pointHoverRadius: 0, fill: false, tension: 0 },
+                            { label: '50',      data: line50,  borderColor: '#9ca3af', borderDash: [4,4], borderWidth: 1, pointRadius: 0, pointHoverRadius: 0, fill: false, tension: 0 },
+                            { label: '40',      data: line40,  borderColor: '#f87171', borderDash: [4,4], borderWidth: 1, pointRadius: 0, pointHoverRadius: 0, fill: false, tension: 0 }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        animation: false,
+                        animations: { colors: false, x: false, y: false },
+                        transitions: { active: { animation: { duration: 0 } } },
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: {
+                            legend: { labels: {
+                                color: '#9ca3af', font: { family: 'monospace', size: 11 },
+                                // Filter the three reference-line series out of the legend —
+                                // they're visual guides, not data the operator toggles on/off.
+                                filter: it => it.text === 'RSI(14)'
+                            } },
+                            tooltip: {
+                                filter: c => c.dataset.label === 'RSI(14)',
+                                callbacks: { label: c => 'RSI: ' + Number(c.parsed.y).toFixed(2) }
+                            }
+                        },
+                        scales: {
+                            x: { ticks: { color: '#6b7280', maxRotation: 0, autoSkipPadding: 12 }, grid: { color: 'rgba(128,128,128,0.08)' } },
+                            y: { min: 20, max: 80, ticks: { color: '#6b7280', stepSize: 10 }, grid: { color: 'rgba(128,128,128,0.08)' } }
+                        }
+                    }
+                });
+            }).catch(() => {});
+        }
+    };
 })();
 </script>
 
 <script src="/js/common.js?v=41"></script>
 <script src="/js/ticker.js?v=36"></script>
-<script src="/js/settings-modal.js?v=52"></script>
+<script src="/js/settings-modal.js?v=53"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
 <script src="/js/manual-terminal-modal.js?v=45"></script>
 </body>
