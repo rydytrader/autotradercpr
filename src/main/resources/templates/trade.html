@@ -256,17 +256,13 @@
                         <span id="hdrFutChg" style="margin-left:4px;font-weight:600;"></span></span>
                     <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
                         <span id="hdrVixChg" style="margin-left:4px;font-weight:600;"></span></span>
-                    <span style="color:var(--text-muted);">ATM <span id="hdrAtm" style="color:var(--accent-cyan);font-weight:700;">—</span></span>
-                    <span id="hdrLockedStrike" style="display:none;color:var(--text-muted);font-size:0.72rem;">
-                        <span id="hdrLockedTag" style="color:var(--accent-cyan);font-weight:700;letter-spacing:0.04em;">LOCK 0</span>
-                        <span style="margin-left:6px;">CE <span id="hdrLockedCeLtp" style="color:#f87171;font-weight:700;">—</span>
-                            <span style="color:var(--text-muted);font-size:0.66rem;margin-left:2px;">vwap <span id="hdrLockedCeVwap">—</span></span></span>
-                        <span style="margin-left:8px;">PE <span id="hdrLockedPeLtp" style="color:#34d399;font-weight:700;">—</span>
-                            <span style="color:var(--text-muted);font-size:0.66rem;margin-left:2px;">vwap <span id="hdrLockedPeVwap">—</span></span></span>
-                    </span>
                 </div>
             </div>
             <div style="display:flex; gap:10px; align-items:center;">
+                <button type="button" id="levelsBtn" onclick="openLevelsModal()" title="Camarilla levels + session legs"
+                        style="background:rgba(125,211,252,0.10);border:1px solid rgba(125,211,252,0.30);color:var(--accent-cyan);
+                               padding:5px 10px;border-radius:6px;font-family:var(--font-mono);font-size:0.95rem;font-weight:700;
+                               letter-spacing:0;cursor:pointer;line-height:1;">☰</button>
                 <div class="kill-switch-wrap" id="killSwitchWrap">
                     <span class="kill-switch-label" id="killSwitchLabel">Trading ON</span>
                     <label class="kill-switch">
@@ -275,7 +271,6 @@
                     </label>
                 </div>
                 <button class="squareoff-btn" id="squareOffBtn" onclick="executeSquareOff()" disabled>⬛ Square Off</button>
-                <span class="section-badge" id="positionsBadge">0 active</span>
             </div>
         </div>
         <div class="table-wrap">
@@ -309,7 +304,6 @@
             </table>
         </div>
     </div>
-
 
     <!-- ── Trend (OI bias) + NIFTY RSI charts (side-by-side) ────────────── -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px;">
@@ -352,7 +346,7 @@
                           style="color:var(--text-primary);font-weight:700;">—</span></span>
                     <span id="hdrNiftyRsiMomentum"
                           style="padding:2px 10px;border-radius:999px;font-weight:700;font-size:0.62rem;letter-spacing:0.05em;
-                                 background:rgba(148,163,184,0.10);color:var(--text-secondary);border:1px solid rgba(148,163,184,0.30);">— MOMENTUM</span>
+                                 background:rgba(148,163,184,0.10);color:var(--text-secondary);border:1px solid rgba(148,163,184,0.30);">—</span>
                     <button onclick="NiftyRsiChart.refresh()" title="Refresh"
                             style="background:rgba(99,179,237,0.10);border:1px solid rgba(99,179,237,0.30);color:var(--accent-blue);
                                    padding:4px 10px;border-radius:6px;font-family:var(--font-mono);font-size:0.66rem;font-weight:700;
@@ -402,6 +396,46 @@
             <span class="footer-tag">rydytrader</span></div>
     </footer>
 </div>
+</div>
+
+<!-- ── Levels modal (Camarilla pivots + session legs) ─────────────────────── -->
+<div id="levelsModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;" onclick="if(event.target===this)closeLevelsModal()">
+    <div class="section-card" style="margin:0;min-width:480px;max-width:680px;max-height:88vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,0.4);">
+        <div class="section-header">
+            <div class="section-title">
+                <div class="section-title-dot" style="background: var(--accent-cyan)"></div>
+                Camarilla Levels &amp; Session Legs
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <button type="button" onclick="refreshLevelsModal()" title="Refresh"
+                        style="background:rgba(99,179,237,0.10);border:1px solid rgba(99,179,237,0.30);color:var(--accent-blue);
+                               padding:4px 10px;border-radius:6px;font-family:var(--font-mono);font-size:0.7rem;font-weight:700;
+                               cursor:pointer;line-height:1;">⟳</button>
+                <button type="button" onclick="closeLevelsModal()" title="Close"
+                        style="background:transparent;border:none;color:var(--text-muted);font-size:1.2rem;cursor:pointer;line-height:1;">×</button>
+            </div>
+        </div>
+        <div style="padding:18px 22px;">
+            <!-- Camarilla pivots -->
+            <div>
+                <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;">Camarilla pivots — NIFTY</div>
+                <div id="levelsModalPivots" style="display:grid;grid-template-columns:repeat(2, 1fr);gap:6px 14px;font-family:var(--font-mono);font-size:0.76rem;">
+                    <div style="color:var(--text-muted);grid-column:span 2;">resolving…</div>
+                </div>
+            </div>
+
+            <!-- Divider between pivots and legs -->
+            <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
+
+            <!-- Session legs -->
+            <div>
+                <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;">Session-static OTM trade legs</div>
+                <div id="levelsModalLegs">
+                    <div style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.72rem;">resolving…</div>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -528,33 +562,171 @@
         // Futures cells are populated by renderFutTickerCells() in applyState() —
         // no separate ticker-SSE writer needed since futures isn't in the ticker feed.
         var vxEl  = document.getElementById('hdrVix');
-        var atmEl = document.getElementById('hdrAtm');
         if (vxEl)  vxEl.textContent  = d.indiaVix  != null ? Number(d.indiaVix).toFixed(2)  : '—';
-        if (atmEl) atmEl.textContent = d.currentAtm != null && d.currentAtm > 0 ? String(d.currentAtm) : '—';
-        renderLockedStrikeChip(d.lockedStrike);
+        captureLevelsState(d);
     }
 
-    // ── Locked-strike chip — visible only while a pending confirmation owns the
-    //    pre-subscribed CE+PE legs at a specific ATM. Hides when no pending. ───
-    function renderLockedStrikeChip(lk) {
-        var wrap = document.getElementById('hdrLockedStrike');
-        if (!wrap) return;
-        if (!lk || !lk.strike) { wrap.style.display = 'none'; return; }
-        wrap.style.display = 'inline';
-        var fmt = function(v) {
-            var n = Number(v);
-            return (isFinite(n) && n > 0) ? n.toFixed(2) : '—';
-        };
-        var tag = document.getElementById('hdrLockedTag');
-        if (tag) tag.textContent = 'LOCK ' + lk.strike;
-        var ceLtp = document.getElementById('hdrLockedCeLtp');
-        if (ceLtp) ceLtp.textContent = fmt(lk.ceLtp);
-        var peLtp = document.getElementById('hdrLockedPeLtp');
-        if (peLtp) peLtp.textContent = fmt(lk.peLtp);
-        var ceVwap = document.getElementById('hdrLockedCeVwap');
-        if (ceVwap) ceVwap.textContent = fmt(lk.ceVwap);
-        var peVwap = document.getElementById('hdrLockedPeVwap');
-        if (peVwap) peVwap.textContent = fmt(lk.peVwap);
+    // ── Levels modal — Camarilla pivots + session-static OTM trade legs.
+    //    Opens via the "◎ Levels" button next to the kill switch. Both the
+    //    pivots block and the legs block are refreshed whenever a fresh state
+    //    payload lands AND the modal is currently visible. ────────────────────
+    var _latestSetupLegs = [];
+    var _latestPivots    = null;
+    function captureLevelsState(d) {
+        _latestSetupLegs = d.setupLegs || [];
+        if (d.atmVwap && d.perSymbolLevels) {
+            _latestPivots = d.perSymbolLevels[d.atmVwap.futSymbol] || null;
+        }
+        // If the modal is open, refresh its body immediately so the operator
+        // sees live LTP/VWAP movement without closing + reopening.
+        var modal = document.getElementById('levelsModal');
+        if (modal && modal.style.display === 'flex') renderLevelsModal();
+    }
+    function openLevelsModal() {
+        var modal = document.getElementById('levelsModal');
+        if (!modal) return;
+        renderLevelsModal();
+        modal.style.display = 'flex';
+    }
+    function closeLevelsModal() {
+        var modal = document.getElementById('levelsModal');
+        if (modal) modal.style.display = 'none';
+    }
+    function refreshLevelsModal() {
+        // Force-fetch the latest state so the modal reflects current LTP/VWAP
+        // without waiting on the next SSE tick. captureLevelsState() will
+        // re-invoke renderLevelsModal() once the payload arrives.
+        fetch('/api/camarilla/state').then(function(r){ return r.ok ? r.json() : null; })
+            .then(function(d){ if (d) captureLevelsState(d); })
+            .catch(function(){});
+    }
+    // Hook the shared ticker SSE so the modal's per-leg LTPs update sub-second.
+    // VWAP keeps refreshing from the camarilla state SSE (every ~2 s, plenty
+    // for a running-average metric). Pure patch — no re-fetch, just mutates
+    // the cached _latestSetupLegs entries in place and re-renders if visible.
+    function attachLevelsModalLtpUpdates() {
+        var src = window.__tickerSSE;
+        if (!src) { setTimeout(attachLevelsModalLtpUpdates, 500); return; }
+        src.addEventListener('ticker', function(ev) {
+            if (!_latestSetupLegs || !_latestSetupLegs.length) return;
+            try {
+                var arr = JSON.parse(ev.data);
+                if (!arr || !arr.length) return;
+                var bySymbol = {};
+                for (var i = 0; i < arr.length; i++) {
+                    var t = arr[i];
+                    if (t && t.fyers && typeof t.lp === 'number') bySymbol[t.fyers] = t.lp;
+                }
+                var changed = false;
+                for (var j = 0; j < _latestSetupLegs.length; j++) {
+                    var L = _latestSetupLegs[j];
+                    var lp = bySymbol[L.symbol];
+                    if (lp != null && lp !== L.ltp) {
+                        L.ltp = lp;
+                        changed = true;
+                    }
+                }
+                if (changed) {
+                    var modal = document.getElementById('levelsModal');
+                    if (modal && modal.style.display === 'flex') renderLevelsModal();
+                }
+            } catch (e) {}
+        });
+    }
+    function renderLevelsModal() {
+        var pivWrap = document.getElementById('levelsModalPivots');
+        var lgWrap  = document.getElementById('levelsModalLegs');
+        if (pivWrap) {
+            var lv = _latestPivots;
+            if (!lv) {
+                pivWrap.innerHTML = '<div style="color:var(--text-muted);grid-column:span 2;">resolving…</div>';
+            } else {
+                // Resolve current NIFTY spot for the centred anchor row.
+                var spot = (lastState && lastState.atmVwap && lastState.atmVwap.futLtp) || 0;
+                var H5 = Number(lv.h5), H4 = Number(lv.h4), H3 = Number(lv.h3);
+                var L3 = Number(lv.l3), L4 = Number(lv.l4), L5 = Number(lv.l5);
+                var rows = [
+                    ['H5', H5, '#a78bfa', 'outer target'],
+                    ['H4', H4, '#34d399', 'bullish trigger'],
+                    ['H3', H3, '#f87171', 'bearish trigger'],
+                    null,   // spot anchor row
+                    ['L3', L3, '#34d399', 'bullish trigger'],
+                    ['L4', L4, '#f87171', 'bearish trigger'],
+                    ['L5', L5, '#a78bfa', 'outer target']
+                ];
+                function fmtNum(n) { return (isFinite(n) && n > 0)
+                    ? n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                    : '—'; }
+                pivWrap.style.display       = 'flex';
+                pivWrap.style.flexDirection = 'column';
+                pivWrap.style.gap           = '6px';
+                pivWrap.innerHTML = rows.map(function(r) {
+                    if (r === null) {
+                        // Spot anchor — visually distinct, sits between H3 and L3.
+                        return '<div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:rgba(125,211,252,0.06);border-left:3px solid var(--accent-cyan);border-radius:4px;">'
+                             + '<span style="font-family:var(--font-mono);font-size:0.66rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--accent-cyan);">NIFTY spot</span>'
+                             + '<span style="flex:1;"></span>'
+                             + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--accent-cyan);min-width:96px;text-align:right;">' + fmtNum(spot) + '</span>'
+                             + '</div>';
+                    }
+                    var label = r[0], val = r[1], col = r[2], meaning = r[3];
+                    return '<div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:rgba(255,255,255,0.015);border-left:3px solid ' + col + ';border-radius:4px;">'
+                         + '<span style="font-family:var(--font-mono);font-size:0.78rem;font-weight:700;color:' + col + ';min-width:28px;">' + label + '</span>'
+                         + '<span style="flex:1;font-family:var(--font-mono);font-size:0.62rem;color:var(--text-muted);letter-spacing:0.04em;text-transform:uppercase;">' + meaning + '</span>'
+                         + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--text-primary);min-width:96px;text-align:right;">' + fmtNum(val) + '</span>'
+                         + '</div>';
+                }).join('');
+            }
+        }
+        if (lgWrap) {
+            var legs = _latestSetupLegs;
+            if (!legs || !legs.length) {
+                lgWrap.innerHTML = '<div style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.72rem;">resolving…</div>';
+                return;
+            }
+            var fmtNum2 = function(v) {
+                var n = Number(v);
+                if (!isFinite(n) || n <= 0) return '—';
+                return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            };
+            function pillColors(dir) {
+                if (dir === 'BULLISH') return { fg: '#34d399', bg: 'rgba(52,211,153,0.12)', bd: 'rgba(52,211,153,0.40)' };
+                if (dir === 'BEARISH') return { fg: '#f87171', bg: 'rgba(248,113,113,0.12)', bd: 'rgba(248,113,113,0.40)' };
+                return { fg: 'var(--text-secondary)', bg: 'rgba(148,163,184,0.12)', bd: 'rgba(148,163,184,0.30)' };
+            }
+            lgWrap.style.display       = 'flex';
+            lgWrap.style.flexDirection = 'column';
+            lgWrap.style.gap           = '6px';
+            lgWrap.innerHTML = legs.map(function(L) {
+                var setupTag = L.setupTag || '';
+                var col = pillColors(L.dir);
+                // When the WS feed isn't streaming (holiday / pre-market) the
+                // backend falls back to the chain-quoted reference price and
+                // flags ltpStale = true. Render in muted colour with a small
+                // "closed" hint so the operator doesn't mistake it for live.
+                var stale  = !!L.ltpStale;
+                var ltpCol = stale ? 'var(--text-muted)' : 'var(--text-primary)';
+                var staleHint = stale
+                    ? '<span style="font-family:var(--font-mono);font-size:0.56rem;color:var(--text-muted);letter-spacing:0.05em;margin-left:6px;">closed</span>'
+                    : '';
+                return '<div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:rgba(255,255,255,0.015);border-left:3px solid ' + col.fg + ';border-radius:4px;">' +
+                    // Setup pill
+                    '<span style="padding:4px 10px;border-radius:6px;font-family:var(--font-mono);font-size:0.66rem;font-weight:700;letter-spacing:0.06em;' +
+                        'background:' + col.bg + ';color:' + col.fg + ';border:1px solid ' + col.bd + ';">' + setupTag + '</span>' +
+                    // Trade descriptor: "Sell PE 24550"
+                    '<span style="font-family:var(--font-mono);font-size:0.74rem;color:var(--text-secondary);">' +
+                        'Sell <span style="color:var(--text-primary);font-weight:700;">' + (L.side || '') + ' ' + (L.strike || '—') + '</span>' +
+                    '</span>' +
+                    // Level reference: "near H3"
+                    '<span style="flex:1;font-family:var(--font-mono);font-size:0.62rem;color:var(--text-muted);letter-spacing:0.04em;text-transform:uppercase;">near ' + (L.levelRef || '—') + '</span>' +
+                    // LTP — prominent, right-aligned. Muted + "closed" hint when stale.
+                    '<span style="display:flex;align-items:baseline;justify-content:flex-end;min-width:140px;">' +
+                        '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:' + ltpCol + ';">' + fmtNum2(L.ltp) + '</span>' +
+                        staleHint +
+                    '</span>' +
+                '</div>';
+            }).join('');
+        }
     }
 
     // ── Tick-level NIFTY / VIX / ATM updates via the shared ticker SSE ─────
@@ -733,8 +905,6 @@
                 + '</tr>';
             }).join('');
         }
-
-        document.getElementById('positionsBadge').textContent = positions.length + ' active';
     }
 
     // "NSE:NIFTY2662325100PE" → "NIFTY 25100 PE". Falls back to original on no-match
@@ -871,10 +1041,27 @@
 
     // ── Market Clock ────────────────────────────────────────────────────────
     function isWeekend(d) { var dow = d.getDay(); return dow === 0 || dow === 6; }
+    // NSE holiday cache — populated on page load via /api/market-holidays.
+    // Map of "yyyy-MM-dd" → holiday name. Empty until the fetch lands.
+    var nseHolidays = {};
+    function isoDate(d) {
+        var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
+        return y + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
+    }
+    function isHoliday(d) { return !!nseHolidays[isoDate(d)]; }
+    function holidayName(d) { return nseHolidays[isoDate(d)] || ''; }
+    function loadHolidays() {
+        fetch('/api/market-holidays').then(function(r){ return r.ok ? r.json() : []; })
+            .then(function(arr) {
+                (arr || []).forEach(function(h) {
+                    if (h && h.date) nseHolidays[h.date] = h.name || 'Holiday';
+                });
+            }).catch(function(){});
+    }
     function nextTradingDay(d) {
         var nxt = new Date(d.getTime());
         nxt.setDate(nxt.getDate() + 1);
-        while (isWeekend(nxt)) nxt.setDate(nxt.getDate() + 1);
+        while (isWeekend(nxt) || isHoliday(nxt)) nxt.setDate(nxt.getDate() + 1);
         return nxt.toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' });
     }
     function updateMarketClock() {
@@ -886,6 +1073,12 @@
             clockEl.textContent = now.toLocaleTimeString('en-IN', { hour12: false });
             var dayName = now.getDay() === 0 ? 'Sunday' : 'Saturday';
             subEl.textContent = dayName + ' — ' + nextTradingDay(now);
+            subEl.style.color = 'var(--accent-red)';
+            return;
+        }
+        if (isHoliday(now)) {
+            clockEl.textContent = now.toLocaleTimeString('en-IN', { hour12: false });
+            subEl.textContent = 'Holiday: ' + holidayName(now) + ' — ' + nextTradingDay(now);
             subEl.style.color = 'var(--accent-red)';
             return;
         }
@@ -1009,10 +1202,12 @@
         // Prime the page immediately, then attach the SSE stream for live updates.
         loadState();
         startStream();
+        loadHolidays();
         updateMarketClock();
         setInterval(updateMarketClock, 1000);
         attachTickerHeaderUpdates();
         attachTickerPositionUpdates();
+        attachLevelsModalLtpUpdates();
         checkConnection();
         setInterval(checkConnection, 5000);
         OiBiasHeader.start();
@@ -1142,10 +1337,10 @@
     //   RSI < 40  → BEARISH (red)    — sustained selling pressure
     //   40 ≤ x ≤ 60 → NEUTRAL (grey)  — chop / no directional edge
     function rsiMomentum(v) {
-        if (!isFinite(v))   return { label:'— MOMENTUM', bg:'rgba(148,163,184,0.10)', fg:'var(--text-secondary)', bd:'rgba(148,163,184,0.30)', valueColor:'var(--text-primary)' };
-        if (v > 60)         return { label:'MOMENTUM BULLISH', bg:'rgba(52,211,153,0.10)',  fg:'#34d399', bd:'rgba(52,211,153,0.35)',  valueColor:'#34d399' };
-        if (v < 40)         return { label:'MOMENTUM BEARISH', bg:'rgba(248,113,113,0.10)', fg:'#f87171', bd:'rgba(248,113,113,0.35)', valueColor:'#f87171' };
-        return                { label:'MOMENTUM NEUTRAL', bg:'rgba(148,163,184,0.10)', fg:'var(--text-secondary)', bd:'rgba(148,163,184,0.30)', valueColor:'var(--text-primary)' };
+        if (!isFinite(v))   return { label:'—',        bg:'rgba(148,163,184,0.10)', fg:'var(--text-secondary)', bd:'rgba(148,163,184,0.30)', valueColor:'var(--text-primary)' };
+        if (v > 60)         return { label:'BULLISH',  bg:'rgba(52,211,153,0.10)',  fg:'#34d399', bd:'rgba(52,211,153,0.35)',  valueColor:'#34d399' };
+        if (v < 40)         return { label:'BEARISH',  bg:'rgba(248,113,113,0.10)', fg:'#f87171', bd:'rgba(248,113,113,0.35)', valueColor:'#f87171' };
+        return                { label:'NEUTRAL',  bg:'rgba(148,163,184,0.10)', fg:'var(--text-secondary)', bd:'rgba(148,163,184,0.30)', valueColor:'var(--text-primary)' };
     }
     let rsiChart = null;
     window.NiftyRsiChart = {
@@ -1153,27 +1348,40 @@
             this.refresh();
             setInterval(() => this.refresh(), 30000);
         },
+        // Pre-computed 75-bucket session grid: 09:15, 09:20, …, 15:25.
+        // Used as the chart's x-axis so the 60/50/40 reference lines always
+        // span the full trading day regardless of how many RSI samples have
+        // arrived (the bug we fixed: with only 1 sample, single-point ref
+        // datasets don't render).
+        _buildSessionGrid() {
+            if (this._grid) return this._grid;
+            var grid = [];
+            // 09:15 → 15:25 inclusive, step 5 minutes = 75 buckets.
+            for (var mins = 9*60+15; mins <= 15*60+25; mins += 5) {
+                var h = Math.floor(mins/60), m = mins - h*60;
+                grid.push((h<10?'0':'')+h + ':' + (m<10?'0':'')+m);
+            }
+            this._grid = grid;
+            return grid;
+        },
         refresh() {
             fetch('/api/nifty-rsi/history').then(r => r.ok ? r.json() : null).then(d => {
                 if (!d) return;
                 var samples = d.samples || [];
-                var labels, rsiData;
-                if (samples.length === 0) {
-                    // No data yet (pre-market, or first boot before 09:15) — render
-                    // a placeholder x-axis spanning the trading session so the
-                    // 60/50/40 dotted reference lines are still visible. RSI series
-                    // is all null → Chart.js renders nothing for it.
-                    labels  = ['09:15','10:30','12:00','13:30','15:00','15:30'];
-                    rsiData = [null, null, null, null, null, null];
-                } else {
-                    labels  = samples.map(s => s.t);
-                    rsiData = samples.map(s => s.rsi);
-                }
-                // Constant-value series for the 60/50/40 reference lines, length-
-                // matched to the labels axis so Chart.js renders them as straight
-                // horizontals across the visible x-axis — visible even when there
-                // is no RSI data yet.
+                var labels  = this._buildSessionGrid();
                 var n = labels.length;
+                // Place each RSI sample at its matching bucket position; all
+                // other positions stay null so Chart.js renders gaps.
+                var bucketIdx = {};
+                for (var i = 0; i < n; i++) bucketIdx[labels[i]] = i;
+                var rsiData = new Array(n).fill(null);
+                for (var j = 0; j < samples.length; j++) {
+                    var idx = bucketIdx[samples[j].t];
+                    if (idx != null) rsiData[idx] = samples[j].rsi;
+                }
+                // Reference-line datasets span the full grid so the boundaries
+                // are visible from the empty pre-market state through every
+                // bar of the live session.
                 var line60 = new Array(n).fill(60);
                 var line50 = new Array(n).fill(50);
                 var line40 = new Array(n).fill(40);
@@ -1238,7 +1446,7 @@
 
 <script src="/js/common.js?v=41"></script>
 <script src="/js/ticker.js?v=36"></script>
-<script src="/js/settings-modal.js?v=53"></script>
+<script src="/js/settings-modal.js?v=54"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
 <script src="/js/manual-terminal-modal.js?v=45"></script>
 </body>

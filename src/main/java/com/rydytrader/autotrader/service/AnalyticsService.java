@@ -518,23 +518,33 @@ public class AnalyticsService {
             if (pnl > 0)      { wins++;   sumWin  += pnl; }
             else if (pnl < 0) { losses++; sumLoss += pnl; }
         }
-        // Drawdown over the cumulative per-trade equity curve. Track the indices of the
-        // peak preceding the deepest drawdown and of the trough itself, then convert those
-        // indices into CALENDAR DAYS between sessionDate(peak) and sessionDate(trough).
-        // Multiple trades on the same day → 0 days; the metric counts dates, not trades.
+        // Drawdown over the cumulative DAY-AGGREGATED equity curve — same
+        // bucketing the chart uses, so the badge matches what the operator
+        // sees in the equity curve. Per-trade walking previously produced a
+        // larger drawdown number than the chart could explain because intraday
+        // swings on multi-cycle days were counted as separate peaks/troughs.
+        // Now: sum each trading day's net P&L, walk those daily totals in
+        // chronological order, track running peak vs current cum, capture the
+        // deepest peak-to-trough as the max drawdown.
+        java.util.NavigableMap<String, Double> netByDate = new java.util.TreeMap<>();
+        for (Trade t : closed) {
+            String d = t.sessionDate();
+            if (d == null || d.isBlank()) continue;
+            netByDate.merge(d, t.netPnl(), Double::sum);
+        }
         double peak = 0, cum = 0, maxDd = 0;
-        int peakIdx = 0, troughIdx = 0, curPeakIdx = 0;
-        for (int i = 0; i < closed.size(); i++) {
-            cum += closed.get(i).netPnl();
-            if (cum > peak) { peak = cum; curPeakIdx = i; }
+        String peakDateStr = "", troughDateStr = "", curPeakDateStr = "";
+        for (Map.Entry<String, Double> e : netByDate.entrySet()) {
+            cum += e.getValue();
+            if (cum > peak) { peak = cum; curPeakDateStr = e.getKey(); }
             double dd = cum - peak;
-            if (dd < maxDd) { maxDd = dd; peakIdx = curPeakIdx; troughIdx = i; }
+            if (dd < maxDd) { maxDd = dd; peakDateStr = curPeakDateStr; troughDateStr = e.getKey(); }
         }
         int maxDrawdownDays = 0;
-        if (maxDd < 0) {
+        if (maxDd < 0 && !peakDateStr.isEmpty() && !troughDateStr.isEmpty()) {
             try {
-                LocalDate peakDate   = LocalDate.parse(closed.get(peakIdx).sessionDate());
-                LocalDate troughDate = LocalDate.parse(closed.get(troughIdx).sessionDate());
+                LocalDate peakDate   = LocalDate.parse(peakDateStr);
+                LocalDate troughDate = LocalDate.parse(troughDateStr);
                 long daysBetween = java.time.temporal.ChronoUnit.DAYS.between(peakDate, troughDate);
                 maxDrawdownDays = (int) Math.max(0, daysBetween);
             } catch (Exception ignored) {
@@ -601,10 +611,19 @@ public class AnalyticsService {
         double netSum = 0;
         for (Trade t : trades) netSum += t.netPnl();
         double expectancy = netSum / n;
-        // Recovery factor: total net / |max drawdown over per-trade equity curve|.
-        double peak = 0, cum = 0, maxDd = 0;
+        // Recovery factor: total net / |max drawdown over the DAY-AGGREGATED
+        // equity curve|. Same bucketing as the chart and the maxDrawdown
+        // metric in extremes() so the operator sees consistent numbers across
+        // the three places drawdown is referenced.
+        java.util.NavigableMap<String, Double> netByDateEdge = new java.util.TreeMap<>();
         for (Trade t : trades) {
-            cum += t.netPnl();
+            String d = t.sessionDate();
+            if (d == null || d.isBlank()) continue;
+            netByDateEdge.merge(d, t.netPnl(), Double::sum);
+        }
+        double peak = 0, cum = 0, maxDd = 0;
+        for (Map.Entry<String, Double> e : netByDateEdge.entrySet()) {
+            cum += e.getValue();
             if (cum > peak) peak = cum;
             double dd = cum - peak;
             if (dd < maxDd) maxDd = dd;

@@ -82,6 +82,7 @@ public class NiftyRsiService {
     private final FyersClientRouter  fyersClient;
     private final TokenStore         tokenStore;
     private final FyersProperties    fyersProperties;
+    private final MarketDataService  marketDataService;
     private final ObjectMapper       mapper = new ObjectMapper()
         .registerModule(new JavaTimeModule())
         .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
@@ -93,11 +94,13 @@ public class NiftyRsiService {
     public NiftyRsiService(CandleAggregator candleAggregator,
                            FyersClientRouter fyersClient,
                            TokenStore tokenStore,
-                           FyersProperties fyersProperties) {
-        this.candleAggregator = candleAggregator;
-        this.fyersClient      = fyersClient;
-        this.tokenStore       = tokenStore;
-        this.fyersProperties  = fyersProperties;
+                           FyersProperties fyersProperties,
+                           MarketDataService marketDataService) {
+        this.candleAggregator  = candleAggregator;
+        this.fyersClient       = fyersClient;
+        this.tokenStore        = tokenStore;
+        this.fyersProperties   = fyersProperties;
+        this.marketDataService = marketDataService;
     }
 
     @PostConstruct
@@ -345,8 +348,56 @@ public class NiftyRsiService {
         // RSI value from yesterday's buffer (the bar-close path won't fire
         // until 09:20 IST). No-op when dayKey already matches today.
         rolloverIfNewDay();
-        return new History(state.dayKey, state.lastRsi,
-            new ArrayList<>(state.todaySamples));
+        List<RsiSample> samples = new ArrayList<>(state.todaySamples);
+        Double live = currentLiveRsi();
+        if (live != null) {
+            // Live tip — projected RSI for the in-progress 5-min bar, using
+            // current NIFTY LTP as a candidate close. Mirrors TradingView's
+            // intra-bar RSI behaviour: the right-most chart point updates with
+            // every tick (every poll, in our case). When the bar finally
+            // closes, onBarClose appends the canonical close-derived sample at
+            // the same bucket label and the tip just becomes the final point.
+            String tipLabel = currentBucketLabel();
+            boolean alreadyClosed = !samples.isEmpty()
+                && tipLabel.equals(samples.get(samples.size() - 1).t());
+            if (!alreadyClosed) {
+                samples.add(new RsiSample(tipLabel, round2(live)));
+            }
+            return new History(state.dayKey, round2(live), samples);
+        }
+        return new History(state.dayKey, state.lastRsi, samples);
+    }
+
+    /** Project the RSI value for the in-progress 5-min bar using current
+     *  NIFTY spot LTP as a candidate close. Returns null when Wilder isn't
+     *  seeded yet, the buffer is empty, or the LTP isn't available. Does
+     *  NOT mutate {@code state.avgGain} / {@code state.avgLoss} — those
+     *  advance only on actual bar close. */
+    private Double currentLiveRsi() {
+        if (!state.wilderSeeded || state.recentBars.isEmpty()) return null;
+        double ltp;
+        try { ltp = marketDataService.getLtp(NIFTY_SYMBOL); }
+        catch (Exception e) { return null; }
+        if (ltp <= 0) return null;
+        double lastClose = state.recentBars.get(state.recentBars.size() - 1).close();
+        double diff = ltp - lastClose;
+        double gain = diff >= 0 ?  diff : 0;
+        double loss = diff <  0 ? -diff : 0;
+        double avgGain = (state.avgGain * (PERIOD - 1) + gain) / PERIOD;
+        double avgLoss = (state.avgLoss * (PERIOD - 1) + loss) / PERIOD;
+        return rsiFromAverages(avgGain, avgLoss);
+    }
+
+    /** Bucket label "HH:mm" for the 5-min slot the wall clock is currently
+     *  inside, anchored on IST 09:15/09:20/etc. Matches what the bar that
+     *  eventually closes for this slot will carry. */
+    private static String currentBucketLabel() {
+        LocalTime now = LocalTime.now(IST);
+        int minOfDay = now.getHour() * 60 + now.getMinute();
+        int bucketStart = (minOfDay / 5) * 5;
+        int h = bucketStart / 60;
+        int m = bucketStart - h * 60;
+        return String.format("%02d:%02d", h, m);
     }
 
     // ── Disk persistence ────────────────────────────────────────────────────

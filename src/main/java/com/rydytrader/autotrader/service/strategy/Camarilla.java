@@ -229,8 +229,13 @@ public class Camarilla implements Strategy {
 
         // AtmTracker listener kept for any consumers that still need the locked
         // AtmChange event (OptionOiSubscriber). Camarilla no longer depends on it
-        // for strike resolution — fire() reads live spot at trade time.
+        // for strike resolution — fire() looks up the pre-resolved session leg.
         atmTracker.setListener(this::onAtmChange);
+        // Best-effort attempt to resolve the four session-static OTM legs
+        // immediately on boot. Fails silently when Camarilla levels or the
+        // option chain aren't warmed yet; the scheduled retry catches up.
+        try { resolveSessionLegs(); }
+        catch (Exception e) { log.warn("[Camarilla] session-legs boot resolve failed: {}", e.getMessage()); }
         log.info("[Camarilla] booted — enabled={}, lots={}, squareoff={}, restoredPositions={}",
             riskSettings.isCamarillaEnabled(), riskSettings.getCamarillaLotsPerLeg(),
             riskSettings.getCamarillaSquareOffTime(), state.openPositions.size());
@@ -442,6 +447,17 @@ public class Camarilla implements Strategy {
             if (!state.openPositions.containsKey(symbol)) return false;
             return closePosition(symbol, reason == null ? "MANUAL" : reason);
         }
+    }
+
+    /** True when at least one AUTO position (any non-MANUAL setup) is currently
+     *  open. Used by Phase 3 confirmation-detection to suspend scanning while
+     *  an auto trade is in flight, without suspending it for operator-driven
+     *  MANUAL terminal trades that run alongside the auto strategy. */
+    private boolean hasOpenAutoPosition() {
+        for (Position p : state.openPositions.values()) {
+            if (p != null && p.setup != ActiveSetup.MANUAL) return true;
+        }
+        return false;
     }
 
     /** Snapshot of all open positions whose {@code setup == MANUAL}. Returned as a fresh
@@ -660,11 +676,26 @@ public class Camarilla implements Strategy {
             catch (Exception e) { continue; }
             if (triggerLtp <= 0) continue;
 
-            // Direction-aware comparisons. SHORT: target BELOW, SL ABOVE. LONG: flipped.
+            // Direction-aware comparisons. v2 sells options for BOTH directional
+            // bets (sell PUT for bullish, sell CALL for bearish), so p.isShort
+            // is always true and can't drive the comparator. Use the bet
+            // direction instead — bullish bets (L3_REVERSAL, H4_BREAKOUT) want
+            // NIFTY to RISE (target ABOVE entry, SL BELOW); bearish bets
+            // (H3_REVERSAL, L4_BREAKDOWN) want NIFTY to FALL (target BELOW,
+            // SL ABOVE). v1 positions (no triggerSymbol) keep the legacy
+            // p.isShort-based semantic since their target/SL were already
+            // option-premium-based, where short means premium falls.
             double targetRef = v2 ? p.targetFutures : p.targetLevel;
             double slRef     = v2 ? p.slFutures     : p.slLevel;
-            boolean targetHit = p.isShort ? (triggerLtp <= targetRef) : (triggerLtp >= targetRef);
-            boolean slBreach  = p.isShort ? (triggerLtp >= slRef)     : (triggerLtp <= slRef);
+            boolean bullishBet;
+            if (v2) {
+                ActiveSetup s = p.setup;
+                bullishBet = s == ActiveSetup.L3_REVERSAL || s == ActiveSetup.H4_BREAKOUT;
+            } else {
+                bullishBet = !p.isShort;
+            }
+            boolean targetHit = bullishBet ? (triggerLtp >= targetRef) : (triggerLtp <= targetRef);
+            boolean slBreach  = bullishBet ? (triggerLtp <= slRef)     : (triggerLtp >= slRef);
 
             if (targetHit) {
                 Object lock = symbolLocks.computeIfAbsent(symbol, k -> new Object());
@@ -672,7 +703,7 @@ public class Camarilla implements Strategy {
                     Position p2 = state.openPositions.get(symbol);
                     if (p2 == null) continue;
                     double tgt2 = v2 ? p2.targetFutures : p2.targetLevel;
-                    boolean stillHit = p2.isShort ? (triggerLtp <= tgt2) : (triggerLtp >= tgt2);
+                    boolean stillHit = bullishBet ? (triggerLtp >= tgt2) : (triggerLtp <= tgt2);
                     if (!stillHit) continue;
                     event("[SUCCESS]", "Exit", "TARGET — " + shortSym(symbol) + " @ " + round2(triggerLtp));
                     closePosition(symbol, "TARGET_HIT");
@@ -740,36 +771,17 @@ public class Camarilla implements Strategy {
             CamarillaLevels lv = camarillaService.getLevels(triggerSym);
             if (lv == null) return;   // levels warming up
 
-            // ── Two-candle entry model — three-phase walk on the current bar ──
-            // 0) staleness expiry (any pending older than MAX_PENDING_BARS clears)
+            // ── Two-candle entry model — four-phase walk on the current bar ──
             // 1) trigger check (against any pending confirmation in either slot)
-            // 2) invalidation check (only if nothing triggered in that slot)
-            // 3) new-confirmation detection (only if no trade fired this bar)
-            // Then persist. Order matters: trigger before invalidate (prevents a
-            // bar that breaks the far extreme from being dropped); detect last so
-            // a strong same-bar can't immediately replace a triggered pending.
-
-            // --- Phase 0: STALENESS EXPIRY ---
-            // A pending that's been sitting in its slot for more than
-            // MAX_PENDING_BARS bars without a trigger or invalidation is
-            // geometrically obsolete — the structural levels it captured no
-            // longer reflect current market state. Clear it before evaluating
-            // triggers so a stale-and-suddenly-valid bar can't fire a stale
-            // trade. Six bars get a full chance to trigger / invalidate; on the
-            // 7th, the pending expires.
-            long maxPendingAgeMs = MAX_PENDING_BARS * BAR_LENGTH_MS;
-            if (state.pendingBullish != null
-                && c.startMillis() - state.pendingBullish.barStartMs > maxPendingAgeMs) {
-                event("[INFO]", "Setup", state.pendingBullish.setup + " expired (" + MAX_PENDING_BARS + " bars)");
-                releaseOptionLegs(state.pendingBullish);
-                state.pendingBullish = null;
-            }
-            if (state.pendingBearish != null
-                && c.startMillis() - state.pendingBearish.barStartMs > maxPendingAgeMs) {
-                event("[INFO]", "Setup", state.pendingBearish.setup + " expired (" + MAX_PENDING_BARS + " bars)");
-                releaseOptionLegs(state.pendingBearish);
-                state.pendingBearish = null;
-            }
+            // 2) staleness expiry (any pending at or past MAX_PENDING_BARS age clears)
+            // 3) invalidation check (only if nothing triggered or expired in that slot)
+            // 4) new-confirmation detection (only if no trade fired this bar)
+            // Then persist. Order matters: trigger runs first so bar 6 (the
+            // deadline bar) still gets its chance to fire before being
+            // expired. Expiry runs second so an unresolved deadline bar
+            // clears the slot, freeing Phase 4 to seed a fresh confirmation
+            // on the same bar if its geometry matches. Detect last so a
+            // strong same-bar can't immediately replace a triggered pending.
 
             boolean firedThisBar = false;
 
@@ -795,53 +807,70 @@ public class Camarilla implements Strategy {
                 firedThisBar = true;
             }
 
-            // --- Phase 2: INVALIDATION ---
+            // --- Phase 2: STALENESS EXPIRY ---
+            // A pending that's been sitting for MAX_PENDING_BARS bars (= 30 min
+            // at 5-min cadence) without resolving is dropped. The confirmation
+            // bar is bar 0; bar 6 (age = 30 min) is the deadline — it gets a
+            // trigger chance in Phase 1 first, then if it didn't trigger, it
+            // expires here. Phase 4 detection can still seed a fresh
+            // confirmation on the same bar if its geometry matches a setup.
+            long maxPendingAgeMs = MAX_PENDING_BARS * BAR_LENGTH_MS;
+            // Session-static legs replaced the per-pending subscribe/unsubscribe
+            // lifecycle — the four OTM legs stay subscribed all session, so
+            // expire / invalidate just clears the slot.
+            if (state.pendingBullish != null
+                && c.startMillis() - state.pendingBullish.barStartMs >= maxPendingAgeMs) {
+                event("[INFO]", "Setup", state.pendingBullish.setup + " expired (" + MAX_PENDING_BARS + " bars)");
+                state.pendingBullish = null;
+            }
+            if (state.pendingBearish != null
+                && c.startMillis() - state.pendingBearish.barStartMs >= maxPendingAgeMs) {
+                event("[INFO]", "Setup", state.pendingBearish.setup + " expired (" + MAX_PENDING_BARS + " bars)");
+                state.pendingBearish = null;
+            }
+
+            // --- Phase 3: INVALIDATION ---
             if (state.pendingBullish != null && c.close() < state.pendingBullish.confirmLow) {
                 event("[INFO]", "Setup", state.pendingBullish.setup + " nullified @ " + round2(c.close()));
-                releaseOptionLegs(state.pendingBullish);
                 state.pendingBullish = null;
             }
             if (state.pendingBearish != null && c.close() > state.pendingBearish.confirmHigh) {
                 event("[INFO]", "Setup", state.pendingBearish.setup + " nullified @ " + round2(c.close()));
-                releaseOptionLegs(state.pendingBearish);
                 state.pendingBearish = null;
             }
 
-            // --- Phase 3: NEW CONFIRMATION ---
-            if (!firedThisBar) {
+            // --- Phase 4: NEW CONFIRMATION ---
+            // Lock out new-confirmation detection while EITHER (a) a pending
+            // is still active, or (b) an AUTO position is open. Once a
+            // confirmation candle is recorded we commit to it; once an auto
+            // trade is initiated we wait for it to close before scanning
+            // again. MANUAL positions (Options Scalper Terminal trades) do
+            // NOT block detection — they're operator-discretionary and run
+            // alongside the auto strategy on the same chart. Detection
+            // resumes the bar AFTER the active pending resolves (Phase 1
+            // trigger, Phase 2 nullification, or Phase 0 expiry) AND all
+            // auto positions have closed. If a bar both clears a pending
+            // and would qualify as a new confirmation, the clear happens
+            // first and the same bar CAN seed a new one (the slot is empty
+            // by Phase 3).
+            if (!firedThisBar
+                && state.pendingBullish == null
+                && state.pendingBearish == null
+                && !hasOpenAutoPosition()) {
                 PendingConfirmation fresh = detectConfirmation(c, lv);
                 if (fresh != null) {
                     boolean bullish = isBullishBet(fresh.setup);
-                    PendingConfirmation prev = bullish ? state.pendingBullish : state.pendingBearish;
-                    if (prev != null && prev.setup != fresh.setup) {
-                        event("[INFO]", "Setup", prev.setup + " → " + fresh.setup);
-                        // Same-side replacement — release the old strike's legs.
-                        // If the new lockedAtm ends up identical, preSubscribeOptionLegs
-                        // will re-subscribe via the idempotent adHocSymbols set.
-                        releaseOptionLegs(prev);
-                    }
                     event("[INFO]", "Setup", fresh.setup + " confirmed (H "
                         + round2(fresh.confirmHigh) + ", L " + round2(fresh.confirmLow)
                         + ", TGT " + round2(fresh.targetLevel) + ")");
-                    // Lock ATM at confirmation time — fire() uses fresh.lockedAtm at
-                    // trigger time instead of recomputing live ATM. Guarantees the
-                    // strike we pre-subscribe is the strike we trade.
-                    double spot = 0;
-                    try { spot = marketDataService.getLtp(NIFTY_SYMBOL); }
-                    catch (Exception ignored) {}
-                    if (spot > 0) {
-                        fresh.lockedAtm = Math.round(spot / (double) STRIKE_STEP) * STRIKE_STEP;
-                    }
+                    // The trade leg for this setup is the pre-resolved
+                    // session-static OTM symbol (resolveSessionLegs at boot).
+                    // No per-confirmation ATM lock, no per-confirmation
+                    // subscribe — fire() looks up legSymbolFor(setup) at
+                    // trigger time. The lockedAtm / ceSymbol / peSymbol fields
+                    // on PendingConfirmation are now back-compat only.
                     if (bullish) state.pendingBullish = fresh;
                     else         state.pendingBearish = fresh;
-                    // Pre-subscribe BOTH legs (CE + PE) at the locked ATM strike.
-                    // The traded side (PUT for bullish, CALL for bearish) needs
-                    // its LTP warm by trigger time — fixes the p.entryPrice = 0
-                    // cascade. The opposite side is subscribed too so the header
-                    // chip can show both legs' LTP/VWAP while the pending sits
-                    // active. Symbols cached on the pending so invalidation /
-                    // expiry knows what to unsubscribe.
-                    preSubscribeOptionLegs(fresh);
                 }
             }
 
@@ -888,45 +917,166 @@ public class Camarilla implements Strategy {
      *  chip alongside ATM. Both symbols are stored on the pending so
      *  releaseOptionLegs() can unsubscribe them when the confirmation invalidates
      *  or expires. */
-    private void preSubscribeOptionLegs(PendingConfirmation pending) {
-        if (pending == null || pending.lockedAtm <= 0) {
-            event("[INFO]", "Setup", "pre-sub skipped — no ATM lock");
-            return;
+    /** Resolve the four session-static OTM trade legs from today's Camarilla
+     *  levels and subscribe them in one shot. Idempotent — bails immediately
+     *  once today's legs are already on file. Returns {@code true} if all four
+     *  legs are successfully resolved (either freshly, or already resolved).
+     *
+     *  <p>Setup → leg mapping:
+     *  <pre>
+     *    H4_BREAKOUT  (bullish) → sell PE at strike nearest to H3
+     *    L3_REVERSAL  (bullish) → sell PE at strike nearest to L4
+     *    H3_REVERSAL  (bearish) → sell CE at strike nearest to H4
+     *    L4_BREAKDOWN (bearish) → sell CE at strike nearest to L3
+     *  </pre>
+     *  Each trade leg is one Camarilla level "further" than the
+     *  breakout/reversal level, giving the bet OTM cushion in the expected
+     *  direction. */
+    private synchronized boolean resolveSessionLegs() {
+        String today = LocalDate.now(IST).toString();
+        if (today.equals(state.sessionLegsDayKey)
+            && !state.h4bSymbol.isBlank() && !state.l3rSymbol.isBlank()
+            && !state.h3rSymbol.isBlank() && !state.l4bSymbol.isBlank()) {
+            // Already resolved earlier today. Re-subscribe defensively — on a
+            // mid-day JVM restart the symbols persist on State (via disk
+            // cache) but the Fyers WS subscription set is empty until we
+            // call subscribeAdditional again. The call is idempotent at the
+            // WS layer (adHocSymbols is a Set), so re-running it on every
+            // resolve is cheap insurance against any restart gap.
+            ensureSessionLegsSubscribed();
+            return true;
         }
-        BalancedAtmSelector.StrikeAtLevel row = atmSelector.resolveStrikeAtLevel(pending.lockedAtm);
-        if (row == null) {
-            event("[INFO]", "Setup", "pre-sub failed — no chain row at " + pending.lockedAtm);
-            return;
+        CamarillaLevels lv = camarillaService.getLevels(NIFTY_SYMBOL);
+        if (lv == null) return false;
+        BalancedAtmSelector.StrikeAtLevel h3row = atmSelector.resolveStrikeAtLevel(lv.h3());
+        BalancedAtmSelector.StrikeAtLevel h4row = atmSelector.resolveStrikeAtLevel(lv.h4());
+        BalancedAtmSelector.StrikeAtLevel l3row = atmSelector.resolveStrikeAtLevel(lv.l3());
+        BalancedAtmSelector.StrikeAtLevel l4row = atmSelector.resolveStrikeAtLevel(lv.l4());
+        if (h3row == null || h4row == null || l3row == null || l4row == null) {
+            log.debug("[Camarilla] session legs deferred — one or more chain rows null (h3={}, h4={}, l3={}, l4={})",
+                h3row, h4row, l3row, l4row);
+            return false;
         }
-        pending.ceSymbol = row.ceSymbol();
-        pending.peSymbol = row.peSymbol();
-        java.util.List<String> legs = new java.util.ArrayList<>(2);
-        if (pending.ceSymbol != null && !pending.ceSymbol.isBlank()) legs.add(pending.ceSymbol);
-        if (pending.peSymbol != null && !pending.peSymbol.isBlank()) legs.add(pending.peSymbol);
+        state.h4bSymbol = h3row.peSymbol(); state.h4bStrike = h3row.resolvedStrike(); state.h4bRefLtp = h3row.peLtp();
+        state.l3rSymbol = l4row.peSymbol(); state.l3rStrike = l4row.resolvedStrike(); state.l3rRefLtp = l4row.peLtp();
+        state.h3rSymbol = h4row.ceSymbol(); state.h3rStrike = h4row.resolvedStrike(); state.h3rRefLtp = h4row.ceLtp();
+        state.l4bSymbol = l3row.ceSymbol(); state.l4bStrike = l3row.resolvedStrike(); state.l4bRefLtp = l3row.ceLtp();
+        // Fyers' option-chain payload commonly serves 0 LTPs on holidays for
+        // illiquid OTM strikes. Fall back to /data/quotes which returns the
+        // last-quoted price per symbol (Friday's close on a holiday Monday).
+        // Only triggered when at least one of the four chain LTPs is 0.
+        if (state.h4bRefLtp <= 0 || state.l3rRefLtp <= 0
+            || state.h3rRefLtp <= 0 || state.l4bRefLtp <= 0) {
+            backfillRefLtpsFromQuotes();
+        }
+        state.sessionLegsDayKey = today;
+        ensureSessionLegsSubscribed();
+        event("[INFO]", "Session", "OTM legs resolved — H4B PE " + state.h4bStrike
+            + " | L3R PE " + state.l3rStrike
+            + " | H3R CE " + state.h3rStrike
+            + " | L4B CE " + state.l4bStrike);
+        saveToDisk();
+        return true;
+    }
+
+    /** Pull last-quoted prices from Fyers {@code /data/quotes} via
+     *  {@link CamarillaService#fetchLastQuotedLtps(String)} for any of the
+     *  four session legs whose chain-derived refLtp came back as 0. On a
+     *  holiday or pre-market the chain endpoint can serve 0 LTPs even though
+     *  the quotes endpoint still returns the prior session's close. */
+    private void backfillRefLtpsFromQuotes() {
+        java.util.LinkedHashSet<String> needed = new java.util.LinkedHashSet<>();
+        if (state.h4bRefLtp <= 0 && !state.h4bSymbol.isBlank()) needed.add(state.h4bSymbol);
+        if (state.l3rRefLtp <= 0 && !state.l3rSymbol.isBlank()) needed.add(state.l3rSymbol);
+        if (state.h3rRefLtp <= 0 && !state.h3rSymbol.isBlank()) needed.add(state.h3rSymbol);
+        if (state.l4bRefLtp <= 0 && !state.l4bSymbol.isBlank()) needed.add(state.l4bSymbol);
+        if (needed.isEmpty()) return;
+        java.util.Map<String, Double> ltpBySymbol = camarillaService.fetchLastQuotedLtps(String.join(",", needed));
+        if (ltpBySymbol.isEmpty()) return;
+        if (state.h4bRefLtp <= 0 && ltpBySymbol.containsKey(state.h4bSymbol)) state.h4bRefLtp = ltpBySymbol.get(state.h4bSymbol);
+        if (state.l3rRefLtp <= 0 && ltpBySymbol.containsKey(state.l3rSymbol)) state.l3rRefLtp = ltpBySymbol.get(state.l3rSymbol);
+        if (state.h3rRefLtp <= 0 && ltpBySymbol.containsKey(state.h3rSymbol)) state.h3rRefLtp = ltpBySymbol.get(state.h3rSymbol);
+        if (state.l4bRefLtp <= 0 && ltpBySymbol.containsKey(state.l4bSymbol)) state.l4bRefLtp = ltpBySymbol.get(state.l4bSymbol);
+        log.info("[Camarilla] session legs ref LTPs backfilled from /data/quotes — H4B={}, L3R={}, H3R={}, L4B={}",
+            state.h4bRefLtp, state.l3rRefLtp, state.h3rRefLtp, state.l4bRefLtp);
+    }
+
+    /** Idempotent re-subscribe of the four current session legs. Safe to call
+     *  on every resolveSessionLegs() invocation — backed by the Set-add
+     *  contract of {@code MarketDataService.subscribeAdditional}. Critical for
+     *  closing the mid-day-restart gap where State carries the symbols on
+     *  disk but the Fyers WS subscription set boots empty. */
+    private void ensureSessionLegsSubscribed() {
+        java.util.List<String> legs = new java.util.ArrayList<>(4);
+        if (state.h4bSymbol != null && !state.h4bSymbol.isBlank()) legs.add(state.h4bSymbol);
+        if (state.l3rSymbol != null && !state.l3rSymbol.isBlank()) legs.add(state.l3rSymbol);
+        if (state.h3rSymbol != null && !state.h3rSymbol.isBlank()) legs.add(state.h3rSymbol);
+        if (state.l4bSymbol != null && !state.l4bSymbol.isBlank()) legs.add(state.l4bSymbol);
         if (legs.isEmpty()) return;
         try { marketDataService.subscribeAdditional(legs); }
         catch (Exception ignored) {}
-        event("[INFO]", "Setup", "pre-sub CE+PE @ " + pending.lockedAtm);
     }
 
-    /** Release pre-subscribed CE/PE legs when a pending invalidates or expires.
-     *  Safe to call even when neither symbol is set (no-op). We DON'T release the
-     *  leg if a position is currently open on it — the fast-tick watcher and
-     *  fastSlCheck need the LTP feed to keep flowing. */
-    private void releaseOptionLegs(PendingConfirmation pending) {
-        if (pending == null) return;
-        java.util.List<String> legs = new java.util.ArrayList<>(2);
-        if (pending.ceSymbol != null && !pending.ceSymbol.isBlank()
-            && !state.openPositions.containsKey(pending.ceSymbol)) {
-            legs.add(pending.ceSymbol);
+    /** Unsubscribe yesterday's four session legs. Safe to call multiple times
+     *  — only legs without an open position get released. Triggered by the
+     *  daily reset cron so today's resolve can subscribe fresh symbols
+     *  (helpful when NIFTY weekly expiry rolls and the chain emits new
+     *  symbol names). */
+    private synchronized void releaseSessionLegs() {
+        java.util.List<String> legs = new java.util.ArrayList<>(4);
+        for (String sym : new String[] {state.h4bSymbol, state.l3rSymbol, state.h3rSymbol, state.l4bSymbol}) {
+            if (sym != null && !sym.isBlank() && !state.openPositions.containsKey(sym)) {
+                legs.add(sym);
+            }
         }
-        if (pending.peSymbol != null && !pending.peSymbol.isBlank()
-            && !state.openPositions.containsKey(pending.peSymbol)) {
-            legs.add(pending.peSymbol);
+        if (!legs.isEmpty()) {
+            try { marketDataService.unsubscribeAdditional(legs); }
+            catch (Exception ignored) {}
         }
-        if (legs.isEmpty()) return;
-        try { marketDataService.unsubscribeAdditional(legs); }
-        catch (Exception ignored) {}
+        state.h4bSymbol = "";
+        state.l3rSymbol = "";
+        state.h3rSymbol = "";
+        state.l4bSymbol = "";
+        state.h4bStrike = 0;
+        state.l3rStrike = 0;
+        state.h3rStrike = 0;
+        state.l4bStrike = 0;
+        state.sessionLegsDayKey = "";
+    }
+
+    /** Look up the pre-resolved option symbol for a given setup. Returns
+     *  empty string when the legs haven't been resolved yet (caller should
+     *  log + skip). */
+    private String legSymbolFor(ActiveSetup setup) {
+        if (setup == null) return "";
+        return switch (setup) {
+            case H4_BREAKOUT  -> state.h4bSymbol;
+            case L3_REVERSAL  -> state.l3rSymbol;
+            case H3_REVERSAL  -> state.h3rSymbol;
+            case L4_BREAKDOWN -> state.l4bSymbol;
+            default            -> "";
+        };
+    }
+
+    /** Look up the resolved strike for a given setup. */
+    private long strikeFor(ActiveSetup setup) {
+        if (setup == null) return 0;
+        return switch (setup) {
+            case H4_BREAKOUT  -> state.h4bStrike;
+            case L3_REVERSAL  -> state.l3rStrike;
+            case H3_REVERSAL  -> state.h3rStrike;
+            case L4_BREAKDOWN -> state.l4bStrike;
+            default            -> 0;
+        };
+    }
+
+    /** Scheduled retry — runs every 30 seconds until today's four legs are
+     *  resolved. No clock gate; runs from boot until {@code sessionLegsDayKey
+     *  == today}. Idempotent — once resolved, becomes a cheap no-op. */
+    @Scheduled(fixedDelay = 30_000, initialDelay = 30_000)
+    public void retrySessionLegsIfNeeded() {
+        try { resolveSessionLegs(); }
+        catch (Exception e) { log.warn("[Camarilla] session-legs retry failed: {}", e.getMessage()); }
     }
 
     private static PendingConfirmation mkConfirmation(ActiveSetup setup, Candle c, double target) {
@@ -1019,40 +1169,18 @@ public class Camarilla implements Strategy {
         if (!shortSetup) return;   // v2 is sell-only by design
         boolean bullishBet = isBullishBet(setup);
 
-        // ── Pick the ATM option leg ──
-        // The strike was locked at confirmation time and pre-subscribed; reuse it
-        // so the option leg we trade is the same one we warmed up. lockedAtm = 0
-        // is the back-compat path for pendings restored from disk before this
-        // change shipped — fall through to a live recompute.
-        long strike = lockedAtm;
-        if (strike <= 0) {
-            double spot = 0;
-            try { spot = marketDataService.getLtp(NIFTY_SYMBOL); }
-            catch (Exception ignored) {}
-            if (spot <= 0) {
-                event("[ERROR]", "AUTO ENTRY", setup
-                    + " — NIFTY spot LTP not available, skipping");
-                return;
-            }
-            strike = Math.round(spot / (double) STRIKE_STEP) * STRIKE_STEP;
-        }
-        BalancedAtmSelector.StrikeAtLevel row = atmSelector.resolveStrikeAtLevel(strike);
-        String optionSym = null;
-        if (row != null) {
-            optionSym = bullishBet ? row.peSymbol() : row.ceSymbol();
-        }
+        // ── Pick the trade leg from the pre-resolved session map ──
+        // Each setup has a session-static OTM leg resolved at boot from today's
+        // Camarilla levels. No per-trade strike math, no on-demand subscribe —
+        // the leg has been live on the WebSocket since boot.
+        String optionSym = legSymbolFor(setup);
+        long   strike    = strikeFor(setup);
         if (optionSym == null || optionSym.isBlank()) {
-            event("[ERROR]", "AUTO ENTRY",
-                setup + " — couldn't resolve " + (bullishBet ? "PUT" : "CALL")
-                + " symbol at strike " + strike);
+            event("[ERROR]", "AUTO ENTRY", setup + " — session leg not resolved yet, skipping");
             return;
         }
         // Avoid double-entry on the same option leg if a prior trade is still open on it.
         if (state.openPositions.containsKey(optionSym)) return;
-        // On-demand subscription for the option leg — needed so the LTP cache
-        // starts warming for fastSlCheck / fill resolution. Idempotent.
-        try { marketDataService.subscribeAdditional(java.util.Collections.singletonList(optionSym)); }
-        catch (Exception ignored) {}
 
         // ── OI bias gate ──
         // Block only when the OI tracker reads a STRONG bias (VERY_BULLISH or
@@ -1163,6 +1291,10 @@ public class Camarilla implements Strategy {
         p.breakevenMoved  = false;
         p.isShort         = true;
         p.productType     = productType;
+        // Back-compat: lockedAtm field on Position kept for state-file
+        // deserialisation of older runs. Still stored on the position so any
+        // legacy consumer that reads it sees the trade's strike.
+        p.lockedAtm = strike;
         try {
             com.rydytrader.autotrader.service.OptionOiTracker oiAtEntry = oiTrackerProvider == null ? null
                 : oiTrackerProvider.getIfAvailable();
@@ -1851,6 +1983,10 @@ public class Camarilla implements Strategy {
         // v2 two-candle entry — drop any pending confirmations on day rollover / reset.
         state.pendingBullish = null;
         state.pendingBearish = null;
+        // Release yesterday's session-static OTM legs so the resolver picks up
+        // today's fresh Camarilla levels (and any fresh weekly-expiry chain
+        // symbols that rolled overnight) on its next tick.
+        releaseSessionLegs();
         saveToDisk();
         publishStream();
     }
@@ -1931,37 +2067,29 @@ public class Camarilla implements Strategy {
         m.put("dayKey",            state.dayKey);
         m.put("tradesToday",       state.tradesToday);
         m.put("consecutiveLosses", state.consecutiveLosses);
-        // v2 — live ATM: round current NIFTY spot to the nearest STRIKE_STEP.
-        // Falls back to 0 when spot LTP isn't available yet (pre-market or
-        // before first tick).
+        // Live ATM (round current NIFTY spot to STRIKE_STEP) — still used
+        // below by the atmVwap chip block (NIFTY futures + ATM PUT/CALL
+        // header chips). The standalone `currentAtm` payload field is gone;
+        // the trade page no longer displays it.
         long liveAtm = 0;
         try {
             double spotLtp = marketDataService.getLtp(NIFTY_SYMBOL);
             if (spotLtp > 0) liveAtm = Math.round(spotLtp / (double) STRIKE_STEP) * STRIKE_STEP;
         } catch (Exception ignored) {}
-        m.put("currentAtm",        liveAtm);
-        // Locked-ATM CE/PE pricing — populated only when a pending confirmation is
-        // sitting on the books with pre-subscribed legs. Header chip on the trade
-        // page renders this next to ATM so the operator sees both legs' LTP/VWAP
-        // for whichever strike the next trigger would fire on. Bullish pending
-        // wins the chip slot if both directions are pending (rare; happens when
-        // a bullish and bearish setup confirm on different bars without one
-        // triggering or invalidating the other yet).
-        PendingConfirmation chipPending = state.pendingBullish != null
-            ? state.pendingBullish
-            : state.pendingBearish;
-        if (chipPending != null && chipPending.lockedAtm > 0) {
-            Map<String, Object> chip = new LinkedHashMap<>();
-            chip.put("strike",   chipPending.lockedAtm);
-            chip.put("setup",    chipPending.setup == null ? "" : chipPending.setup.toString());
-            chip.put("ceSymbol", chipPending.ceSymbol == null ? "" : chipPending.ceSymbol);
-            chip.put("peSymbol", chipPending.peSymbol == null ? "" : chipPending.peSymbol);
-            chip.put("ceLtp",    safeLtp(chipPending.ceSymbol));
-            chip.put("peLtp",    safeLtp(chipPending.peSymbol));
-            chip.put("ceVwap",   safeVwap(chipPending.ceSymbol));
-            chip.put("peVwap",   safeVwap(chipPending.peSymbol));
-            m.put("lockedStrike", chip);
-        }
+        // v2 session-static OTM legs — one row per setup, all four resolved at
+        // boot and subscribed all session. Trade page renders this as a
+        // 4-row block (replaces the legacy dynamic ATM chip and the per-pending
+        // LOCK chip). Emitted as an empty array until the four legs resolve.
+        java.util.List<Map<String, Object>> setupLegs = new java.util.ArrayList<>(4);
+        addSetupLegRow(setupLegs, ActiveSetup.H4_BREAKOUT,  "BULLISH", "H3",
+                       state.h4bStrike, state.h4bSymbol, "PE", state.h4bRefLtp);
+        addSetupLegRow(setupLegs, ActiveSetup.L3_REVERSAL,  "BULLISH", "L4",
+                       state.l3rStrike, state.l3rSymbol, "PE", state.l3rRefLtp);
+        addSetupLegRow(setupLegs, ActiveSetup.H3_REVERSAL,  "BEARISH", "H4",
+                       state.h3rStrike, state.h3rSymbol, "CE", state.h3rRefLtp);
+        addSetupLegRow(setupLegs, ActiveSetup.L4_BREAKDOWN, "BEARISH", "L3",
+                       state.l4bStrike, state.l4bSymbol, "CE", state.l4bRefLtp);
+        m.put("setupLegs", setupLegs);
         m.put("watchlistSize",     state.symbolRole.size());
         m.put("watchlistRoles",    new LinkedHashMap<>(state.symbolRole));
 
@@ -2115,6 +2243,30 @@ public class Camarilla implements Strategy {
         // ── V2 watchlist ──────────────────────────────────────────────────────
         /** Current monitored 6-contract matrix (ATM, ±1 strike, CE+PE) → role mapping. */
         public Map<String, WatchRole> symbolRole = new ConcurrentHashMap<>();
+
+        // ── V2 session-static OTM legs (one per setup) ───────────────────────
+        // Resolved at boot from today's Camarilla levels and subscribed for the
+        // full session — no per-confirmation churn. fire() looks up the right
+        // leg by setup type. Empty until the first successful resolveSessionLegs().
+        public String h4bSymbol = "";   // H4_BREAKOUT  → sell PE near H3
+        public String l3rSymbol = "";   // L3_REVERSAL  → sell PE near L4
+        public String h3rSymbol = "";   // H3_REVERSAL  → sell CE near H4
+        public String l4bSymbol = "";   // L4_BREAKDOWN → sell CE near L3
+        public long   h4bStrike;
+        public long   l3rStrike;
+        public long   h3rStrike;
+        public long   l4bStrike;
+        /** Reference LTP per leg — captured from the option chain at resolve
+         *  time. Used as a display fallback on holidays / pre-market when the
+         *  WS feed isn't streaming (live getLtp returns 0). Reflects the
+         *  chain's last-quoted price, i.e. yesterday's close on a holiday. */
+        public double h4bRefLtp;
+        public double l3rRefLtp;
+        public double h3rRefLtp;
+        public double l4bRefLtp;
+        /** YYYY-MM-DD on which the four legs above were resolved. When this
+         *  doesn't match today, the scheduled retry refreshes them. */
+        public String sessionLegsDayKey = "";
     }
 
     /** v2 two-candle entry — a bar that met the confirmation geometry of one of the
@@ -2207,6 +2359,17 @@ public class Camarilla implements Strategy {
          *  consecutive polls, close the option at market. {@code Double.NaN}
          *  disables the auto-SL. */
         public double slFutures = Double.NaN;
+        /** v2 — locked ATM strike captured at confirmation time and carried
+         *  through to this open position. Drives the "LOCK NNNN" chip on the
+         *  trade page so the header stays visible from confirmation through
+         *  position close, not just during the pending window. 0 for v1
+         *  positions and any position not seeded from a v2 confirmation. */
+        public long   lockedAtm;
+        /** v2 — both leg symbols at the locked strike, retained on the open
+         *  position so the chip can keep showing CE/PE LTP + VWAP through the
+         *  full trade lifetime even after the pending is cleared by trigger. */
+        public String ceSymbol = "";
+        public String peSymbol = "";
     }
 
     /** Backward-compat overload — defaults source to "Strategy". */
@@ -2289,6 +2452,45 @@ public class Camarilla implements Strategy {
         if (sym == null || sym.isBlank()) return 0;
         try { return round2(marketDataService.getVwap(sym)); }
         catch (Exception e) { return 0; }
+    }
+
+    /** Append one row to the {@code setupLegs} dashboard array — used for the
+     *  four session-static OTM legs. Live LTP comes from the WS tick cache;
+     *  when that's 0 (holiday, pre-market, fresh boot before first tick), we
+     *  fall back to {@code refLtp} — the chain-quoted price captured at
+     *  resolve time, which on a non-trading day reflects yesterday's last
+     *  close. {@code ltpStale = true} signals the UI to render the value
+     *  muted so the operator knows it's not live. */
+    private void addSetupLegRow(java.util.List<Map<String, Object>> rows,
+                                ActiveSetup setup, String dir, String levelRef,
+                                long strike, String symbol, String side,
+                                double refLtp) {
+        double live = safeLtp(symbol);
+        boolean stale = live <= 0 && refLtp > 0;
+        double ltp   = live > 0 ? live : round2(refLtp);
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("setup",    setup == null ? "" : setup.toString());
+        row.put("setupTag", setup == null ? "" : shortSetupTag(setup));
+        row.put("dir",      dir);
+        row.put("levelRef", levelRef);
+        row.put("strike",   strike);
+        row.put("symbol",   symbol == null ? "" : symbol);
+        row.put("side",     side);
+        row.put("ltp",      ltp);
+        row.put("ltpStale", stale);
+        row.put("vwap",     safeVwap(symbol));
+        rows.add(row);
+    }
+
+    /** Short 3-char tag for the trade-page setupLegs block. */
+    private static String shortSetupTag(ActiveSetup s) {
+        return switch (s) {
+            case H4_BREAKOUT  -> "H4B";
+            case L3_REVERSAL  -> "L3R";
+            case H3_REVERSAL  -> "H3R";
+            case L4_BREAKDOWN -> "L4B";
+            default            -> s.toString();
+        };
     }
 
     /** Compact rendering of a Fyers option symbol for the event log:

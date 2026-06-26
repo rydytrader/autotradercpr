@@ -142,6 +142,37 @@ public class CamarillaService {
         return Map.copyOf(bySymbol);
     }
 
+    /** Hit Fyers {@code /data/quotes} for a comma-separated symbol list and
+     *  return {@code symbol → lp} for entries that came back with a positive
+     *  last price. On holidays this commonly returns the prior session's last
+     *  close even when the live WS feed is silent — used by the strategy as a
+     *  fallback for "session leg reference LTP" when the option-chain endpoint
+     *  served 0. Returns an empty map on any failure. */
+    public Map<String, Double> fetchLastQuotedLtps(String csvSymbols) {
+        Map<String, Double> out = new java.util.LinkedHashMap<>();
+        if (csvSymbols == null || csvSymbols.isBlank()) return out;
+        try {
+            String accessToken = tokenStore.getAccessToken();
+            if (accessToken == null || accessToken.isBlank()) return out;
+            String auth = fyersProperties.getClientId() + ":" + accessToken;
+            JsonNode resp = fyersClient.getQuotes(csvSymbols, auth);
+            if (resp == null) return out;
+            JsonNode data = resp.get("d");
+            if (data == null || !data.isArray()) return out;
+            for (JsonNode item : data) {
+                JsonNode v = item.get("v");
+                if (v == null) continue;
+                String sym = v.has("symbol") ? v.get("symbol").asText() : null;
+                if (sym == null || sym.isBlank()) continue;
+                double lp = v.has("lp") ? v.get("lp").asDouble() : 0;
+                if (lp > 0) out.put(sym, lp);
+            }
+        } catch (Exception e) {
+            log.warn("[CamarillaService] fetchLastQuotedLtps failed: {}", e.getMessage());
+        }
+        return out;
+    }
+
     /** Fan-out warm-up. For each strike in [atmStrike − 10×50 … atmStrike + 10×50], resolve
      *  the CE+PE symbols via the option chain, then fetch each symbol's prior-day OHLC and
      *  compute its Camarilla levels. Runs async — non-blocking for the caller. */
