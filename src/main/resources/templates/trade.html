@@ -700,15 +700,6 @@
             lgWrap.innerHTML = legs.map(function(L) {
                 var setupTag = L.setupTag || '';
                 var col = pillColors(L.dir);
-                // When the WS feed isn't streaming (holiday / pre-market) the
-                // backend falls back to the chain-quoted reference price and
-                // flags ltpStale = true. Render in muted colour with a small
-                // "closed" hint so the operator doesn't mistake it for live.
-                var stale  = !!L.ltpStale;
-                var ltpCol = stale ? 'var(--text-muted)' : 'var(--text-primary)';
-                var staleHint = stale
-                    ? '<span style="font-family:var(--font-mono);font-size:0.56rem;color:var(--text-muted);letter-spacing:0.05em;margin-left:6px;">closed</span>'
-                    : '';
                 return '<div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:rgba(255,255,255,0.015);border-left:3px solid ' + col.fg + ';border-radius:4px;">' +
                     // Setup pill
                     '<span style="padding:4px 10px;border-radius:6px;font-family:var(--font-mono);font-size:0.66rem;font-weight:700;letter-spacing:0.06em;' +
@@ -719,11 +710,11 @@
                     '</span>' +
                     // Level reference: "near H3"
                     '<span style="flex:1;font-family:var(--font-mono);font-size:0.62rem;color:var(--text-muted);letter-spacing:0.04em;text-transform:uppercase;">near ' + (L.levelRef || '—') + '</span>' +
-                    // LTP — prominent, right-aligned. Muted + "closed" hint when stale.
-                    '<span style="display:flex;align-items:baseline;justify-content:flex-end;min-width:140px;">' +
-                        '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:' + ltpCol + ';">' + fmtNum2(L.ltp) + '</span>' +
-                        staleHint +
-                    '</span>' +
+                    // LTP — prominent, right-aligned. On holidays the value
+                    // is the prior session's close (refLtp); the operator
+                    // knows we're in a non-trading session via the market
+                    // clock card already on the page.
+                    '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--text-primary);min-width:96px;text-align:right;">' + fmtNum2(L.ltp) + '</span>' +
                 '</div>';
             }).join('');
         }
