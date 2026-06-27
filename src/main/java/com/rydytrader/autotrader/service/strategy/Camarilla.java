@@ -120,6 +120,11 @@ public class Camarilla implements Strategy {
         H4_BREAKOUT,       // bullish: spot bar closes above H4 → sell ATM PUT
         L4_BREAKDOWN,      // bearish: spot bar closes below L4 → sell ATM CALL
         VWAP_BREAKDOWN,    // v1 legacy (retired) — kept for old DB row deserialisation only
+        // Iron-wall strangle — fired ONCE per session at trading-start. Each leg has SL
+        // at the Camarilla level itself (+/- 3 ticks on spot); no target. Coexists with
+        // directional setups; does NOT block Phase 4 confirmation detection.
+        H4_STRANGLE,       // sells CE near H4 — SL = H4 + 3 ticks
+        L4_STRANGLE,       // sells PE near L4 — SL = L4 − 3 ticks
         MANUAL             // user-placed via Options Scalper Terminal — direction comes from caller
     }
 
@@ -130,13 +135,38 @@ public class Camarilla implements Strategy {
             || s == ActiveSetup.H3_REVERSAL
             || s == ActiveSetup.H4_BREAKOUT
             || s == ActiveSetup.L4_BREAKDOWN
+            || s == ActiveSetup.H4_STRANGLE
+            || s == ActiveSetup.L4_STRANGLE
             || s == ActiveSetup.VWAP_BREAKDOWN;
     }
 
     /** True for the bullish-bet setups (sell PUT). Used by fire() to pick the ATM
-     *  PUT vs ATM CALL trade leg. */
+     *  PUT vs ATM CALL trade leg. L4_STRANGLE sells PE (bullish stance);
+     *  H4_STRANGLE sells CE (bearish stance). */
     private static boolean isBullishBet(ActiveSetup s) {
-        return s == ActiveSetup.L3_REVERSAL || s == ActiveSetup.H4_BREAKOUT;
+        return s == ActiveSetup.L3_REVERSAL
+            || s == ActiveSetup.H4_BREAKOUT
+            || s == ActiveSetup.L4_STRANGLE;
+    }
+
+    /** True for the iron-wall strangle setups. Used by detection-lockout gates
+     *  to keep the strangle from blocking directional Phase 4 confirmations. */
+    private static boolean isStrangleSetup(ActiveSetup s) {
+        return s == ActiveSetup.H4_STRANGLE || s == ActiveSetup.L4_STRANGLE;
+    }
+
+    /** Composite key {@code "setup|symbol"} for {@code state.openPositions}.
+     *  Allows multiple logical positions on the same Fyers option symbol
+     *  (e.g., a strangle leg AND a directional fire on the same CE-at-H4
+     *  contract, each tracked independently with its own SL). */
+    private static String posKey(Position p) {
+        if (p == null) return "";
+        String setup = p.setup == null ? "MANUAL" : p.setup.name();
+        return setup + "|" + (p.symbol == null ? "" : p.symbol);
+    }
+    private static String posKey(ActiveSetup setup, String symbol) {
+        String s = setup == null ? "MANUAL" : setup.name();
+        return s + "|" + (symbol == null ? "" : symbol);
     }
 
     /** V2 watchlist role for each monitored option contract. ATM and ITM strikes only check
@@ -319,9 +349,8 @@ public class Camarilla implements Strategy {
         boolean anyClosed = false;
         synchronized (this) {
             if (state.openPositions.isEmpty()) return false;
-            List<String> symbols = new ArrayList<>(state.openPositions.keySet());
-            for (String sym : symbols) {
-                if (closePosition(sym, reason == null ? "MANUAL" : reason)) anyClosed = true;
+            for (Position p : new ArrayList<>(state.openPositions.values())) {
+                if (closePosition(p, reason == null ? "MANUAL" : reason)) anyClosed = true;
             }
         }
         return anyClosed;
@@ -444,8 +473,15 @@ public class Camarilla implements Strategy {
     public boolean forceCloseSymbol(String symbol, String reason) {
         if (symbol == null || symbol.isBlank()) return false;
         synchronized (this) {
-            if (!state.openPositions.containsKey(symbol)) return false;
-            return closePosition(symbol, reason == null ? "MANUAL" : reason);
+            // Close EVERY logical position on this symbol (composite-key world:
+            // a strangle leg + a directional fire can both be open here).
+            boolean anyClosed = false;
+            for (Position p : new ArrayList<>(state.openPositions.values())) {
+                if (p != null && symbol.equals(p.symbol)) {
+                    if (closePosition(p, reason == null ? "MANUAL" : reason)) anyClosed = true;
+                }
+            }
+            return anyClosed;
         }
     }
 
@@ -455,7 +491,12 @@ public class Camarilla implements Strategy {
      *  MANUAL terminal trades that run alongside the auto strategy. */
     private boolean hasOpenAutoPosition() {
         for (Position p : state.openPositions.values()) {
-            if (p != null && p.setup != ActiveSetup.MANUAL) return true;
+            if (p == null) continue;
+            if (p.setup == ActiveSetup.MANUAL) continue;
+            // Iron-wall strangle holds positions all session; it must NOT
+            // block Phase 4 directional confirmation detection.
+            if (isStrangleSetup(p.setup)) continue;
+            return true;
         }
         return false;
     }
@@ -555,7 +596,7 @@ public class Camarilla implements Strategy {
         synchronized (this) {
             int closed = 0;
             for (Position p : new ArrayList<>(openManualPositions())) {
-                if (closePosition(p.symbol, reason == null ? "MANUAL_CLOSE" : reason)) closed++;
+                if (closePosition(p, reason == null ? "MANUAL_CLOSE" : reason)) closed++;
             }
             return closed;
         }
@@ -565,7 +606,11 @@ public class Camarilla implements Strategy {
     public void resetToIdle(String reason) {
         synchronized (this) {
             // Drop in-memory positions WITHOUT placing exits (operator recovery flow).
-            for (String sym : new ArrayList<>(state.openPositions.keySet())) {
+            java.util.Set<String> uniqueSymbols = new java.util.HashSet<>();
+            for (Position p : state.openPositions.values()) {
+                if (p != null && p.symbol != null) uniqueSymbols.add(p.symbol);
+            }
+            for (String sym : uniqueSymbols) {
                 candleAggregator.unsubscribe(sym);
             }
             state.openPositions.clear();
@@ -654,22 +699,27 @@ public class Camarilla implements Strategy {
                     + " > maxRisk ₹" + round2(maxRisk)
                     + " — force-closing all positions and locking session");
                 state.dailyLossLockout = true;
-                for (String sym : new ArrayList<>(state.openPositions.keySet())) {
-                    closePosition(sym, "RISK_BREACH");
+                for (Position p : new ArrayList<>(state.openPositions.values())) {
+                    closePosition(p, "RISK_BREACH");
                 }
                 saveToDisk();
                 return;
             }
         }
 
-        for (String symbol : new ArrayList<>(state.openPositions.keySet())) {
-            Position p = state.openPositions.get(symbol);
+        // Iterate by Position (not by symbol) so positions that share a Fyers
+        // symbol — e.g. an iron-wall strangle leg AND a directional fire that
+        // both ended up short the same CE-at-H4 contract — are each watched
+        // independently with their own SL / target.
+        for (Position p : new ArrayList<>(state.openPositions.values())) {
             if (p == null) continue;
+            String symbol = p.symbol;
+            String posKey = posKey(p);
 
             // Resolve the LTP that drives target/SL decisions for THIS position.
             // v2 = futures LTP, v1 = option premium LTP.
             boolean v2 = p.triggerSymbol != null && !p.triggerSymbol.isBlank()
-                       && !Double.isNaN(p.targetFutures) && !Double.isNaN(p.slFutures);
+                       && !Double.isNaN(p.slFutures);
             String triggerSrc = v2 ? p.triggerSymbol : symbol;
             double triggerLtp;
             try { triggerLtp = marketDataService.getLtp(triggerSrc); }
@@ -679,34 +729,31 @@ public class Camarilla implements Strategy {
             // Direction-aware comparisons. v2 sells options for BOTH directional
             // bets (sell PUT for bullish, sell CALL for bearish), so p.isShort
             // is always true and can't drive the comparator. Use the bet
-            // direction instead — bullish bets (L3_REVERSAL, H4_BREAKOUT) want
-            // NIFTY to RISE (target ABOVE entry, SL BELOW); bearish bets
-            // (H3_REVERSAL, L4_BREAKDOWN) want NIFTY to FALL (target BELOW,
-            // SL ABOVE). v1 positions (no triggerSymbol) keep the legacy
-            // p.isShort-based semantic since their target/SL were already
-            // option-premium-based, where short means premium falls.
+            // direction instead — bullish bets (L3_REVERSAL, H4_BREAKOUT,
+            // L4_STRANGLE) want NIFTY to STAY/RISE (target ABOVE entry, SL BELOW);
+            // bearish bets (H3_REVERSAL, L4_BREAKDOWN, H4_STRANGLE) want NIFTY to
+            // STAY/FALL (target BELOW, SL ABOVE). Strangle setups carry NaN
+            // target — the target comparator naturally fails (NaN comparisons
+            // are always false), leaving only the SL gate active.
             double targetRef = v2 ? p.targetFutures : p.targetLevel;
             double slRef     = v2 ? p.slFutures     : p.slLevel;
-            boolean bullishBet;
-            if (v2) {
-                ActiveSetup s = p.setup;
-                bullishBet = s == ActiveSetup.L3_REVERSAL || s == ActiveSetup.H4_BREAKOUT;
-            } else {
-                bullishBet = !p.isShort;
-            }
-            boolean targetHit = bullishBet ? (triggerLtp >= targetRef) : (triggerLtp <= targetRef);
-            boolean slBreach  = bullishBet ? (triggerLtp <= slRef)     : (triggerLtp >= slRef);
+            boolean bullishBet = v2 ? isBullishBet(p.setup) : !p.isShort;
+            boolean targetHit = !Double.isNaN(targetRef)
+                && (bullishBet ? (triggerLtp >= targetRef) : (triggerLtp <= targetRef));
+            boolean slBreach  = !Double.isNaN(slRef)
+                && (bullishBet ? (triggerLtp <= slRef) : (triggerLtp >= slRef));
 
             if (targetHit) {
                 Object lock = symbolLocks.computeIfAbsent(symbol, k -> new Object());
                 synchronized (lock) {
-                    Position p2 = state.openPositions.get(symbol);
+                    Position p2 = state.openPositions.get(posKey);
                     if (p2 == null) continue;
                     double tgt2 = v2 ? p2.targetFutures : p2.targetLevel;
-                    boolean stillHit = bullishBet ? (triggerLtp >= tgt2) : (triggerLtp <= tgt2);
+                    boolean stillHit = !Double.isNaN(tgt2)
+                        && (bullishBet ? (triggerLtp >= tgt2) : (triggerLtp <= tgt2));
                     if (!stillHit) continue;
                     event("[SUCCESS]", "Exit", "TARGET — " + shortSym(symbol) + " @ " + round2(triggerLtp));
-                    closePosition(symbol, "TARGET_HIT");
+                    closePosition(p2, "TARGET_HIT");
                 }
                 continue;
             }
@@ -716,10 +763,11 @@ public class Camarilla implements Strategy {
                 if (p.slBreachStreak >= SL_BREACH_CONFIRM_TICKS) {
                     Object lock = symbolLocks.computeIfAbsent(symbol, k -> new Object());
                     synchronized (lock) {
-                        Position p2 = state.openPositions.get(symbol);
+                        Position p2 = state.openPositions.get(posKey);
                         if (p2 == null) continue;
-                        event("[WARNING]", "Exit", "SL — " + shortSym(symbol) + " @ " + round2(triggerLtp));
-                        closePosition(symbol, "SL_HIT");
+                        event("[WARNING]", "Exit", "SL — " + shortSym(symbol)
+                            + " [" + p2.setup + "] @ " + round2(triggerLtp));
+                        closePosition(p2, "SL_HIT");
                     }
                 }
             } else if (p.slBreachStreak > 0) {
@@ -770,6 +818,13 @@ public class Camarilla implements Strategy {
             if (!canFireNewEntry()) return;
             CamarillaLevels lv = camarillaService.getLevels(triggerSym);
             if (lv == null) return;   // levels warming up
+
+            // ── Phase 0.5: IRON-WALL STRANGLE — once per session ──
+            // Fires both H4_STRANGLE + L4_STRANGLE on the first bar close
+            // after the trading-start gate elapses. Each leg has SL at the
+            // Camarilla level itself; no target. Strangle positions don't
+            // block Phase 4 directional detection (see hasOpenAutoPosition).
+            tryFireStrangle(lv);
 
             // ── Two-candle entry model — four-phase walk on the current bar ──
             // 1) trigger check (against any pending confirmation in either slot)
@@ -1023,9 +1078,15 @@ public class Camarilla implements Strategy {
      *  (helpful when NIFTY weekly expiry rolls and the chain emits new
      *  symbol names). */
     private synchronized void releaseSessionLegs() {
+        // Only release a leg if NO open position references it (composite-key
+        // world: walk values() and check each Position.symbol).
+        java.util.Set<String> openSymbols = new java.util.HashSet<>();
+        for (Position p : state.openPositions.values()) {
+            if (p != null && p.symbol != null) openSymbols.add(p.symbol);
+        }
         java.util.List<String> legs = new java.util.ArrayList<>(4);
         for (String sym : new String[] {state.h4bSymbol, state.l3rSymbol, state.h3rSymbol, state.l4bSymbol}) {
-            if (sym != null && !sym.isBlank() && !state.openPositions.containsKey(sym)) {
+            if (sym != null && !sym.isBlank() && !openSymbols.contains(sym)) {
                 legs.add(sym);
             }
         }
@@ -1044,6 +1105,38 @@ public class Camarilla implements Strategy {
         state.sessionLegsDayKey = "";
     }
 
+    /** Fire the iron-wall strangle once per session — both legs together —
+     *  on the first {@code onCandleClose} after {@code canFireNewEntry()}
+     *  returns true (i.e., the configured trading-start time has elapsed).
+     *
+     *  <p>Both legs reuse the pre-resolved session symbols (H4_STRANGLE
+     *  shares H3_REVERSAL's CE-near-H4 symbol; L4_STRANGLE shares L3_REVERSAL's
+     *  PE-near-L4 symbol). SL = the Camarilla level itself; the existing
+     *  3-tick SL-confirmation gate in {@code fastSlCheck} handles noise.
+     *  No target — strangle exits only on SL or timed squareoff. */
+    private void tryFireStrangle(CamarillaLevels lv) {
+        if (state.strangleFiredToday) return;
+        if (state.doneForDay || state.dailyLossLockout) return;
+        if (lv == null) return;
+        if (state.h3rSymbol == null || state.h3rSymbol.isBlank()) return;
+        if (state.l3rSymbol == null || state.l3rSymbol.isBlank()) return;
+        if (state.futuresSymbol == null || state.futuresSymbol.isBlank()) return;
+
+        String triggerSym = state.futuresSymbol;
+        // H4_STRANGLE: sells CE at H4-rounded strike; SL = H4 (spot crosses up).
+        // No target (Double.NaN propagates through fastSlCheck cleanly).
+        fire(triggerSym, ActiveSetup.H4_STRANGLE, Double.NaN, lv.h4(), null, 0);
+        // L4_STRANGLE: sells PE at L4-rounded strike; SL = L4 (spot crosses down).
+        fire(triggerSym, ActiveSetup.L4_STRANGLE, Double.NaN, lv.l4(), null, 0);
+
+        // Set the flag regardless of whether either fire() succeeded — both
+        // fire() paths log their own [ERROR] events on failure, and we
+        // don't want to retry on every 5-min bar if (e.g.) the OI bias
+        // gate is rejecting both legs all morning.
+        state.strangleFiredToday = true;
+        saveToDisk();
+    }
+
     /** Look up the pre-resolved option symbol for a given setup. Returns
      *  empty string when the legs haven't been resolved yet (caller should
      *  log + skip). */
@@ -1054,6 +1147,12 @@ public class Camarilla implements Strategy {
             case L3_REVERSAL  -> state.l3rSymbol;
             case H3_REVERSAL  -> state.h3rSymbol;
             case L4_BREAKDOWN -> state.l4bSymbol;
+            // Iron-wall strangle reuses the existing session legs — same
+            // strike as the corresponding directional setup, no new chain
+            // fetch required. H4_STRANGLE shares H3_REVERSAL's CE-near-H4,
+            // L4_STRANGLE shares L3_REVERSAL's PE-near-L4.
+            case H4_STRANGLE  -> state.h3rSymbol;
+            case L4_STRANGLE  -> state.l3rSymbol;
             default            -> "";
         };
     }
@@ -1066,6 +1165,8 @@ public class Camarilla implements Strategy {
             case L3_REVERSAL  -> state.l3rStrike;
             case H3_REVERSAL  -> state.h3rStrike;
             case L4_BREAKDOWN -> state.l4bStrike;
+            case H4_STRANGLE  -> state.h3rStrike;
+            case L4_STRANGLE  -> state.l3rStrike;
             default            -> 0;
         };
     }
@@ -1179,8 +1280,11 @@ public class Camarilla implements Strategy {
             event("[ERROR]", "AUTO ENTRY", setup + " — session leg not resolved yet, skipping");
             return;
         }
-        // Avoid double-entry on the same option leg if a prior trade is still open on it.
-        if (state.openPositions.containsKey(optionSym)) return;
+        // Avoid double-entry of the SAME setup on the same option leg. Different
+        // setups (strangle + directional, or two directionals on the same OTM
+        // strike) CAN both be open simultaneously and are tracked under
+        // distinct composite keys.
+        if (state.openPositions.containsKey(posKey(setup, optionSym))) return;
 
         // ── OI bias gate ──
         // Block only when the OI tracker reads a STRONG bias (VERY_BULLISH or
@@ -1220,12 +1324,20 @@ public class Camarilla implements Strategy {
         // ── Futures-price-based R:R floor (toggle) ──
         // For futures-driven entries the candle close approximates the entry futures price.
         // reward = |entryFut − targetFut|, risk = |slFut − entryFut|.
-        double entryFutures = entryCandle.close();
+        // Strangle fires have no trigger candle (entryCandle==null) and no
+        // target (targetFutures==NaN) — fall back to live spot for entryFutures
+        // and skip the R:R floor entirely.
+        double entryFutures;
+        if (entryCandle != null) {
+            entryFutures = entryCandle.close();
+        } else {
+            entryFutures = 0;
+        }
         try {
             double live = marketDataService.getLtp(triggerSymbol);
             if (live > 0) entryFutures = live;
         } catch (Exception ignored) {}
-        if (riskSettings.isCamarillaMinRRCheckEnabled()) {
+        if (riskSettings.isCamarillaMinRRCheckEnabled() && !Double.isNaN(targetFutures)) {
             double reward = Math.abs(entryFutures - targetFutures);
             double risk   = Math.abs(slFutures - entryFutures);
             if (risk > 0 && reward < risk) {
@@ -1303,7 +1415,7 @@ public class Camarilla implements Strategy {
                 p.entryOiBias = b == null ? "" : b;
             }
         } catch (Exception ignored) {}
-        state.openPositions.put(optionSym, p);
+        state.openPositions.put(posKey(p), p);
         state.tradesToday++;
         // Re-subscribe candle listener on the option symbol too — needed so the existing
         // candle-close skip-if-open path correctly short-circuits if any leftover code
@@ -1365,11 +1477,20 @@ public class Camarilla implements Strategy {
             // original "reject duplicate" behaviour blocked legitimate scalper workflows;
             // both flows now route through mergeAdd / mergeReduce. Strategy positions
             // (L4_BREAKDOWN etc) don't merge — they're owned by the algo and reject here.
-            Position existing = state.openPositions.get(symbol);
-            if (existing != null) {
-                if (existing.setup != ActiveSetup.MANUAL) {
-                    return ManualPlaceResult.err("strategy position open on " + symbol + " — manual merge blocked");
-                }
+            // With composite-key openPositions, multiple logical positions can share a
+            // symbol (e.g., strangle + directional). Scan to find any MANUAL or any
+            // strategy position on this symbol; strategy presence blocks manual entry.
+            Position existingManual = state.openPositions.get(posKey(ActiveSetup.MANUAL, symbol));
+            Position existingStrategy = null;
+            for (Position pp : state.openPositions.values()) {
+                if (pp == null || !symbol.equals(pp.symbol)) continue;
+                if (pp.setup != ActiveSetup.MANUAL) { existingStrategy = pp; break; }
+            }
+            if (existingStrategy != null) {
+                return ManualPlaceResult.err("strategy position open on " + symbol + " — manual merge blocked");
+            }
+            if (existingManual != null) {
+                Position existing = existingManual;
                 boolean sameDirection = (side == -1) == existing.isShort;
                 if (sameDirection) {
                     return mergeAdd(existing, side, qty, orderType, limitPrice);
@@ -1510,7 +1631,7 @@ public class Camarilla implements Strategy {
                 }
             } catch (Exception ignored) {}
 
-            state.openPositions.put(symbol, p);
+            state.openPositions.put(posKey(p), p);
             state.tradesToday++;
             saveToDisk();
 
@@ -1733,8 +1854,8 @@ public class Camarilla implements Strategy {
         if (deltaPts == 0) return ManualPlaceResult.err("deltaPts cannot be zero");
         Object lock = symbolLocks.computeIfAbsent(symbol, k -> new Object());
         synchronized (lock) {
-            Position p = state.openPositions.get(symbol);
-            if (p == null || p.setup != ActiveSetup.MANUAL) {
+            Position p = state.openPositions.get(posKey(ActiveSetup.MANUAL, symbol));
+            if (p == null) {
                 return ManualPlaceResult.err("no open MANUAL position on " + symbol);
             }
             if (Double.isNaN(p.slLevel)) {
@@ -1809,17 +1930,37 @@ public class Camarilla implements Strategy {
         catch (Exception e) { return; }
         if (ZonedDateTime.now(IST).toLocalTime().isAfter(cutoff)) {
             event("[INFO]", "Squareoff", "TIMED_EXIT — clock reached " + hhmm + ", flattening " + state.openPositions.size() + " position(s)");
-            for (String sym : new ArrayList<>(state.openPositions.keySet())) {
-                closePosition(sym, "TIMED_EXIT");
+            for (Position p : new ArrayList<>(state.openPositions.values())) {
+                closePosition(p, "TIMED_EXIT");
             }
         }
     }
 
     /** Close a single open position via market exit. Returns true when the close action was
-     *  attempted (the order may still fail at the broker). */
+     *  attempted (the order may still fail at the broker).
+     *
+     *  <p>Back-compat shim: when only a symbol is known (legacy callers like
+     *  the squareoff cron and the Options Scalper Terminal), resolve the first
+     *  position whose {@code p.symbol} matches and route through the
+     *  Position-aware overload. */
     private boolean closePosition(String symbol, String reason) {
-        Position p = state.openPositions.get(symbol);
+        if (symbol == null || symbol.isBlank()) return false;
+        Position p = null;
+        for (Position pp : state.openPositions.values()) {
+            if (pp != null && symbol.equals(pp.symbol)) { p = pp; break; }
+        }
+        return p != null && closePosition(p, reason);
+    }
+
+    /** Close a specific Position object. The Position MUST already be present
+     *  in {@code state.openPositions} under its composite key {@code posKey(p)} —
+     *  multiple positions can coexist on the same Fyers option symbol (e.g.,
+     *  an iron-wall strangle leg and a directional setup that both ended up
+     *  short the same CE-at-H4 contract). Each is tracked independently with
+     *  its own SL/target/qty. */
+    private boolean closePosition(Position p, String reason) {
         if (p == null) return false;
+        String symbol = p.symbol;
         // SHORT closes with a BUY (+1); LONG closes with a SELL (-1). CRITICAL: pass the
         // SAME productType used for the entry so Fyers nets the two legs. A MARGIN buy
         // against an INTRADAY short does NOT square off — they're treated as separate
@@ -1884,10 +2025,18 @@ public class Camarilla implements Strategy {
         event(net >= 0 ? "[SUCCESS]" : "[WARNING]", "Exit",
             symbol + " closed (" + reason + ") net=" + round2(net) + " gross=" + round2(gross));
 
-        state.openPositions.remove(symbol);
+        state.openPositions.remove(posKey(p));
 
-        // Stop subscribing to this symbol's candles UNLESS it's still in the V2 watchlist.
-        if (!state.symbolRole.containsKey(symbol)) {
+        // Stop subscribing to this symbol's candles ONLY when there are no
+        // remaining open positions on this exact symbol AND it's not in the
+        // V2 watchlist. A symbol shared by multiple logical positions
+        // (e.g., strangle leg + directional fire) must keep its candle feed
+        // alive while ANY of them remains open.
+        boolean stillUsed = false;
+        for (Position pp : state.openPositions.values()) {
+            if (pp != null && symbol.equals(pp.symbol)) { stillUsed = true; break; }
+        }
+        if (!stillUsed && !state.symbolRole.containsKey(symbol)) {
             candleAggregator.unsubscribe(symbol);
         }
 
@@ -1974,8 +2123,13 @@ public class Camarilla implements Strategy {
         state.consecutiveLosses = 0;
         state.doneForDay = false;
         state.todayClosedTrades.clear();
+        state.strangleFiredToday = false;
         if (state.recentEvents != null) state.recentEvents.clear();
-        for (String sym : new ArrayList<>(state.openPositions.keySet())) {
+        java.util.Set<String> uniqSymbols = new java.util.HashSet<>();
+        for (Position p : state.openPositions.values()) {
+            if (p != null && p.symbol != null) uniqSymbols.add(p.symbol);
+        }
+        for (String sym : uniqSymbols) {
             candleAggregator.unsubscribe(sym);
         }
         state.openPositions.clear();
@@ -2001,12 +2155,17 @@ public class Camarilla implements Strategy {
             state.consecutiveLosses = 0;
             state.doneForDay = false;
             state.todayClosedTrades.clear();
+            state.strangleFiredToday = false;
             // Event ring is per-session — drop yesterday's events so the Positions Event Log
             // starts fresh each morning. Without this the log accumulates indefinitely across
             // restarts and old [Entry] / [Exit] lines from previous days bleed into today's view.
             if (state.recentEvents != null) state.recentEvents.clear();
             // Any positions surviving overnight are dropped (intraday product or operator action).
-            for (String sym : new ArrayList<>(state.openPositions.keySet())) {
+            java.util.Set<String> uniqSymbolsRoll = new java.util.HashSet<>();
+            for (Position p : state.openPositions.values()) {
+                if (p != null && p.symbol != null) uniqSymbolsRoll.add(p.symbol);
+            }
+            for (String sym : uniqSymbolsRoll) {
                 candleAggregator.unsubscribe(sym);
             }
             state.openPositions.clear();
@@ -2080,7 +2239,7 @@ public class Camarilla implements Strategy {
         // boot and subscribed all session. Trade page renders this as a
         // 4-row block (replaces the legacy dynamic ATM chip and the per-pending
         // LOCK chip). Emitted as an empty array until the four legs resolve.
-        java.util.List<Map<String, Object>> setupLegs = new java.util.ArrayList<>(4);
+        java.util.List<Map<String, Object>> setupLegs = new java.util.ArrayList<>(6);
         addSetupLegRow(setupLegs, ActiveSetup.H4_BREAKOUT,  "BULLISH", "H3",
                        state.h4bStrike, state.h4bSymbol, "PE", state.h4bRefLtp);
         addSetupLegRow(setupLegs, ActiveSetup.L3_REVERSAL,  "BULLISH", "L4",
@@ -2089,6 +2248,14 @@ public class Camarilla implements Strategy {
                        state.h3rStrike, state.h3rSymbol, "CE", state.h3rRefLtp);
         addSetupLegRow(setupLegs, ActiveSetup.L4_BREAKDOWN, "BEARISH", "L3",
                        state.l4bStrike, state.l4bSymbol, "CE", state.l4bRefLtp);
+        // Iron-wall strangle legs — share strikes/symbols with H3R + L3R but
+        // their SL is the Camarilla level itself rather than a confirmation
+        // candle extreme. Rendered with "SL H4" / "SL L4" in the Levels modal
+        // so the operator can tell the two pairs apart at a glance.
+        addSetupLegRow(setupLegs, ActiveSetup.H4_STRANGLE,  "BEARISH", "SL H4",
+                       state.h3rStrike, state.h3rSymbol, "CE", state.h3rRefLtp);
+        addSetupLegRow(setupLegs, ActiveSetup.L4_STRANGLE,  "BULLISH", "SL L4",
+                       state.l3rStrike, state.l3rSymbol, "PE", state.l3rRefLtp);
         m.put("setupLegs", setupLegs);
         m.put("watchlistSize",     state.symbolRole.size());
         m.put("watchlistRoles",    new LinkedHashMap<>(state.symbolRole));
@@ -2267,6 +2434,10 @@ public class Camarilla implements Strategy {
         /** YYYY-MM-DD on which the four legs above were resolved. When this
          *  doesn't match today, the scheduled retry refreshes them. */
         public String sessionLegsDayKey = "";
+
+        /** True once today's iron-wall strangle (H4_STRANGLE + L4_STRANGLE) has
+         *  been fired. Reset on day rollover so it re-fires next session. */
+        public boolean strangleFiredToday;
     }
 
     /** v2 two-candle entry — a bar that met the confirmation geometry of one of the
@@ -2413,10 +2584,33 @@ public class Camarilla implements Strategy {
                 if (state.openPositions == null) state.openPositions = new ConcurrentHashMap<>();
                 if (state.todayClosedTrades == null) state.todayClosedTrades = new ArrayList<>();
                 if (state.recentEvents == null) state.recentEvents = new ArrayList<>();
+                migrateOpenPositionsKeyFormat();
             }
         } catch (IOException e) {
             log.warn("[Camarilla] failed to load state: {}", e.getMessage());
         }
+    }
+
+    /** State files written before the iron-wall-strangle commit keyed
+     *  openPositions by raw symbol; the new format is composite
+     *  {@code "setup|symbol"}. Walk the map once after load — any key without
+     *  a {@code |} is rebuilt under its computed posKey. Idempotent. */
+    private void migrateOpenPositionsKeyFormat() {
+        if (state.openPositions == null || state.openPositions.isEmpty()) return;
+        boolean anyOld = false;
+        for (String key : state.openPositions.keySet()) {
+            if (key == null || key.indexOf('|') < 0) { anyOld = true; break; }
+        }
+        if (!anyOld) return;
+        Map<String, Position> migrated = new ConcurrentHashMap<>();
+        for (Map.Entry<String, Position> e : state.openPositions.entrySet()) {
+            Position pos = e.getValue();
+            if (pos == null) continue;
+            migrated.put(posKey(pos), pos);
+        }
+        state.openPositions = migrated;
+        log.info("[Camarilla] migrated {} openPositions entries to composite keys",
+            migrated.size());
     }
 
     private synchronized void saveToDisk() {
@@ -2489,6 +2683,8 @@ public class Camarilla implements Strategy {
             case L3_REVERSAL  -> "L3R";
             case H3_REVERSAL  -> "H3R";
             case L4_BREAKDOWN -> "L4B";
+            case H4_STRANGLE  -> "H4SS";
+            case L4_STRANGLE  -> "L4SS";
             default            -> s.toString();
         };
     }
