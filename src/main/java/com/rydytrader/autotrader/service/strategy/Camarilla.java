@@ -1146,12 +1146,18 @@ public class Camarilla implements Strategy {
             return;
         }
 
+        // Same buffer setting as directional setups — shifts each leg's SL
+        // outward from the structural Camarilla level so 1-tick noise doesn't
+        // chop us out. H4_STRANGLE's SL goes ABOVE H4 (bearish-side trigger);
+        // L4_STRANGLE's SL goes BELOW L4 (bullish-side trigger).
+        double slBuf = Math.max(0, riskSettings.getCamarillaDirectionalSlBufferPoints());
+
         String triggerSym = state.futuresSymbol;
-        // H4_STRANGLE: sells CE at H4-rounded strike; SL = H4 (spot crosses up).
+        // H4_STRANGLE: sells CE at H4-rounded strike; SL = H4 + buffer.
         // No target (Double.NaN propagates through fastSlCheck cleanly).
-        fire(triggerSym, ActiveSetup.H4_STRANGLE, Double.NaN, lv.h4(), null, 0);
-        // L4_STRANGLE: sells PE at L4-rounded strike; SL = L4 (spot crosses down).
-        fire(triggerSym, ActiveSetup.L4_STRANGLE, Double.NaN, lv.l4(), null, 0);
+        fire(triggerSym, ActiveSetup.H4_STRANGLE, Double.NaN, lv.h4() + slBuf, null, 0);
+        // L4_STRANGLE: sells PE at L4-rounded strike; SL = L4 − buffer.
+        fire(triggerSym, ActiveSetup.L4_STRANGLE, Double.NaN, lv.l4() - slBuf, null, 0);
 
         // Set the flag regardless of whether either fire() succeeded — both
         // fire() paths log their own [ERROR] events on failure, and we
@@ -1247,6 +1253,13 @@ public class Camarilla implements Strategy {
      *  used by both the dashboard badge AND the budget gate at entry time. */
     private double exposedRiskNow() {
         double total = 0;
+        // Iron-wall strangle is structurally mutex: spot can't be above H4 AND
+        // below L4 at the same moment, so at most ONE leg can lose on SL. Sum
+        // every other position normally; aggregate the H4_STRANGLE +
+        // L4_STRANGLE pair via max() at the end so the iron-wall contributes
+        // its worse-leg projection, not the double-count.
+        double h4StrangleRisk = 0;
+        double l4StrangleRisk = 0;
         for (Position p : state.openPositions.values()) {
             // v2 positions: futures-distance proxy (entryFutures vs slFutures),
             // scaled by ATM_DELTA so the projection reflects actual option premium
@@ -1263,8 +1276,19 @@ public class Camarilla implements Strategy {
                     ? Math.max(0, p.slLevel - p.entryPrice)
                     : Math.max(0, p.entryPrice - p.slLevel);
             }
-            total += perShare * p.qty;
+            double perPos = perShare * p.qty;
+            if (p.setup == ActiveSetup.H4_STRANGLE) {
+                h4StrangleRisk += perPos;
+            } else if (p.setup == ActiveSetup.L4_STRANGLE) {
+                l4StrangleRisk += perPos;
+            } else {
+                total += perPos;
+            }
         }
+        // Pair contribution: max() collapses both-legs-open to one-leg's risk;
+        // one-leg-open (the other was SL'd) reads through unchanged since the
+        // closed leg's risk is 0; neither-open contributes 0.
+        total += Math.max(h4StrangleRisk, l4StrangleRisk);
         return total;
     }
 
