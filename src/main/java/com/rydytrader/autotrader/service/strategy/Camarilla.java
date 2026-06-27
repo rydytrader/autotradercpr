@@ -1122,6 +1122,23 @@ public class Camarilla implements Strategy {
         if (state.l3rSymbol == null || state.l3rSymbol.isBlank()) return;
         if (state.futuresSymbol == null || state.futuresSymbol.isBlank()) return;
 
+        // Neutral-zone gate: the iron-wall thesis only holds when spot starts
+        // INSIDE the L3-H3 inner band. If price is already above H3 or below
+        // L3 at trading-start, a directional bias is already in play and the
+        // strangle's expected theta capture is dominated by direction risk.
+        // Skip for today and flip the flag — one-shot decision per session.
+        double spot = 0;
+        try { spot = marketDataService.getLtp(NIFTY_SYMBOL); }
+        catch (Exception ignored) {}
+        if (spot <= 0) return;   // can't read spot — retry on next bar
+        if (spot < lv.l3() || spot > lv.h3()) {
+            event("[INFO]", "Strangle", "skipped — spot " + round2(spot)
+                + " outside L3-H3 band [" + round2(lv.l3()) + " … " + round2(lv.h3()) + "]");
+            state.strangleFiredToday = true;
+            saveToDisk();
+            return;
+        }
+
         String triggerSym = state.futuresSymbol;
         // H4_STRANGLE: sells CE at H4-rounded strike; SL = H4 (spot crosses up).
         // No target (Double.NaN propagates through fastSlCheck cleanly).
