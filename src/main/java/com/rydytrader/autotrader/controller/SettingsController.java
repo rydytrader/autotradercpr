@@ -42,6 +42,7 @@ public class SettingsController {
         result.put("camarillaMaxConcurrentPositions", riskSettings.getCamarillaMaxConcurrentPositions(effectiveMode));
         result.put("camarillaOiBiasFilterEnabled", riskSettings.isCamarillaOiBiasFilterEnabled(effectiveMode));
         result.put("camarillaMinRRCheckEnabled",   riskSettings.isCamarillaMinRRCheckEnabled(effectiveMode));
+        result.put("camarillaDirectionalSlBufferPoints", riskSettings.getCamarillaDirectionalSlBufferPoints(effectiveMode));
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
         result.put("maxRiskPerDayPct",    riskSettings.getMaxRiskPerDayPct(effectiveMode));
@@ -89,6 +90,7 @@ public class SettingsController {
             if (body.containsKey("camarillaMaxConcurrentPositions")) riskSettings.setCamarillaMaxConcurrentPositions(effectiveMode, Integer.parseInt(body.get("camarillaMaxConcurrentPositions").toString()));
             if (body.containsKey("camarillaOiBiasFilterEnabled"))    riskSettings.setCamarillaOiBiasFilterEnabled(effectiveMode, Boolean.parseBoolean(body.get("camarillaOiBiasFilterEnabled").toString()));
             if (body.containsKey("camarillaMinRRCheckEnabled"))      riskSettings.setCamarillaMinRRCheckEnabled(effectiveMode, Boolean.parseBoolean(body.get("camarillaMinRRCheckEnabled").toString()));
+            if (body.containsKey("camarillaDirectionalSlBufferPoints")) riskSettings.setCamarillaDirectionalSlBufferPoints(effectiveMode, Double.parseDouble(body.get("camarillaDirectionalSlBufferPoints").toString()));
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
             if (body.containsKey("maxRiskPerDayPct"))  riskSettings.setMaxRiskPerDayPct(effectiveMode, Double.parseDouble(body.get("maxRiskPerDayPct").toString()));

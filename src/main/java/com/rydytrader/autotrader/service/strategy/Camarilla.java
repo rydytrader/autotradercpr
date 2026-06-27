@@ -845,19 +845,26 @@ public class Camarilla implements Strategy {
             // is about to open a position on the traded side and the watcher needs
             // its LTP feed alive. The untraded leg stays subscribed too (cheap;
             // releases on next reconnect via the deferred-unsubscribe contract).
+            // Configurable buffer (NIFTY spot points) widening the SL beyond the
+            // confirmation candle's far extreme. Strangle setups don't go through
+            // this path — they fire via tryFireStrangle with SL at the level.
+            double slBuf = Math.max(0, riskSettings.getCamarillaDirectionalSlBufferPoints());
+
             PendingConfirmation pb = state.pendingBullish;
             if (pb != null && c.isGreen() && c.close() > pb.confirmHigh) {
+                double slWithBuffer = pb.confirmLow - slBuf;
                 event("[INFO]", "Setup", pb.setup + " trigger @ " + round2(c.close())
-                    + " (SL " + round2(pb.confirmLow) + ", TGT " + round2(pb.targetLevel) + ")");
-                fire(triggerSym, pb.setup, pb.targetLevel, pb.confirmLow, c, pb.lockedAtm);
+                    + " (SL " + round2(slWithBuffer) + ", TGT " + round2(pb.targetLevel) + ")");
+                fire(triggerSym, pb.setup, pb.targetLevel, slWithBuffer, c, pb.lockedAtm);
                 state.pendingBullish = null;
                 firedThisBar = true;
             }
             PendingConfirmation pr = state.pendingBearish;
             if (pr != null && c.isRed() && c.close() < pr.confirmLow) {
+                double slWithBuffer = pr.confirmHigh + slBuf;
                 event("[INFO]", "Setup", pr.setup + " trigger @ " + round2(c.close())
-                    + " (SL " + round2(pr.confirmHigh) + ", TGT " + round2(pr.targetLevel) + ")");
-                fire(triggerSym, pr.setup, pr.targetLevel, pr.confirmHigh, c, pr.lockedAtm);
+                    + " (SL " + round2(slWithBuffer) + ", TGT " + round2(pr.targetLevel) + ")");
+                fire(triggerSym, pr.setup, pr.targetLevel, slWithBuffer, c, pr.lockedAtm);
                 state.pendingBearish = null;
                 firedThisBar = true;
             }

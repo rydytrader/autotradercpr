@@ -39,6 +39,7 @@
                         '<option value="FRIDAY">Friday</option>' +
                         '</select><div class="sm-hint">NIFTY weekly expiry day. Drives the Expiry vs Non-Expiry analytics split.</div></div>' +
                     '<div class="sm-field"><label><input type="checkbox" id="sm-camarillaMinRRCheckEnabled"> &nbsp;Min 1:1 R:R Check</label><div class="sm-hint">When ON: skip algo entries whose reward (entry → target) is smaller than risk (entry → SL). Filters out late entries where most of the move is already done. Off bypasses the geometry check — only the daily-risk gate applies.</div></div>' +
+                    '<div class="sm-field"><label>Directional SL Buffer (NIFTY pts)</label><input type="number" id="sm-camarillaDirectionalSlBufferPoints" step="0.5" min="0" max="50"><div class="sm-hint">Widens stop-loss beyond the confirmation candle\'s edge by this many NIFTY spot points. Applies to all four directional setups (H4 Breakout, L3 Reversal, H3 Reversal, L4 Breakdown). Strangle setups unaffected. Default 5.0; set to 0 to use the candle extreme exactly.</div></div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
                     '<div class="sm-field"><label>Brokerage per Order (₹)</label><input type="number" id="sm-brokeragePerOrder" step="1" min="0"><div class="sm-hint">Flat per-order brokerage. Drives charge estimates on every dashboard + session row.</div></div>' +
@@ -207,7 +208,8 @@
             startingCapital:          parseFloat(document.getElementById('sm-startingCapital').value) || 0,
             portfolioMaxRiskPct:      parseFloat(document.getElementById('sm-portfolioMaxRiskPct').value) || 0,
             weeklyExpiryDayOfWeek:    (document.getElementById('sm-weeklyExpiryDayOfWeek').value || 'TUESDAY').trim().toUpperCase(),
-            camarillaMinRRCheckEnabled: !!document.getElementById('sm-camarillaMinRRCheckEnabled').checked
+            camarillaMinRRCheckEnabled: !!document.getElementById('sm-camarillaMinRRCheckEnabled').checked,
+            camarillaDirectionalSlBufferPoints: parseFloat(document.getElementById('sm-camarillaDirectionalSlBufferPoints').value) || 0
         };
         postSettings('/api/settings/risk', body);
     }
@@ -266,6 +268,8 @@
             if (expSel)   expSel.value   = d.weeklyExpiryDayOfWeek || 'TUESDAY';
             var rrChk = document.getElementById('sm-camarillaMinRRCheckEnabled');
             if (rrChk) rrChk.checked = d.camarillaMinRRCheckEnabled !== false;
+            var slBuf = document.getElementById('sm-camarillaDirectionalSlBufferPoints');
+            if (slBuf) slBuf.value = d.camarillaDirectionalSlBufferPoints != null ? d.camarillaDirectionalSlBufferPoints : 5.0;
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {
                 updatePortfolioRiskHint(parseFloat(capInput.value) || 0, parseFloat(pctInput && pctInput.value) || 0);
