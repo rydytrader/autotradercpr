@@ -1236,27 +1236,30 @@ public class Camarilla implements Strategy {
         // when momentum is neutral — strong trend in either direction makes
         // the rejection thesis less likely to hold.
         // RSI unavailable (Wilder not seeded, NIFTY LTP missing) → pass through.
-        try {
-            com.rydytrader.autotrader.service.NiftyRsiService rsi = niftyRsiProvider == null ? null
-                : niftyRsiProvider.getIfAvailable();
-            if (rsi != null) {
-                Double v = rsi.currentRsi();
-                if (v != null) {
-                    double r = v;
-                    boolean ok = switch (setup) {
-                        case H4_BREAKOUT  -> r > 60 && r < 80;
-                        case L4_BREAKDOWN -> r < 40 && r > 20;
-                        case L3_REVERSAL  -> r > 40 && r < 60;
-                        case H3_REVERSAL  -> r > 40 && r < 60;
-                        default            -> true;
-                    };
-                    if (!ok) {
-                        event("[WARNING]", "Momentum", setup + " skip — RSI " + round2(r));
-                        return;
+        // Toggle: camarillaMomentumCheckEnabled (Settings → Camarilla pane).
+        if (riskSettings.isCamarillaMomentumCheckEnabled()) {
+            try {
+                com.rydytrader.autotrader.service.NiftyRsiService rsi = niftyRsiProvider == null ? null
+                    : niftyRsiProvider.getIfAvailable();
+                if (rsi != null) {
+                    Double v = rsi.currentRsi();
+                    if (v != null) {
+                        double r = v;
+                        boolean ok = switch (setup) {
+                            case H4_BREAKOUT  -> r > 60 && r < 80;
+                            case L4_BREAKDOWN -> r < 40 && r > 20;
+                            case L3_REVERSAL  -> r > 40 && r < 60;
+                            case H3_REVERSAL  -> r > 40 && r < 60;
+                            default            -> true;
+                        };
+                        if (!ok) {
+                            event("[WARNING]", "Momentum", setup + " skip — RSI " + round2(r));
+                            return;
+                        }
                     }
                 }
-            }
-        } catch (Exception ignored) {}
+            } catch (Exception ignored) {}
+        }
 
         // ── Risk gates: consumed > maxRisk locks out the day ──
         double maxRisk = riskSettings.getPortfolioMaxDailyLoss();

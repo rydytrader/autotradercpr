@@ -25,6 +25,7 @@
                     '<div class="sm-field"><label>Trading Start Time (HH:mm IST)</label><input type="time" id="sm-camarillaTradingStartTime" step="60"><div class="sm-hint">New entries only fire on candle closes after this time. Default 09:30. Exits and position management run independently.</div></div>' +
                     '<div class="sm-field"><label>Trading End Time (HH:mm IST)</label><input type="time" id="sm-camarillaTradingEndTime" step="60"><div class="sm-hint">No new entries fire on candle closes after this time. Default 13:30. Existing positions keep running until target / SL / squareoff.</div></div>' +
                     '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-camarillaSquareOffTime" step="60"><div class="sm-hint">Hard exit if neither target nor SL has triggered.</div></div>' +
+                    '<div class="sm-field"><label><input type="checkbox" id="sm-camarillaMomentumCheckEnabled"> &nbsp;Momentum (RSI) Check</label><div class="sm-hint">When ON: each directional setup requires NIFTY RSI(14) to sit inside a setup-specific band — breakouts 60-80 (bullish) / 20-40 (bearish), reversals 40-60. Filters out late-entry breakouts at exhaustion and reversals against a strong trend. When OFF: the momentum gate is skipped entirely. Default ON.</div></div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
                     '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline used by the Home analytics page (capital growth %, equity curve, return %). Default ₹10,00,000.</div></div>' +
@@ -184,6 +185,7 @@
             if (g('sm-camarillaTradingStartTime'))  g('sm-camarillaTradingStartTime').value = d.camarillaTradingStartTime || '09:30';
             if (g('sm-camarillaTradingEndTime'))    g('sm-camarillaTradingEndTime').value = d.camarillaTradingEndTime || '13:30';
             if (g('sm-camarillaSquareOffTime'))     g('sm-camarillaSquareOffTime').value = d.camarillaSquareOffTime || '15:15';
+            if (g('sm-camarillaMomentumCheckEnabled')) g('sm-camarillaMomentumCheckEnabled').checked = d.camarillaMomentumCheckEnabled !== false;
             // sm-camarillaMinRRCheckEnabled now lives in the Risk pane — loaded by loadPortfolioRiskValues().
         }).catch(function() {});
     }
@@ -191,11 +193,12 @@
     function saveCamarillaTab() {
         var g = id => document.getElementById(id);
         var body = {
-            camarillaLotsPerLeg:        parseInt(g('sm-camarillaLotsPerLeg').value, 10) || 1,
-            camarillaOrderType:         g('sm-camarillaOrderType').value,
-            camarillaTradingStartTime:  (g('sm-camarillaTradingStartTime').value || '').trim(),
-            camarillaTradingEndTime:    (g('sm-camarillaTradingEndTime').value || '').trim(),
-            camarillaSquareOffTime:     (g('sm-camarillaSquareOffTime').value || '').trim()
+            camarillaLotsPerLeg:         parseInt(g('sm-camarillaLotsPerLeg').value, 10) || 1,
+            camarillaOrderType:          g('sm-camarillaOrderType').value,
+            camarillaTradingStartTime:   (g('sm-camarillaTradingStartTime').value || '').trim(),
+            camarillaTradingEndTime:     (g('sm-camarillaTradingEndTime').value || '').trim(),
+            camarillaSquareOffTime:      (g('sm-camarillaSquareOffTime').value || '').trim(),
+            camarillaMomentumCheckEnabled: !!g('sm-camarillaMomentumCheckEnabled').checked
         };
         postSettings('/api/settings/risk', body);
     }

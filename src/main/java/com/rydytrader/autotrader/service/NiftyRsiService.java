@@ -353,6 +353,14 @@ public class NiftyRsiService {
         rolloverIfNewDay();
         boolean tradingDay = marketHolidayService.isTradingDay();
         List<RsiSample> samples = new ArrayList<>(state.todaySamples);
+        // Skip the live-tip projection on weekends / NSE holidays — there's no
+        // intra-bar movement to track and the tip would freeze at a single
+        // stale value, drawing a misleading flat segment on the chart. The
+        // panel still renders (with whatever closed samples exist) and the
+        // header pill shows the last known RSI value for context.
+        if (!tradingDay) {
+            return new History(state.dayKey, state.lastRsi, samples, false);
+        }
         Double live = currentLiveRsi();
         if (live != null) {
             // Live tip — projected RSI for the in-progress 5-min bar, using
@@ -367,9 +375,9 @@ public class NiftyRsiService {
             if (!alreadyClosed) {
                 samples.add(new RsiSample(tipLabel, round2(live)));
             }
-            return new History(state.dayKey, round2(live), samples, tradingDay);
+            return new History(state.dayKey, round2(live), samples, true);
         }
-        return new History(state.dayKey, state.lastRsi, samples, tradingDay);
+        return new History(state.dayKey, state.lastRsi, samples, true);
     }
 
     /** Public live-RSI accessor for strategy gates. Returns the projected RSI

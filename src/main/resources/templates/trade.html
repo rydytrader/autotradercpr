@@ -1225,20 +1225,11 @@
         refresh() {
             fetch('/api/nifty-rsi/history').then(r => r.ok ? r.json() : null).then(d => {
                 if (!d) return;
-                // Hide the Momentum card on non-trading days (weekends, NSE
-                // holidays). The chart would show a flat line from the last
-                // closed-session bar; better to drop it and let the Event Log
-                // grow to occupy the full row.
-                var card = $('momentumCard');
-                var row  = $('chartRow');
-                if (d.tradingDay === false) {
-                    if (card) card.style.display = 'none';
-                    if (row)  row.style.gridTemplateColumns = '1fr';
-                    return;
-                } else {
-                    if (card) card.style.display = '';
-                    if (row)  row.style.gridTemplateColumns = '1fr 1fr';
-                }
+                // Momentum card stays visible on non-trading days (weekends /
+                // NSE holidays) — the chart simply renders no new RSI samples
+                // since the server skips the live-tip projection when
+                // !tradingDay. Reference lines + last closed-session samples
+                // (if any) still show.
                 var samples = d.samples || [];
                 var labels  = this._buildSessionGrid();
                 var n = labels.length;
@@ -1318,7 +1309,7 @@
 
 <script src="/js/common.js?v=41"></script>
 <script src="/js/ticker.js?v=36"></script>
-<script src="/js/settings-modal.js?v=58"></script>
+<script src="/js/settings-modal.js?v=59"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
 <script src="/js/manual-terminal-modal.js?v=45"></script>
 </body>

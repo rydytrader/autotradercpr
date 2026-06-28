@@ -41,6 +41,7 @@ public class SettingsController {
         result.put("camarillaSquareOffTime",      riskSettings.getCamarillaSquareOffTime(effectiveMode));
         result.put("camarillaMaxConcurrentPositions", riskSettings.getCamarillaMaxConcurrentPositions(effectiveMode));
         result.put("camarillaMinRRCheckEnabled",   riskSettings.isCamarillaMinRRCheckEnabled(effectiveMode));
+        result.put("camarillaMomentumCheckEnabled", riskSettings.isCamarillaMomentumCheckEnabled(effectiveMode));
         result.put("camarillaDirectionalSlBufferPoints", riskSettings.getCamarillaDirectionalSlBufferPoints(effectiveMode));
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
@@ -88,6 +89,7 @@ public class SettingsController {
             if (body.containsKey("camarillaSquareOffTime"))     riskSettings.setCamarillaSquareOffTime(effectiveMode, body.get("camarillaSquareOffTime").toString());
             if (body.containsKey("camarillaMaxConcurrentPositions")) riskSettings.setCamarillaMaxConcurrentPositions(effectiveMode, Integer.parseInt(body.get("camarillaMaxConcurrentPositions").toString()));
             if (body.containsKey("camarillaMinRRCheckEnabled"))      riskSettings.setCamarillaMinRRCheckEnabled(effectiveMode, Boolean.parseBoolean(body.get("camarillaMinRRCheckEnabled").toString()));
+            if (body.containsKey("camarillaMomentumCheckEnabled"))   riskSettings.setCamarillaMomentumCheckEnabled(effectiveMode, Boolean.parseBoolean(body.get("camarillaMomentumCheckEnabled").toString()));
             if (body.containsKey("camarillaDirectionalSlBufferPoints")) riskSettings.setCamarillaDirectionalSlBufferPoints(effectiveMode, Double.parseDouble(body.get("camarillaDirectionalSlBufferPoints").toString()));
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
