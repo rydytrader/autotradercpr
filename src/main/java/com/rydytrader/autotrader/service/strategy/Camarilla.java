@@ -171,6 +171,7 @@ public class Camarilla implements Strategy {
     private final RiskSettingsStore     riskSettings;
     private final ObjectProvider<StrategyTradeRepository> tradeRepoProvider;
     private final ObjectProvider<CamarillaStreamBroker>   streamBrokerProvider;
+    private final ObjectProvider<com.rydytrader.autotrader.service.NiftyRsiService> niftyRsiProvider;
     // Tolerate unknown fields on read so a state file written by a different
     // branch (e.g. a future v3 or v1's older shape) doesn't wipe today's
     // in-memory ring on boot. Without this guard Jackson throws
@@ -196,7 +197,8 @@ public class Camarilla implements Strategy {
                      EventService eventService,
                      RiskSettingsStore riskSettings,
                      ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
-                     ObjectProvider<CamarillaStreamBroker> streamBrokerProvider) {
+                     ObjectProvider<CamarillaStreamBroker> streamBrokerProvider,
+                     ObjectProvider<com.rydytrader.autotrader.service.NiftyRsiService> niftyRsiProvider) {
         this.camarillaService     = camarillaService;
         this.candleAggregator     = candleAggregator;
         this.atmTracker           = atmTracker;
@@ -207,6 +209,7 @@ public class Camarilla implements Strategy {
         this.riskSettings         = riskSettings;
         this.tradeRepoProvider    = tradeRepoProvider;
         this.streamBrokerProvider = streamBrokerProvider;
+        this.niftyRsiProvider     = niftyRsiProvider;
     }
 
     /** Push the latest dashboard state to every SSE-connected browser. No-op when no clients. */
@@ -1220,6 +1223,38 @@ public class Camarilla implements Strategy {
         // MANUAL position on the same Fyers symbol coexists fine — they live
         // under distinct composite keys.
         if (state.openPositions.containsKey(posKey(setup, optionSym))) return;
+
+        // ── Momentum (NIFTY RSI-14) gate ──
+        // Each directional setup requires the spot momentum to point the same
+        // way as the trade thesis. Reversal setups demand the WEAKER threshold
+        // (just not strongly against direction); breakout setups demand the
+        // STRONGER threshold (sustained pressure with the breakout).
+        //   H4_BREAKOUT  (bullish) → RSI > 60
+        //   L4_BREAKDOWN (bearish) → RSI < 40
+        //   L3_REVERSAL  (bullish) → RSI > 40
+        //   H3_REVERSAL  (bearish) → RSI < 60
+        // RSI unavailable (Wilder not seeded, NIFTY LTP missing) → pass through.
+        try {
+            com.rydytrader.autotrader.service.NiftyRsiService rsi = niftyRsiProvider == null ? null
+                : niftyRsiProvider.getIfAvailable();
+            if (rsi != null) {
+                Double v = rsi.currentRsi();
+                if (v != null) {
+                    double r = v;
+                    boolean ok = switch (setup) {
+                        case H4_BREAKOUT  -> r > 60;
+                        case L4_BREAKDOWN -> r < 40;
+                        case L3_REVERSAL  -> r > 40;
+                        case H3_REVERSAL  -> r < 60;
+                        default            -> true;
+                    };
+                    if (!ok) {
+                        event("[WARNING]", "Momentum", setup + " skip — RSI " + round2(r));
+                        return;
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
 
         // ── Risk gates: consumed > maxRisk locks out the day ──
         double maxRisk = riskSettings.getPortfolioMaxDailyLoss();

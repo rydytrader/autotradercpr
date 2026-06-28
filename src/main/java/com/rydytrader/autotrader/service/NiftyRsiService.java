@@ -83,6 +83,7 @@ public class NiftyRsiService {
     private final TokenStore         tokenStore;
     private final FyersProperties    fyersProperties;
     private final MarketDataService  marketDataService;
+    private final MarketHolidayService marketHolidayService;
     private final ObjectMapper       mapper = new ObjectMapper()
         .registerModule(new JavaTimeModule())
         .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)
@@ -95,12 +96,14 @@ public class NiftyRsiService {
                            FyersClientRouter fyersClient,
                            TokenStore tokenStore,
                            FyersProperties fyersProperties,
-                           MarketDataService marketDataService) {
-        this.candleAggregator  = candleAggregator;
-        this.fyersClient       = fyersClient;
-        this.tokenStore        = tokenStore;
-        this.fyersProperties   = fyersProperties;
-        this.marketDataService = marketDataService;
+                           MarketDataService marketDataService,
+                           MarketHolidayService marketHolidayService) {
+        this.candleAggregator      = candleAggregator;
+        this.fyersClient           = fyersClient;
+        this.tokenStore            = tokenStore;
+        this.fyersProperties       = fyersProperties;
+        this.marketDataService     = marketDataService;
+        this.marketHolidayService  = marketHolidayService;
     }
 
     @PostConstruct
@@ -348,6 +351,7 @@ public class NiftyRsiService {
         // RSI value from yesterday's buffer (the bar-close path won't fire
         // until 09:20 IST). No-op when dayKey already matches today.
         rolloverIfNewDay();
+        boolean tradingDay = marketHolidayService.isTradingDay();
         List<RsiSample> samples = new ArrayList<>(state.todaySamples);
         Double live = currentLiveRsi();
         if (live != null) {
@@ -363,9 +367,19 @@ public class NiftyRsiService {
             if (!alreadyClosed) {
                 samples.add(new RsiSample(tipLabel, round2(live)));
             }
-            return new History(state.dayKey, round2(live), samples);
+            return new History(state.dayKey, round2(live), samples, tradingDay);
         }
-        return new History(state.dayKey, state.lastRsi, samples);
+        return new History(state.dayKey, state.lastRsi, samples, tradingDay);
+    }
+
+    /** Public live-RSI accessor for strategy gates. Returns the projected RSI
+     *  for the in-progress bar when LTP is available, otherwise the last
+     *  closed-bar RSI. Returns {@code null} when Wilder isn't seeded yet
+     *  (callers should treat this as "no signal — don't block the trade"). */
+    public synchronized Double currentRsi() {
+        Double live = currentLiveRsi();
+        if (live != null) return round2(live);
+        return state.lastRsi;
     }
 
     /** Project the RSI value for the in-progress 5-min bar using current
@@ -435,7 +449,7 @@ public class NiftyRsiService {
 
     public record Bar(String t, double close) {}
     public record RsiSample(String t, double rsi) {}
-    public record History(String dayKey, Double lastRsi, List<RsiSample> samples) {}
+    public record History(String dayKey, Double lastRsi, List<RsiSample> samples, boolean tradingDay) {}
 
     public static class State {
         public String       dayKey       = LocalDate.now(IST).toString();

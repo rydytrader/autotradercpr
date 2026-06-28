@@ -305,10 +305,12 @@
         </div>
     </div>
 
-    <!-- ── NIFTY RSI / Momentum panel (full width) ────────────────────── -->
-    <div style="margin-top:18px;">
+    <!-- ── Momentum (LEFT) + Event Log (RIGHT) — side by side ──────────── -->
+    <!-- Momentum card hidden via JS on non-trading days; when hidden, the
+         Event Log expands to occupy the full row via id="chartRow" toggle. -->
+    <div id="chartRow" style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px;">
         <!-- NIFTY RSI(14) chart panel — display-only indicator, 5-min closes from 09:15 IST -->
-        <div class="section-card fixed-card-log fade-in" style="margin:0;">
+        <div id="momentumCard" class="section-card fixed-card-log fade-in" style="margin:0;">
             <div class="section-header">
                 <div class="section-title">
                     <div class="section-title-dot" style="background: var(--accent-cyan)"></div>
@@ -332,10 +334,8 @@
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- ── Event Log (full width, below the chart row) ──────────────────── -->
-    <div style="margin-top:18px;">
+        <!-- Event Log -->
         <div class="section-card fixed-card-log fade-in" style="margin:0;">
             <div class="section-header">
                 <div class="section-title">
@@ -1225,6 +1225,20 @@
         refresh() {
             fetch('/api/nifty-rsi/history').then(r => r.ok ? r.json() : null).then(d => {
                 if (!d) return;
+                // Hide the Momentum card on non-trading days (weekends, NSE
+                // holidays). The chart would show a flat line from the last
+                // closed-session bar; better to drop it and let the Event Log
+                // grow to occupy the full row.
+                var card = $('momentumCard');
+                var row  = $('chartRow');
+                if (d.tradingDay === false) {
+                    if (card) card.style.display = 'none';
+                    if (row)  row.style.gridTemplateColumns = '1fr';
+                    return;
+                } else {
+                    if (card) card.style.display = '';
+                    if (row)  row.style.gridTemplateColumns = '1fr 1fr';
+                }
                 var samples = d.samples || [];
                 var labels  = this._buildSessionGrid();
                 var n = labels.length;
