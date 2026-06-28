@@ -712,9 +712,9 @@ public class AnalyticsService {
         return s.isBlank() ? null : s;
     }
 
-    // ── BREAKDOWN: By Setup / AM vs PM / Expiry vs Non-expiry / OI confirmation ─
+    // ── BREAKDOWN: By Setup / AM vs PM / Expiry vs Non-expiry ─
 
-    /** Renders four side-by-side comparison cards. Each card returns
+    /** Renders three side-by-side comparison cards. Each card returns
      *  {@code { groupName: { trades, wins, losses, netPnl, winRate } }}. Filters out the
      *  synthetic OPEN_POSITION_MTM row everywhere. */
     private Map<String, Object> breakdowns(List<Trade> trades) {
@@ -722,7 +722,6 @@ public class AnalyticsService {
         out.put("bySetup",        splitBySetup(trades));
         out.put("amVsPm",         splitAmVsPm(trades));
         out.put("expiryVsNon",    splitExpiryVsNon(trades));
-        out.put("oiConfirmation", splitOiConfirmation(trades));
         return out;
     }
 
@@ -797,39 +796,6 @@ public class AnalyticsService {
         if (s == null || s.isBlank()) return java.time.DayOfWeek.TUESDAY;
         try { return java.time.DayOfWeek.valueOf(s.trim().toUpperCase()); }
         catch (Exception e) { return java.time.DayOfWeek.TUESDAY; }
-    }
-
-    /** 5-tier split keyed on the bias state frozen at entry. Legacy STRONG_* labels collapse
-     *  into the regular Bullish/Bearish buckets so historical rows still appear in the right
-     *  group when the operator opens the card. Unknown catches null / blank / no-baseline-yet. */
-    private Map<String, Map<String, Object>> splitOiConfirmation(List<Trade> trades) {
-        Map<String, List<Trade>> bins = new LinkedHashMap<>();
-        bins.put("Very Bullish", new ArrayList<>());
-        bins.put("Bullish",      new ArrayList<>());
-        bins.put("Neutral",      new ArrayList<>());
-        bins.put("Bearish",      new ArrayList<>());
-        bins.put("Very Bearish", new ArrayList<>());
-        bins.put("Unknown",      new ArrayList<>());
-        for (Trade t : trades) {
-            if (!isClosedStraddle(t)) continue;
-            String bias = t.entryOiBias();
-            if (bias == null || bias.isBlank() || "no-baseline-yet".equals(bias)) {
-                bins.get("Unknown").add(t);
-                continue;
-            }
-            switch (bias) {
-                case "VERY_BULLISH_BIAS"   -> bins.get("Very Bullish").add(t);
-                case "BULLISH_BIAS",
-                     "STRONG_BULLISH_BIAS" -> bins.get("Bullish").add(t);   // legacy + new
-                case "NEUTRAL",
-                     "STALE"               -> bins.get("Neutral").add(t);
-                case "BEARISH_BIAS",
-                     "STRONG_BEARISH_BIAS" -> bins.get("Bearish").add(t);   // legacy + new
-                case "VERY_BEARISH_BIAS"   -> bins.get("Very Bearish").add(t);
-                default                    -> bins.get("Unknown").add(t);
-            }
-        }
-        return summariseBins(bins);
     }
 
     private Map<String, Map<String, Object>> summariseBins(Map<String, List<Trade>> bins) {

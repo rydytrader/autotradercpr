@@ -336,7 +336,7 @@
         </div>
     </div>
 
-    <!-- ── Breakdown cards (By Setup, AM vs PM, Expiry vs Non, OI Confirmation) ── -->
+    <!-- ── Breakdown cards (By Setup, AM vs PM, Expiry vs Non) ── -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-bottom:20px;" id="ahBreakdowns">
         <div class="section-card fade-in" style="margin:0;">
             <div class="section-header">
@@ -358,13 +358,6 @@
             </div>
             <div id="ahBreakdownExpiryVsNon" style="padding:14px 18px;"></div>
         </div>
-        <div class="section-card fade-in" style="margin:0;">
-            <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:#f87171;"></div> OI Confirmation</div>
-                <span class="section-badge" style="font-size:0.58rem;margin-left:auto;">Strong = with-trend</span>
-            </div>
-            <div id="ahBreakdownOiConfirmation" style="padding:14px 18px;"></div>
-        </div>
     </div>
 
     <footer class="page-footer">
@@ -379,7 +372,7 @@
 
 <script src="/js/common.js?v=41"></script>
 <script src="/js/ticker.js?v=4"></script>
-<script src="/js/settings-modal.js?v=57"></script>
+<script src="/js/settings-modal.js?v=58"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
 <script src="/js/manual-terminal-modal.js?v=45"></script>
 
@@ -752,7 +745,6 @@
         renderBin('ahBreakdownBySetup',        b.bySetup        || {});
         renderBin('ahBreakdownAmVsPm',         b.amVsPm         || {});
         renderBin('ahBreakdownExpiryVsNon',    b.expiryVsNon    || {});
-        renderBin('ahBreakdownOiConfirmation', b.oiConfirmation || {});
     }
 
     /** Render a {groupName: {trades, wins, losses, netPnl, winRate}} object as a small

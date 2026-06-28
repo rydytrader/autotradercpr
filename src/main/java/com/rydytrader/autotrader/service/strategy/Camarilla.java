@@ -171,7 +171,6 @@ public class Camarilla implements Strategy {
     private final RiskSettingsStore     riskSettings;
     private final ObjectProvider<StrategyTradeRepository> tradeRepoProvider;
     private final ObjectProvider<CamarillaStreamBroker>   streamBrokerProvider;
-    private final ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> oiTrackerProvider;
     // Tolerate unknown fields on read so a state file written by a different
     // branch (e.g. a future v3 or v1's older shape) doesn't wipe today's
     // in-memory ring on boot. Without this guard Jackson throws
@@ -197,8 +196,7 @@ public class Camarilla implements Strategy {
                      EventService eventService,
                      RiskSettingsStore riskSettings,
                      ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
-                     ObjectProvider<CamarillaStreamBroker> streamBrokerProvider,
-                     ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> oiTrackerProvider) {
+                     ObjectProvider<CamarillaStreamBroker> streamBrokerProvider) {
         this.camarillaService     = camarillaService;
         this.candleAggregator     = candleAggregator;
         this.atmTracker           = atmTracker;
@@ -209,7 +207,6 @@ public class Camarilla implements Strategy {
         this.riskSettings         = riskSettings;
         this.tradeRepoProvider    = tradeRepoProvider;
         this.streamBrokerProvider = streamBrokerProvider;
-        this.oiTrackerProvider    = oiTrackerProvider;
     }
 
     /** Push the latest dashboard state to every SSE-connected browser. No-op when no clients. */
@@ -246,9 +243,10 @@ public class Camarilla implements Strategy {
         catch (Exception ignored) {}
         log.info("[Camarilla] v2 boot — trigger feed subscribed: {}", triggerSym);
 
-        // AtmTracker listener kept for any consumers that still need the locked
-        // AtmChange event (OptionOiSubscriber). Camarilla no longer depends on it
-        // for strike resolution — fire() looks up the pre-resolved session leg.
+        // AtmTracker listener — Camarilla no longer depends on AtmChange for
+        // strike resolution (fire() looks up the pre-resolved session leg),
+        // but keeping the registration is harmless and lets any future
+        // AtmChange consumer hook in cleanly.
         atmTracker.setListener(this::onAtmChange);
         // Best-effort attempt to resolve the four session-static OTM legs
         // immediately on boot. Fails silently when Camarilla levels or the
@@ -770,10 +768,9 @@ public class Camarilla implements Strategy {
     /** v2 — true no-op. The trigger feed (NIFTY spot) is subscribed at boot, and
      *  the ATM strike is computed live from spot LTP at fire() time. AtmTracker's
      *  session-locked baseline is irrelevant to Camarilla; the listener
-     *  registration in boot() is retained only so OptionOiSubscriber and other
-     *  consumers still receive the AtmChange event. Camarilla emits nothing —
-     *  posting "resolved → N" was misleading since the value never gates a
-     *  trade decision. */
+     *  registration in boot() is retained as a harmless hook for any future
+     *  AtmChange consumer. Camarilla emits nothing — posting "resolved → N"
+     *  was misleading since the value never gates a trade decision. */
     public synchronized void onAtmChange(AtmTracker.AtmChange ev) {
         // intentionally empty
     }
@@ -1224,31 +1221,6 @@ public class Camarilla implements Strategy {
         // under distinct composite keys.
         if (state.openPositions.containsKey(posKey(setup, optionSym))) return;
 
-        // ── OI bias gate ──
-        // Block only when the OI tracker reads a STRONG bias (VERY_BULLISH or
-        // VERY_BEARISH). Mild BULLISH / BEARISH and NEUTRAL / STALE always pass
-        // through — the moderate forms aren't conclusive enough to fade.
-        // Toggle: camarillaOiBiasFilterEnabled (Settings → Camarilla pane).
-        if (riskSettings.isCamarillaOiBiasFilterEnabled()) {
-            try {
-                com.rydytrader.autotrader.service.OptionOiTracker oiCheck = oiTrackerProvider == null ? null
-                    : oiTrackerProvider.getIfAvailable();
-                if (oiCheck != null) {
-                    String bias = oiCheck.snapshot().bias();
-                    boolean veryBullish = "VERY_BULLISH_BIAS".equals(bias);
-                    boolean veryBearish = "VERY_BEARISH_BIAS".equals(bias);
-                    if (bullishBet && veryBearish) {
-                        event("[WARNING]", "OiBias", setup + " skip — " + bias);
-                        return;
-                    }
-                    if (!bullishBet && veryBullish) {
-                        event("[WARNING]", "OiBias", setup + " skip — " + bias);
-                        return;
-                    }
-                }
-            } catch (Exception ignored) {}
-        }
-
         // ── Risk gates: consumed > maxRisk locks out the day ──
         double maxRisk = riskSettings.getPortfolioMaxDailyLoss();
         if (maxRisk > 0 && consumedRiskNow() > maxRisk) {
@@ -1337,14 +1309,6 @@ public class Camarilla implements Strategy {
         // deserialisation of older runs. Still stored on the position so any
         // legacy consumer that reads it sees the trade's strike.
         p.lockedAtm = strike;
-        try {
-            com.rydytrader.autotrader.service.OptionOiTracker oiAtEntry = oiTrackerProvider == null ? null
-                : oiTrackerProvider.getIfAvailable();
-            if (oiAtEntry != null) {
-                String b = oiAtEntry.snapshot().bias();
-                p.entryOiBias = b == null ? "" : b;
-            }
-        } catch (Exception ignored) {}
         state.openPositions.put(posKey(p), p);
         state.tradesToday++;
         // Re-subscribe candle listener on the option symbol too — needed so the existing
@@ -1551,16 +1515,6 @@ public class Camarilla implements Strategy {
             p.breakevenMoved  = false;
             p.isShort         = (side == -1);
             p.productType     = resolvedProductType;   // reused by mergeAdd/mergeReduce/closePosition
-
-            try {
-                com.rydytrader.autotrader.service.OptionOiTracker oiAtEntry = oiTrackerProvider == null ? null
-                    : oiTrackerProvider.getIfAvailable();
-                if (oiAtEntry != null) {
-                    String b = oiAtEntry.snapshot().bias();
-                    p.entryOiBias = b == null ? "" : b;
-                }
-            } catch (Exception ignored) {}
-
             state.openPositions.put(posKey(p), p);
             state.tradesToday++;
             saveToDisk();

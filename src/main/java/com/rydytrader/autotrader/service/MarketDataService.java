@@ -83,16 +83,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
     // Ad-hoc subscription set (e.g. open option legs from the rolling straddle)
     private final Set<String> adHocSymbols = ConcurrentHashMap.newKeySet();
 
-    // Last seen OI per fyersSymbol — populated by full-mode ticks for option scrips. Index
-    // ticks carry no OI so this stays absent for those symbols.
-    private final ConcurrentHashMap<String, Long> oiBySymbol = new ConcurrentHashMap<>();
-
-    // OI tick listeners — fired on every tick that carries a non-zero OI value AND that
-    // represents a change vs the previously stored value. Used by OptionOiTracker to
-    // maintain its per-strike OI map without polling.
-    public record OiTick(String fyersSymbol, long oi, long exchFeedTimeSec) {}
-    private final CopyOnWriteArrayList<java.util.function.Consumer<OiTick>> oiListeners = new CopyOnWriteArrayList<>();
-
     // Equity-only flags kept as no-ops for API compatibility with callers we haven't
     // yet stripped (PollingService etc.). Returns false / does nothing.
     private final Set<String> trailedSymbols = ConcurrentHashMap.newKeySet();
@@ -293,31 +283,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         tick.recalcChange();
         dirty = true;
 
-        // Fan out OI changes to registered listeners. Option scrips report OI in every full
-        // update; equity / index ticks carry raw.oi=0 and never trigger a fan-out.
-        if (raw.oi > 0) {
-            Long prev = oiBySymbol.put(fyersSymbol, raw.oi);
-            if (prev == null || prev != raw.oi) {
-                OiTick ev = new OiTick(fyersSymbol, raw.oi, raw.exchFeedTime);
-                for (var l : oiListeners) {
-                    try { l.accept(ev); } catch (Exception e) {
-                        log.warn("[MarketData] OI listener threw: {}", e.getMessage());
-                    }
-                }
-            }
-        }
-    }
-
-    /** Register a listener for OI updates. Called for every option-scrip tick whose OI
-     *  value changed since the last tick for that symbol. */
-    public void addOiListener(java.util.function.Consumer<OiTick> listener) {
-        if (listener != null) oiListeners.add(listener);
-    }
-
-    /** Last seen OI value for {@code fyersSymbol}, or {@code null} if no tick has reported
-     *  OI for it yet (e.g. an index, or a strike that hasn't traded since subscribe). */
-    public Long getOi(String fyersSymbol) {
-        return oiBySymbol.get(fyersSymbol);
     }
 
     @Override

@@ -305,35 +305,8 @@
         </div>
     </div>
 
-    <!-- ── Trend (OI bias) + NIFTY RSI charts (side-by-side) ────────────── -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px;">
-        <!-- OI Bias chart panel -->
-        <div class="section-card fixed-card-log fade-in" style="margin:0;">
-            <div class="section-header">
-                <div class="section-title">
-                    <div class="section-title-dot" style="background: var(--accent-amber, #fbbf24)"></div>
-                    Trend
-                </div>
-                <div style="display:flex;align-items:center;gap:14px;margin-left:auto;font-family:var(--font-mono);font-size:0.72rem;">
-                    <span style="color:var(--text-muted);">ΔCE <span id="hdrOiCe" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                    <span style="color:var(--text-muted);">ΔPE <span id="hdrOiPe" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                    <span style="color:var(--text-muted);">DIFF <span id="hdrOiDiff" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                    <span id="hdrOiTrend"
-                          style="padding:2px 10px;border-radius:999px;font-weight:700;font-size:0.62rem;letter-spacing:0.05em;
-                                 background:rgba(148,163,184,0.10);color:var(--text-secondary);border:1px solid rgba(148,163,184,0.30);">— TREND</span>
-                    <button onclick="OiBiasChart.refresh()" title="Refresh"
-                            style="background:rgba(99,179,237,0.10);border:1px solid rgba(99,179,237,0.30);color:var(--accent-blue);
-                                   padding:4px 10px;border-radius:6px;font-family:var(--font-mono);font-size:0.66rem;font-weight:700;
-                                   letter-spacing:0.05em;cursor:pointer;">⟳</button>
-                </div>
-            </div>
-            <div style="padding:14px 18px;height:100%;display:flex;flex-direction:column;">
-                <div style="position:relative;flex:1;width:100%;min-height:260px;">
-                    <canvas id="oiBiasChart"></canvas>
-                </div>
-            </div>
-        </div>
-
+    <!-- ── NIFTY RSI / Momentum panel (full width) ────────────────────── -->
+    <div style="margin-top:18px;">
         <!-- NIFTY RSI(14) chart panel — display-only indicator, 5-min closes from 09:15 IST -->
         <div class="section-card fixed-card-log fade-in" style="margin:0;">
             <div class="section-header">
@@ -1201,8 +1174,6 @@
         attachLevelsModalLtpUpdates();
         checkConnection();
         setInterval(checkConnection, 5000);
-        OiBiasHeader.start();
-        OiBiasChart.init();
         NiftyRsiChart.init();
         loadWelcome();
     });
@@ -1213,115 +1184,11 @@
 (function() {
     const $ = id => document.getElementById(id);
 
-    function fmtSigned(n) {
-        var v = Number(n);
-        if (!isFinite(v)) return '—';
-        var sign = v >= 0 ? '+' : '';
-        return sign + v.toLocaleString('en-IN');
-    }
-
-    function applyTrendPill(bias) {
-        var el = $('hdrOiTrend');
-        if (!el) return;
-        // 5-tier scheme + STALE override. Legacy STRONG_*_BIAS labels (written by older
-        // tracker versions) map to the regular BEARISH/BULLISH tier for back-compat — no
-        // VERY tier for those since the older classifier never emitted them.
-        var label = '—';
-        var bg = 'rgba(148,163,184,0.10)', fg = 'var(--text-secondary)', bd = 'rgba(148,163,184,0.30)';
-        if (bias === 'STALE') {
-            label = 'STALE';
-        } else if (bias === 'VERY_BEARISH_BIAS') {
-            label = 'VERY BEARISH'; bg = 'rgba(127,29,29,0.20)';  fg = '#fca5a5'; bd = 'rgba(127,29,29,0.45)';
-        } else if (bias === 'BEARISH_BIAS' || bias === 'STRONG_BEARISH_BIAS') {
-            label = 'BEARISH';      bg = 'rgba(248,113,113,0.10)'; fg = '#f87171'; bd = 'rgba(248,113,113,0.35)';
-        } else if (bias === 'VERY_BULLISH_BIAS') {
-            label = 'VERY BULLISH'; bg = 'rgba(6,95,70,0.20)';     fg = '#86efac'; bd = 'rgba(6,95,70,0.45)';
-        } else if (bias === 'BULLISH_BIAS' || bias === 'STRONG_BULLISH_BIAS') {
-            label = 'BULLISH';      bg = 'rgba(52,211,153,0.10)';  fg = '#34d399'; bd = 'rgba(52,211,153,0.35)';
-        } else if (bias === 'NEUTRAL') {
-            label = 'NEUTRAL';
-        }
-        el.textContent = '● ' + label;
-        el.style.background = bg;
-        el.style.color = fg;
-        el.style.borderColor = bd;
-    }
-
-    window.OiBiasHeader = {
-        start() {
-            this.refresh();
-            setInterval(() => this.refresh(), 30000);
-        },
-        refresh() {
-            fetch('/api/option-oi/state').then(r => r.ok ? r.json() : null).then(d => {
-                if (!d) return;
-                $('hdrOiCe').textContent   = fmtSigned(d.cumulativeCeChange);
-                $('hdrOiPe').textContent   = fmtSigned(d.cumulativePeChange);
-                $('hdrOiDiff').textContent = fmtSigned(d.diff);
-                // Color ΔCE / ΔPE by sign
-                $('hdrOiCe').style.color   = (d.cumulativeCeChange || 0) >= 0 ? '#34d399' : '#f87171';
-                $('hdrOiPe').style.color   = (d.cumulativePeChange || 0) >= 0 ? '#34d399' : '#f87171';
-                $('hdrOiDiff').style.color = (d.diff || 0) >= 0 ? '#f87171' : '#34d399';
-                applyTrendPill(d.bias);
-            }).catch(() => {});
-        }
-    };
-
-    let chart = null;
-    window.OiBiasChart = {
-        // Initial draw + auto-refresh loop. Chart snapshots land every minute on the backend
-        // so polling every 15s keeps the line within ~15s of the latest snapshot while not
-        // hammering the server (and most polls between snapshots will just re-render the same
-        // data with negligible cost).
-        init() {
-            this.refresh();
-            setInterval(() => this.refresh(), 15000);
-        },
-        // Manual refresh via the ⟳ button on the chart card.
-        refresh() {
-            fetch('/api/option-oi/history').then(r => r.ok ? r.json() : null).then(d => {
-                if (!d) return;
-                var samples = d.samples || [];
-                var labels  = samples.map(s => s.t);
-                var ceData  = samples.map(s => s.cumCe);
-                var peData  = samples.map(s => s.cumPe);
-                var ctx = $('oiBiasChart').getContext('2d');
-                if (chart) chart.destroy();
-                chart = new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: labels,
-                        datasets: [
-                            { label: 'ΔCE OI', data: ceData, borderColor: '#f87171', backgroundColor: 'rgba(248,113,113,0.10)', tension: 0.25, pointRadius: 0, pointHoverRadius: 4 },
-                            { label: 'ΔPE OI', data: peData, borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,0.10)', tension: 0.25, pointRadius: 0, pointHoverRadius: 4 }
-                        ]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        animation: false,
-                        animations: { colors: false, x: false, y: false },
-                        transitions: { active: { animation: { duration: 0 } } },
-                        interaction: { mode: 'index', intersect: false },
-                        plugins: {
-                            legend: { labels: { color: '#9ca3af', font: { family: 'monospace', size: 11 } } },
-                            tooltip: { callbacks: { label: c => c.dataset.label + ': ' + fmtSigned(c.parsed.y) } }
-                        },
-                        scales: {
-                            x: { ticks: { color: '#6b7280', maxRotation: 0, autoSkipPadding: 12 }, grid: { color: 'rgba(128,128,128,0.08)' } },
-                            y: { ticks: { color: '#6b7280', callback: v => fmtSigned(v) }, grid: { color: 'rgba(128,128,128,0.08)' } }
-                        }
-                    }
-                });
-            }).catch(() => {});
-        }
-    };
-
     // ── NIFTY RSI(14) chart ─────────────────────────────────────────────
     // Display-only indicator: 5-min closes of NSE:NIFTY50-INDEX, Wilder smoothing.
     // Three dotted horizontal reference lines drawn as flat-value datasets — no
     // dependency on the Chart.js annotation plugin so this works with the base
-    // CDN build the OiBiasChart already uses.
+    // Chart.js CDN bundle loaded above.
     //
     // Momentum classifier (trend-following interpretation):
     //   RSI > 60  → BULLISH (green)  — sustained buying pressure
@@ -1437,7 +1304,7 @@
 
 <script src="/js/common.js?v=41"></script>
 <script src="/js/ticker.js?v=36"></script>
-<script src="/js/settings-modal.js?v=57"></script>
+<script src="/js/settings-modal.js?v=58"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
 <script src="/js/manual-terminal-modal.js?v=45"></script>
 </body>

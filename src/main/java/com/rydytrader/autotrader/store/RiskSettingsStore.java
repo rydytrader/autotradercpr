@@ -40,11 +40,6 @@ public class RiskSettingsStore {
         volatile String  camarillaTradingEndTime   = "13:30"; // no new signals after this time (IST); exits keep running
         volatile String  camarillaSquareOffTime   = "15:15";
         volatile int     camarillaMaxConcurrentPositions = 4; // hard cap on simultaneously-open positions
-        /** When true, Camarilla.fire() rejects CE shorts in a STRONG_BULLISH_BIAS market and
-         *  PE shorts in a STRONG_BEARISH_BIAS market — the bias must NOT oppose the trade
-         *  direction. NEUTRAL and STALE pass through (no signal = no block). Off by default
-         *  for the first 1–2 weeks of live observation; flip in settings when confident. */
-        volatile boolean camarillaOiBiasFilterEnabled = false;
         /** Minimum 1:1 reward-to-risk check on algo entries. When true, fire() skips
          *  a trade whose reward (entry → effective target, with L5 clamped at 0 on
          *  expiry) is smaller than its risk (entry → SL). When false, the geometry
@@ -423,7 +418,6 @@ public class RiskSettingsStore {
     public String  getCamarillaTradingEndTime()   { return cfg().camarillaTradingEndTime; }
     public String  getCamarillaSquareOffTime()    { return cfg().camarillaSquareOffTime; }
     public int     getCamarillaMaxConcurrentPositions() { return cfg().camarillaMaxConcurrentPositions; }
-    public boolean isCamarillaOiBiasFilterEnabled()     { return cfg().camarillaOiBiasFilterEnabled; }
     public boolean isCamarillaMinRRCheckEnabled()       { return cfg().camarillaMinRRCheckEnabled; }
     public double  getCamarillaDirectionalSlBufferPoints() { return cfg().camarillaDirectionalSlBufferPoints; }
     public String  getWeeklyExpiryDayOfWeek()           { return cfg().weeklyExpiryDayOfWeek; }
@@ -618,7 +612,6 @@ public class RiskSettingsStore {
     public void setCamarillaTradingEndTime(String v)      { cfg().camarillaTradingEndTime = (v == null || v.isBlank()) ? "13:30" : v.trim(); }
     public void setCamarillaSquareOffTime(String v)       { cfg().camarillaSquareOffTime = v == null ? "" : v.trim(); }
     public void setCamarillaMaxConcurrentPositions(int v) { cfg().camarillaMaxConcurrentPositions = Math.max(1, v); }
-    public void setCamarillaOiBiasFilterEnabled(boolean v) { cfg().camarillaOiBiasFilterEnabled = v; }
     public void setCamarillaMinRRCheckEnabled(boolean v)   { cfg().camarillaMinRRCheckEnabled = v; }
     public void setCamarillaDirectionalSlBufferPoints(double v) {
         cfg().camarillaDirectionalSlBufferPoints = Math.max(0, v);
@@ -732,7 +725,6 @@ public class RiskSettingsStore {
     public String  getCamarillaTradingEndTime(String mode)    { return cfgFor(mode).camarillaTradingEndTime; }
     public String  getCamarillaSquareOffTime(String mode)     { return cfgFor(mode).camarillaSquareOffTime; }
     public int     getCamarillaMaxConcurrentPositions(String mode) { return cfgFor(mode).camarillaMaxConcurrentPositions; }
-    public boolean isCamarillaOiBiasFilterEnabled(String mode)     { return cfgFor(mode).camarillaOiBiasFilterEnabled; }
     public boolean isCamarillaMinRRCheckEnabled(String mode)       { return cfgFor(mode).camarillaMinRRCheckEnabled; }
     public double  getCamarillaDirectionalSlBufferPoints(String mode) { return cfgFor(mode).camarillaDirectionalSlBufferPoints; }
     public String  getWeeklyExpiryDayOfWeek(String mode)           { return cfgFor(mode).weeklyExpiryDayOfWeek; }
@@ -766,7 +758,6 @@ public class RiskSettingsStore {
     public void setCamarillaTradingEndTime(String mode, String v)      { cfgFor(mode).camarillaTradingEndTime = (v == null || v.isBlank()) ? "13:30" : v.trim(); }
     public void setCamarillaSquareOffTime(String mode, String v)       { cfgFor(mode).camarillaSquareOffTime = v == null ? "" : v.trim(); }
     public void setCamarillaMaxConcurrentPositions(String mode, int v) { cfgFor(mode).camarillaMaxConcurrentPositions = Math.max(1, v); }
-    public void setCamarillaOiBiasFilterEnabled(String mode, boolean v) { cfgFor(mode).camarillaOiBiasFilterEnabled = v; }
     public void setCamarillaMinRRCheckEnabled(String mode, boolean v)   { cfgFor(mode).camarillaMinRRCheckEnabled = v; }
     public void setCamarillaDirectionalSlBufferPoints(String mode, double v) {
         cfgFor(mode).camarillaDirectionalSlBufferPoints = Math.max(0, v);
@@ -815,7 +806,6 @@ public class RiskSettingsStore {
             upsert("camarillaTradingEndTime",    c.camarillaTradingEndTime);
             upsert("camarillaSquareOffTime",     c.camarillaSquareOffTime);
             upsert("camarillaMaxConcurrentPositions", String.valueOf(c.camarillaMaxConcurrentPositions));
-            upsert("camarillaOiBiasFilterEnabled", String.valueOf(c.camarillaOiBiasFilterEnabled));
             upsert("camarillaMinRRCheckEnabled",   String.valueOf(c.camarillaMinRRCheckEnabled));
             upsert("camarillaDirectionalSlBufferPoints", String.valueOf(c.camarillaDirectionalSlBufferPoints));
             upsert("weeklyExpiryDayOfWeek", c.weeklyExpiryDayOfWeek);
@@ -987,7 +977,7 @@ public class RiskSettingsStore {
                     case "camarillaH3RevEnabled"           -> { /* retired — both setups always on */ }
                     case "camarillaL4BdEnabled"            -> { /* retired — both setups always on */ }
                     case "camarillaMaxConcurrentPositions" -> c.camarillaMaxConcurrentPositions = Integer.parseInt(v);
-                    case "camarillaOiBiasFilterEnabled" -> c.camarillaOiBiasFilterEnabled = Boolean.parseBoolean(v);
+                    case "camarillaOiBiasFilterEnabled" -> { /* retired with the OI subsystem — silently consumed */ }
                     case "camarillaMinRRCheckEnabled"   -> c.camarillaMinRRCheckEnabled   = Boolean.parseBoolean(v);
                     case "camarillaDirectionalSlBufferPoints" -> c.camarillaDirectionalSlBufferPoints = Double.parseDouble(v);
                     // Retired keys silently consumed so legacy JSON files load without

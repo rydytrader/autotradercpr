@@ -98,8 +98,8 @@ public class AtmTracker {
 
     /** Register an ATM-change listener. The single session-open resolution fires an
      *  {@link AtmChange} with {@code oldAtm = -1} to every registered listener.
-     *  Multiple consumers (Camarilla, OptionOiSubscriber, …) can subscribe
-     *  independently; each receives the bootstrap event. */
+     *  Multiple consumers can subscribe independently; each receives the
+     *  bootstrap event. */
     public void addListener(Consumer<AtmChange> l) {
         if (l != null) listeners.add(l);
     }
