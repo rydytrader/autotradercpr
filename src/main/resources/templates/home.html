@@ -336,13 +336,13 @@
         </div>
     </div>
 
-    <!-- ── Breakdown cards (CE vs PE, AM vs PM, Expiry vs Non, OI Confirmation) ── -->
+    <!-- ── Breakdown cards (By Setup, AM vs PM, Expiry vs Non, OI Confirmation) ── -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-bottom:20px;" id="ahBreakdowns">
         <div class="section-card fade-in" style="margin:0;">
             <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:#a78bfa;"></div> CE vs PE</div>
+                <div class="section-title"><div class="section-title-dot" style="background:#a78bfa;"></div> By Setup</div>
             </div>
-            <div id="ahBreakdownCeVsPe" style="padding:14px 18px;"></div>
+            <div id="ahBreakdownBySetup" style="padding:14px 18px;"></div>
         </div>
         <div class="section-card fade-in" style="margin:0;">
             <div class="section-header">
@@ -749,7 +749,7 @@
     }
 
     function renderBreakdowns(b) {
-        renderBin('ahBreakdownCeVsPe',         b.ceVsPe         || {});
+        renderBin('ahBreakdownBySetup',        b.bySetup        || {});
         renderBin('ahBreakdownAmVsPm',         b.amVsPm         || {});
         renderBin('ahBreakdownExpiryVsNon',    b.expiryVsNon    || {});
         renderBin('ahBreakdownOiConfirmation', b.oiConfirmation || {});

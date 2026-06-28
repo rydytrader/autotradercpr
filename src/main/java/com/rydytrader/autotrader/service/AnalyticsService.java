@@ -712,39 +712,40 @@ public class AnalyticsService {
         return s.isBlank() ? null : s;
     }
 
-    // ── BREAKDOWN: CE vs PE / AM vs PM / Expiry vs Non-expiry / OI confirmation ─
+    // ── BREAKDOWN: By Setup / AM vs PM / Expiry vs Non-expiry / OI confirmation ─
 
     /** Renders four side-by-side comparison cards. Each card returns
      *  {@code { groupName: { trades, wins, losses, netPnl, winRate } }}. Filters out the
      *  synthetic OPEN_POSITION_MTM row everywhere. */
     private Map<String, Object> breakdowns(List<Trade> trades) {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("ceVsPe",         splitCeVsPe(trades));
+        out.put("bySetup",        splitBySetup(trades));
         out.put("amVsPm",         splitAmVsPm(trades));
         out.put("expiryVsNon",    splitExpiryVsNon(trades));
         out.put("oiConfirmation", splitOiConfirmation(trades));
         return out;
     }
 
-    /** 4-way split by leg side AND trade direction. Direction is derived from setup —
-     *  L4_BREAKDOWN / H3_REVERSAL = short (Sell row); H4_BREAKOUT = long (Buy row). */
-    private Map<String, Map<String, Object>> splitCeVsPe(List<Trade> trades) {
+    /** 4-way split by setup tag (H4_BREAKOUT, L3_REVERSAL, H3_REVERSAL, L4_BREAKDOWN).
+     *  Legacy / MANUAL rows fall into the "Other" bin. Each setup card displays the
+     *  display label (e.g. "H4 Breakout") rather than the raw enum name. */
+    private Map<String, Map<String, Object>> splitBySetup(List<Trade> trades) {
         Map<String, List<Trade>> bins = new LinkedHashMap<>();
-        bins.put("CE Sell", new ArrayList<>());
-        bins.put("CE Buy",  new ArrayList<>());
-        bins.put("PE Sell", new ArrayList<>());
-        bins.put("PE Buy",  new ArrayList<>());
-        bins.put("Unknown", new ArrayList<>());
+        bins.put("H4 Breakout",  new ArrayList<>());
+        bins.put("L3 Reversal",  new ArrayList<>());
+        bins.put("H3 Reversal",  new ArrayList<>());
+        bins.put("L4 Breakdown", new ArrayList<>());
+        bins.put("Other",        new ArrayList<>());
         for (Trade t : trades) {
             if (!isClosedStraddle(t)) continue;
-            String s = t.symbol();
-            if (s == null || s.isBlank()) { bins.get("Unknown").add(t); continue; }
             String setup = t.setup() == null ? "" : t.setup();
-            boolean isLong = "H4_BREAKOUT".equals(setup);
-            String up = s.toUpperCase();
-            if (up.endsWith("CE"))      bins.get(isLong ? "CE Buy"  : "CE Sell").add(t);
-            else if (up.endsWith("PE")) bins.get(isLong ? "PE Buy"  : "PE Sell").add(t);
-            else                        bins.get("Unknown").add(t);
+            switch (setup) {
+                case "H4_BREAKOUT"  -> bins.get("H4 Breakout").add(t);
+                case "L3_REVERSAL"  -> bins.get("L3 Reversal").add(t);
+                case "H3_REVERSAL"  -> bins.get("H3 Reversal").add(t);
+                case "L4_BREAKDOWN" -> bins.get("L4 Breakdown").add(t);
+                default              -> bins.get("Other").add(t);
+            }
         }
         return summariseBins(bins);
     }
