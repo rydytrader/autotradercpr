@@ -1225,14 +1225,16 @@ public class Camarilla implements Strategy {
         if (state.openPositions.containsKey(posKey(setup, optionSym))) return;
 
         // ── Momentum (NIFTY RSI-14) gate ──
-        // Each directional setup requires the spot momentum to point the same
-        // way as the trade thesis. Reversal setups demand the WEAKER threshold
-        // (just not strongly against direction); breakout setups demand the
-        // STRONGER threshold (sustained pressure with the breakout).
-        //   H4_BREAKOUT  (bullish) → RSI > 60
-        //   L4_BREAKDOWN (bearish) → RSI < 40
-        //   L3_REVERSAL  (bullish) → RSI > 40
-        //   H3_REVERSAL  (bearish) → RSI < 60
+        // Each directional setup requires NIFTY RSI to sit inside a band that
+        // matches the setup's thesis:
+        //   H4_BREAKOUT  (bullish)  → 60 < RSI < 80   trending up but not exhausted
+        //   L4_BREAKDOWN (bearish)  → 20 < RSI < 40   trending down but not exhausted
+        //   L3_REVERSAL  (bullish)  → 40 < RSI < 60   neutral chop — reversal off L3
+        //   H3_REVERSAL  (bearish)  → 40 < RSI < 60   neutral chop — reversal off H3
+        // Breakouts skip when RSI is overbought/oversold (≥ 80 / ≤ 20) since
+        // that's typically a late, exhaustion-prone entry. Reversals only fire
+        // when momentum is neutral — strong trend in either direction makes
+        // the rejection thesis less likely to hold.
         // RSI unavailable (Wilder not seeded, NIFTY LTP missing) → pass through.
         try {
             com.rydytrader.autotrader.service.NiftyRsiService rsi = niftyRsiProvider == null ? null
@@ -1242,10 +1244,10 @@ public class Camarilla implements Strategy {
                 if (v != null) {
                     double r = v;
                     boolean ok = switch (setup) {
-                        case H4_BREAKOUT  -> r > 60;
-                        case L4_BREAKDOWN -> r < 40;
-                        case L3_REVERSAL  -> r > 40;
-                        case H3_REVERSAL  -> r < 60;
+                        case H4_BREAKOUT  -> r > 60 && r < 80;
+                        case L4_BREAKDOWN -> r < 40 && r > 20;
+                        case L3_REVERSAL  -> r > 40 && r < 60;
+                        case H3_REVERSAL  -> r > 40 && r < 60;
                         default            -> true;
                     };
                     if (!ok) {
