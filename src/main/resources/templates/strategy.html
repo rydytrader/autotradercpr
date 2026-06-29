@@ -53,8 +53,21 @@
         .band-row .left { color:var(--text-primary); font-weight:700; }
         .band-row .right { color:var(--accent-amber, #fbbf24); }
 
-        .doc-svg-wrap { background:var(--bg-primary); border:1px solid var(--border); border-radius:10px; padding:20px; margin:14px 0; display:flex; justify-content:center; }
-        .doc-svg-wrap svg { max-width:100%; height:auto; }
+        .doc-svg-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:14px; margin:14px 0; }
+        .doc-svg-card { background:var(--bg-primary); border:1px solid var(--border); border-radius:10px; padding:16px 18px; }
+        .doc-svg-title { font-family:'Roboto Mono', monospace; font-size:0.72rem; font-weight:700; color:var(--text-muted); letter-spacing:0.08em; text-transform:uppercase; margin:0 0 12px 0; text-align:center; }
+        .doc-svg-card svg { max-width:100%; height:auto; display:block; margin:0 auto; }
+        .doc-svg-card svg text { font-family:'Roboto Mono', monospace; }
+        .doc-svg-card .lvl-pill { font-size:9px; font-weight:700; letter-spacing:0.04em; }
+        .doc-svg-card .lvl-h5  { fill:#fbbf24; }
+        .doc-svg-card .lvl-h4  { fill:#f87171; }
+        .doc-svg-card .lvl-h3  { fill:#fca5a5; }
+        .doc-svg-card .lvl-l3  { fill:#86efac; }
+        .doc-svg-card .lvl-l4  { fill:#34d399; }
+        .doc-svg-card .lvl-l5  { fill:#fbbf24; }
+        .doc-svg-card .ann-bull { fill:#86efac; }
+        .doc-svg-card .ann-bear { fill:#fca5a5; }
+        .doc-svg-card .ann-mute { fill:#9ca3af; }
     </style>
 </head>
 <body style="margin:0;display:flex;flex-direction:column;min-height:100vh;">
@@ -191,97 +204,110 @@
             are extreme-move targets, reached only on strong-trend days.
         </p>
 
-        <div class="doc-svg-wrap">
-            <!-- SVG: Camarilla level layout with two-candle pattern annotation -->
-            <svg viewBox="0 0 720 460" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Camarilla levels with confirmation and trigger candles">
-                <!-- Background grid -->
-                <defs>
-                    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                        <path d="M 40 0 L 0 0 0 40" fill="none" stroke="rgba(128,128,128,0.08)" stroke-width="1"/>
-                    </pattern>
-                </defs>
-                <rect width="720" height="460" fill="url(#grid)"/>
+        <div class="doc-svg-grid">
+            <!-- ─── Reversals (L3 + H3) ──────────────────────────────────── -->
+            <div class="doc-svg-card">
+                <div class="doc-svg-title">Reversals · L3 / H3</div>
+                <svg viewBox="0 0 380 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="L3 and H3 reversal setups">
+                    <defs>
+                        <marker id="arrG1" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#34d399"/></marker>
+                        <marker id="arrR1" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#f87171"/></marker>
+                    </defs>
 
-                <!-- Y-axis label -->
-                <text x="12" y="20" font-family="monospace" font-size="10" fill="#9ca3af">NIFTY</text>
+                    <!-- Level labels (left-side chips) + lines -->
+                    <!-- H4 -->
+                    <rect x="6"  y="35" width="26" height="14" rx="3" fill="rgba(248,113,113,0.12)" stroke="rgba(248,113,113,0.4)" stroke-width="0.8"/>
+                    <text x="19" y="45" class="lvl-pill lvl-h4" text-anchor="middle">H4</text>
+                    <line x1="36" y1="42" x2="372" y2="42" stroke="#f87171" stroke-width="1.6"/>
 
-                <!-- Camarilla levels with labels -->
-                <!-- H5 -->
-                <line x1="60" y1="40"  x2="700" y2="40"  stroke="#fbbf24" stroke-width="1" stroke-dasharray="2,3"/>
-                <text x="700" y="36" font-family="monospace" font-size="11" fill="#fbbf24" text-anchor="end">H5 — extreme</text>
-                <!-- H4 -->
-                <line x1="60" y1="90"  x2="700" y2="90"  stroke="#f87171" stroke-width="2"/>
-                <text x="700" y="86" font-family="monospace" font-size="12" font-weight="700" fill="#f87171" text-anchor="end">H4 — breakout</text>
-                <!-- H3 -->
-                <line x1="60" y1="155" x2="700" y2="155" stroke="#fca5a5" stroke-width="1.5" stroke-dasharray="6,3"/>
-                <text x="700" y="151" font-family="monospace" font-size="11" fill="#fca5a5" text-anchor="end">H3 — upper reversal</text>
-                <!-- PP -->
-                <line x1="60" y1="225" x2="700" y2="225" stroke="#9ca3af" stroke-width="1" stroke-dasharray="3,3"/>
-                <text x="700" y="221" font-family="monospace" font-size="10" fill="#9ca3af" text-anchor="end">PP</text>
-                <!-- L3 -->
-                <line x1="60" y1="295" x2="700" y2="295" stroke="#86efac" stroke-width="1.5" stroke-dasharray="6,3"/>
-                <text x="700" y="291" font-family="monospace" font-size="11" fill="#86efac" text-anchor="end">L3 — lower reversal</text>
-                <!-- L4 -->
-                <line x1="60" y1="360" x2="700" y2="360" stroke="#34d399" stroke-width="2"/>
-                <text x="700" y="356" font-family="monospace" font-size="12" font-weight="700" fill="#34d399" text-anchor="end">L4 — breakdown</text>
-                <!-- L5 -->
-                <line x1="60" y1="410" x2="700" y2="410" stroke="#fbbf24" stroke-width="1" stroke-dasharray="2,3"/>
-                <text x="700" y="406" font-family="monospace" font-size="11" fill="#fbbf24" text-anchor="end">L5 — extreme</text>
+                    <!-- H3 -->
+                    <rect x="6"  y="92" width="26" height="14" rx="3" fill="rgba(252,165,165,0.12)" stroke="rgba(252,165,165,0.4)" stroke-width="0.8"/>
+                    <text x="19" y="102" class="lvl-pill lvl-h3" text-anchor="middle">H3</text>
+                    <line x1="36" y1="99" x2="372" y2="99" stroke="#fca5a5" stroke-width="1.3" stroke-dasharray="6,4"/>
 
-                <!-- Time axis -->
-                <line x1="60" y1="430" x2="700" y2="430" stroke="rgba(148,163,184,0.4)" stroke-width="1"/>
+                    <!-- L3 -->
+                    <rect x="6"  y="180" width="26" height="14" rx="3" fill="rgba(134,239,172,0.12)" stroke="rgba(134,239,172,0.4)" stroke-width="0.8"/>
+                    <text x="19" y="190" class="lvl-pill lvl-l3" text-anchor="middle">L3</text>
+                    <line x1="36" y1="187" x2="372" y2="187" stroke="#86efac" stroke-width="1.3" stroke-dasharray="6,4"/>
 
-                <!-- Confirmation candle (bullish reversal at L3) — left side ~x=180 -->
-                <!-- Wick -->
-                <line x1="180" y1="265" x2="180" y2="320" stroke="#9ca3af" stroke-width="1"/>
-                <!-- Body (red color showing it could be any color now, but rendered as small body) -->
-                <rect x="172" y="270" width="16" height="20" fill="#f87171" stroke="#9ca3af" stroke-width="0.5"/>
-                <!-- Annotation -->
-                <text x="180" y="345" font-family="monospace" font-size="10" fill="#86efac" text-anchor="middle" font-weight="700">CONFIRMATION</text>
-                <text x="180" y="358" font-family="monospace" font-size="9" fill="#9ca3af" text-anchor="middle">low ≤ L3, close &gt; L3</text>
-                <text x="180" y="370" font-family="monospace" font-size="9" fill="#9ca3af" text-anchor="middle">(any color)</text>
+                    <!-- L4 -->
+                    <rect x="6"  y="237" width="26" height="14" rx="3" fill="rgba(52,211,153,0.12)" stroke="rgba(52,211,153,0.4)" stroke-width="0.8"/>
+                    <text x="19" y="247" class="lvl-pill lvl-l4" text-anchor="middle">L4</text>
+                    <line x1="36" y1="244" x2="372" y2="244" stroke="#34d399" stroke-width="1.6"/>
 
-                <!-- Trigger candle (bullish, green, closes above confirm high) — ~x=260 -->
-                <line x1="260" y1="235" x2="260" y2="280" stroke="#9ca3af" stroke-width="1"/>
-                <rect x="252" y="240" width="16" height="35" fill="#34d399" stroke="#9ca3af" stroke-width="0.5"/>
-                <text x="260" y="220" font-family="monospace" font-size="10" fill="#34d399" text-anchor="middle" font-weight="700">TRIGGER</text>
-                <text x="260" y="208" font-family="monospace" font-size="9" fill="#9ca3af" text-anchor="middle">green AND close &gt; confirm high</text>
+                    <!-- BULLISH @ L3: confirmation wicks below L3, recovers above; trigger green close > confirm high -->
+                    <line x1="85"  y1="172" x2="85"  y2="212" stroke="#9ca3af" stroke-width="1"/>
+                    <rect x="78"  y="177" width="14" height="15" fill="#f87171" stroke="#9ca3af" stroke-width="0.5"/>
+                    <line x1="120" y1="152" x2="120" y2="182" stroke="#9ca3af" stroke-width="1"/>
+                    <rect x="113" y="157" width="14" height="22" fill="#34d399" stroke="#9ca3af" stroke-width="0.5"/>
+                    <path d="M 95 178 Q 107 167 111 162" fill="none" stroke="#34d399" stroke-width="1.3" stroke-dasharray="2,2" marker-end="url(#arrG1)"/>
+                    <text x="70" y="270" font-size="9" font-weight="700" class="ann-bull">L3_REVERSAL</text>
+                    <text x="70" y="282" font-size="8" class="ann-mute">sell PE @ L4 · tgt H3</text>
 
-                <!-- Arrow from confirmation to trigger -->
-                <path d="M 200 280 Q 230 250 250 245" fill="none" stroke="#34d399" stroke-width="1.5" stroke-dasharray="3,3" marker-end="url(#arrow)"/>
+                    <!-- BEARISH @ H3: confirmation wicks above H3, fails; trigger red close < confirm low -->
+                    <line x1="270" y1="76"  x2="270" y2="118" stroke="#9ca3af" stroke-width="1"/>
+                    <rect x="263" y="104" width="14" height="13" fill="#34d399" stroke="#9ca3af" stroke-width="0.5"/>
+                    <line x1="305" y1="108" x2="305" y2="138" stroke="#9ca3af" stroke-width="1"/>
+                    <rect x="298" y="113" width="14" height="22" fill="#f87171" stroke="#9ca3af" stroke-width="0.5"/>
+                    <path d="M 280 114 Q 290 128 296 132" fill="none" stroke="#f87171" stroke-width="1.3" stroke-dasharray="2,2" marker-end="url(#arrR1)"/>
+                    <text x="255" y="270" font-size="9" font-weight="700" class="ann-bear">H3_REVERSAL</text>
+                    <text x="255" y="282" font-size="8" class="ann-mute">sell CE @ H4 · tgt L3</text>
+                </svg>
+            </div>
 
-                <!-- Fire annotation -->
-                <text x="305" y="245" font-family="monospace" font-size="10" font-weight="700" fill="#67e8f9">→ FIRE: sell PE near L4</text>
+            <!-- ─── Breakouts (H4 + L4) ──────────────────────────────────── -->
+            <div class="doc-svg-card">
+                <div class="doc-svg-title">Breakouts · H4 / L4</div>
+                <svg viewBox="0 0 380 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="H4 breakout and L4 breakdown setups">
+                    <defs>
+                        <marker id="arrG2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#34d399"/></marker>
+                        <marker id="arrR2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#f87171"/></marker>
+                    </defs>
 
-                <!-- Bearish side: confirmation at H3 + trigger -->
-                <!-- Confirmation -->
-                <line x1="490" y1="135" x2="490" y2="190" stroke="#9ca3af" stroke-width="1"/>
-                <rect x="482" y="160" width="16" height="20" fill="#34d399" stroke="#9ca3af" stroke-width="0.5"/>
-                <text x="490" y="112" font-family="monospace" font-size="10" fill="#fca5a5" text-anchor="middle" font-weight="700">CONFIRMATION</text>
-                <text x="490" y="124" font-family="monospace" font-size="9" fill="#9ca3af" text-anchor="middle">high ≥ H3, close &lt; H3</text>
+                    <!-- H5 -->
+                    <rect x="6"  y="13" width="26" height="14" rx="3" fill="rgba(251,191,36,0.10)" stroke="rgba(251,191,36,0.35)" stroke-width="0.8"/>
+                    <text x="19" y="23" class="lvl-pill lvl-h5" text-anchor="middle">H5</text>
+                    <line x1="36" y1="20" x2="372" y2="20" stroke="#fbbf24" stroke-width="1" stroke-dasharray="3,4"/>
 
-                <!-- Trigger (bearish, red, closes below confirm low) -->
-                <line x1="570" y1="170" x2="570" y2="215" stroke="#9ca3af" stroke-width="1"/>
-                <rect x="562" y="175" width="16" height="35" fill="#f87171" stroke="#9ca3af" stroke-width="0.5"/>
-                <text x="570" y="240" font-family="monospace" font-size="10" fill="#f87171" text-anchor="middle" font-weight="700">TRIGGER</text>
-                <text x="570" y="253" font-family="monospace" font-size="9" fill="#9ca3af" text-anchor="middle">red AND close &lt; confirm low</text>
+                    <!-- H4 -->
+                    <rect x="6"  y="63" width="26" height="14" rx="3" fill="rgba(248,113,113,0.12)" stroke="rgba(248,113,113,0.4)" stroke-width="0.8"/>
+                    <text x="19" y="73" class="lvl-pill lvl-h4" text-anchor="middle">H4</text>
+                    <line x1="36" y1="70" x2="372" y2="70" stroke="#f87171" stroke-width="1.6"/>
 
-                <!-- Arrow from H3 confirmation to trigger -->
-                <path d="M 510 180 Q 540 200 560 200" fill="none" stroke="#f87171" stroke-width="1.5" stroke-dasharray="3,3" marker-end="url(#arrow-red)"/>
+                    <!-- H3 -->
+                    <rect x="6"  y="118" width="26" height="14" rx="3" fill="rgba(252,165,165,0.10)" stroke="rgba(252,165,165,0.35)" stroke-width="0.8"/>
+                    <text x="19" y="128" class="lvl-pill lvl-h3" text-anchor="middle">H3</text>
+                    <line x1="36" y1="125" x2="372" y2="125" stroke="#fca5a5" stroke-width="1.1" stroke-dasharray="6,4"/>
 
-                <!-- Fire annotation bearish -->
-                <text x="615" y="200" font-family="monospace" font-size="10" font-weight="700" fill="#67e8f9">FIRE: sell CE near H4</text>
+                    <!-- L3 -->
+                    <rect x="6"  y="178" width="26" height="14" rx="3" fill="rgba(134,239,172,0.10)" stroke="rgba(134,239,172,0.35)" stroke-width="0.8"/>
+                    <text x="19" y="188" class="lvl-pill lvl-l3" text-anchor="middle">L3</text>
+                    <line x1="36" y1="185" x2="372" y2="185" stroke="#86efac" stroke-width="1.1" stroke-dasharray="6,4"/>
 
-                <!-- Arrow markers -->
-                <defs>
-                    <marker id="arrow" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
-                        <path d="M0,0 L0,6 L9,3 z" fill="#34d399"/>
-                    </marker>
-                    <marker id="arrow-red" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
-                        <path d="M0,0 L0,6 L9,3 z" fill="#f87171"/>
-                    </marker>
-                </defs>
-            </svg>
+                    <!-- L4 -->
+                    <rect x="6"  y="233" width="26" height="14" rx="3" fill="rgba(52,211,153,0.12)" stroke="rgba(52,211,153,0.4)" stroke-width="0.8"/>
+                    <text x="19" y="243" class="lvl-pill lvl-l4" text-anchor="middle">L4</text>
+                    <line x1="36" y1="240" x2="372" y2="240" stroke="#34d399" stroke-width="1.6"/>
+
+                    <!-- BULLISH BREAKOUT @ H4: confirmation closes above H4; trigger green close > confirm high -->
+                    <line x1="85"  y1="55" x2="85"  y2="85" stroke="#9ca3af" stroke-width="1"/>
+                    <rect x="78"  y="58" width="14" height="22" fill="#34d399" stroke="#9ca3af" stroke-width="0.5"/>
+                    <line x1="120" y1="32" x2="120" y2="60" stroke="#9ca3af" stroke-width="1"/>
+                    <rect x="113" y="36" width="14" height="20" fill="#34d399" stroke="#9ca3af" stroke-width="0.5"/>
+                    <path d="M 95 55 Q 107 45 111 41" fill="none" stroke="#34d399" stroke-width="1.3" stroke-dasharray="2,2" marker-end="url(#arrG2)"/>
+                    <text x="70" y="105" font-size="9" font-weight="700" fill="#f87171">H4_BREAKOUT</text>
+                    <text x="70" y="117" font-size="8" class="ann-mute">sell PE @ H3 · tgt H5</text>
+
+                    <!-- BEARISH BREAKDOWN @ L4: confirmation closes below L4; trigger red close < confirm low -->
+                    <line x1="270" y1="225" x2="270" y2="258" stroke="#9ca3af" stroke-width="1"/>
+                    <rect x="263" y="230" width="14" height="22" fill="#f87171" stroke="#9ca3af" stroke-width="0.5"/>
+                    <line x1="305" y1="247" x2="305" y2="270" stroke="#9ca3af" stroke-width="1"/>
+                    <rect x="298" y="250" width="14" height="15" fill="#f87171" stroke="#9ca3af" stroke-width="0.5"/>
+                    <path d="M 280 248 Q 290 256 296 256" fill="none" stroke="#f87171" stroke-width="1.3" stroke-dasharray="2,2" marker-end="url(#arrR2)"/>
+                    <text x="240" y="160" font-size="9" font-weight="700" fill="#34d399">L4_BREAKDOWN</text>
+                    <text x="240" y="172" font-size="8" class="ann-mute">sell CE @ L3 · tgt L5</text>
+                </svg>
+            </div>
         </div>
     </div>
 
