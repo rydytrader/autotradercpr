@@ -233,11 +233,20 @@ public class NiftyRsiService {
         String today = LocalDate.now(IST).toString();
         if (today.equals(state.dayKey)) return;
         if (state.dayKey != null && !state.dayKey.isBlank()) {
-            log.info("[NiftyRsi] day rollover {} → {} — clearing today's samples (Wilder state carries forward)",
+            log.info("[NiftyRsi] day rollover {} → {} — clearing today's samples and forcing Wilder re-seed",
                 state.dayKey, today);
         }
         state.dayKey       = today;
         state.todaySamples = new ArrayList<>();
+        // Force a re-seed on every new trading day. The in-memory recentBars
+        // + Wilder running averages can drift when the bot ran through a
+        // connectivity issue or restart during the prior session — stale-LTP
+        // "flat" bars get persisted and would otherwise poison the next-day
+        // RSI calculation (the first live tick of the new day computes a huge
+        // gap-diff against the stale close, spiking RSI to extremes). The
+        // scheduled retry / boot / onBarClose paths will call seedFromHistory
+        // and rebuild recentBars + averages from genuine Fyers history.
+        state.wilderSeeded = false;
         saveToDisk();
     }
 
