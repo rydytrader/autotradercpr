@@ -378,8 +378,19 @@ public class OptionChainController {
         return "";
     }
 
-    /** Parse the weekly-expiry ISO date out of a Fyers option symbol. Public so other
-     *  controllers (manual terminal, etc.) can share the same parser without duplication. */
+    /** Parse the expiry ISO date out of a Fyers option symbol. Handles both formats
+     *  Fyers uses for NIFTY options:
+     *  <ul>
+     *    <li><b>Weekly</b> {@code NSE:NIFTYYYMDDXXXXXCE} — 1-char month
+     *        (1-9 for Jan-Sep, O/N/D for Oct/Nov/Dec), 2-char day.</li>
+     *    <li><b>Monthly</b> {@code NSE:NIFTYYYMMMXXXXXCE} — 3-letter month abbrev
+     *        (JAN, FEB, ..., DEC). Day defaults to the last Tuesday of that month
+     *        (NIFTY's current weekly+monthly expiry day; coupled with
+     *        {@code weeklyExpiryDayOfWeek} setting).</li>
+     *  </ul>
+     *  Disambiguation: try the 3-letter monthly format first (chars [2..5] match a
+     *  known month abbrev), else fall through to single-char weekly format.
+     *  Public so other controllers (manual terminal, etc.) share the same parser. */
     public static String parseExpiryFromSymbol(String fyersSymbol) {
         if (fyersSymbol == null) return "";
         try {
@@ -388,6 +399,16 @@ public class OptionChainController {
             String tail = fyersSymbol.substring(hash + 5);
             if (tail.length() < 5) return "";
             int yr = Integer.parseInt(tail.substring(0, 2));
+            int yearFull = 2000 + yr;
+            // Monthly format first (3-letter month abbrev).
+            if (tail.length() >= 5) {
+                String maybeMonth = tail.substring(2, 5);
+                Integer monthIdx = MONTH_ABBREVS.get(maybeMonth);
+                if (monthIdx != null) {
+                    return lastTuesdayOfMonth(yearFull, monthIdx).toString();
+                }
+            }
+            // Weekly format fallback (1-char month + 2-char day).
             char monthCh = tail.charAt(2);
             int month;
             if (monthCh >= '1' && monthCh <= '9') month = monthCh - '0';
@@ -396,10 +417,27 @@ public class OptionChainController {
             else if (monthCh == 'D') month = 12;
             else return "";
             int day = Integer.parseInt(tail.substring(3, 5));
-            return LocalDate.of(2000 + yr, month, day).toString();
+            return LocalDate.of(yearFull, month, day).toString();
         } catch (Exception e) {
             return "";
         }
+    }
+
+    private static final Map<String, Integer> MONTH_ABBREVS = Map.ofEntries(
+        Map.entry("JAN", 1),  Map.entry("FEB", 2),  Map.entry("MAR", 3),
+        Map.entry("APR", 4),  Map.entry("MAY", 5),  Map.entry("JUN", 6),
+        Map.entry("JUL", 7),  Map.entry("AUG", 8),  Map.entry("SEP", 9),
+        Map.entry("OCT", 10), Map.entry("NOV", 11), Map.entry("DEC", 12)
+    );
+
+    /** Last Tuesday of the given month — NIFTY's current weekly + monthly expiry day. */
+    private static LocalDate lastTuesdayOfMonth(int year, int month) {
+        LocalDate d = LocalDate.of(year, month, 1)
+            .withDayOfMonth(LocalDate.of(year, month, 1).lengthOfMonth());
+        while (d.getDayOfWeek() != java.time.DayOfWeek.TUESDAY) {
+            d = d.minusDays(1);
+        }
+        return d;
     }
 
     private static String textField(JsonNode row, String... keys) {
@@ -434,13 +472,19 @@ public class OptionChainController {
     // ── Greeks (Fyers doesn't ship them — compute via shared BSM utility) ──────
 
     /** Years to expiry, computed from any quoted symbol in the chain. Returns 0 when no
-     *  symbol parses cleanly. Uses a 365-day calendar (NIFTY's convention). */
+     *  symbol parses cleanly. Uses a 365-day calendar (NIFTY's convention). Logs a sample
+     *  unparseable symbol so the operator can extend {@link #parseExpiryFromSymbol} when
+     *  Fyers introduces a new format. */
     private double resolveYearsToExpiry(NavigableMap<Long, Leg[]> byStrike) {
+        String sampleUnparsed = null;
         for (Leg[] pair : byStrike.values()) {
             for (Leg l : pair) {
                 if (l == null || l.symbol == null || l.symbol.isEmpty()) continue;
                 String exp = parseExpiryFromSymbol(l.symbol);
-                if (exp.isEmpty()) continue;
+                if (exp.isEmpty()) {
+                    if (sampleUnparsed == null) sampleUnparsed = l.symbol;
+                    continue;
+                }
                 try {
                     LocalDate expDate = LocalDate.parse(exp);
                     LocalDate today   = LocalDate.now();
@@ -449,6 +493,11 @@ public class OptionChainController {
                     return days / 365.0;
                 } catch (Exception ignored) {}
             }
+        }
+        if (sampleUnparsed != null) {
+            log.warn("[option-chain] expiry parse failed for all chain symbols (sample: {}). "
+                + "Delta column will show — for every row. Extend parseExpiryFromSymbol to handle this format.",
+                sampleUnparsed);
         }
         return 0;
     }
