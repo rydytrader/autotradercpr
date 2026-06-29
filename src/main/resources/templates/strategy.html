@@ -53,24 +53,40 @@
         .band-row .left { color:var(--text-primary); font-weight:700; }
         .band-row .right { color:var(--accent-amber, #fbbf24); }
 
-        /* Camarilla formula table — polished layout with colored level chips */
-        .formula-table { display:flex; flex-direction:column; gap:6px; margin:14px 0 4px 0; }
-        .formula-row { display:grid; grid-template-columns:46px 1fr auto; gap:14px; align-items:center; padding:10px 14px; background:var(--bg-primary); border:1px solid var(--border); border-radius:8px; }
-        .formula-chip { font-family:'Roboto Mono', monospace; font-size:0.74rem; font-weight:700; letter-spacing:0.04em; text-align:center; padding:4px 0; border-radius:4px; border:1px solid transparent; }
+        /* Camarilla formula table — six levels in a single horizontal row */
+        .formula-table { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin:14px 0 4px 0; }
+        .formula-row { display:flex; flex-direction:column; align-items:center; gap:8px; padding:12px 8px; background:var(--bg-primary); border:1px solid var(--border); border-radius:8px; }
+        .formula-chip { font-family:'Roboto Mono', monospace; font-size:0.74rem; font-weight:700; letter-spacing:0.04em; text-align:center; padding:4px 12px; border-radius:4px; border:1px solid transparent; }
         .formula-chip.h5 { color:#fbbf24; background:rgba(251,191,36,0.10); border-color:rgba(251,191,36,0.35); }
         .formula-chip.h4 { color:#f87171; background:rgba(248,113,113,0.12); border-color:rgba(248,113,113,0.40); }
         .formula-chip.h3 { color:#fca5a5; background:rgba(252,165,165,0.10); border-color:rgba(252,165,165,0.35); }
         .formula-chip.l3 { color:#86efac; background:rgba(134,239,172,0.10); border-color:rgba(134,239,172,0.35); }
         .formula-chip.l4 { color:#34d399; background:rgba(52,211,153,0.12); border-color:rgba(52,211,153,0.40); }
         .formula-chip.l5 { color:#fbbf24; background:rgba(251,191,36,0.10); border-color:rgba(251,191,36,0.35); }
-        .formula-eq   { font-family:'Roboto Mono', monospace; font-size:0.86rem; font-weight:600; color:var(--text-primary); letter-spacing:0.02em; }
-        .formula-role { font-family:'Roboto Mono', monospace; font-size:0.68rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.08em; }
+        .formula-eq   { font-family:'Roboto Mono', monospace; font-size:0.86rem; font-weight:600; color:var(--text-primary); letter-spacing:0.02em; text-align:center; white-space:nowrap; }
+        .formula-role { font-family:'Roboto Mono', monospace; font-size:0.6rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; text-align:center; line-height:1.3; }
         .formula-k    { background:rgba(125,211,252,0.10); border:1px solid rgba(125,211,252,0.30); border-radius:6px; padding:6px 12px; font-family:'Roboto Mono', monospace; font-size:0.78rem; color:var(--accent-cyan); display:inline-block; margin-bottom:6px; }
+        /* Collapse to a 3×2 grid on narrow screens so equations don't overflow */
+        @media (max-width: 760px) {
+            .formula-table { grid-template-columns:repeat(3,1fr); }
+        }
 
-        .doc-svg-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:14px; margin:14px 0; }
+        .doc-svg-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(380px,1fr)); gap:16px; margin:14px 0; }
         .doc-svg-card { background:var(--bg-primary); border:1px solid var(--border); border-radius:10px; padding:16px 18px; }
-        .doc-svg-title { font-family:'Roboto Mono', monospace; font-size:0.72rem; font-weight:700; color:var(--text-muted); letter-spacing:0.08em; text-transform:uppercase; margin:0 0 12px 0; text-align:center; }
-        .doc-svg-card svg { max-width:100%; height:auto; display:block; margin:0 auto; }
+        .doc-svg-title { font-family:'Roboto Mono', monospace; font-size:0.7rem; font-weight:700; color:var(--text-muted); letter-spacing:0.08em; text-transform:uppercase; margin:0 0 12px 0; text-align:center; }
+        .doc-svg-card svg { max-width:420px; width:100%; height:auto; display:block; margin:0 auto; }
+
+        /* Setup section: SVG diagram on left + two setup cards on the right (stacks on narrow screens) */
+        .setup-with-diagram { display:grid; grid-template-columns:minmax(340px,1.2fr) 1fr 1fr; gap:14px; align-items:stretch; margin:10px 0 18px 0; }
+        @media (max-width: 920px) {
+            .setup-with-diagram { grid-template-columns:1fr 1fr; }
+            .setup-with-diagram > .doc-svg-card { grid-column:1 / -1; }
+        }
+        @media (max-width: 560px) {
+            .setup-with-diagram { grid-template-columns:1fr; }
+        }
+        .setup-with-diagram .setup-card { margin:0; }
+        .doc-inline-chip { background:rgba(125,211,252,0.10); border:1px solid rgba(125,211,252,0.30); border-radius:5px; padding:1px 8px; font-family:'Roboto Mono', monospace; font-size:0.86em; color:var(--accent-cyan); display:inline-block; vertical-align:baseline; margin:0 2px; }
         .doc-svg-card svg text { font-family:'Roboto Mono', monospace; }
         .doc-svg-card .lvl-pill { font-size:9px; font-weight:700; letter-spacing:0.04em; }
         .doc-svg-card .lvl-h5  { fill:#fbbf24; }
@@ -198,10 +214,9 @@
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-amber, #fbbf24);"></span> Camarilla Pivots</h2>
         <p class="doc-p">
             Computed nightly from the previous day's <strong>H</strong>igh, <strong>L</strong>ow,
-            and <strong>C</strong>lose. The pivot range
+            and <strong>C</strong>lose. The pivot range <span class="doc-inline-chip">k = 1.1 × (H − L)</span>
+            sets the scale of all six trading levels:
         </p>
-        <div class="formula-k">k = 1.1 × (H − L)</div>
-        <p class="doc-p">sets the scale of all six trading levels:</p>
         <div class="formula-table">
             <div class="formula-row">
                 <div class="formula-chip h5">H5</div>
@@ -240,39 +255,40 @@
             a sustained break beyond them signals a directional regime change. <strong>H5 / L5</strong>
             are extreme-move targets, reached only on strong-trend days.
         </p>
+    </div>
 
-        <div class="doc-svg-grid">
-            <!-- ─── Reversals (L3 + H3) ──────────────────────────────────── -->
-            <div class="doc-svg-card">
-                <div class="doc-svg-title">Reversals · L3 / H3</div>
+    <!-- ── The Four Setups (paired with diagrams) ── -->
+    <div class="doc-section fade-in">
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-purple, #a78bfa);"></span> The Four Setups</h2>
+        <p class="doc-p">
+            All setups go SHORT an OTM option. Bullish bets sell PUTs (profit if NIFTY stays
+            above the put's strike); bearish bets sell CALLs (profit if NIFTY stays below the
+            call's strike). The bot picks the OTM leg at session-start and holds the same four
+            symbols all day.
+        </p>
+
+        <!-- Reversals subsection -->
+        <h3 class="doc-h3" style="margin-top:22px;">Reversals · L3 / H3</h3>
+        <div class="setup-with-diagram">
+            <div class="doc-svg-card" style="margin:0;">
                 <svg viewBox="0 0 380 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="L3 and H3 reversal setups">
                     <defs>
                         <marker id="arrG1" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#34d399"/></marker>
                         <marker id="arrR1" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#f87171"/></marker>
                     </defs>
-
-                    <!-- Level labels (left-side chips) + lines -->
-                    <!-- H4 -->
                     <rect x="6"  y="35" width="26" height="14" rx="3" fill="rgba(248,113,113,0.12)" stroke="rgba(248,113,113,0.4)" stroke-width="0.8"/>
                     <text x="19" y="45" class="lvl-pill lvl-h4" text-anchor="middle">H4</text>
                     <line x1="36" y1="42" x2="372" y2="42" stroke="#f87171" stroke-width="1.6"/>
-
-                    <!-- H3 -->
                     <rect x="6"  y="92" width="26" height="14" rx="3" fill="rgba(252,165,165,0.12)" stroke="rgba(252,165,165,0.4)" stroke-width="0.8"/>
                     <text x="19" y="102" class="lvl-pill lvl-h3" text-anchor="middle">H3</text>
                     <line x1="36" y1="99" x2="372" y2="99" stroke="#fca5a5" stroke-width="1.3" stroke-dasharray="6,4"/>
-
-                    <!-- L3 -->
                     <rect x="6"  y="180" width="26" height="14" rx="3" fill="rgba(134,239,172,0.12)" stroke="rgba(134,239,172,0.4)" stroke-width="0.8"/>
                     <text x="19" y="190" class="lvl-pill lvl-l3" text-anchor="middle">L3</text>
                     <line x1="36" y1="187" x2="372" y2="187" stroke="#86efac" stroke-width="1.3" stroke-dasharray="6,4"/>
-
-                    <!-- L4 -->
                     <rect x="6"  y="237" width="26" height="14" rx="3" fill="rgba(52,211,153,0.12)" stroke="rgba(52,211,153,0.4)" stroke-width="0.8"/>
                     <text x="19" y="247" class="lvl-pill lvl-l4" text-anchor="middle">L4</text>
                     <line x1="36" y1="244" x2="372" y2="244" stroke="#34d399" stroke-width="1.6"/>
-
-                    <!-- BULLISH @ L3: confirmation wicks below L3, recovers above; trigger green close > confirm high -->
+                    <!-- BULLISH @ L3 -->
                     <line x1="85"  y1="172" x2="85"  y2="212" stroke="#9ca3af" stroke-width="1"/>
                     <rect x="78"  y="177" width="14" height="15" fill="#f87171" stroke="#9ca3af" stroke-width="0.5"/>
                     <line x1="120" y1="152" x2="120" y2="182" stroke="#9ca3af" stroke-width="1"/>
@@ -280,8 +296,7 @@
                     <path d="M 95 178 Q 107 167 111 162" fill="none" stroke="#34d399" stroke-width="1.3" stroke-dasharray="2,2" marker-end="url(#arrG1)"/>
                     <text x="70" y="270" font-size="9" font-weight="700" class="ann-bull">L3_REVERSAL</text>
                     <text x="70" y="282" font-size="8" class="ann-mute">sell PE @ L4 · tgt H3</text>
-
-                    <!-- BEARISH @ H3: confirmation wicks above H3, fails; trigger red close < confirm low -->
+                    <!-- BEARISH @ H3 -->
                     <line x1="270" y1="76"  x2="270" y2="118" stroke="#9ca3af" stroke-width="1"/>
                     <rect x="263" y="104" width="14" height="13" fill="#34d399" stroke="#9ca3af" stroke-width="0.5"/>
                     <line x1="305" y1="108" x2="305" y2="138" stroke="#9ca3af" stroke-width="1"/>
@@ -291,42 +306,49 @@
                     <text x="255" y="282" font-size="8" class="ann-mute">sell CE @ H4 · tgt L3</text>
                 </svg>
             </div>
+            <div class="setup-card bull">
+                <div class="setup-tag">Bullish · Mean-reversion</div>
+                <div class="setup-name">L3_REVERSAL</div>
+                <div class="setup-body">
+                    Triggers when NIFTY wicks below <strong>L3</strong> and recovers.<br>
+                    Sells <code>PE near L4</code> · Target <strong>H3</strong> · SL = confirmation candle low + buffer
+                </div>
+            </div>
+            <div class="setup-card bear">
+                <div class="setup-tag">Bearish · Mean-reversion</div>
+                <div class="setup-name">H3_REVERSAL</div>
+                <div class="setup-body">
+                    Triggers when NIFTY wicks above <strong>H3</strong> and rejects.<br>
+                    Sells <code>CE near H4</code> · Target <strong>L3</strong> · SL = confirmation candle high + buffer
+                </div>
+            </div>
+        </div>
 
-            <!-- ─── Breakouts (H4 + L4) ──────────────────────────────────── -->
-            <div class="doc-svg-card">
-                <div class="doc-svg-title">Breakouts · H4 / L4</div>
+        <!-- Breakouts subsection -->
+        <h3 class="doc-h3" style="margin-top:24px;">Breakouts · H4 / L4</h3>
+        <div class="setup-with-diagram">
+            <div class="doc-svg-card" style="margin:0;">
                 <svg viewBox="0 0 380 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="H4 breakout and L4 breakdown setups">
                     <defs>
                         <marker id="arrG2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#34d399"/></marker>
                         <marker id="arrR2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#f87171"/></marker>
                     </defs>
-
-                    <!-- H5 -->
                     <rect x="6"  y="13" width="26" height="14" rx="3" fill="rgba(251,191,36,0.10)" stroke="rgba(251,191,36,0.35)" stroke-width="0.8"/>
                     <text x="19" y="23" class="lvl-pill lvl-h5" text-anchor="middle">H5</text>
                     <line x1="36" y1="20" x2="372" y2="20" stroke="#fbbf24" stroke-width="1" stroke-dasharray="3,4"/>
-
-                    <!-- H4 -->
                     <rect x="6"  y="63" width="26" height="14" rx="3" fill="rgba(248,113,113,0.12)" stroke="rgba(248,113,113,0.4)" stroke-width="0.8"/>
                     <text x="19" y="73" class="lvl-pill lvl-h4" text-anchor="middle">H4</text>
                     <line x1="36" y1="70" x2="372" y2="70" stroke="#f87171" stroke-width="1.6"/>
-
-                    <!-- H3 -->
                     <rect x="6"  y="118" width="26" height="14" rx="3" fill="rgba(252,165,165,0.10)" stroke="rgba(252,165,165,0.35)" stroke-width="0.8"/>
                     <text x="19" y="128" class="lvl-pill lvl-h3" text-anchor="middle">H3</text>
                     <line x1="36" y1="125" x2="372" y2="125" stroke="#fca5a5" stroke-width="1.1" stroke-dasharray="6,4"/>
-
-                    <!-- L3 -->
                     <rect x="6"  y="178" width="26" height="14" rx="3" fill="rgba(134,239,172,0.10)" stroke="rgba(134,239,172,0.35)" stroke-width="0.8"/>
                     <text x="19" y="188" class="lvl-pill lvl-l3" text-anchor="middle">L3</text>
                     <line x1="36" y1="185" x2="372" y2="185" stroke="#86efac" stroke-width="1.1" stroke-dasharray="6,4"/>
-
-                    <!-- L4 -->
                     <rect x="6"  y="233" width="26" height="14" rx="3" fill="rgba(52,211,153,0.12)" stroke="rgba(52,211,153,0.4)" stroke-width="0.8"/>
                     <text x="19" y="243" class="lvl-pill lvl-l4" text-anchor="middle">L4</text>
                     <line x1="36" y1="240" x2="372" y2="240" stroke="#34d399" stroke-width="1.6"/>
-
-                    <!-- BULLISH BREAKOUT @ H4: confirmation closes above H4; trigger green close > confirm high -->
+                    <!-- BULLISH BREAKOUT @ H4 -->
                     <line x1="85"  y1="55" x2="85"  y2="85" stroke="#9ca3af" stroke-width="1"/>
                     <rect x="78"  y="58" width="14" height="22" fill="#34d399" stroke="#9ca3af" stroke-width="0.5"/>
                     <line x1="120" y1="32" x2="120" y2="60" stroke="#9ca3af" stroke-width="1"/>
@@ -334,8 +356,7 @@
                     <path d="M 95 55 Q 107 45 111 41" fill="none" stroke="#34d399" stroke-width="1.3" stroke-dasharray="2,2" marker-end="url(#arrG2)"/>
                     <text x="70" y="105" font-size="9" font-weight="700" fill="#f87171">H4_BREAKOUT</text>
                     <text x="70" y="117" font-size="8" class="ann-mute">sell PE @ H3 · tgt H5</text>
-
-                    <!-- BEARISH BREAKDOWN @ L4: confirmation closes below L4; trigger red close < confirm low -->
+                    <!-- BEARISH BREAKDOWN @ L4 -->
                     <line x1="270" y1="225" x2="270" y2="258" stroke="#9ca3af" stroke-width="1"/>
                     <rect x="263" y="230" width="14" height="22" fill="#f87171" stroke="#9ca3af" stroke-width="0.5"/>
                     <line x1="305" y1="247" x2="305" y2="270" stroke="#9ca3af" stroke-width="1"/>
@@ -345,41 +366,12 @@
                     <text x="240" y="172" font-size="8" class="ann-mute">sell CE @ L3 · tgt L5</text>
                 </svg>
             </div>
-        </div>
-    </div>
-
-    <!-- ── The Four Setups ── -->
-    <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-purple, #a78bfa);"></span> The Four Setups</h2>
-        <p class="doc-p">
-            All setups go SHORT an OTM option. Bullish bets sell PUTs (profit if NIFTY stays
-            above the put's strike); bearish bets sell CALLs (profit if NIFTY stays below the
-            call's strike). The bot picks the OTM leg at session-start and holds the same four
-            symbols all day.
-        </p>
-        <div class="setup-grid">
-            <div class="setup-card bull">
-                <div class="setup-tag">Bullish · Mean-reversion</div>
-                <div class="setup-name">L3_REVERSAL</div>
-                <div class="setup-body">
-                    Triggers when NIFTY wicks below <strong>L3</strong> and recovers.<br>
-                    Sells <code>PE near L4</code> · Target <strong>H3</strong> · SL = confirmation candle low + buffer
-                </div>
-            </div>
             <div class="setup-card bull">
                 <div class="setup-tag">Bullish · Trend continuation</div>
                 <div class="setup-name">H4_BREAKOUT</div>
                 <div class="setup-body">
                     Triggers when NIFTY breaks above <strong>H4</strong>.<br>
                     Sells <code>PE near H3</code> · Target <strong>H5</strong> · SL = confirmation candle low + buffer
-                </div>
-            </div>
-            <div class="setup-card bear">
-                <div class="setup-tag">Bearish · Mean-reversion</div>
-                <div class="setup-name">H3_REVERSAL</div>
-                <div class="setup-body">
-                    Triggers when NIFTY wicks above <strong>H3</strong> and rejects.<br>
-                    Sells <code>CE near H4</code> · Target <strong>L3</strong> · SL = confirmation candle high + buffer
                 </div>
             </div>
             <div class="setup-card bear">
