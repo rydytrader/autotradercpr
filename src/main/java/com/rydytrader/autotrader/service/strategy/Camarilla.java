@@ -1317,7 +1317,7 @@ public class Camarilla implements Strategy {
 
         log.info("[Camarilla v2] {} fired — sell {} qty={} (triggerFut={}, entryFut={}, target={}, sl={})",
             setup, optionSym, qty, triggerSymbol, entryFutures, targetFutures, slFutures);
-        event("[INFO]", "AUTO ENTRY", "sell " + optionSym + " ×" + (qty / LOT_SIZE)
+        event("[SUCCESS]", "AUTO ENTRY", "sell " + optionSym + " ×" + (qty / LOT_SIZE)
             + "L (TGT " + round2(targetFutures) + ", SL " + round2(slFutures) + ")");
 
         OrderDTO order = orderService.placeOrder(optionSym, qty, orderSide, 0, productType);
