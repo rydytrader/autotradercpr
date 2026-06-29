@@ -38,7 +38,7 @@
                         '<option value="THURSDAY">Thursday</option>' +
                         '<option value="FRIDAY">Friday</option>' +
                         '</select><div class="sm-hint">NIFTY weekly expiry day. Drives the Expiry vs Non-Expiry analytics split.</div></div>' +
-                    '<div class="sm-field"><label><input type="checkbox" id="sm-camarillaMinRRCheckEnabled"> &nbsp;Min 1:1 R:R Check</label><div class="sm-hint">When ON: skip algo entries whose reward (entry → target) is smaller than risk (entry → SL). Filters out late entries where most of the move is already done. Off bypasses the geometry check — only the daily-risk gate applies.</div></div>' +
+                    '<div class="sm-field"><label>Min R:R Ratio</label><input type="number" id="sm-camarillaMinRRRatio" step="0.1" min="0" max="10"><div class="sm-hint">Reward must be at least this multiple of risk to fire a trade. 1.0 = 1:1, 2.0 = 1:2 (reward ≥ 2 × risk). Set to 0 to disable the R:R check entirely and rely solely on the budget gate. Default 2.0 — premium-selling needs an asymmetric floor since winning trades capture small theta while losing trades hit a wider SL.</div></div>' +
                     '<div class="sm-field"><label>Directional SL Buffer (NIFTY pts)</label><input type="number" id="sm-camarillaDirectionalSlBufferPoints" step="0.5" min="0" max="50"><div class="sm-hint">Widens stop-loss beyond the confirmation candle\'s edge by this many NIFTY spot points. Applies to all four directional setups (H4 Breakout, L3 Reversal, H3 Reversal, L4 Breakdown). Default 5.0; set to 0 to use the candle extreme exactly.</div></div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
@@ -186,7 +186,7 @@
             if (g('sm-camarillaTradingEndTime'))    g('sm-camarillaTradingEndTime').value = d.camarillaTradingEndTime || '13:30';
             if (g('sm-camarillaSquareOffTime'))     g('sm-camarillaSquareOffTime').value = d.camarillaSquareOffTime || '15:15';
             if (g('sm-camarillaMomentumCheckEnabled')) g('sm-camarillaMomentumCheckEnabled').checked = d.camarillaMomentumCheckEnabled !== false;
-            // sm-camarillaMinRRCheckEnabled now lives in the Risk pane — loaded by loadPortfolioRiskValues().
+            // sm-camarillaMinRRRatio lives in the Risk pane — loaded by loadPortfolioRiskValues().
         }).catch(function() {});
     }
 
@@ -208,7 +208,7 @@
             startingCapital:          parseFloat(document.getElementById('sm-startingCapital').value) || 0,
             portfolioMaxRiskPct:      parseFloat(document.getElementById('sm-portfolioMaxRiskPct').value) || 0,
             weeklyExpiryDayOfWeek:    (document.getElementById('sm-weeklyExpiryDayOfWeek').value || 'TUESDAY').trim().toUpperCase(),
-            camarillaMinRRCheckEnabled: !!document.getElementById('sm-camarillaMinRRCheckEnabled').checked,
+            camarillaMinRRRatio:        Math.max(0, parseFloat(document.getElementById('sm-camarillaMinRRRatio').value) || 0),
             camarillaDirectionalSlBufferPoints: parseFloat(document.getElementById('sm-camarillaDirectionalSlBufferPoints').value) || 0
         };
         postSettings('/api/settings/risk', body);
@@ -266,8 +266,8 @@
             if (capInput) capInput.value = d.startingCapital != null ? d.startingCapital : 1000000;
             if (pctInput) pctInput.value = d.portfolioMaxRiskPct != null ? d.portfolioMaxRiskPct : 0;
             if (expSel)   expSel.value   = d.weeklyExpiryDayOfWeek || 'TUESDAY';
-            var rrChk = document.getElementById('sm-camarillaMinRRCheckEnabled');
-            if (rrChk) rrChk.checked = d.camarillaMinRRCheckEnabled !== false;
+            var rrRatio = document.getElementById('sm-camarillaMinRRRatio');
+            if (rrRatio) rrRatio.value = d.camarillaMinRRRatio != null ? d.camarillaMinRRRatio : 2.0;
             var slBuf = document.getElementById('sm-camarillaDirectionalSlBufferPoints');
             if (slBuf) slBuf.value = d.camarillaDirectionalSlBufferPoints != null ? d.camarillaDirectionalSlBufferPoints : 5.0;
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);

@@ -825,8 +825,10 @@ public class Camarilla implements Strategy {
             PendingConfirmation pb = state.pendingBullish;
             if (pb != null && c.isGreen() && c.close() > pb.confirmHigh) {
                 double slWithBuffer = pb.confirmLow - slBuf;
+                double rr = computeRR(c.close(), pb.targetLevel, slWithBuffer);
                 event("[INFO]", "Setup", pb.setup + " trigger @ " + round2(c.close())
-                    + " (SL " + round2(slWithBuffer) + ", TGT " + round2(pb.targetLevel) + ")");
+                    + " (SL " + round2(slWithBuffer) + ", TGT " + round2(pb.targetLevel)
+                    + ", R:R " + (Double.isNaN(rr) ? "—" : round2(rr)) + ")");
                 fire(triggerSym, pb.setup, pb.targetLevel, slWithBuffer, c, pb.lockedAtm);
                 state.pendingBullish = null;
                 firedThisBar = true;
@@ -834,8 +836,10 @@ public class Camarilla implements Strategy {
             PendingConfirmation pr = state.pendingBearish;
             if (pr != null && c.isRed() && c.close() < pr.confirmLow) {
                 double slWithBuffer = pr.confirmHigh + slBuf;
+                double rr = computeRR(c.close(), pr.targetLevel, slWithBuffer);
                 event("[INFO]", "Setup", pr.setup + " trigger @ " + round2(c.close())
-                    + " (SL " + round2(slWithBuffer) + ", TGT " + round2(pr.targetLevel) + ")");
+                    + " (SL " + round2(slWithBuffer) + ", TGT " + round2(pr.targetLevel)
+                    + ", R:R " + (Double.isNaN(rr) ? "—" : round2(rr)) + ")");
                 fire(triggerSym, pr.setup, pr.targetLevel, slWithBuffer, c, pr.lockedAtm);
                 state.pendingBearish = null;
                 firedThisBar = true;
@@ -1283,12 +1287,13 @@ public class Camarilla implements Strategy {
             double live = marketDataService.getLtp(triggerSymbol);
             if (live > 0) entryFutures = live;
         } catch (Exception ignored) {}
-        if (riskSettings.isCamarillaMinRRCheckEnabled()) {
+        double minRatio = riskSettings.getCamarillaMinRRRatio();
+        if (minRatio > 0) {
             double reward = Math.abs(entryFutures - targetFutures);
             double risk   = Math.abs(slFutures - entryFutures);
-            if (risk > 0 && reward < risk) {
+            if (risk > 0 && reward < risk * minRatio) {
                 event("[WARNING]", "Sizing", setup + " skip — R:R "
-                    + round2(reward / risk) + " < 1.0");
+                    + round2(reward / risk) + " < " + round2(minRatio));
                 return;
             }
         }
@@ -2566,6 +2571,15 @@ public class Camarilla implements Strategy {
     // ── Misc utility ────────────────────────────────────────────────────────
 
     private static double round2(double v) { return Math.round(v * 100.0) / 100.0; }
+
+    /** Reward-to-risk ratio for an event-log line — {@code reward / risk} in spot points.
+     *  Returns NaN when risk is zero (caller should render as "—"). */
+    private static double computeRR(double entry, double target, double sl) {
+        double risk = Math.abs(sl - entry);
+        if (risk <= 0) return Double.NaN;
+        double reward = Math.abs(entry - target);
+        return reward / risk;
+    }
 
     /** Defensive LTP lookup — returns 0 on null/blank symbol or any LTP cache miss
      *  so the dashboard payload never throws on pre-tick option legs. */

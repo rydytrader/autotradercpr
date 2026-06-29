@@ -40,7 +40,7 @@ public class SettingsController {
         result.put("camarillaTradingEndTime",     riskSettings.getCamarillaTradingEndTime(effectiveMode));
         result.put("camarillaSquareOffTime",      riskSettings.getCamarillaSquareOffTime(effectiveMode));
         result.put("camarillaMaxConcurrentPositions", riskSettings.getCamarillaMaxConcurrentPositions(effectiveMode));
-        result.put("camarillaMinRRCheckEnabled",   riskSettings.isCamarillaMinRRCheckEnabled(effectiveMode));
+        result.put("camarillaMinRRRatio",          riskSettings.getCamarillaMinRRRatio(effectiveMode));
         result.put("camarillaMomentumCheckEnabled", riskSettings.isCamarillaMomentumCheckEnabled(effectiveMode));
         result.put("camarillaDirectionalSlBufferPoints", riskSettings.getCamarillaDirectionalSlBufferPoints(effectiveMode));
         // Money / Risk
@@ -88,7 +88,7 @@ public class SettingsController {
             if (body.containsKey("camarillaTradingEndTime"))    riskSettings.setCamarillaTradingEndTime(effectiveMode, body.get("camarillaTradingEndTime").toString());
             if (body.containsKey("camarillaSquareOffTime"))     riskSettings.setCamarillaSquareOffTime(effectiveMode, body.get("camarillaSquareOffTime").toString());
             if (body.containsKey("camarillaMaxConcurrentPositions")) riskSettings.setCamarillaMaxConcurrentPositions(effectiveMode, Integer.parseInt(body.get("camarillaMaxConcurrentPositions").toString()));
-            if (body.containsKey("camarillaMinRRCheckEnabled"))      riskSettings.setCamarillaMinRRCheckEnabled(effectiveMode, Boolean.parseBoolean(body.get("camarillaMinRRCheckEnabled").toString()));
+            if (body.containsKey("camarillaMinRRRatio"))             riskSettings.setCamarillaMinRRRatio(effectiveMode, Double.parseDouble(body.get("camarillaMinRRRatio").toString()));
             if (body.containsKey("camarillaMomentumCheckEnabled"))   riskSettings.setCamarillaMomentumCheckEnabled(effectiveMode, Boolean.parseBoolean(body.get("camarillaMomentumCheckEnabled").toString()));
             if (body.containsKey("camarillaDirectionalSlBufferPoints")) riskSettings.setCamarillaDirectionalSlBufferPoints(effectiveMode, Double.parseDouble(body.get("camarillaDirectionalSlBufferPoints").toString()));
             // Money / Risk
