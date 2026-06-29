@@ -76,16 +76,23 @@
         .doc-svg-title { font-family:'Roboto Mono', monospace; font-size:0.7rem; font-weight:700; color:var(--text-muted); letter-spacing:0.08em; text-transform:uppercase; margin:0 0 12px 0; text-align:center; }
         .doc-svg-card svg { max-width:420px; width:100%; height:auto; display:block; margin:0 auto; }
 
-        /* Setup section: SVG diagram on left + two setup cards on the right (stacks on narrow screens) */
-        .setup-with-diagram { display:grid; grid-template-columns:minmax(340px,1.2fr) 1fr 1fr; gap:14px; align-items:stretch; margin:10px 0 18px 0; }
-        @media (max-width: 920px) {
-            .setup-with-diagram { grid-template-columns:1fr 1fr; }
-            .setup-with-diagram > .doc-svg-card { grid-column:1 / -1; }
+        /* Setup section: combined description (left) + SVG diagram (right) side by side */
+        .setup-combo { display:grid; grid-template-columns:1fr minmax(320px, 1fr); gap:14px; align-items:stretch; margin:10px 0 22px 0; }
+        @media (max-width: 880px) {
+            .setup-combo { grid-template-columns:1fr; }
         }
-        @media (max-width: 560px) {
-            .setup-with-diagram { grid-template-columns:1fr; }
-        }
-        .setup-with-diagram .setup-card { margin:0; }
+        .setup-combo > .doc-svg-card { display:flex; align-items:center; justify-content:center; }
+        .setup-combo-card { background:var(--bg-primary); border:1px solid var(--border); border-radius:10px; overflow:hidden; display:flex; flex-direction:column; }
+        .combo-row { display:flex; flex-direction:column; gap:8px; padding:16px 18px; flex:1; }
+        .combo-row + .combo-row { border-top:1px solid rgba(128,128,128,0.12); }
+        .combo-row.bull { border-left:3px solid var(--accent-green); }
+        .combo-row.bear { border-left:3px solid var(--accent-red, #f87171); }
+        .combo-label { display:flex; flex-direction:column; gap:3px; }
+        .combo-label .setup-tag { font-family:'Roboto Mono', monospace; font-size:0.66rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-muted); }
+        .combo-label .setup-name { font-family:'Roboto Mono', monospace; font-size:0.92rem; font-weight:700; letter-spacing:0.04em; }
+        .combo-body { font-size:0.88rem; color:var(--text-secondary); line-height:1.65; }
+        .combo-body code { background:rgba(125,211,252,0.10); border-radius:3px; padding:1px 5px; font-family:'Roboto Mono', monospace; font-size:0.82rem; color:var(--accent-cyan); }
+        .combo-body strong { color:var(--text-primary); font-weight:600; }
         .doc-inline-chip { background:rgba(125,211,252,0.10); border:1px solid rgba(125,211,252,0.30); border-radius:5px; padding:1px 8px; font-family:'Roboto Mono', monospace; font-size:0.86em; color:var(--accent-cyan); display:inline-block; vertical-align:baseline; margin:0 2px; }
         .doc-svg-card svg text { font-family:'Roboto Mono', monospace; }
         .doc-svg-card .lvl-pill { font-size:9px; font-weight:700; letter-spacing:0.04em; }
@@ -269,7 +276,31 @@
 
         <!-- Reversals subsection -->
         <h3 class="doc-h3" style="margin-top:22px;">Reversals · L3 / H3</h3>
-        <div class="setup-with-diagram">
+        <div class="setup-combo">
+            <div class="setup-combo-card">
+                <div class="combo-row bull">
+                    <div class="combo-label">
+                        <span class="setup-tag">Bullish · Mean-reversion</span>
+                        <span class="setup-name" style="color:var(--accent-green);">L3_REVERSAL</span>
+                    </div>
+                    <div class="combo-body">
+                        NIFTY wicks below <strong>L3</strong> and recovers back above. Bot sells
+                        <code>PE near L4</code>, targets <strong>H3</strong>. SL = confirmation
+                        candle low + buffer.
+                    </div>
+                </div>
+                <div class="combo-row bear">
+                    <div class="combo-label">
+                        <span class="setup-tag">Bearish · Mean-reversion</span>
+                        <span class="setup-name" style="color:var(--accent-red, #f87171);">H3_REVERSAL</span>
+                    </div>
+                    <div class="combo-body">
+                        NIFTY wicks above <strong>H3</strong> and rejects back below. Bot sells
+                        <code>CE near H4</code>, targets <strong>L3</strong>. SL = confirmation
+                        candle high + buffer.
+                    </div>
+                </div>
+            </div>
             <div class="doc-svg-card" style="margin:0;">
                 <svg viewBox="0 0 380 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="L3 and H3 reversal setups">
                     <defs>
@@ -306,27 +337,35 @@
                     <text x="255" y="282" font-size="8" class="ann-mute">sell CE @ H4 · tgt L3</text>
                 </svg>
             </div>
-            <div class="setup-card bull">
-                <div class="setup-tag">Bullish · Mean-reversion</div>
-                <div class="setup-name">L3_REVERSAL</div>
-                <div class="setup-body">
-                    Triggers when NIFTY wicks below <strong>L3</strong> and recovers.<br>
-                    Sells <code>PE near L4</code> · Target <strong>H3</strong> · SL = confirmation candle low + buffer
-                </div>
-            </div>
-            <div class="setup-card bear">
-                <div class="setup-tag">Bearish · Mean-reversion</div>
-                <div class="setup-name">H3_REVERSAL</div>
-                <div class="setup-body">
-                    Triggers when NIFTY wicks above <strong>H3</strong> and rejects.<br>
-                    Sells <code>CE near H4</code> · Target <strong>L3</strong> · SL = confirmation candle high + buffer
-                </div>
-            </div>
         </div>
 
         <!-- Breakouts subsection -->
         <h3 class="doc-h3" style="margin-top:24px;">Breakouts · H4 / L4</h3>
-        <div class="setup-with-diagram">
+        <div class="setup-combo">
+            <div class="setup-combo-card">
+                <div class="combo-row bull">
+                    <div class="combo-label">
+                        <span class="setup-tag">Bullish · Trend continuation</span>
+                        <span class="setup-name" style="color:var(--accent-green);">H4_BREAKOUT</span>
+                    </div>
+                    <div class="combo-body">
+                        NIFTY closes above <strong>H4</strong>, breaking out of the pivot
+                        band. Bot sells <code>PE near H3</code>, targets <strong>H5</strong>.
+                        SL = confirmation candle low + buffer.
+                    </div>
+                </div>
+                <div class="combo-row bear">
+                    <div class="combo-label">
+                        <span class="setup-tag">Bearish · Trend continuation</span>
+                        <span class="setup-name" style="color:var(--accent-red, #f87171);">L4_BREAKDOWN</span>
+                    </div>
+                    <div class="combo-body">
+                        NIFTY closes below <strong>L4</strong>, breaking down through the
+                        floor. Bot sells <code>CE near L3</code>, targets <strong>L5</strong>.
+                        SL = confirmation candle high + buffer.
+                    </div>
+                </div>
+            </div>
             <div class="doc-svg-card" style="margin:0;">
                 <svg viewBox="0 0 380 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="H4 breakout and L4 breakdown setups">
                     <defs>
@@ -365,22 +404,6 @@
                     <text x="240" y="160" font-size="9" font-weight="700" fill="#34d399">L4_BREAKDOWN</text>
                     <text x="240" y="172" font-size="8" class="ann-mute">sell CE @ L3 · tgt L5</text>
                 </svg>
-            </div>
-            <div class="setup-card bull">
-                <div class="setup-tag">Bullish · Trend continuation</div>
-                <div class="setup-name">H4_BREAKOUT</div>
-                <div class="setup-body">
-                    Triggers when NIFTY breaks above <strong>H4</strong>.<br>
-                    Sells <code>PE near H3</code> · Target <strong>H5</strong> · SL = confirmation candle low + buffer
-                </div>
-            </div>
-            <div class="setup-card bear">
-                <div class="setup-tag">Bearish · Trend continuation</div>
-                <div class="setup-name">L4_BREAKDOWN</div>
-                <div class="setup-body">
-                    Triggers when NIFTY breaks below <strong>L4</strong>.<br>
-                    Sells <code>CE near L3</code> · Target <strong>L5</strong> · SL = confirmation candle high + buffer
-                </div>
             </div>
         </div>
     </div>
