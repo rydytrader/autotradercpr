@@ -53,6 +53,20 @@
         .band-row .left { color:var(--text-primary); font-weight:700; }
         .band-row .right { color:var(--accent-amber, #fbbf24); }
 
+        /* Camarilla formula table — polished layout with colored level chips */
+        .formula-table { display:flex; flex-direction:column; gap:6px; margin:14px 0 4px 0; }
+        .formula-row { display:grid; grid-template-columns:46px 1fr auto; gap:14px; align-items:center; padding:10px 14px; background:var(--bg-primary); border:1px solid var(--border); border-radius:8px; }
+        .formula-chip { font-family:'Roboto Mono', monospace; font-size:0.74rem; font-weight:700; letter-spacing:0.04em; text-align:center; padding:4px 0; border-radius:4px; border:1px solid transparent; }
+        .formula-chip.h5 { color:#fbbf24; background:rgba(251,191,36,0.10); border-color:rgba(251,191,36,0.35); }
+        .formula-chip.h4 { color:#f87171; background:rgba(248,113,113,0.12); border-color:rgba(248,113,113,0.40); }
+        .formula-chip.h3 { color:#fca5a5; background:rgba(252,165,165,0.10); border-color:rgba(252,165,165,0.35); }
+        .formula-chip.l3 { color:#86efac; background:rgba(134,239,172,0.10); border-color:rgba(134,239,172,0.35); }
+        .formula-chip.l4 { color:#34d399; background:rgba(52,211,153,0.12); border-color:rgba(52,211,153,0.40); }
+        .formula-chip.l5 { color:#fbbf24; background:rgba(251,191,36,0.10); border-color:rgba(251,191,36,0.35); }
+        .formula-eq   { font-family:'Roboto Mono', monospace; font-size:0.86rem; font-weight:600; color:var(--text-primary); letter-spacing:0.02em; }
+        .formula-role { font-family:'Roboto Mono', monospace; font-size:0.68rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.08em; }
+        .formula-k    { background:rgba(125,211,252,0.10); border:1px solid rgba(125,211,252,0.30); border-radius:6px; padding:6px 12px; font-family:'Roboto Mono', monospace; font-size:0.78rem; color:var(--accent-cyan); display:inline-block; margin-bottom:6px; }
+
         .doc-svg-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(360px,1fr)); gap:14px; margin:14px 0; }
         .doc-svg-card { background:var(--bg-primary); border:1px solid var(--border); border-radius:10px; padding:16px 18px; }
         .doc-svg-title { font-family:'Roboto Mono', monospace; font-size:0.72rem; font-weight:700; color:var(--text-muted); letter-spacing:0.08em; text-transform:uppercase; margin:0 0 12px 0; text-align:center; }
@@ -185,17 +199,40 @@
         <p class="doc-p">
             Computed nightly from the previous day's <strong>H</strong>igh, <strong>L</strong>ow,
             and <strong>C</strong>lose. The pivot range
-            <code style="font-family:var(--font-mono);color:var(--accent-cyan);background:rgba(125,211,252,0.10);padding:1px 5px;border-radius:3px;">k = 1.1 × (H − L)</code>
-            sets the scale of all levels:
         </p>
-        <div class="band-grid">
-            <div class="band-row"><span class="left">H5</span><span class="right">(H ÷ L) × C — extreme upside</span></div>
-            <div class="band-row"><span class="left">H4</span><span class="right">C + k/2 — breakout level</span></div>
-            <div class="band-row"><span class="left">H3</span><span class="right">C + k/4 — upper reversal zone</span></div>
-            <div class="band-row"><span class="left">PP</span><span class="right">(H + L + C) ÷ 3 — pivot point</span></div>
-            <div class="band-row"><span class="left">L3</span><span class="right">C − k/4 — lower reversal zone</span></div>
-            <div class="band-row"><span class="left">L4</span><span class="right">C − k/2 — breakdown level</span></div>
-            <div class="band-row"><span class="left">L5</span><span class="right">(L ÷ H) × C — extreme downside</span></div>
+        <div class="formula-k">k = 1.1 × (H − L)</div>
+        <p class="doc-p">sets the scale of all six trading levels:</p>
+        <div class="formula-table">
+            <div class="formula-row">
+                <div class="formula-chip h5">H5</div>
+                <div class="formula-eq">(H ÷ L) × C</div>
+                <div class="formula-role">extreme upside target</div>
+            </div>
+            <div class="formula-row">
+                <div class="formula-chip h4">H4</div>
+                <div class="formula-eq">C + k/2</div>
+                <div class="formula-role">breakout level</div>
+            </div>
+            <div class="formula-row">
+                <div class="formula-chip h3">H3</div>
+                <div class="formula-eq">C + k/4</div>
+                <div class="formula-role">upper reversal zone</div>
+            </div>
+            <div class="formula-row">
+                <div class="formula-chip l3">L3</div>
+                <div class="formula-eq">C − k/4</div>
+                <div class="formula-role">lower reversal zone</div>
+            </div>
+            <div class="formula-row">
+                <div class="formula-chip l4">L4</div>
+                <div class="formula-eq">C − k/2</div>
+                <div class="formula-role">breakdown level</div>
+            </div>
+            <div class="formula-row">
+                <div class="formula-chip l5">L5</div>
+                <div class="formula-eq">(L ÷ H) × C</div>
+                <div class="formula-role">extreme downside target</div>
+            </div>
         </div>
         <p class="doc-p">
             The <strong>L3–H3 band</strong> is the "neutral" core; price spending time inside it
