@@ -201,6 +201,11 @@ public class ViewController {
         return "calendar";
     }
 
+    @GetMapping("/strategy")
+    public String strategy() {
+        return "strategy";
+    }
+
     @GetMapping("/trade")
     public String trade() {
         return "trade";
