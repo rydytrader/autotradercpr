@@ -1203,8 +1203,78 @@
     let rsiChart = null;
     window.NiftyRsiChart = {
         init() {
+            // One initial /history fetch — populates the chart with all
+            // closed samples + reference lines + the tradingDay flag.
             this.refresh();
-            setInterval(() => this.refresh(), 30000);
+            // Then connect SSE for live tip updates (~1 Hz push from
+            // NiftyRsiStreamBroker). Each push carries the in-progress
+            // bucket's projected RSI AND the last-closed canonical RSI,
+            // so the bar boundary handover is drift-free.
+            if (window.EventSource) {
+                try {
+                    var self = this;
+                    var es = new EventSource('/api/nifty-rsi/stream');
+                    es.addEventListener('tip', function(evt) {
+                        try { self._applyTip(JSON.parse(evt.data)); }
+                        catch (e) {}
+                    });
+                    // Browser auto-reconnects on transient errors; only
+                    // log here for visibility, no explicit reconnect.
+                    es.onerror = function() {};
+                } catch (e) {
+                    setInterval(() => this.refresh(), 5000);
+                }
+            } else {
+                setInterval(() => this.refresh(), 5000);
+            }
+        },
+
+        /** Apply a single streaming tip update. Overwrites the live-tip
+         *  bucket AND (if present) the last-closed bucket so the canonical
+         *  close value replaces the slightly-stale live-tip projection
+         *  that was sitting in that cell. */
+        _applyTip(d) {
+            if (!rsiChart || !d) return;
+            var labels = this._buildSessionGrid();
+            var dataArr = rsiChart.data.datasets[0].data;
+            var mutated = false;
+            // Live in-progress bucket (null on non-trading days / Wilder unseeded).
+            if (d.tip && d.tip.t && d.tip.rsi != null) {
+                var tipIdx = labels.indexOf(d.tip.t);
+                if (tipIdx >= 0) {
+                    dataArr[tipIdx] = Number(d.tip.rsi);
+                    mutated = true;
+                }
+            }
+            // Most-recent closed bucket (drift-free freeze).
+            if (d.lastClosed && d.lastClosed.t && d.lastClosed.rsi != null) {
+                var lcIdx = labels.indexOf(d.lastClosed.t);
+                if (lcIdx >= 0) {
+                    dataArr[lcIdx] = Number(d.lastClosed.rsi);
+                    mutated = true;
+                }
+            }
+            if (mutated) rsiChart.update('none');
+            // Header chip + pill — value source is tip if present, else
+            // last-closed canonical, else leave as-is.
+            var hdr = (d.tip && d.tip.rsi != null) ? d.tip.rsi
+                    : (d.lastClosed && d.lastClosed.rsi != null) ? d.lastClosed.rsi
+                    : null;
+            if (hdr != null) {
+                var lr = Number(hdr);
+                var m  = rsiMomentum(lr);
+                var chip = $('hdrNiftyRsi'); var pill = $('hdrNiftyRsiMomentum');
+                if (chip) {
+                    chip.textContent = lr.toFixed(1);
+                    chip.style.color = m.valueColor;
+                }
+                if (pill) {
+                    pill.textContent       = m.label;
+                    pill.style.background  = m.bg;
+                    pill.style.color       = m.fg;
+                    pill.style.borderColor = m.bd;
+                }
+            }
         },
         // Pre-computed 75-bucket session grid: 09:15, 09:20, …, 15:25.
         // Used as the chart's x-axis so the 60/50/40 reference lines always
@@ -1263,44 +1333,51 @@
                     pill.style.color       = m.fg;
                     pill.style.borderColor = m.bd;
                 }
-                var ctx = $('niftyRsiChart').getContext('2d');
-                if (rsiChart) rsiChart.destroy();
-                rsiChart = new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: labels,
-                        datasets: [
-                            { label: 'RSI(14)', data: rsiData, borderColor: 'rgb(125,211,252)', backgroundColor: 'rgba(125,211,252,0.10)', tension: 0.25, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2 },
-                            { label: '60',      data: line60,  borderColor: '#34d399', borderDash: [4,4], borderWidth: 1, pointRadius: 0, pointHoverRadius: 0, fill: false, tension: 0 },
-                            { label: '50',      data: line50,  borderColor: '#9ca3af', borderDash: [4,4], borderWidth: 1, pointRadius: 0, pointHoverRadius: 0, fill: false, tension: 0 },
-                            { label: '40',      data: line40,  borderColor: '#f87171', borderDash: [4,4], borderWidth: 1, pointRadius: 0, pointHoverRadius: 0, fill: false, tension: 0 }
-                        ]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        animation: false,
-                        animations: { colors: false, x: false, y: false },
-                        transitions: { active: { animation: { duration: 0 } } },
-                        interaction: { mode: 'index', intersect: false },
-                        plugins: {
-                            legend: { labels: {
-                                color: '#9ca3af', font: { family: 'monospace', size: 11 },
-                                // Filter the three reference-line series out of the legend —
-                                // they're visual guides, not data the operator toggles on/off.
-                                filter: it => it.text === 'RSI(14)'
-                            } },
-                            tooltip: {
-                                filter: c => c.dataset.label === 'RSI(14)',
-                                callbacks: { label: c => 'RSI: ' + Number(c.parsed.y).toFixed(2) }
-                            }
+                // Build chart on first refresh, mutate-in-place thereafter.
+                // The labels grid and reference lines are constant; only the
+                // RSI(14) dataset's data array changes between refreshes.
+                if (!rsiChart) {
+                    var ctx = $('niftyRsiChart').getContext('2d');
+                    rsiChart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [
+                                { label: 'RSI(14)', data: rsiData, borderColor: 'rgb(125,211,252)', backgroundColor: 'rgba(125,211,252,0.10)', tension: 0.25, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2 },
+                                { label: '60',      data: line60,  borderColor: '#34d399', borderDash: [4,4], borderWidth: 1, pointRadius: 0, pointHoverRadius: 0, fill: false, tension: 0 },
+                                { label: '50',      data: line50,  borderColor: '#9ca3af', borderDash: [4,4], borderWidth: 1, pointRadius: 0, pointHoverRadius: 0, fill: false, tension: 0 },
+                                { label: '40',      data: line40,  borderColor: '#f87171', borderDash: [4,4], borderWidth: 1, pointRadius: 0, pointHoverRadius: 0, fill: false, tension: 0 }
+                            ]
                         },
-                        scales: {
-                            x: { ticks: { color: '#6b7280', maxRotation: 0, autoSkipPadding: 12 }, grid: { color: 'rgba(128,128,128,0.08)' } },
-                            y: { min: 20, max: 80, ticks: { color: '#6b7280', stepSize: 10 }, grid: { color: 'rgba(128,128,128,0.08)' } }
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            animation: false,
+                            animations: { colors: false, x: false, y: false },
+                            transitions: { active: { animation: { duration: 0 } } },
+                            interaction: { mode: 'index', intersect: false },
+                            plugins: {
+                                legend: { labels: {
+                                    color: '#9ca3af', font: { family: 'monospace', size: 11 },
+                                    // Filter the three reference-line series out of the legend —
+                                    // they're visual guides, not data the operator toggles on/off.
+                                    filter: it => it.text === 'RSI(14)'
+                                } },
+                                tooltip: {
+                                    filter: c => c.dataset.label === 'RSI(14)',
+                                    callbacks: { label: c => 'RSI: ' + Number(c.parsed.y).toFixed(2) }
+                                }
+                            },
+                            scales: {
+                                x: { ticks: { color: '#6b7280', maxRotation: 0, autoSkipPadding: 12 }, grid: { color: 'rgba(128,128,128,0.08)' } },
+                                y: { min: 20, max: 80, ticks: { color: '#6b7280', stepSize: 10 }, grid: { color: 'rgba(128,128,128,0.08)' } }
+                            }
                         }
-                    }
-                });
+                    });
+                } else {
+                    rsiChart.data.datasets[0].data = rsiData;
+                    rsiChart.update('none');
+                }
             }).catch(() => {});
         }
     };

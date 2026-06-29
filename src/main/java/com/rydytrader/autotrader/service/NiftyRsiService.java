@@ -399,6 +399,34 @@ public class NiftyRsiService {
         return state.lastRsi;
     }
 
+    /** Streaming snapshot for the SSE broker. Returns the live tip (projected
+     *  RSI + current 5-min bucket label) for the in-progress bar, and the
+     *  canonical close of the most recent closed bar — so the frontend can
+     *  overwrite both buckets on every push and avoid drift at the 5-min
+     *  boundary (the live tip's projected value gets replaced by the
+     *  canonical close value the moment the bar closes). Returns
+     *  {@code tradingDay=false} on weekends/holidays, in which case
+     *  {@code tip} is null (no live projection — matches Commit NN).
+     *
+     *  <p>Tip is null when Wilder isn't seeded yet or NIFTY LTP unavailable.
+     *  lastClosed is null when {@code state.todaySamples} is empty. */
+    public synchronized LiveTip liveTip() {
+        rolloverIfNewDay();
+        boolean tradingDay = marketHolidayService.isTradingDay();
+        RsiSample lastClosed = state.todaySamples.isEmpty()
+            ? null
+            : state.todaySamples.get(state.todaySamples.size() - 1);
+        if (!tradingDay) {
+            return new LiveTip(null, lastClosed, false);
+        }
+        Double live = currentLiveRsi();
+        if (live == null) {
+            return new LiveTip(null, lastClosed, true);
+        }
+        return new LiveTip(new RsiSample(currentBucketLabel(), round2(live)),
+                           lastClosed, true);
+    }
+
     /** Project the RSI value for the in-progress 5-min bar using current
      *  NIFTY spot LTP as a candidate close. Returns null when Wilder isn't
      *  seeded yet, the buffer is empty, or the LTP isn't available. Does
@@ -467,6 +495,12 @@ public class NiftyRsiService {
     public record Bar(String t, double close) {}
     public record RsiSample(String t, double rsi) {}
     public record History(String dayKey, Double lastRsi, List<RsiSample> samples, boolean tradingDay) {}
+    /** SSE-streaming snapshot. {@code tip} = current in-progress 5-min bucket
+     *  with live LTP-projected RSI (null on non-trading days or when Wilder
+     *  isn't ready). {@code lastClosed} = canonical RSI of the most recently
+     *  closed bar (null when none yet today). Frontend overwrites both
+     *  buckets every push so the bar-boundary handover is drift-free. */
+    public record LiveTip(RsiSample tip, RsiSample lastClosed, boolean tradingDay) {}
 
     public static class State {
         public String       dayKey       = LocalDate.now(IST).toString();
