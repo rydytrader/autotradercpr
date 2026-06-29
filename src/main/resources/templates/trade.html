@@ -1265,7 +1265,7 @@
                 var m  = rsiMomentum(lr);
                 var chip = $('hdrNiftyRsi'); var pill = $('hdrNiftyRsiMomentum');
                 if (chip) {
-                    chip.textContent = lr.toFixed(1);
+                    chip.textContent = lr.toFixed(2);
                     chip.style.color = m.valueColor;
                 }
                 if (pill) {
@@ -1324,7 +1324,7 @@
                 var lr = (d.lastRsi != null && isFinite(d.lastRsi)) ? Number(d.lastRsi) : NaN;
                 var m  = rsiMomentum(lr);
                 if (chip) {
-                    chip.textContent = isFinite(lr) ? lr.toFixed(1) : '—';
+                    chip.textContent = isFinite(lr) ? lr.toFixed(2) : '—';
                     chip.style.color = m.valueColor;
                 }
                 if (pill) {
