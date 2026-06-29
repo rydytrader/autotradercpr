@@ -53,7 +53,9 @@ public record CamarillaLevels(
             round(l1), round(l2), round(l3), round(l4), round(l5), round(l6));
     }
 
+    /** NIFTY tick size is ₹0.05 — round each computed pivot to the nearest tick so the
+     *  displayed value matches a tradeable price step (24656.78 → 24656.80). */
     private static double round(double v) {
-        return Math.round(v * 100.0) / 100.0;
+        return Math.round(v * 20.0) / 20.0;
     }
 }
