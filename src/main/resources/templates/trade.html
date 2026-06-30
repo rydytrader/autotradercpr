@@ -697,9 +697,21 @@
             lgWrap.style.display       = 'flex';
             lgWrap.style.flexDirection = 'column';
             lgWrap.style.gap           = '6px';
+            // Live NIFTY spot for time-value calculation. Falls back to 0
+            // (which yields "—" via fmtNum2) when state hasn't landed yet.
+            var spotForTv = (lastState && lastState.atmVwap && lastState.atmVwap.futLtp) || 0;
+            function timeValue(side, strike, ltp) {
+                var s = Number(spotForTv), k = Number(strike), p = Number(ltp);
+                if (!isFinite(s) || s <= 0 || !isFinite(k) || k <= 0 || !isFinite(p) || p <= 0) return null;
+                var intrinsic = 0;
+                if (side === 'CE')      intrinsic = Math.max(0, s - k);
+                else if (side === 'PE') intrinsic = Math.max(0, k - s);
+                return Math.max(0, p - intrinsic);
+            }
             lgWrap.innerHTML = legs.map(function(L) {
                 var setupTag = L.setupTag || '';
                 var col = pillColors(L.dir);
+                var tv = timeValue(L.side, L.strike, L.ltp);
                 return '<div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:rgba(255,255,255,0.015);border-left:3px solid ' + col.fg + ';border-radius:4px;">' +
                     // Setup pill
                     '<span style="padding:4px 10px;border-radius:6px;font-family:var(--font-mono);font-size:0.66rem;font-weight:700;letter-spacing:0.06em;' +
@@ -715,6 +727,11 @@
                     // knows we're in a non-trading session via the market
                     // clock card already on the page.
                     '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--text-primary);min-width:96px;text-align:right;">' + fmtNum2(L.ltp) + '</span>' +
+                    // Time value = LTP − intrinsic. For CE intrinsic = max(0, spot−strike),
+                    // for PE intrinsic = max(0, strike−spot). When the strike is OTM
+                    // this equals LTP; when ITM it shows the pure theta+vega component.
+                    // Smaller and muted vs LTP so it reads as secondary info.
+                    '<span style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-muted);min-width:78px;text-align:right;" title="Time value = LTP − intrinsic">TV ' + (tv != null ? fmtNum2(tv) : '—') + '</span>' +
                 '</div>';
             }).join('');
         }
