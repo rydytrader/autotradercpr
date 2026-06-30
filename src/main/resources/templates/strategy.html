@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org" data-strategy-id="strategy">
 <head>
-    <title>TraderEdge — Strategy</title>
+    <title>TraderEdge — Camarilla Iron Falcon</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -185,8 +185,8 @@
     <!-- ── Page header (mirrors Home / Calendar) ── -->
     <div class="page-header fade-in" style="margin-bottom:18px;">
         <div>
-            <div class="page-title">Strategy</div>
-            <div class="page-subtitle">Camarilla pivots · two-candle confirmation · RSI momentum gate</div>
+            <div class="page-title">Camarilla Iron Falcon</div>
+            <div class="page-subtitle">Directional reversals &amp; breakouts · Iron-wall mean-reversion strangle · RSI 40-60 momentum gate</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -200,19 +200,38 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot"></span> Overview</h2>
         <p class="doc-p">
-            The bot trades <strong>NIFTY weekly options</strong> on the Indian market, using
-            <strong>Camarilla pivots</strong> derived from the previous day's high, low, and close
-            to identify high-probability reversal and breakout levels. Every trade is a
-            <strong>premium-selling</strong> position — the bot sells out-of-the-money (OTM) calls
-            or puts depending on the directional bias of the setup, profiting from time decay and
-            the underlying staying within an expected range.
+            <strong>Camarilla Iron Falcon</strong> is a dual-mode premium-selling strategy on
+            <strong>NIFTY weekly options</strong>. It runs two complementary engines in parallel,
+            both anchored on the same <strong>Camarilla pivot grid</strong> derived from the
+            previous day's high, low, and close — built so that one engine pays when the band
+            holds and the other pays when it breaks.
+        </p>
+        <ol class="doc-p" style="padding-left:22px; margin-top:0;">
+            <li style="margin-bottom:8px;">
+                <strong>Directional selling</strong> — four setups (L3 / H3 reversals, H4 / L4
+                breakouts) gated by a two-candle confirmation + trigger model on 5-min NIFTY
+                spot bars. Each setup sells the OTM option at its own pivot level, with a
+                target at the next Camarilla level out and an ATR-scaled stop-loss buffer.
+            </li>
+            <li style="margin-bottom:0;">
+                <strong>Iron-wall strangle</strong> — a non-directional mean-reversion theta
+                play. Continuously monitors NIFTY spot vs the prior close (the true Camarilla
+                band center) and fires a paired H4-CE + L4-PE short strangle the moment spot
+                trades within a configurable ATR-proximity window AND momentum is neutral.
+                Each leg manages its own stop independently — an "iron wall" on each wing.
+            </li>
+        </ol>
+        <p class="doc-p" style="margin-top:14px;">
+            Both engines share the same <strong>RSI-14 neutral-band gate (40 &lt; RSI &lt; 60)</strong>
+            for reversal-style entries — the directional reversals AND the strangle agree that
+            mean-reversion theses fail under strong trend. Breakouts use a wider trending-band
+            (60-80 / 20-40). Risk management is built in at three layers: per-trade R:R floor,
+            per-day budget cap, and a daily squareoff time.
         </p>
         <p class="doc-p">
-            Entries are gated by a strict <strong>two-candle confirmation + trigger</strong> model
-            on 5-minute NIFTY spot bars, plus an <strong>RSI-14 momentum band</strong> filter that
-            ensures the broader spot momentum agrees with the setup's thesis. Risk management is
-            built in at three layers: per-trade R:R floor, per-day budget cap, and a daily
-            squareoff time.
+            Strangle positions and directional fires coexist on the same Fyers contracts
+            (composite-key tracking), each with independent SL/target. The four directional
+            setups continue evaluating fresh signals while the strangle holds.
         </p>
     </div>
 
