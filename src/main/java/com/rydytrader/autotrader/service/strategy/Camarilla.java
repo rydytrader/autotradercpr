@@ -1038,7 +1038,7 @@ public class Camarilla implements Strategy {
         }
         state.sessionLegsDayKey = today;
         ensureSessionLegsSubscribed();
-        event("[INFO]", "Session", "OTM legs resolved — H4B PE " + state.h4bStrike
+        event("[INFO]", "Session", "Leg Strikes Resolved — H4B PE " + state.h4bStrike
             + " | L3R PE " + state.l3rStrike
             + " | H3R CE " + state.h3rStrike
             + " | L4B CE " + state.l4bStrike);
