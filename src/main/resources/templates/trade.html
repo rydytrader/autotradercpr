@@ -632,15 +632,13 @@
             if (!lv) {
                 pivWrap.innerHTML = '<div style="color:var(--text-muted);grid-column:span 2;">resolving…</div>';
             } else {
-                // Resolve current NIFTY spot for the centred anchor row.
-                var spot = (lastState && lastState.atmVwap && lastState.atmVwap.futLtp) || 0;
                 function dailyVal(key) { return Number(lv[key]); }
                 function weeklyVal(key) { return wk ? Number(wk[key]) : NaN; }
                 var rows = [
                     ['H5', dailyVal('h5'), weeklyVal('h5'), '#a78bfa', 'outer target'],
                     ['H4', dailyVal('h4'), weeklyVal('h4'), '#34d399', 'bullish trigger'],
                     ['H3', dailyVal('h3'), weeklyVal('h3'), '#f87171', 'bearish trigger'],
-                    null,   // spot anchor row
+                    'PP',   // pivot-point anchor row (rendered specially below)
                     ['L3', dailyVal('l3'), weeklyVal('l3'), '#34d399', 'bullish trigger'],
                     ['L4', dailyVal('l4'), weeklyVal('l4'), '#f87171', 'bearish trigger'],
                     ['L5', dailyVal('l5'), weeklyVal('l5'), '#a78bfa', 'outer target']
@@ -659,12 +657,16 @@
                     + '<span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;font-weight:700;min-width:96px;text-align:right;">Weekly</span>'
                     + '</div>';
                 var rowsHtml = rows.map(function(r) {
-                    if (r === null) {
-                        // Spot anchor — visually distinct, sits between H3 and L3. Spans both value columns.
+                    if (r === 'PP') {
+                        // Pivot Point — visually distinct, sits between H3 and L3.
+                        // Renders the same two value columns (Daily | Weekly) as
+                        // the surrounding pivot rows so the layout aligns.
+                        var dPP = dailyVal('pp'), wPP = weeklyVal('pp');
                         return '<div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:rgba(125,211,252,0.06);border-left:3px solid var(--accent-cyan);border-radius:4px;">'
-                             + '<span style="font-family:var(--font-mono);font-size:0.66rem;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--accent-cyan);">NIFTY spot</span>'
-                             + '<span style="flex:1;"></span>'
-                             + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--accent-cyan);min-width:206px;text-align:right;">' + fmtNum(spot) + '</span>'
+                             + '<span style="font-family:var(--font-mono);font-size:0.78rem;font-weight:700;color:var(--accent-cyan);min-width:28px;">PP</span>'
+                             + '<span style="flex:1;font-family:var(--font-mono);font-size:0.62rem;color:var(--text-muted);letter-spacing:0.04em;text-transform:uppercase;">pivot point</span>'
+                             + '<span style="font-family:var(--font-mono);font-size:0.92rem;font-weight:700;color:var(--accent-cyan);min-width:96px;text-align:right;">' + fmtNum(dPP) + '</span>'
+                             + '<span style="font-family:var(--font-mono);font-size:0.92rem;font-weight:700;color:var(--accent-cyan);min-width:96px;text-align:right;">' + fmtNum(wPP) + '</span>'
                              + '</div>';
                     }
                     var label = r[0], dVal = r[1], wVal = r[2], col = r[3], meaning = r[4];
