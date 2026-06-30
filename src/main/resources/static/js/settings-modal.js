@@ -26,6 +26,7 @@
                     '<div class="sm-field"><label>Trading End Time (HH:mm IST)</label><input type="time" id="sm-camarillaTradingEndTime" step="60"><div class="sm-hint">No new entries fire on candle closes after this time. Default 13:30. Existing positions keep running until target / SL / squareoff.</div></div>' +
                     '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-camarillaSquareOffTime" step="60"><div class="sm-hint">Hard exit if neither target nor SL has triggered.</div></div>' +
                     '<div class="sm-field"><label><input type="checkbox" id="sm-camarillaMomentumCheckEnabled"> &nbsp;Momentum (RSI) Check</label><div class="sm-hint">When ON: each directional setup requires NIFTY RSI(14) to sit inside a setup-specific band — breakouts 60-80 (bullish) / 20-40 (bearish), reversals 40-60. Filters out late-entry breakouts at exhaustion and reversals against a strong trend. When OFF: the momentum gate is skipped entirely. Default ON.</div></div>' +
+                    '<div class="sm-field"><label>Strangle ATR Proximity (× 5m ATR)</label><input type="number" id="sm-camarillaStrangleAtrProximity" step="0.1" min="0" max="5"><div class="sm-hint">Fires the iron-wall strangle (sell H4 CE + sell L4 PE) once per session when NIFTY spot trades within this multiple of the live 5-min ATR around the prior close (the true Camarilla band center). 0.5 = half an ATR. Set to 0 to disable the strangle entirely. Default 0.5.</div></div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
                     '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline used by the Home analytics page (capital growth %, equity curve, return %). Default ₹10,00,000.</div></div>' +
@@ -186,6 +187,7 @@
             if (g('sm-camarillaTradingEndTime'))    g('sm-camarillaTradingEndTime').value = d.camarillaTradingEndTime || '13:30';
             if (g('sm-camarillaSquareOffTime'))     g('sm-camarillaSquareOffTime').value = d.camarillaSquareOffTime || '15:15';
             if (g('sm-camarillaMomentumCheckEnabled')) g('sm-camarillaMomentumCheckEnabled').checked = d.camarillaMomentumCheckEnabled !== false;
+            if (g('sm-camarillaStrangleAtrProximity')) g('sm-camarillaStrangleAtrProximity').value = d.camarillaStrangleAtrProximity != null ? d.camarillaStrangleAtrProximity : 0.5;
             // sm-camarillaMinRRRatio lives in the Risk pane — loaded by loadPortfolioRiskValues().
         }).catch(function() {});
     }
@@ -198,7 +200,8 @@
             camarillaTradingStartTime:   (g('sm-camarillaTradingStartTime').value || '').trim(),
             camarillaTradingEndTime:     (g('sm-camarillaTradingEndTime').value || '').trim(),
             camarillaSquareOffTime:      (g('sm-camarillaSquareOffTime').value || '').trim(),
-            camarillaMomentumCheckEnabled: !!g('sm-camarillaMomentumCheckEnabled').checked
+            camarillaMomentumCheckEnabled: !!g('sm-camarillaMomentumCheckEnabled').checked,
+            camarillaStrangleAtrProximity: Math.max(0, parseFloat(g('sm-camarillaStrangleAtrProximity').value) || 0)
         };
         postSettings('/api/settings/risk', body);
     }

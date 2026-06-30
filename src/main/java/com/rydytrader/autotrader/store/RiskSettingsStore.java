@@ -45,6 +45,14 @@ public class RiskSettingsStore {
          *  Otherwise the momentum gate is bypassed entirely and the trade
          *  fires regardless of RSI. Default ON. */
         volatile boolean camarillaMomentumCheckEnabled = true;
+        /** Iron-wall strangle proximity gate: fires the strangle (sell H4 CE +
+         *  sell L4 PE) when NIFTY spot trades within this multiple of the live
+         *  5-min ATR around the prior close (Camarilla band center). Default
+         *  0.5 = half an ATR. Set to 0 to disable the strangle entirely. The
+         *  band center (prior close C) is the true symmetry axis of the
+         *  Camarilla levels — firing near C means maximum theta capture and
+         *  equal headroom to either SL. */
+        volatile double camarillaStrangleAtrProximity = 0.5;
         /** Minimum reward:risk ratio floor for algo entries. fire() skips trades
          *  whose reward/risk falls below this ratio. 1.0 = 1:1 (reward ≥ risk),
          *  2.0 = 1:2 (reward ≥ 2 × risk). Set to 0 to disable the R:R check
@@ -426,6 +434,7 @@ public class RiskSettingsStore {
     public int     getCamarillaMaxConcurrentPositions() { return cfg().camarillaMaxConcurrentPositions; }
     public double  getCamarillaMinRRRatio()             { return cfg().camarillaMinRRRatio; }
     public boolean isCamarillaMomentumCheckEnabled()    { return cfg().camarillaMomentumCheckEnabled; }
+    public double  getCamarillaStrangleAtrProximity()   { return cfg().camarillaStrangleAtrProximity; }
     public double  getCamarillaDirectionalSlBufferAtrMult() { return cfg().camarillaDirectionalSlBufferAtrMult; }
     public String  getWeeklyExpiryDayOfWeek()           { return cfg().weeklyExpiryDayOfWeek; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
@@ -621,6 +630,7 @@ public class RiskSettingsStore {
     public void setCamarillaMaxConcurrentPositions(int v) { cfg().camarillaMaxConcurrentPositions = Math.max(1, v); }
     public void setCamarillaMinRRRatio(double v)           { cfg().camarillaMinRRRatio = Math.max(0, v); }
     public void setCamarillaMomentumCheckEnabled(boolean v) { cfg().camarillaMomentumCheckEnabled = v; }
+    public void setCamarillaStrangleAtrProximity(double v)  { cfg().camarillaStrangleAtrProximity = Math.max(0, v); }
     public void setCamarillaDirectionalSlBufferAtrMult(double v) {
         cfg().camarillaDirectionalSlBufferAtrMult = Math.max(0, v);
     }
@@ -735,6 +745,7 @@ public class RiskSettingsStore {
     public int     getCamarillaMaxConcurrentPositions(String mode) { return cfgFor(mode).camarillaMaxConcurrentPositions; }
     public double  getCamarillaMinRRRatio(String mode)             { return cfgFor(mode).camarillaMinRRRatio; }
     public boolean isCamarillaMomentumCheckEnabled(String mode)    { return cfgFor(mode).camarillaMomentumCheckEnabled; }
+    public double  getCamarillaStrangleAtrProximity(String mode)   { return cfgFor(mode).camarillaStrangleAtrProximity; }
     public double  getCamarillaDirectionalSlBufferAtrMult(String mode) { return cfgFor(mode).camarillaDirectionalSlBufferAtrMult; }
     public String  getWeeklyExpiryDayOfWeek(String mode)           { return cfgFor(mode).weeklyExpiryDayOfWeek; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
@@ -769,6 +780,7 @@ public class RiskSettingsStore {
     public void setCamarillaMaxConcurrentPositions(String mode, int v) { cfgFor(mode).camarillaMaxConcurrentPositions = Math.max(1, v); }
     public void setCamarillaMinRRRatio(String mode, double v)           { cfgFor(mode).camarillaMinRRRatio = Math.max(0, v); }
     public void setCamarillaMomentumCheckEnabled(String mode, boolean v) { cfgFor(mode).camarillaMomentumCheckEnabled = v; }
+    public void setCamarillaStrangleAtrProximity(String mode, double v)  { cfgFor(mode).camarillaStrangleAtrProximity = Math.max(0, v); }
     public void setCamarillaDirectionalSlBufferAtrMult(String mode, double v) {
         cfgFor(mode).camarillaDirectionalSlBufferAtrMult = Math.max(0, v);
     }
@@ -818,6 +830,7 @@ public class RiskSettingsStore {
             upsert("camarillaMaxConcurrentPositions", String.valueOf(c.camarillaMaxConcurrentPositions));
             upsert("camarillaMinRRRatio",          String.valueOf(c.camarillaMinRRRatio));
             upsert("camarillaMomentumCheckEnabled", String.valueOf(c.camarillaMomentumCheckEnabled));
+            upsert("camarillaStrangleAtrProximity", String.valueOf(c.camarillaStrangleAtrProximity));
             upsert("camarillaDirectionalSlBufferAtrMult", String.valueOf(c.camarillaDirectionalSlBufferAtrMult));
             upsert("weeklyExpiryDayOfWeek", c.weeklyExpiryDayOfWeek);
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
@@ -992,6 +1005,7 @@ public class RiskSettingsStore {
                     case "camarillaMinRRCheckEnabled"   -> { /* retired — replaced by camarillaMinRRRatio (0 = disabled) */ }
                     case "camarillaMinRRRatio"          -> c.camarillaMinRRRatio          = Double.parseDouble(v);
                     case "camarillaMomentumCheckEnabled" -> c.camarillaMomentumCheckEnabled = Boolean.parseBoolean(v);
+                    case "camarillaStrangleAtrProximity" -> c.camarillaStrangleAtrProximity = Double.parseDouble(v);
                     case "camarillaDirectionalSlBufferPoints" -> { /* retired in favour of camarillaDirectionalSlBufferAtrMult; silently consumed */ }
                     case "camarillaDirectionalSlBufferAtrMult" -> c.camarillaDirectionalSlBufferAtrMult = Double.parseDouble(v);
                     // Retired keys silently consumed so legacy JSON files load without
