@@ -687,6 +687,19 @@ public class Camarilla implements Strategy {
         // First: drain any bar-candidate buffers whose grace window has elapsed.
         drainPendingBars();
 
+        // ── Phase 0.5: IRON-WALL STRANGLE — proximity gate (tick cadence) ──
+        // Runs on every fast-tick scheduler invocation, gated by
+        // canFireNewEntry() so the check only activates between
+        // camarillaTradingStartTime and camarillaTradingEndTime. The
+        // strangle fires on the first tick where spot enters the
+        // ± (proximityMult × 5-min ATR) window around the prior close,
+        // not on a 5-min bar close — so a brief intra-bar pass through
+        // the band center still catches the entry.
+        if (isEnabled() && canFireNewEntry()) {
+            CamarillaLevels lv = camarillaService.getLevels(state.futuresSymbol);
+            if (lv != null) tryFireStrangle(lv);
+        }
+
         // Fast-tick TARGET + SL watcher — fires on the live LTP, not on candle close.
         //   • TARGET: single-tick. As soon as triggerLtp crosses targetLevel, close.
         //   • SL:     confirmed over SL_BREACH_CONFIRM_TICKS consecutive polls (~1.5 s)
@@ -821,15 +834,6 @@ public class Camarilla implements Strategy {
             if (!canFireNewEntry()) return;
             CamarillaLevels lv = camarillaService.getLevels(triggerSym);
             if (lv == null) return;   // levels warming up
-
-            // ── Phase 0.5: IRON-WALL STRANGLE ──
-            // Proximity-gated, once-per-session. Fires the H4 CE + L4 PE
-            // strangle when NIFTY spot trades within
-            // ± (camarillaStrangleAtrProximity × 5-min ATR) of the prior close
-            // (Camarilla band center). Runs BEFORE the directional triggers so
-            // both can land on the same bar — composite-key openPositions
-            // handles the (rare) Fyers-symbol collision.
-            tryFireStrangle(lv);
 
             // ── Two-candle entry model — four-phase walk on the current bar ──
             // 1) trigger check (against any pending confirmation in either slot)
@@ -1175,7 +1179,7 @@ public class Camarilla implements Strategy {
      *  buffer the directional setups use (camarillaDirectionalSlBufferAtrMult ×
      *  ATR). No target — NaN propagates through fire() and fastSlCheck so
      *  only the SL gate exits the leg. */
-    private void tryFireStrangle(CamarillaLevels lv) {
+    private synchronized void tryFireStrangle(CamarillaLevels lv) {
         if (state.strangleFiredToday) return;
         if (state.doneForDay || state.dailyLossLockout) return;
         if (lv == null) return;
