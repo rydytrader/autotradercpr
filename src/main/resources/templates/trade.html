@@ -645,7 +645,7 @@
                     ['H5', dailyVal('h5'), weeklyVal('h5'), '#a78bfa', 'outer target'],
                     ['H4', dailyVal('h4'), weeklyVal('h4'), '#34d399', 'bullish trigger'],
                     ['H3', dailyVal('h3'), weeklyVal('h3'), '#f87171', 'bearish trigger'],
-                    'C',    // prior-close anchor row — true Camarilla band center (rendered specially below)
+                    'P',    // pivot anchor row — true Camarilla band center (= prior close mathematically; rendered specially below)
                     ['L3', dailyVal('l3'), weeklyVal('l3'), '#34d399', 'bullish trigger'],
                     ['L4', dailyVal('l4'), weeklyVal('l4'), '#f87171', 'bearish trigger'],
                     ['L5', dailyVal('l5'), weeklyVal('l5'), '#a78bfa', 'outer target']
@@ -664,17 +664,20 @@
                     + '<span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;font-weight:700;min-width:96px;text-align:right;">Weekly</span>'
                     + '</div>';
                 var rowsHtml = rows.map(function(r) {
-                    if (r === 'C') {
-                        // Prior close — the true axis of symmetry of the Camarilla
-                        // bands. H1..H4 = C + multiplier×k, L1..L4 = C − same.
-                        // Sits between H3 and L3 with the cyan accent that
+                    if (r === 'P') {
+                        // Pivot — the true axis of symmetry of the Camarilla
+                        // bands. H1..H4 = P + multiplier×k, L1..L4 = P − same.
+                        // Mathematically equals the prior close — the value
+                        // comes from CamarillaLevels.priorClose() — but we
+                        // label it as P / Pivot in the UI for clarity. Sits
+                        // between H3 and L3 with the cyan accent that
                         // separates the H-side from the L-side.
-                        var dC = dailyVal('priorClose'), wC = weeklyVal('priorClose');
+                        var dP = dailyVal('priorClose'), wP = weeklyVal('priorClose');
                         return '<div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:rgba(125,211,252,0.06);border-left:3px solid var(--accent-cyan);border-radius:4px;">'
-                             + '<span style="font-family:var(--font-mono);font-size:0.78rem;font-weight:700;color:var(--accent-cyan);min-width:28px;">C</span>'
-                             + '<span style="flex:1;font-family:var(--font-mono);font-size:0.62rem;color:var(--text-muted);letter-spacing:0.04em;text-transform:uppercase;">prior close</span>'
-                             + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--accent-cyan);min-width:96px;text-align:right;">' + fmtNum(dC) + '</span>'
-                             + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--accent-cyan);min-width:96px;text-align:right;">' + fmtNum(wC) + '</span>'
+                             + '<span style="font-family:var(--font-mono);font-size:0.78rem;font-weight:700;color:var(--accent-cyan);min-width:28px;">P</span>'
+                             + '<span style="flex:1;font-family:var(--font-mono);font-size:0.62rem;color:var(--text-muted);letter-spacing:0.04em;text-transform:uppercase;">pivot</span>'
+                             + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--accent-cyan);min-width:96px;text-align:right;">' + fmtNum(dP) + '</span>'
+                             + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--accent-cyan);min-width:96px;text-align:right;">' + fmtNum(wP) + '</span>'
                              + '</div>';
                     }
                     var label = r[0], dVal = r[1], wVal = r[2], col = r[3], meaning = r[4];
