@@ -1205,6 +1205,25 @@ public class Camarilla implements Strategy {
         double centerC = lv.priorClose();
         if (Math.abs(spot - centerC) > windowHalf) return;   // spot too far from C — wait
 
+        // ── Momentum (NIFTY RSI-14) gate — neutral band only ──
+        // Strangle is a mean-reversion theta play. Only fire when momentum is
+        // neutral (40 < RSI < 60). Strong trend in either direction makes one
+        // wing far more likely to be tested intraday. Same neutral band as the
+        // directional reversal setups (L3_REVERSAL / H3_REVERSAL).
+        // We deliberately return WITHOUT flipping strangleFiredToday — if RSI
+        // recovers later in the session and spot is still in the window, we
+        // still want to fire. The toggle is shared with directional setups.
+        if (riskSettings.isCamarillaMomentumCheckEnabled()) {
+            try {
+                com.rydytrader.autotrader.service.NiftyRsiService rsi = niftyRsiProvider == null ? null
+                    : niftyRsiProvider.getIfAvailable();
+                if (rsi != null) {
+                    Double v = rsi.currentRsi();
+                    if (v != null && !(v > 40 && v < 60)) return;
+                }
+            } catch (Exception ignored) {}
+        }
+
         // Inside the proximity window. Compute per-leg SL buffer (same multiplier
         // as the directional setups for consistency).
         double bufferMult = Math.max(0, riskSettings.getCamarillaDirectionalSlBufferAtrMult());
