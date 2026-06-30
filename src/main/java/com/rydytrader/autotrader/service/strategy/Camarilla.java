@@ -1030,7 +1030,8 @@ public class Camarilla implements Strategy {
         String today = LocalDate.now(IST).toString();
         if (today.equals(state.sessionLegsDayKey)
             && !state.h4bSymbol.isBlank() && !state.l3rSymbol.isBlank()
-            && !state.h3rSymbol.isBlank() && !state.l4bSymbol.isBlank()) {
+            && !state.h3rSymbol.isBlank() && !state.l4bSymbol.isBlank()
+            && !state.h4SsSymbol.isBlank() && !state.l4SsSymbol.isBlank()) {
             // Already resolved earlier today. Re-subscribe defensively — on a
             // mid-day JVM restart the symbols persist on State (via disk
             // cache) but the Fyers WS subscription set is empty until we
@@ -1069,9 +1070,12 @@ public class Camarilla implements Strategy {
         // Fyers' option-chain payload commonly serves 0 LTPs on holidays for
         // illiquid OTM strikes. Fall back to /data/quotes which returns the
         // last-quoted price per symbol (Friday's close on a holiday Monday).
-        // Only triggered when at least one of the four chain LTPs is 0.
+        // Triggered when ANY of the six chain LTPs (4 directional + 2 strangle)
+        // is 0 — important for the strangle legs which sit further from spot
+        // and are more likely to return 0 from the chain endpoint.
         if (state.h4bRefLtp <= 0 || state.l3rRefLtp <= 0
-            || state.h3rRefLtp <= 0 || state.l4bRefLtp <= 0) {
+            || state.h3rRefLtp <= 0 || state.l4bRefLtp <= 0
+            || state.h4SsRefLtp <= 0 || state.l4SsRefLtp <= 0) {
             backfillRefLtpsFromQuotes();
         }
         state.sessionLegsDayKey = today;
@@ -1097,6 +1101,8 @@ public class Camarilla implements Strategy {
         if (state.l3rRefLtp <= 0 && !state.l3rSymbol.isBlank()) needed.add(state.l3rSymbol);
         if (state.h3rRefLtp <= 0 && !state.h3rSymbol.isBlank()) needed.add(state.h3rSymbol);
         if (state.l4bRefLtp <= 0 && !state.l4bSymbol.isBlank()) needed.add(state.l4bSymbol);
+        if (state.h4SsRefLtp <= 0 && !state.h4SsSymbol.isBlank()) needed.add(state.h4SsSymbol);
+        if (state.l4SsRefLtp <= 0 && !state.l4SsSymbol.isBlank()) needed.add(state.l4SsSymbol);
         if (needed.isEmpty()) return;
         java.util.Map<String, Double> ltpBySymbol = camarillaService.fetchLastQuotedLtps(String.join(",", needed));
         if (ltpBySymbol.isEmpty()) return;
@@ -1104,8 +1110,10 @@ public class Camarilla implements Strategy {
         if (state.l3rRefLtp <= 0 && ltpBySymbol.containsKey(state.l3rSymbol)) state.l3rRefLtp = ltpBySymbol.get(state.l3rSymbol);
         if (state.h3rRefLtp <= 0 && ltpBySymbol.containsKey(state.h3rSymbol)) state.h3rRefLtp = ltpBySymbol.get(state.h3rSymbol);
         if (state.l4bRefLtp <= 0 && ltpBySymbol.containsKey(state.l4bSymbol)) state.l4bRefLtp = ltpBySymbol.get(state.l4bSymbol);
-        log.info("[Camarilla] session legs ref LTPs backfilled from /data/quotes — H4B={}, L3R={}, H3R={}, L4B={}",
-            state.h4bRefLtp, state.l3rRefLtp, state.h3rRefLtp, state.l4bRefLtp);
+        if (state.h4SsRefLtp <= 0 && ltpBySymbol.containsKey(state.h4SsSymbol)) state.h4SsRefLtp = ltpBySymbol.get(state.h4SsSymbol);
+        if (state.l4SsRefLtp <= 0 && ltpBySymbol.containsKey(state.l4SsSymbol)) state.l4SsRefLtp = ltpBySymbol.get(state.l4SsSymbol);
+        log.info("[Camarilla] session legs ref LTPs backfilled from /data/quotes — H4B={}, L3R={}, H3R={}, L4B={}, H4SS={}, L4SS={}",
+            state.h4bRefLtp, state.l3rRefLtp, state.h3rRefLtp, state.l4bRefLtp, state.h4SsRefLtp, state.l4SsRefLtp);
     }
 
     /** Idempotent re-subscribe of the four current session legs. Safe to call

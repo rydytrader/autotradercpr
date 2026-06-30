@@ -383,7 +383,7 @@
 
 <!-- ── Levels modal (Camarilla pivots + session legs) ─────────────────────── -->
 <div id="levelsModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;" onclick="if(event.target===this)closeLevelsModal()">
-    <div class="section-card" style="margin:0;min-width:480px;max-width:680px;max-height:88vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,0.4);">
+    <div class="section-card" style="margin:0;min-width:480px;max-width:1120px;width:90vw;max-height:88vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,0.4);">
         <div class="section-header">
             <div class="section-title">
                 <div class="section-title-dot" style="background: var(--accent-cyan)"></div>
@@ -399,22 +399,28 @@
             </div>
         </div>
         <div style="padding:18px 22px;">
-            <!-- Camarilla pivots -->
-            <div>
-                <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;">Camarilla pivots — NIFTY</div>
-                <div id="levelsModalPivots" style="display:grid;grid-template-columns:repeat(2, 1fr);gap:6px 14px;font-family:var(--font-mono);font-size:0.76rem;">
-                    <div style="color:var(--text-muted);grid-column:span 2;">resolving…</div>
+            <!-- Two-column layout: pivots (left) | session legs (right). The legs
+                 column stacks Directional + Iron-wall strangle vertically.
+                 Falls back to a single column on narrow viewports via grid auto. -->
+            <div style="display:grid;grid-template-columns:minmax(340px, 1fr) minmax(420px, 1.4fr);gap:24px;align-items:start;">
+                <!-- Camarilla pivots -->
+                <div>
+                    <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;">Camarilla pivots — NIFTY</div>
+                    <div id="levelsModalPivots" style="display:grid;grid-template-columns:repeat(2, 1fr);gap:6px 14px;font-family:var(--font-mono);font-size:0.76rem;">
+                        <div style="color:var(--text-muted);grid-column:span 2;">resolving…</div>
+                    </div>
                 </div>
-            </div>
 
-            <!-- Divider between pivots and legs -->
-            <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;">
-
-            <!-- Session legs -->
-            <div>
-                <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;">Session-static trade legs</div>
-                <div id="levelsModalLegs">
-                    <div style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.72rem;">resolving…</div>
+                <!-- Session legs: two subsections — directional + iron-wall strangle -->
+                <div>
+                    <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;">Directional legs</div>
+                    <div id="levelsModalLegsDir">
+                        <div style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.72rem;">resolving…</div>
+                    </div>
+                    <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;margin:14px 0 6px 0;">Iron-wall strangle legs</div>
+                    <div id="levelsModalLegsStrangle">
+                        <div style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.72rem;">resolving…</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -625,7 +631,8 @@
     }
     function renderLevelsModal() {
         var pivWrap = document.getElementById('levelsModalPivots');
-        var lgWrap  = document.getElementById('levelsModalLegs');
+        var lgWrapDir      = document.getElementById('levelsModalLegsDir');
+        var lgWrapStrangle = document.getElementById('levelsModalLegsStrangle');
         if (pivWrap) {
             var lv = _latestPivots;
             var wk = _latestWeeklyPivots;
@@ -681,10 +688,12 @@
                 pivWrap.innerHTML = headerHtml + rowsHtml;
             }
         }
-        if (lgWrap) {
+        if (lgWrapDir || lgWrapStrangle) {
             var legs = _latestSetupLegs;
+            var loadingHtml = '<div style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.72rem;">resolving…</div>';
             if (!legs || !legs.length) {
-                lgWrap.innerHTML = '<div style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.72rem;">resolving…</div>';
+                if (lgWrapDir)      lgWrapDir.innerHTML      = loadingHtml;
+                if (lgWrapStrangle) lgWrapStrangle.innerHTML = loadingHtml;
                 return;
             }
             var fmtNum2 = function(v) {
@@ -697,9 +706,6 @@
                 if (dir === 'BEARISH') return { fg: '#f87171', bg: 'rgba(248,113,113,0.12)', bd: 'rgba(248,113,113,0.40)' };
                 return { fg: 'var(--text-secondary)', bg: 'rgba(148,163,184,0.12)', bd: 'rgba(148,163,184,0.30)' };
             }
-            lgWrap.style.display       = 'flex';
-            lgWrap.style.flexDirection = 'column';
-            lgWrap.style.gap           = '6px';
             // Live NIFTY spot for time-value calculation. Falls back to 0
             // (which yields "—" via fmtNum2) when state hasn't landed yet.
             var spotForTv = (lastState && lastState.atmVwap && lastState.atmVwap.futLtp) || 0;
@@ -711,7 +717,7 @@
                 else if (side === 'PE') intrinsic = Math.max(0, k - s);
                 return Math.max(0, p - intrinsic);
             }
-            lgWrap.innerHTML = legs.map(function(L) {
+            function renderLegRow(L) {
                 var setupTag = L.setupTag || '';
                 var col = pillColors(L.dir);
                 var tv = timeValue(L.side, L.strike, L.ltp);
@@ -729,14 +735,44 @@
                     // is the prior session's close (refLtp); the operator
                     // knows we're in a non-trading session via the market
                     // clock card already on the page.
-                    '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--text-primary);min-width:96px;text-align:right;">' + fmtNum2(L.ltp) + '</span>' +
+                    '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--text-primary);min-width:78px;text-align:right;">' + fmtNum2(L.ltp) + '</span>' +
                     // Time value = LTP − intrinsic. For CE intrinsic = max(0, spot−strike),
                     // for PE intrinsic = max(0, strike−spot). When the strike is OTM
                     // this equals LTP; when ITM it shows the pure theta+vega component.
-                    // Smaller and muted vs LTP so it reads as secondary info.
-                    '<span style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-muted);min-width:78px;text-align:right;" title="Time value = LTP − intrinsic">TV ' + (tv != null ? fmtNum2(tv) : '—') + '</span>' +
+                    '<span style="font-family:var(--font-mono);font-size:0.84rem;font-weight:700;color:var(--text-secondary);min-width:78px;text-align:right;" title="Time value = LTP − intrinsic">' + (tv != null ? fmtNum2(tv) : '—') + '</span>' +
                 '</div>';
-            }).join('');
+            }
+            // Header row mirroring the pivots' "Daily | Weekly" header — gives
+            // the LTP and TV columns a label so the operator knows what each
+            // number is. Padding/min-widths match renderLegRow so columns align.
+            function legsHeaderHtml() {
+                return '<div style="display:flex;align-items:center;gap:14px;padding:4px 14px 6px 14px;">'
+                    + '<span style="min-width:40px;"></span>'                            // setup pill spacer
+                    + '<span style="min-width:120px;"></span>'                           // "Sell PE 24550" spacer
+                    + '<span style="flex:1;"></span>'                                    // levelRef spacer
+                    + '<span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;font-weight:700;min-width:78px;text-align:right;">LTP</span>'
+                    + '<span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;font-weight:700;min-width:78px;text-align:right;">TV</span>'
+                    + '</div>';
+            }
+            // Partition by setup family: H4SS/L4SS go to the strangle wrapper,
+            // everything else (H4B/L3R/H3R/L4B) goes to the directional wrapper.
+            // Each section renders independently; an empty section shows a
+            // muted "resolving…" line rather than collapsing silently.
+            function isStrangleLeg(L) { return L.setup === 'H4_STRANGLE' || L.setup === 'L4_STRANGLE'; }
+            var dirLegs      = legs.filter(function(L) { return !isStrangleLeg(L); });
+            var strangleLegs = legs.filter(isStrangleLeg);
+            if (lgWrapDir) {
+                lgWrapDir.style.display       = 'flex';
+                lgWrapDir.style.flexDirection = 'column';
+                lgWrapDir.style.gap           = '6px';
+                lgWrapDir.innerHTML = dirLegs.length ? (legsHeaderHtml() + dirLegs.map(renderLegRow).join('')) : loadingHtml;
+            }
+            if (lgWrapStrangle) {
+                lgWrapStrangle.style.display       = 'flex';
+                lgWrapStrangle.style.flexDirection = 'column';
+                lgWrapStrangle.style.gap           = '6px';
+                lgWrapStrangle.innerHTML = strangleLegs.length ? (legsHeaderHtml() + strangleLegs.map(renderLegRow).join('')) : loadingHtml;
+            }
         }
     }
 
