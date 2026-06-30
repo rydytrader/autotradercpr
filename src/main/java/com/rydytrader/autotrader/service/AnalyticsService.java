@@ -248,17 +248,15 @@ public class AnalyticsService {
         };
         boolean allStrategies = strategyId == null || strategyId.isBlank() || "all".equalsIgnoreCase(strategyId);
 
-        // Singleton strategy now: if the bean exists and is disabled, hide its trades. If the
-        // bean isn't present yet (Commit A intermediate state, before Camarilla lands), keep
-        // every persisted row visible — there's no other source.
-        Strategy strat = strategy();
-        boolean strategyEnabled = strat == null || strat.isEnabled();
-
+        // Historical / analytics rows are ALWAYS visible regardless of the
+        // kill-switch state. The kill switch only blocks NEW fires; previously
+        // realized trades belong in Home / Calendar / Trade Log permanently.
+        // (Earlier this branch filtered out persisted rows when the strategy
+        // was disabled, which broke dashboards immediately on toggle.)
         List<Trade> out = new ArrayList<>();
         // Persisted rows
         for (StrategyTradeEntity e : tradeRepo.findAllByOrderByClosedAtMillisAsc()) {
             if (!allStrategies && !strategyId.equals(e.getStrategyId())) continue;
-            if (!strategyEnabled) continue;
             LocalDate d;
             try { d = LocalDate.parse(e.getSessionDate()); }
             catch (Exception ignored) { continue; }
@@ -299,7 +297,12 @@ public class AnalyticsService {
      *  OPEN_POSITION_MTM remainder is attributed regardless of persisted history. */
     private void appendLiveTodayTrades(List<Trade> out, String strategyId, LocalDate today) {
         Strategy strat = strategy();
-        if (strat == null || !strat.isEnabled()) return;
+        // Kill switch state is irrelevant here — the strategy holds today's
+        // closed-cycle ring and the live MTM of any still-open position
+        // regardless of whether new fires are allowed. Skipping when disabled
+        // hid the day's accrued P&L from Home / Calendar immediately on
+        // toggle. Only skip when the strategy bean isn't present.
+        if (strat == null) return;
         boolean allStrategies = strategyId == null || strategyId.isBlank() || "all".equalsIgnoreCase(strategyId);
         // NOTE: do NOT bail when strat.id() != strategyId. The strategy's cycle ring also
         // holds MANUAL cycles (strategyId="manual") and those need to flow through the Manual
