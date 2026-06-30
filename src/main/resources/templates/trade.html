@@ -264,6 +264,7 @@
                         <span id="hdrFutChg" style="margin-left:4px;font-weight:600;"></span></span>
                     <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
                         <span id="hdrVixChg" style="margin-left:4px;font-weight:600;"></span></span>
+                    <span style="color:var(--text-muted);" title="NIFTY ATM strike — rounds spot to nearest 50">ATM <span id="hdrAtm" style="color:var(--text-primary);font-weight:700;">—</span></span>
                     <span style="color:var(--text-muted);" title="NIFTY 14-period ATR on 5-min spot bars">ATR<sub style="font-size:0.62em;">5m</sub> <span id="hdrNiftyAtr5m" style="color:var(--text-primary);font-weight:700;">—</span></span>
                 </div>
             </div>
@@ -1151,6 +1152,9 @@
         var p   = Number(pct  || 0);
         var ltpEl = document.getElementById('hdrFut');
         var chgEl = document.getElementById('hdrFutChg');
+        // ATM updates on every spot tick — round to NIFTY's STRIKE_STEP=50.
+        var atmEl = document.getElementById('hdrAtm');
+        if (atmEl) atmEl.textContent = v > 0 ? String(Math.round(v / 50) * 50) : '—';
         if (ltpEl) {
             ltpEl.textContent = v > 0 ? v.toFixed(2) : '—';
             var tip = symbol || 'NIFTY spot index';
@@ -1412,7 +1416,7 @@
 
 <script src="/js/common.js?v=41"></script>
 <script src="/js/ticker.js?v=36"></script>
-<script src="/js/settings-modal.js?v=61"></script>
+<script src="/js/settings-modal.js?v=62"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
 <script src="/js/manual-terminal-modal.js?v=45"></script>
 </body>

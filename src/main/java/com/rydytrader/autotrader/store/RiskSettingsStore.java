@@ -56,11 +56,11 @@ public class RiskSettingsStore {
          *  stop-loss beyond the confirmation candle's far extreme. Buffer in
          *  spot points = NiftyAtrService.currentAtr() × this multiplier.
          *  Bullish bets: SL = confirmLow − buffer. Bearish: SL = confirmHigh
-         *  + buffer. Default 1.0 — one full 5-min ATR of headroom keeps the
+         *  + buffer. Default 0.5 — half a 5-min ATR of headroom keeps the
          *  SL outside normal noise without bloating risk. Set to 0 for SL
          *  exactly at the candle extreme. ATR unavailable (Wilder not seeded
          *  yet) falls back to 0 buffer with a warning. */
-        volatile double camarillaDirectionalSlBufferAtrMult = 1.0;
+        volatile double camarillaDirectionalSlBufferAtrMult = 0.5;
         /** NIFTY weekly options expiry day-of-week (uppercase English name —
          *  MONDAY/TUESDAY/WEDNESDAY/THURSDAY/FRIDAY). NSE has changed this in the past
          *  (Thursday → Tuesday) and may change it again; making it a setting means future
