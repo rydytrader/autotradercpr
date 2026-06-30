@@ -1323,6 +1323,16 @@ public class Camarilla implements Strategy {
      *  used by both the dashboard badge AND the budget gate at entry time. */
     private double exposedRiskNow() {
         double total = 0;
+        // Iron-wall strangle is structurally mutex: NIFTY spot cannot be above
+        // H4 AND below L4 at the same moment, so at most ONE strangle leg can
+        // hit SL on any given session. Summing both would double-count the
+        // worst case. Accumulate the H4_STRANGLE and L4_STRANGLE risks into
+        // separate scalars during the walk, then add max(h4, l4) to the total
+        // at the end — that reflects the actual iron-wall exposure. Directional
+        // setups continue to sum normally (they CAN all SL together on a
+        // strong same-side move).
+        double h4StrangleRisk = 0;
+        double l4StrangleRisk = 0;
         for (Position p : state.openPositions.values()) {
             // v2 positions: futures-distance proxy (entryFutures vs slFutures),
             // scaled by ATM_DELTA so the projection reflects actual option premium
@@ -1339,8 +1349,20 @@ public class Camarilla implements Strategy {
                     ? Math.max(0, p.slLevel - p.entryPrice)
                     : Math.max(0, p.entryPrice - p.slLevel);
             }
-            total += perShare * p.qty;
+            double perPos = perShare * p.qty;
+            if (p.setup == ActiveSetup.H4_STRANGLE) {
+                h4StrangleRisk += perPos;
+            } else if (p.setup == ActiveSetup.L4_STRANGLE) {
+                l4StrangleRisk += perPos;
+            } else {
+                total += perPos;
+            }
         }
+        // Iron-wall pair contribution: max() collapses both-legs-open to the
+        // worse leg's projection; one-leg-open (the other was already SL'd)
+        // reads through unchanged since the closed leg's accumulator is 0;
+        // neither-open contributes 0.
+        total += Math.max(h4StrangleRisk, l4StrangleRisk);
         return total;
     }
 
