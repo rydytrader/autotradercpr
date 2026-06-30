@@ -172,6 +172,7 @@ public class Camarilla implements Strategy {
     private final ObjectProvider<StrategyTradeRepository> tradeRepoProvider;
     private final ObjectProvider<CamarillaStreamBroker>   streamBrokerProvider;
     private final ObjectProvider<com.rydytrader.autotrader.service.NiftyRsiService> niftyRsiProvider;
+    private final ObjectProvider<com.rydytrader.autotrader.service.NiftyAtrService> niftyAtrProvider;
     // Tolerate unknown fields on read so a state file written by a different
     // branch (e.g. a future v3 or v1's older shape) doesn't wipe today's
     // in-memory ring on boot. Without this guard Jackson throws
@@ -198,7 +199,8 @@ public class Camarilla implements Strategy {
                      RiskSettingsStore riskSettings,
                      ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
                      ObjectProvider<CamarillaStreamBroker> streamBrokerProvider,
-                     ObjectProvider<com.rydytrader.autotrader.service.NiftyRsiService> niftyRsiProvider) {
+                     ObjectProvider<com.rydytrader.autotrader.service.NiftyRsiService> niftyRsiProvider,
+                     ObjectProvider<com.rydytrader.autotrader.service.NiftyAtrService> niftyAtrProvider) {
         this.camarillaService     = camarillaService;
         this.candleAggregator     = candleAggregator;
         this.atmTracker           = atmTracker;
@@ -210,6 +212,7 @@ public class Camarilla implements Strategy {
         this.tradeRepoProvider    = tradeRepoProvider;
         this.streamBrokerProvider = streamBrokerProvider;
         this.niftyRsiProvider     = niftyRsiProvider;
+        this.niftyAtrProvider     = niftyAtrProvider;
     }
 
     /** Push the latest dashboard state to every SSE-connected browser. No-op when no clients. */
@@ -818,9 +821,25 @@ public class Camarilla implements Strategy {
             // is about to open a position on the traded side and the watcher needs
             // its LTP feed alive. The untraded leg stays subscribed too (cheap;
             // releases on next reconnect via the deferred-unsubscribe contract).
-            // Configurable buffer (NIFTY spot points) widening the SL beyond the
-            // confirmation candle's far extreme.
-            double slBuf = Math.max(0, riskSettings.getCamarillaDirectionalSlBufferPoints());
+            // Volatility-scaled SL buffer in NIFTY spot points.
+            //   buffer = NIFTY 5-min ATR × camarillaDirectionalSlBufferAtrMult
+            // When ATR isn't seeded yet (Wilder still warming up after boot)
+            // the buffer falls back to 0 so SL sits exactly at the candle
+            // extreme — a missing ATR shouldn't widen risk implicitly.
+            double atrMult = Math.max(0, riskSettings.getCamarillaDirectionalSlBufferAtrMult());
+            double slBuf = 0;
+            if (atrMult > 0) {
+                try {
+                    com.rydytrader.autotrader.service.NiftyAtrService atrSvc = niftyAtrProvider == null ? null
+                        : niftyAtrProvider.getIfAvailable();
+                    Double atr = atrSvc == null ? null : atrSvc.currentAtr();
+                    if (atr != null && atr > 0) {
+                        slBuf = atr * atrMult;
+                    } else {
+                        event("[WARNING]", "Sizing", "ATR unavailable — SL buffer = 0 this fire");
+                    }
+                } catch (Exception ignored) {}
+            }
 
             PendingConfirmation pb = state.pendingBullish;
             if (pb != null && c.isGreen() && c.close() > pb.confirmHigh) {
@@ -2304,6 +2323,12 @@ public class Camarilla implements Strategy {
         try {
             double vix = marketDataService.getLtp("NSE:INDIAVIX-INDEX");
             m.put("indiaVix", round2(vix));
+        } catch (Exception ignored) {}
+        try {
+            com.rydytrader.autotrader.service.NiftyAtrService atrSvc = niftyAtrProvider == null ? null
+                : niftyAtrProvider.getIfAvailable();
+            Double atr = atrSvc == null ? null : atrSvc.currentAtr();
+            if (atr != null) m.put("niftyAtr5m", atr);
         } catch (Exception ignored) {}
         return m;
     }

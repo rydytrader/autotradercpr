@@ -264,6 +264,7 @@
                         <span id="hdrFutChg" style="margin-left:4px;font-weight:600;"></span></span>
                     <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
                         <span id="hdrVixChg" style="margin-left:4px;font-weight:600;"></span></span>
+                    <span style="color:var(--text-muted);" title="NIFTY 14-period ATR on 5-min spot bars">ATR<sub style="font-size:0.62em;">5m</sub> <span id="hdrNiftyAtr5m" style="color:var(--text-primary);font-weight:700;">—</span></span>
                 </div>
             </div>
             <div style="display:flex; gap:10px; align-items:center;">
@@ -544,6 +545,9 @@
         // no separate ticker-SSE writer needed since futures isn't in the ticker feed.
         var vxEl  = document.getElementById('hdrVix');
         if (vxEl)  vxEl.textContent  = d.indiaVix  != null ? Number(d.indiaVix).toFixed(2)  : '—';
+        var atrEl = document.getElementById('hdrNiftyAtr5m');
+        if (atrEl) atrEl.textContent = (d.niftyAtr5m != null && isFinite(Number(d.niftyAtr5m)))
+            ? Number(d.niftyAtr5m).toFixed(2) : '—';
         captureLevelsState(d);
     }
 
@@ -1408,7 +1412,7 @@
 
 <script src="/js/common.js?v=41"></script>
 <script src="/js/ticker.js?v=36"></script>
-<script src="/js/settings-modal.js?v=60"></script>
+<script src="/js/settings-modal.js?v=61"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
 <script src="/js/manual-terminal-modal.js?v=45"></script>
 </body>

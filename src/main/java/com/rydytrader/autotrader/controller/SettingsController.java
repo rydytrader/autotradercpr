@@ -42,7 +42,7 @@ public class SettingsController {
         result.put("camarillaMaxConcurrentPositions", riskSettings.getCamarillaMaxConcurrentPositions(effectiveMode));
         result.put("camarillaMinRRRatio",          riskSettings.getCamarillaMinRRRatio(effectiveMode));
         result.put("camarillaMomentumCheckEnabled", riskSettings.isCamarillaMomentumCheckEnabled(effectiveMode));
-        result.put("camarillaDirectionalSlBufferPoints", riskSettings.getCamarillaDirectionalSlBufferPoints(effectiveMode));
+        result.put("camarillaDirectionalSlBufferAtrMult", riskSettings.getCamarillaDirectionalSlBufferAtrMult(effectiveMode));
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
         result.put("maxRiskPerDayPct",    riskSettings.getMaxRiskPerDayPct(effectiveMode));
@@ -90,7 +90,7 @@ public class SettingsController {
             if (body.containsKey("camarillaMaxConcurrentPositions")) riskSettings.setCamarillaMaxConcurrentPositions(effectiveMode, Integer.parseInt(body.get("camarillaMaxConcurrentPositions").toString()));
             if (body.containsKey("camarillaMinRRRatio"))             riskSettings.setCamarillaMinRRRatio(effectiveMode, Double.parseDouble(body.get("camarillaMinRRRatio").toString()));
             if (body.containsKey("camarillaMomentumCheckEnabled"))   riskSettings.setCamarillaMomentumCheckEnabled(effectiveMode, Boolean.parseBoolean(body.get("camarillaMomentumCheckEnabled").toString()));
-            if (body.containsKey("camarillaDirectionalSlBufferPoints")) riskSettings.setCamarillaDirectionalSlBufferPoints(effectiveMode, Double.parseDouble(body.get("camarillaDirectionalSlBufferPoints").toString()));
+            if (body.containsKey("camarillaDirectionalSlBufferAtrMult")) riskSettings.setCamarillaDirectionalSlBufferAtrMult(effectiveMode, Double.parseDouble(body.get("camarillaDirectionalSlBufferAtrMult").toString()));
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
             if (body.containsKey("maxRiskPerDayPct"))  riskSettings.setMaxRiskPerDayPct(effectiveMode, Double.parseDouble(body.get("maxRiskPerDayPct").toString()));

@@ -39,7 +39,7 @@
                         '<option value="FRIDAY">Friday</option>' +
                         '</select><div class="sm-hint">NIFTY weekly expiry day. Drives the Expiry vs Non-Expiry analytics split.</div></div>' +
                     '<div class="sm-field"><label>Min R:R Ratio</label><input type="number" id="sm-camarillaMinRRRatio" step="0.1" min="0" max="10"><div class="sm-hint">Reward must be at least this multiple of risk to fire a trade. 1.0 = 1:1, 2.0 = 1:2 (reward ≥ 2 × risk). Set to 0 to disable the R:R check entirely and rely solely on the budget gate. Default 2.0 — premium-selling needs an asymmetric floor since winning trades capture small theta while losing trades hit a wider SL.</div></div>' +
-                    '<div class="sm-field"><label>Directional SL Buffer (NIFTY pts)</label><input type="number" id="sm-camarillaDirectionalSlBufferPoints" step="0.5" min="0" max="50"><div class="sm-hint">Widens stop-loss beyond the confirmation candle\'s edge by this many NIFTY spot points. Applies to all four directional setups (H4 Breakout, L3 Reversal, H3 Reversal, L4 Breakdown). Default 5.0; set to 0 to use the candle extreme exactly.</div></div>' +
+                    '<div class="sm-field"><label>Directional SL Buffer (× 5m ATR)</label><input type="number" id="sm-camarillaDirectionalSlBufferAtrMult" step="0.1" min="0" max="10"><div class="sm-hint">Widens stop-loss beyond the confirmation candle\'s edge by this multiple of the live NIFTY 5-min ATR. Applies to all four directional setups (H4 Breakout, L3 Reversal, H3 Reversal, L4 Breakdown). Default 1.0 (one full ATR); set to 0 to use the candle extreme exactly. Buffer self-adjusts to volatility — wider on noisy days, tighter on calm days.</div></div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
                     '<div class="sm-field"><label>Brokerage per Order (₹)</label><input type="number" id="sm-brokeragePerOrder" step="1" min="0"><div class="sm-hint">Flat per-order brokerage. Drives charge estimates on every dashboard + session row.</div></div>' +
@@ -209,7 +209,7 @@
             portfolioMaxRiskPct:      parseFloat(document.getElementById('sm-portfolioMaxRiskPct').value) || 0,
             weeklyExpiryDayOfWeek:    (document.getElementById('sm-weeklyExpiryDayOfWeek').value || 'TUESDAY').trim().toUpperCase(),
             camarillaMinRRRatio:        Math.max(0, parseFloat(document.getElementById('sm-camarillaMinRRRatio').value) || 0),
-            camarillaDirectionalSlBufferPoints: parseFloat(document.getElementById('sm-camarillaDirectionalSlBufferPoints').value) || 0
+            camarillaDirectionalSlBufferAtrMult: Math.max(0, parseFloat(document.getElementById('sm-camarillaDirectionalSlBufferAtrMult').value) || 0)
         };
         postSettings('/api/settings/risk', body);
     }
@@ -268,8 +268,8 @@
             if (expSel)   expSel.value   = d.weeklyExpiryDayOfWeek || 'TUESDAY';
             var rrRatio = document.getElementById('sm-camarillaMinRRRatio');
             if (rrRatio) rrRatio.value = d.camarillaMinRRRatio != null ? d.camarillaMinRRRatio : 2.0;
-            var slBuf = document.getElementById('sm-camarillaDirectionalSlBufferPoints');
-            if (slBuf) slBuf.value = d.camarillaDirectionalSlBufferPoints != null ? d.camarillaDirectionalSlBufferPoints : 5.0;
+            var slBuf = document.getElementById('sm-camarillaDirectionalSlBufferAtrMult');
+            if (slBuf) slBuf.value = d.camarillaDirectionalSlBufferAtrMult != null ? d.camarillaDirectionalSlBufferAtrMult : 1.0;
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {
                 updatePortfolioRiskHint(parseFloat(capInput.value) || 0, parseFloat(pctInput && pctInput.value) || 0);

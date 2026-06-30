@@ -52,14 +52,15 @@ public class RiskSettingsStore {
          *  premium-selling setups need an asymmetric floor since winning trades
          *  capture small theta while losing trades hit a wider SL. */
         volatile double camarillaMinRRRatio = 2.0;
-        /** Buffer (in NIFTY spot points) applied to the directional setups' stop-loss
-         *  beyond the confirmation candle's far extreme. Bullish bets:
-         *  SL = confirmLow − buffer. Bearish bets: SL = confirmHigh + buffer. Default
-         *  5.0 — wide enough to absorb normal noise on the trigger bar without
-         *  invalidating reasonable R:R. Set to 0 to restore the legacy behavior of
-         *  SL exactly at the candle extreme. Strangle setups (H4_STRANGLE,
-         *  L4_STRANGLE) are NOT affected — they use the Camarilla level as SL. */
-        volatile double camarillaDirectionalSlBufferPoints = 5.0;
+        /** Multiplier of NIFTY 5-min ATR applied to the directional setups'
+         *  stop-loss beyond the confirmation candle's far extreme. Buffer in
+         *  spot points = NiftyAtrService.currentAtr() × this multiplier.
+         *  Bullish bets: SL = confirmLow − buffer. Bearish: SL = confirmHigh
+         *  + buffer. Default 1.0 — one full 5-min ATR of headroom keeps the
+         *  SL outside normal noise without bloating risk. Set to 0 for SL
+         *  exactly at the candle extreme. ATR unavailable (Wilder not seeded
+         *  yet) falls back to 0 buffer with a warning. */
+        volatile double camarillaDirectionalSlBufferAtrMult = 1.0;
         /** NIFTY weekly options expiry day-of-week (uppercase English name —
          *  MONDAY/TUESDAY/WEDNESDAY/THURSDAY/FRIDAY). NSE has changed this in the past
          *  (Thursday → Tuesday) and may change it again; making it a setting means future
@@ -425,7 +426,7 @@ public class RiskSettingsStore {
     public int     getCamarillaMaxConcurrentPositions() { return cfg().camarillaMaxConcurrentPositions; }
     public double  getCamarillaMinRRRatio()             { return cfg().camarillaMinRRRatio; }
     public boolean isCamarillaMomentumCheckEnabled()    { return cfg().camarillaMomentumCheckEnabled; }
-    public double  getCamarillaDirectionalSlBufferPoints() { return cfg().camarillaDirectionalSlBufferPoints; }
+    public double  getCamarillaDirectionalSlBufferAtrMult() { return cfg().camarillaDirectionalSlBufferAtrMult; }
     public String  getWeeklyExpiryDayOfWeek()           { return cfg().weeklyExpiryDayOfWeek; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
@@ -620,8 +621,8 @@ public class RiskSettingsStore {
     public void setCamarillaMaxConcurrentPositions(int v) { cfg().camarillaMaxConcurrentPositions = Math.max(1, v); }
     public void setCamarillaMinRRRatio(double v)           { cfg().camarillaMinRRRatio = Math.max(0, v); }
     public void setCamarillaMomentumCheckEnabled(boolean v) { cfg().camarillaMomentumCheckEnabled = v; }
-    public void setCamarillaDirectionalSlBufferPoints(double v) {
-        cfg().camarillaDirectionalSlBufferPoints = Math.max(0, v);
+    public void setCamarillaDirectionalSlBufferAtrMult(double v) {
+        cfg().camarillaDirectionalSlBufferAtrMult = Math.max(0, v);
     }
     public void setWeeklyExpiryDayOfWeek(String v) {
         if (v == null || v.isBlank()) { cfg().weeklyExpiryDayOfWeek = "TUESDAY"; return; }
@@ -734,7 +735,7 @@ public class RiskSettingsStore {
     public int     getCamarillaMaxConcurrentPositions(String mode) { return cfgFor(mode).camarillaMaxConcurrentPositions; }
     public double  getCamarillaMinRRRatio(String mode)             { return cfgFor(mode).camarillaMinRRRatio; }
     public boolean isCamarillaMomentumCheckEnabled(String mode)    { return cfgFor(mode).camarillaMomentumCheckEnabled; }
-    public double  getCamarillaDirectionalSlBufferPoints(String mode) { return cfgFor(mode).camarillaDirectionalSlBufferPoints; }
+    public double  getCamarillaDirectionalSlBufferAtrMult(String mode) { return cfgFor(mode).camarillaDirectionalSlBufferAtrMult; }
     public String  getWeeklyExpiryDayOfWeek(String mode)           { return cfgFor(mode).weeklyExpiryDayOfWeek; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
@@ -768,8 +769,8 @@ public class RiskSettingsStore {
     public void setCamarillaMaxConcurrentPositions(String mode, int v) { cfgFor(mode).camarillaMaxConcurrentPositions = Math.max(1, v); }
     public void setCamarillaMinRRRatio(String mode, double v)           { cfgFor(mode).camarillaMinRRRatio = Math.max(0, v); }
     public void setCamarillaMomentumCheckEnabled(String mode, boolean v) { cfgFor(mode).camarillaMomentumCheckEnabled = v; }
-    public void setCamarillaDirectionalSlBufferPoints(String mode, double v) {
-        cfgFor(mode).camarillaDirectionalSlBufferPoints = Math.max(0, v);
+    public void setCamarillaDirectionalSlBufferAtrMult(String mode, double v) {
+        cfgFor(mode).camarillaDirectionalSlBufferAtrMult = Math.max(0, v);
     }
     public void setWeeklyExpiryDayOfWeek(String mode, String v) {
         if (v == null || v.isBlank()) { cfgFor(mode).weeklyExpiryDayOfWeek = "TUESDAY"; return; }
@@ -817,7 +818,7 @@ public class RiskSettingsStore {
             upsert("camarillaMaxConcurrentPositions", String.valueOf(c.camarillaMaxConcurrentPositions));
             upsert("camarillaMinRRRatio",          String.valueOf(c.camarillaMinRRRatio));
             upsert("camarillaMomentumCheckEnabled", String.valueOf(c.camarillaMomentumCheckEnabled));
-            upsert("camarillaDirectionalSlBufferPoints", String.valueOf(c.camarillaDirectionalSlBufferPoints));
+            upsert("camarillaDirectionalSlBufferAtrMult", String.valueOf(c.camarillaDirectionalSlBufferAtrMult));
             upsert("weeklyExpiryDayOfWeek", c.weeklyExpiryDayOfWeek);
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
@@ -991,7 +992,8 @@ public class RiskSettingsStore {
                     case "camarillaMinRRCheckEnabled"   -> { /* retired — replaced by camarillaMinRRRatio (0 = disabled) */ }
                     case "camarillaMinRRRatio"          -> c.camarillaMinRRRatio          = Double.parseDouble(v);
                     case "camarillaMomentumCheckEnabled" -> c.camarillaMomentumCheckEnabled = Boolean.parseBoolean(v);
-                    case "camarillaDirectionalSlBufferPoints" -> c.camarillaDirectionalSlBufferPoints = Double.parseDouble(v);
+                    case "camarillaDirectionalSlBufferPoints" -> { /* retired in favour of camarillaDirectionalSlBufferAtrMult; silently consumed */ }
+                    case "camarillaDirectionalSlBufferAtrMult" -> c.camarillaDirectionalSlBufferAtrMult = Double.parseDouble(v);
                     // Retired keys silently consumed so legacy JSON files load without
                     // FAIL_ON_UNKNOWN_PROPERTIES errors. portfolioMaxDailyLoss is the
                     // canonical max-risk knob now (derived ₹ from startingCapital ×
