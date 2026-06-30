@@ -2195,13 +2195,17 @@ public class Camarilla implements Strategy {
         // 4-row block (replaces the legacy dynamic ATM chip and the per-pending
         // LOCK chip). Emitted as an empty array until the four legs resolve.
         java.util.List<Map<String, Object>> setupLegs = new java.util.ArrayList<>(4);
-        addSetupLegRow(setupLegs, ActiveSetup.H4_BREAKOUT,  "BULLISH", "H3",
+        // levelRef strings reflect the STRIKE level each setup sells at
+        // (Commit DDD: strikes moved from "next level out" to "at trigger
+        // level"). The Levels modal renders this as "near {levelRef}" next
+        // to the strike — both columns now agree.
+        addSetupLegRow(setupLegs, ActiveSetup.H4_BREAKOUT,  "BULLISH", "H4",
                        state.h4bStrike, state.h4bSymbol, "PE", state.h4bRefLtp);
-        addSetupLegRow(setupLegs, ActiveSetup.L3_REVERSAL,  "BULLISH", "L4",
+        addSetupLegRow(setupLegs, ActiveSetup.L3_REVERSAL,  "BULLISH", "L3",
                        state.l3rStrike, state.l3rSymbol, "PE", state.l3rRefLtp);
-        addSetupLegRow(setupLegs, ActiveSetup.H3_REVERSAL,  "BEARISH", "H4",
+        addSetupLegRow(setupLegs, ActiveSetup.H3_REVERSAL,  "BEARISH", "H3",
                        state.h3rStrike, state.h3rSymbol, "CE", state.h3rRefLtp);
-        addSetupLegRow(setupLegs, ActiveSetup.L4_BREAKDOWN, "BEARISH", "L3",
+        addSetupLegRow(setupLegs, ActiveSetup.L4_BREAKDOWN, "BEARISH", "L4",
                        state.l4bStrike, state.l4bSymbol, "CE", state.l4bRefLtp);
         m.put("setupLegs", setupLegs);
         m.put("watchlistSize",     state.symbolRole.size());
