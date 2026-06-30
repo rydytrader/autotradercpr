@@ -718,13 +718,25 @@
                 return Math.max(0, p - intrinsic);
             }
             function renderLegRow(L) {
-                var setupTag = L.setupTag || '';
                 var col = pillColors(L.dir);
                 var tv = timeValue(L.side, L.strike, L.ltp);
+                // Setup label = full enum name with underscores → spaces.
+                // Strangle setups get expanded to "SHORT STRANGLE" to make the
+                // mechanic explicit (we're SELLING the option, not buying).
+                //   H4_BREAKOUT  → "H4 BREAKOUT"
+                //   L3_REVERSAL  → "L3 REVERSAL"
+                //   H4_STRANGLE  → "H4 SHORT STRANGLE"
+                //   L4_STRANGLE  → "L4 SHORT STRANGLE"
+                // Styled to match the Camarilla pivot row labels (H3/H4 etc):
+                // plain monospace text in the direction's accent color, no pill
+                // background — the left-border stripe already conveys direction.
+                var setupLabel;
+                if (L.setup === 'H4_STRANGLE')      setupLabel = 'H4 SHORT STRANGLE';
+                else if (L.setup === 'L4_STRANGLE') setupLabel = 'L4 SHORT STRANGLE';
+                else                                setupLabel = (L.setup || '').replace(/_/g, ' ');
                 return '<div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:rgba(255,255,255,0.015);border-left:3px solid ' + col.fg + ';border-radius:4px;">' +
-                    // Setup pill
-                    '<span style="padding:4px 10px;border-radius:6px;font-family:var(--font-mono);font-size:0.66rem;font-weight:700;letter-spacing:0.06em;' +
-                        'background:' + col.bg + ';color:' + col.fg + ';border:1px solid ' + col.bd + ';">' + setupTag + '</span>' +
+                    // Setup label — matches pivot row label CSS (font-mono, 0.78rem, weight 700)
+                    '<span style="font-family:var(--font-mono);font-size:0.78rem;font-weight:700;letter-spacing:0.04em;color:' + col.fg + ';min-width:170px;">' + setupLabel + '</span>' +
                     // Trade descriptor: "Sell PE 24550"
                     '<span style="font-family:var(--font-mono);font-size:0.74rem;color:var(--text-secondary);">' +
                         'Sell <span style="color:var(--text-primary);font-weight:700;">' + (L.side || '') + ' ' + (L.strike || '—') + '</span>' +
@@ -747,7 +759,7 @@
             // number is. Padding/min-widths match renderLegRow so columns align.
             function legsHeaderHtml() {
                 return '<div style="display:flex;align-items:center;gap:14px;padding:4px 14px 6px 14px;">'
-                    + '<span style="min-width:40px;"></span>'                            // setup pill spacer
+                    + '<span style="min-width:170px;"></span>'                           // setup-label spacer (matches renderLegRow)
                     + '<span style="min-width:120px;"></span>'                           // "Sell PE 24550" spacer
                     + '<span style="flex:1;"></span>'                                    // levelRef spacer
                     + '<span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;font-weight:700;min-width:78px;text-align:right;">LTP</span>'
