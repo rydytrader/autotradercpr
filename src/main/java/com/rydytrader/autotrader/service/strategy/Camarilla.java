@@ -999,10 +999,16 @@ public class Camarilla implements Strategy {
                 h3row, h4row, l3row, l4row);
             return false;
         }
-        state.h4bSymbol = h3row.peSymbol(); state.h4bStrike = h3row.resolvedStrike(); state.h4bRefLtp = h3row.peLtp();
-        state.l3rSymbol = l4row.peSymbol(); state.l3rStrike = l4row.resolvedStrike(); state.l3rRefLtp = l4row.peLtp();
-        state.h3rSymbol = h4row.ceSymbol(); state.h3rStrike = h4row.resolvedStrike(); state.h3rRefLtp = h4row.ceLtp();
-        state.l4bSymbol = l3row.ceSymbol(); state.l4bStrike = l3row.resolvedStrike(); state.l4bRefLtp = l3row.ceLtp();
+        // Each setup sells the OTM contract whose strike sits AT its own trigger
+        // level — not the next level out. The trigger-candle geometry guarantees
+        // the strike is still slightly OTM at fire time (spot above L3 on L3R,
+        // above H4 on H4B, below H3 on H3R, below L4 on L4B), so premium-selling
+        // semantics hold. Closer-to-ATM strikes = larger premium credit + higher
+        // delta vs the prior "next level out" mapping.
+        state.h4bSymbol = h4row.peSymbol(); state.h4bStrike = h4row.resolvedStrike(); state.h4bRefLtp = h4row.peLtp();
+        state.l3rSymbol = l3row.peSymbol(); state.l3rStrike = l3row.resolvedStrike(); state.l3rRefLtp = l3row.peLtp();
+        state.h3rSymbol = h3row.ceSymbol(); state.h3rStrike = h3row.resolvedStrike(); state.h3rRefLtp = h3row.ceLtp();
+        state.l4bSymbol = l4row.ceSymbol(); state.l4bStrike = l4row.resolvedStrike(); state.l4bRefLtp = l4row.ceLtp();
         // Fyers' option-chain payload commonly serves 0 LTPs on holidays for
         // illiquid OTM strikes. Fall back to /data/quotes which returns the
         // last-quoted price per symbol (Friday's close on a holiday Monday).
@@ -2341,10 +2347,10 @@ public class Camarilla implements Strategy {
         // Resolved at boot from today's Camarilla levels and subscribed for the
         // full session — no per-confirmation churn. fire() looks up the right
         // leg by setup type. Empty until the first successful resolveSessionLegs().
-        public String h4bSymbol = "";   // H4_BREAKOUT  → sell PE near H3
-        public String l3rSymbol = "";   // L3_REVERSAL  → sell PE near L4
-        public String h3rSymbol = "";   // H3_REVERSAL  → sell CE near H4
-        public String l4bSymbol = "";   // L4_BREAKDOWN → sell CE near L3
+        public String h4bSymbol = "";   // H4_BREAKOUT  → sell PE near H4
+        public String l3rSymbol = "";   // L3_REVERSAL  → sell PE near L3
+        public String h3rSymbol = "";   // H3_REVERSAL  → sell CE near H3
+        public String l4bSymbol = "";   // L4_BREAKDOWN → sell CE near L4
         public long   h4bStrike;
         public long   l3rStrike;
         public long   h3rStrike;
