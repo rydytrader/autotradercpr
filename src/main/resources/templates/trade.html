@@ -651,9 +651,11 @@
                 //   CE-selling setups (bearish) → ceil(level)
                 // H4 and L4 have BOTH directions (directional + strangle), so
                 // both floor and ceil are shown as separate chips.
-                // NOTE: leading `[` is space-separated from the next `[` to
-                // avoid Thymeleaf mistaking `[[` for its `[[${expr}]]` inline
-                // expression syntax at template-parse time.
+                // NOTE: nested array literals below are written with a space
+                // between the two opening brackets — Thymeleaf treats an
+                // unbroken pair of opening square brackets as its inline
+                // expression syntax and tries to parse the JS inside as an
+                // expression at template-parse time. Do not collapse the space.
                 var otm = {
                     // level → array of [strike, side] chip descriptors
                     H3: [ [ceilStrike(dailyVal('h3')), 'CE'] ],
