@@ -1043,30 +1043,39 @@ public class Camarilla implements Strategy {
         }
         CamarillaLevels lv = camarillaService.getLevels(NIFTY_SYMBOL);
         if (lv == null) return false;
-        BalancedAtmSelector.StrikeAtLevel h3row = atmSelector.resolveStrikeAtLevel(lv.h3());
-        BalancedAtmSelector.StrikeAtLevel h4row = atmSelector.resolveStrikeAtLevel(lv.h4());
-        BalancedAtmSelector.StrikeAtLevel l3row = atmSelector.resolveStrikeAtLevel(lv.l3());
-        BalancedAtmSelector.StrikeAtLevel l4row = atmSelector.resolveStrikeAtLevel(lv.l4());
-        if (h3row == null || h4row == null || l3row == null || l4row == null) {
-            log.debug("[Camarilla] session legs deferred — one or more chain rows null (h3={}, h4={}, l3={}, l4={})",
-                h3row, h4row, l3row, l4row);
+        // OTM-aware, per-setup strike resolution. Each setup gets the
+        // strike on the OTM side of its own Camarilla level:
+        //   PE sellers (H4_BREAKOUT, L3_REVERSAL, L4_STRANGLE) → floor(level)
+        //   CE sellers (H3_REVERSAL, L4_BREAKDOWN, H4_STRANGLE) → ceil(level)
+        // Previously we round-to-nearest, which picked the ATM/ITM strike when
+        // the level sat closer to the strike ABOVE it (e.g. H4 = 23979 rounded
+        // to 24000 for a PE seller — with spot > 23979 at breakout, that PE is
+        // ATM/ITM, not OTM). Direction-aware floor/ceil fixes this — for H4
+        // = 23979 the PE seller now correctly picks strike 23950.
+        var h4bRow  = atmSelector.resolveOtmStrikeAtLevel(lv.h4(), "PE");
+        var l3rRow  = atmSelector.resolveOtmStrikeAtLevel(lv.l3(), "PE");
+        var h3rRow  = atmSelector.resolveOtmStrikeAtLevel(lv.h3(), "CE");
+        var l4bRow  = atmSelector.resolveOtmStrikeAtLevel(lv.l4(), "CE");
+        var h4SsRow = atmSelector.resolveOtmStrikeAtLevel(lv.h4(), "CE");
+        var l4SsRow = atmSelector.resolveOtmStrikeAtLevel(lv.l4(), "PE");
+        if (h4bRow == null || l3rRow == null || h3rRow == null || l4bRow == null
+            || h4SsRow == null || l4SsRow == null) {
+            log.debug("[Camarilla] session legs deferred — one or more chain rows null "
+                + "(H4B={}, L3R={}, H3R={}, L4B={}, H4SS={}, L4SS={})",
+                h4bRow, l3rRow, h3rRow, l4bRow, h4SsRow, l4SsRow);
             return false;
         }
-        // Each setup sells the OTM contract whose strike sits AT its own trigger
-        // level — not the next level out. The trigger-candle geometry guarantees
-        // the strike is still slightly OTM at fire time (spot above L3 on L3R,
-        // above H4 on H4B, below H3 on H3R, below L4 on L4B), so premium-selling
-        // semantics hold. Closer-to-ATM strikes = larger premium credit + higher
-        // delta vs the prior "next level out" mapping.
-        state.h4bSymbol = h4row.peSymbol(); state.h4bStrike = h4row.resolvedStrike(); state.h4bRefLtp = h4row.peLtp();
-        state.l3rSymbol = l3row.peSymbol(); state.l3rStrike = l3row.resolvedStrike(); state.l3rRefLtp = l3row.peLtp();
-        state.h3rSymbol = h3row.ceSymbol(); state.h3rStrike = h3row.resolvedStrike(); state.h3rRefLtp = h3row.ceLtp();
-        state.l4bSymbol = l4row.ceSymbol(); state.l4bStrike = l4row.resolvedStrike(); state.l4bRefLtp = l4row.ceLtp();
-        // Iron-wall strangle legs — opposite side of the H4 and L4 chain rows
-        // already fetched. H4_STRANGLE sells the CE at H4 strike, L4_STRANGLE
-        // sells the PE at L4 strike. No additional chain fetch needed.
-        state.h4SsSymbol = h4row.ceSymbol(); state.h4SsStrike = h4row.resolvedStrike(); state.h4SsRefLtp = h4row.ceLtp();
-        state.l4SsSymbol = l4row.peSymbol(); state.l4SsStrike = l4row.resolvedStrike(); state.l4SsRefLtp = l4row.peLtp();
+        state.h4bSymbol  = h4bRow.peSymbol();  state.h4bStrike  = h4bRow.resolvedStrike();  state.h4bRefLtp  = h4bRow.peLtp();
+        state.l3rSymbol  = l3rRow.peSymbol();  state.l3rStrike  = l3rRow.resolvedStrike();  state.l3rRefLtp  = l3rRow.peLtp();
+        state.h3rSymbol  = h3rRow.ceSymbol();  state.h3rStrike  = h3rRow.resolvedStrike();  state.h3rRefLtp  = h3rRow.ceLtp();
+        state.l4bSymbol  = l4bRow.ceSymbol();  state.l4bStrike  = l4bRow.resolvedStrike();  state.l4bRefLtp  = l4bRow.ceLtp();
+        // Iron-wall strangle legs — H4_STRANGLE sells the CE at ceil(H4),
+        // L4_STRANGLE sells the PE at floor(L4). When H4 doesn't land exactly
+        // on a 50-boundary the strangle CE strike is one step HIGHER than the
+        // directional H4_BREAKOUT PE strike (which uses floor(H4)). Same
+        // structural relationship on the L4 side.
+        state.h4SsSymbol = h4SsRow.ceSymbol(); state.h4SsStrike = h4SsRow.resolvedStrike(); state.h4SsRefLtp = h4SsRow.ceLtp();
+        state.l4SsSymbol = l4SsRow.peSymbol(); state.l4SsStrike = l4SsRow.resolvedStrike(); state.l4SsRefLtp = l4SsRow.peLtp();
         // Fyers' option-chain payload commonly serves 0 LTPs on holidays for
         // illiquid OTM strikes. Fall back to /data/quotes which returns the
         // last-quoted price per symbol (Friday's close on a holiday Monday).

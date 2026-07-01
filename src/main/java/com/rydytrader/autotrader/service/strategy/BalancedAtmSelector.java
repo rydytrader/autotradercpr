@@ -128,6 +128,45 @@ public class BalancedAtmSelector {
         return new StrikeAtLevel(level, chosen, row.ceSym, row.peSym, row.ce, row.pe);
     }
 
+    /**
+     * OTM-aware sibling of {@link #resolveStrikeAtLevel}. Rounds the level in the direction
+     * that keeps the desired option side strictly out-of-the-money, given that the setup
+     * fires when spot has moved to the far side of the level:
+     *
+     * <ul>
+     *   <li>{@code side = "PE"} &rarr; floor(level / STRIKE_STEP) &times; STRIKE_STEP —
+     *       returns the highest strike &le; level. PE at that strike is OTM when spot &gt; level.</li>
+     *   <li>{@code side = "CE"} &rarr; ceil(level / STRIKE_STEP) &times; STRIKE_STEP —
+     *       returns the lowest strike &ge; level. CE at that strike is OTM when spot &lt; level.</li>
+     * </ul>
+     *
+     * <p>If the computed floor/ceil strike isn't quoted in the current chain,
+     * {@link #nearestStrikeWithBothLegs} walks outward to the nearest liquid strike — same
+     * safe-fallback behaviour as {@link #resolveStrikeAtLevel}.
+     *
+     * <p>For an unrecognised side, falls back to {@link #resolveStrikeAtLevel}.
+     */
+    public StrikeAtLevel resolveOtmStrikeAtLevel(double level, String side) {
+        if (level <= 0) return null;
+        long targetStrike;
+        if ("PE".equalsIgnoreCase(side)) {
+            targetStrike = (long) Math.floor(level / (double) STRIKE_STEP) * STRIKE_STEP;
+        } else if ("CE".equalsIgnoreCase(side)) {
+            targetStrike = (long) Math.ceil(level / (double) STRIKE_STEP) * STRIKE_STEP;
+        } else {
+            return resolveStrikeAtLevel(level);
+        }
+        NavigableMap<Long, ChainRow> chain = fetchChain();
+        if (chain == null || chain.isEmpty()) return null;
+        long chosen = nearestStrikeWithBothLegs(chain, targetStrike);
+        if (chosen <= 0) {
+            log.warn("[atm-selector] resolveOtmStrikeAtLevel({}, {}): no quoted strike found", level, side);
+            return null;
+        }
+        ChainRow row = chain.get(chosen);
+        return new StrikeAtLevel(level, chosen, row.ceSym, row.peSym, row.ce, row.pe);
+    }
+
     /** Walk outward from {@code requested} until we find a strike whose CE AND PE are both
      *  quoted (non-empty symbol, positive LTP). Returns 0 when none in the chain qualifies. */
     private long nearestStrikeWithBothLegs(NavigableMap<Long, ChainRow> chain, long requested) {
