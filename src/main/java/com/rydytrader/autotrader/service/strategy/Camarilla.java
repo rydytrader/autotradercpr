@@ -1028,20 +1028,27 @@ public class Camarilla implements Strategy {
      *  direction. */
     private synchronized boolean resolveSessionLegs() {
         String today = LocalDate.now(IST).toString();
+        // Fetch levels first so the short-circuit can validate the persisted
+        // strikes against the current OTM-aware rule (floor for PE-sellers,
+        // ceil for CE-sellers). If any strike doesn't match, the persisted
+        // state was written with the old round-to-nearest logic and must be
+        // re-resolved — skip the short-circuit.
+        CamarillaLevels lv = camarillaService.getLevels(NIFTY_SYMBOL);
+        boolean persistedStrikesAreOtmAware = lv != null && strikesMatchOtmRule(lv);
         if (today.equals(state.sessionLegsDayKey)
             && !state.h4bSymbol.isBlank() && !state.l3rSymbol.isBlank()
             && !state.h3rSymbol.isBlank() && !state.l4bSymbol.isBlank()
-            && !state.h4SsSymbol.isBlank() && !state.l4SsSymbol.isBlank()) {
-            // Already resolved earlier today. Re-subscribe defensively — on a
-            // mid-day JVM restart the symbols persist on State (via disk
-            // cache) but the Fyers WS subscription set is empty until we
-            // call subscribeAdditional again. The call is idempotent at the
-            // WS layer (adHocSymbols is a Set), so re-running it on every
-            // resolve is cheap insurance against any restart gap.
+            && !state.h4SsSymbol.isBlank() && !state.l4SsSymbol.isBlank()
+            && persistedStrikesAreOtmAware) {
+            // Already resolved earlier today with the current OTM logic.
+            // Re-subscribe defensively — on a mid-day JVM restart the
+            // symbols persist on State (via disk cache) but the Fyers WS
+            // subscription set is empty until we call subscribeAdditional
+            // again. Idempotent at the WS layer, cheap insurance against
+            // any restart gap.
             ensureSessionLegsSubscribed();
             return true;
         }
-        CamarillaLevels lv = camarillaService.getLevels(NIFTY_SYMBOL);
         if (lv == null) return false;
         // OTM-aware, per-setup strike resolution. Each setup gets the
         // strike on the OTM side of its own Camarilla level:
@@ -1097,6 +1104,29 @@ public class Camarilla implements Strategy {
             + " | L4SS PE " + state.l4SsStrike);
         saveToDisk();
         return true;
+    }
+
+    /** Verify each persisted session-leg strike matches the current OTM-aware
+     *  rule (floor for PE-sellers, ceil for CE-sellers). Used by
+     *  {@link #resolveSessionLegs()} to detect state files persisted with the
+     *  older round-to-nearest logic and force a re-resolve — otherwise the
+     *  short-circuit fires on today's date + all six symbols present and the
+     *  stale strikes stay in state forever. Returns false when the levels
+     *  cache isn't loaded (defensive — caller will fall through and re-resolve). */
+    private boolean strikesMatchOtmRule(CamarillaLevels lv) {
+        if (lv == null) return false;
+        long expH4B  = (long) Math.floor(lv.h4() / STRIKE_STEP) * STRIKE_STEP;
+        long expL3R  = (long) Math.floor(lv.l3() / STRIKE_STEP) * STRIKE_STEP;
+        long expH3R  = (long) Math.ceil (lv.h3() / STRIKE_STEP) * STRIKE_STEP;
+        long expL4B  = (long) Math.ceil (lv.l4() / STRIKE_STEP) * STRIKE_STEP;
+        long expH4Ss = (long) Math.ceil (lv.h4() / STRIKE_STEP) * STRIKE_STEP;
+        long expL4Ss = (long) Math.floor(lv.l4() / STRIKE_STEP) * STRIKE_STEP;
+        return state.h4bStrike  == expH4B
+            && state.l3rStrike  == expL3R
+            && state.h3rStrike  == expH3R
+            && state.l4bStrike  == expL4B
+            && state.h4SsStrike == expH4Ss
+            && state.l4SsStrike == expL4Ss;
     }
 
     /** Pull last-quoted prices from Fyers {@code /data/quotes} via
