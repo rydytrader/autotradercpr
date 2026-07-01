@@ -641,28 +641,6 @@
             } else {
                 function dailyVal(key) { return Number(lv[key]); }
                 function weeklyVal(key) { return wk ? Number(wk[key]) : NaN; }
-                // NIFTY strike step. Match STRIKE_STEP in BalancedAtmSelector.java.
-                var STRIKE_STEP_JS = 50;
-                function floorStrike(v) { return isFinite(v) && v > 0 ? Math.floor(v / STRIKE_STEP_JS) * STRIKE_STEP_JS : 0; }
-                function ceilStrike (v) { return isFinite(v) && v > 0 ? Math.ceil (v / STRIKE_STEP_JS) * STRIKE_STEP_JS : 0; }
-                // OTM strike per level, derived direction-aware (matches
-                // BalancedAtmSelector.resolveOtmStrikeAtLevel logic):
-                //   PE-selling setups (bullish) → floor(level)
-                //   CE-selling setups (bearish) → ceil(level)
-                // H4 and L4 have BOTH directions (directional + strangle), so
-                // both floor and ceil are shown as separate chips.
-                // NOTE: nested array literals below are written with a space
-                // between the two opening brackets — Thymeleaf treats an
-                // unbroken pair of opening square brackets as its inline
-                // expression syntax and tries to parse the JS inside as an
-                // expression at template-parse time. Do not collapse the space.
-                var otm = {
-                    // level → array of [strike, side] chip descriptors
-                    H3: [ [ceilStrike(dailyVal('h3')), 'CE'] ],
-                    H4: [ [floorStrike(dailyVal('h4')), 'PE'], [ceilStrike(dailyVal('h4')), 'CE'] ],
-                    L3: [ [floorStrike(dailyVal('l3')), 'PE'] ],
-                    L4: [ [floorStrike(dailyVal('l4')), 'PE'], [ceilStrike(dailyVal('l4')), 'CE'] ]
-                };
                 var rows = [
                     ['H5', dailyVal('h5'), weeklyVal('h5'), '#a78bfa', 'outer target'],
                     ['H4', dailyVal('h4'), weeklyVal('h4'), '#34d399', 'bullish trigger'],
@@ -703,25 +681,9 @@
                              + '</div>';
                     }
                     var label = r[0], dVal = r[1], wVal = r[2], col = r[3], meaning = r[4];
-                    // OTM-strike chips per level. Only levels with an active
-                    // setup get chips (H3/H4/L3/L4). H5/L5 are targets, not
-                    // trade levels, so no chips.
-                    var otmChips = '';
-                    if (otm[label]) {
-                        otmChips = otm[label].map(function(pair) {
-                            var strike = pair[0], side = pair[1];
-                            if (!(strike > 0)) return '';
-                            var chipCol = side === 'PE' ? '#34d399' : '#f87171';
-                            var chipBg  = side === 'PE' ? 'rgba(52,211,153,0.10)' : 'rgba(248,113,113,0.10)';
-                            var chipBd  = side === 'PE' ? 'rgba(52,211,153,0.35)' : 'rgba(248,113,113,0.35)';
-                            return '<span style="padding:2px 8px;border-radius:5px;font-family:var(--font-mono);font-size:0.62rem;font-weight:700;background:'
-                                + chipBg + ';color:' + chipCol + ';border:1px solid ' + chipBd + ';margin-left:6px;">'
-                                + strike + ' ' + side + '</span>';
-                        }).join('');
-                    }
                     return '<div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:rgba(255,255,255,0.015);border-left:3px solid ' + col + ';border-radius:4px;">'
                          + '<span style="font-family:var(--font-mono);font-size:0.78rem;font-weight:700;color:' + col + ';min-width:28px;">' + label + '</span>'
-                         + '<span style="flex:1;font-family:var(--font-mono);font-size:0.62rem;color:var(--text-muted);letter-spacing:0.04em;text-transform:uppercase;">' + meaning + otmChips + '</span>'
+                         + '<span style="flex:1;font-family:var(--font-mono);font-size:0.62rem;color:var(--text-muted);letter-spacing:0.04em;text-transform:uppercase;">' + meaning + '</span>'
                          + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--text-primary);min-width:96px;text-align:right;">' + fmtNum(dVal) + '</span>'
                          + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--text-secondary);min-width:96px;text-align:right;">' + fmtNum(wVal) + '</span>'
                          + '</div>';
