@@ -43,6 +43,7 @@ public class SettingsController {
         result.put("camarillaMinRRRatio",          riskSettings.getCamarillaMinRRRatio(effectiveMode));
         result.put("camarillaMomentumCheckEnabled", riskSettings.isCamarillaMomentumCheckEnabled(effectiveMode));
         result.put("camarillaDirectionalSlBufferAtrMult", riskSettings.getCamarillaDirectionalSlBufferAtrMult(effectiveMode));
+        result.put("camarillaTriggerAtrMult", riskSettings.getCamarillaTriggerAtrMult(effectiveMode));
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
         result.put("maxRiskPerDayPct",    riskSettings.getMaxRiskPerDayPct(effectiveMode));
@@ -91,6 +92,7 @@ public class SettingsController {
             if (body.containsKey("camarillaMinRRRatio"))             riskSettings.setCamarillaMinRRRatio(effectiveMode, Double.parseDouble(body.get("camarillaMinRRRatio").toString()));
             if (body.containsKey("camarillaMomentumCheckEnabled"))   riskSettings.setCamarillaMomentumCheckEnabled(effectiveMode, Boolean.parseBoolean(body.get("camarillaMomentumCheckEnabled").toString()));
             if (body.containsKey("camarillaDirectionalSlBufferAtrMult")) riskSettings.setCamarillaDirectionalSlBufferAtrMult(effectiveMode, Double.parseDouble(body.get("camarillaDirectionalSlBufferAtrMult").toString()));
+            if (body.containsKey("camarillaTriggerAtrMult"))            riskSettings.setCamarillaTriggerAtrMult(effectiveMode, Double.parseDouble(body.get("camarillaTriggerAtrMult").toString()));
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
             if (body.containsKey("maxRiskPerDayPct"))  riskSettings.setMaxRiskPerDayPct(effectiveMode, Double.parseDouble(body.get("maxRiskPerDayPct").toString()));

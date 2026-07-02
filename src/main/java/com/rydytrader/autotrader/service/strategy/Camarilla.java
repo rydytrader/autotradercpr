@@ -678,6 +678,15 @@ public class Camarilla implements Strategy {
         // First: drain any bar-candidate buffers whose grace window has elapsed.
         drainPendingBars();
 
+        // ── Tick-cadence Phase 1 trigger ──
+        // Checks any pending confirmation against live NIFTY spot and fires
+        // the moment spot crosses confirmHigh + (ATR × triggerAtrMult) for
+        // bullish or confirmLow − same for bearish. This runs even when
+        // there are no open positions (fresh confirmations may need to
+        // trigger on a session with no prior trade activity), so it must
+        // happen BEFORE the openPositions-empty short-circuit below.
+        tryFireTriggeredPending();
+
         // Fast-tick TARGET + SL watcher — fires on the live LTP, not on candle close.
         //   • TARGET: single-tick. As soon as triggerLtp crosses targetLevel, close.
         //   • SL:     confirmed over SL_BREACH_CONFIRM_TICKS consecutive polls (~1.5 s)
@@ -774,6 +783,74 @@ public class Camarilla implements Strategy {
     // every poll, so this stays as a no-op for back-compat.
     private void drainPendingBars() { /* retired in v2 two-candle entry */ }
 
+    /** Tick-cadence Phase 1 trigger check. Fires the pending confirmation
+     *  the moment NIFTY spot crosses confirmHigh + (ATR × mult) for bullish
+     *  or confirmLow − (ATR × mult) for bearish. Runs on every fastSlCheck
+     *  poll (~1.5 s).
+     *
+     *  <p>ATR-not-seeded fallback: {@code atrVal = 0} → both trigger delta
+     *  AND SL buffer become 0. Trigger fires at exact extreme; SL sits at
+     *  exact extreme too. Same failure mode both features already share.
+     *  Wilder usually seeds within the first few bars of the session.
+     *
+     *  <p>Passes {@code null} for entryCandle — fire() has a null-tolerant
+     *  entryFutures guard that falls back to live spot LTP. */
+    private synchronized void tryFireTriggeredPending() {
+        if (!isEnabled()) return;
+        if (state.dailyLossLockout) return;
+        if (!canFireNewEntry()) return;
+        if (state.pendingBullish == null && state.pendingBearish == null) return;
+        if (state.futuresSymbol == null || state.futuresSymbol.isBlank()) return;
+
+        double spot;
+        try { spot = marketDataService.getLtp(NIFTY_SYMBOL); }
+        catch (Exception e) { return; }
+        if (spot <= 0) return;
+
+        // Single ATR fetch, reused for both the trigger cushion and the SL buffer.
+        com.rydytrader.autotrader.service.NiftyAtrService atrSvc =
+            niftyAtrProvider == null ? null : niftyAtrProvider.getIfAvailable();
+        Double atr = atrSvc == null ? null : atrSvc.currentAtr();
+        double atrVal = (atr != null && atr > 0) ? atr : 0;
+
+        double triggerAtrMult = Math.max(0, riskSettings.getCamarillaTriggerAtrMult());
+        double slAtrMult      = Math.max(0, riskSettings.getCamarillaDirectionalSlBufferAtrMult());
+        double triggerDelta   = atrVal * triggerAtrMult;
+        double slBuf          = atrVal * slAtrMult;
+        String triggerSym     = state.futuresSymbol;
+
+        PendingConfirmation pb = state.pendingBullish;
+        if (pb != null) {
+            double triggerPrice = pb.confirmHigh + triggerDelta;
+            if (spot >= triggerPrice) {
+                double slWithBuffer = pb.confirmLow - slBuf;
+                double rr = computeRR(spot, pb.targetLevel, slWithBuffer);
+                event("[INFO]", "Setup", pb.setup + " trigger @ " + round2(spot)
+                    + " (SL " + round2(slWithBuffer) + ", TGT " + round2(pb.targetLevel)
+                    + ", R:R " + (Double.isNaN(rr) ? "—" : round2(rr)) + ")");
+                fire(triggerSym, pb.setup, pb.targetLevel, slWithBuffer, null, pb.lockedAtm);
+                state.pendingBullish = null;
+                saveToDisk();
+                return;
+            }
+        }
+
+        PendingConfirmation pr = state.pendingBearish;
+        if (pr != null) {
+            double triggerPrice = pr.confirmLow - triggerDelta;
+            if (spot <= triggerPrice) {
+                double slWithBuffer = pr.confirmHigh + slBuf;
+                double rr = computeRR(spot, pr.targetLevel, slWithBuffer);
+                event("[INFO]", "Setup", pr.setup + " trigger @ " + round2(spot)
+                    + " (SL " + round2(slWithBuffer) + ", TGT " + round2(pr.targetLevel)
+                    + ", R:R " + (Double.isNaN(rr) ? "—" : round2(rr)) + ")");
+                fire(triggerSym, pr.setup, pr.targetLevel, slWithBuffer, null, pr.lockedAtm);
+                state.pendingBearish = null;
+                saveToDisk();
+            }
+        }
+    }
+
     // ── ATM change handler — session-open watchlist setup ─────────────────────
     // With drift checks removed, this fires exactly once per session — on the
     // open-price bootstrap from AtmTracker. The heartbeat path (oldAtm == newAtm)
@@ -810,67 +887,21 @@ public class Camarilla implements Strategy {
             CamarillaLevels lv = camarillaService.getLevels(triggerSym);
             if (lv == null) return;   // levels warming up
 
-            // ── Two-candle entry model — four-phase walk on the current bar ──
-            // 1) trigger check (against any pending confirmation in either slot)
-            // 2) staleness expiry (any pending at or past MAX_PENDING_BARS age clears)
-            // 3) invalidation check (only if nothing triggered or expired in that slot)
-            // 4) new-confirmation detection (only if no trade fired this bar)
-            // Then persist. Order matters: trigger runs first so bar 6 (the
-            // deadline bar) still gets its chance to fire before being
-            // expired. Expiry runs second so an unresolved deadline bar
-            // clears the slot, freeing Phase 4 to seed a fresh confirmation
-            // on the same bar if its geometry matches. Detect last so a
-            // strong same-bar can't immediately replace a triggered pending.
-
-            boolean firedThisBar = false;
-
-            // --- Phase 1: TRIGGER ---
-            // Trigger consumes the pending — we DON'T release the leg here, fire()
-            // is about to open a position on the traded side and the watcher needs
-            // its LTP feed alive. The untraded leg stays subscribed too (cheap;
-            // releases on next reconnect via the deferred-unsubscribe contract).
-            // Volatility-scaled SL buffer in NIFTY spot points.
-            //   buffer = NIFTY 5-min ATR × camarillaDirectionalSlBufferAtrMult
-            // When ATR isn't seeded yet (Wilder still warming up after boot)
-            // the buffer falls back to 0 so SL sits exactly at the candle
-            // extreme — a missing ATR shouldn't widen risk implicitly.
-            double atrMult = Math.max(0, riskSettings.getCamarillaDirectionalSlBufferAtrMult());
-            double slBuf = 0;
-            if (atrMult > 0) {
-                try {
-                    com.rydytrader.autotrader.service.NiftyAtrService atrSvc = niftyAtrProvider == null ? null
-                        : niftyAtrProvider.getIfAvailable();
-                    Double atr = atrSvc == null ? null : atrSvc.currentAtr();
-                    if (atr != null && atr > 0) {
-                        slBuf = atr * atrMult;
-                    } else {
-                        event("[WARNING]", "Sizing", "ATR unavailable — SL buffer = 0 this fire");
-                    }
-                } catch (Exception ignored) {}
-            }
-
-            PendingConfirmation pb = state.pendingBullish;
-            if (pb != null && c.isGreen() && c.close() > pb.confirmHigh) {
-                double slWithBuffer = pb.confirmLow - slBuf;
-                double rr = computeRR(c.close(), pb.targetLevel, slWithBuffer);
-                event("[INFO]", "Setup", pb.setup + " trigger @ " + round2(c.close())
-                    + " (SL " + round2(slWithBuffer) + ", TGT " + round2(pb.targetLevel)
-                    + ", R:R " + (Double.isNaN(rr) ? "—" : round2(rr)) + ")");
-                fire(triggerSym, pb.setup, pb.targetLevel, slWithBuffer, c, pb.lockedAtm);
-                state.pendingBullish = null;
-                firedThisBar = true;
-            }
-            PendingConfirmation pr = state.pendingBearish;
-            if (pr != null && c.isRed() && c.close() < pr.confirmLow) {
-                double slWithBuffer = pr.confirmHigh + slBuf;
-                double rr = computeRR(c.close(), pr.targetLevel, slWithBuffer);
-                event("[INFO]", "Setup", pr.setup + " trigger @ " + round2(c.close())
-                    + " (SL " + round2(slWithBuffer) + ", TGT " + round2(pr.targetLevel)
-                    + ", R:R " + (Double.isNaN(rr) ? "—" : round2(rr)) + ")");
-                fire(triggerSym, pr.setup, pr.targetLevel, slWithBuffer, c, pr.lockedAtm);
-                state.pendingBearish = null;
-                firedThisBar = true;
-            }
+            // ── Two-candle entry model — bar-close routine ──
+            // Phase 1 (Trigger) runs at TICK cadence inside fastSlCheck's
+            // tryFireTriggeredPending() — a pending is triggered as soon as
+            // NIFTY spot crosses confirmHigh + (ATR × camarillaTriggerAtrMult)
+            // for bullish, or confirmLow − (ATR × camarillaTriggerAtrMult)
+            // for bearish. The remaining three phases run on bar close:
+            // 2) staleness expiry (any pending at or past MAX_PENDING_BARS
+            //    age clears)
+            // 3) invalidation check (bar closes past the OPPOSITE extreme →
+            //    thesis broken)
+            // 4) new-confirmation detection (only if slot is empty AND no
+            //    auto position is open)
+            // Order matters: expire first so a stale slot frees Phase 4 to
+            // seed a fresh confirmation on the same bar. Detect last so a
+            // strong same-bar can't immediately replace a valid pending.
 
             // --- Phase 2: STALENESS EXPIRY ---
             // A pending that's been sitting for MAX_PENDING_BARS bars (= 30 min
@@ -918,8 +949,7 @@ public class Camarilla implements Strategy {
             // and would qualify as a new confirmation, the clear happens
             // first and the same bar CAN seed a new one (the slot is empty
             // by Phase 3).
-            if (!firedThisBar
-                && state.pendingBullish == null
+            if (state.pendingBullish == null
                 && state.pendingBearish == null
                 && !hasOpenAutoPosition()) {
                 PendingConfirmation fresh = detectConfirmation(c, lv);
@@ -1345,7 +1375,10 @@ public class Camarilla implements Strategy {
         // ── Futures-price-based R:R floor (toggle) ──
         // For futures-driven entries the candle close approximates the entry futures price.
         // reward = |entryFut − targetFut|, risk = |slFut − entryFut|.
-        double entryFutures = entryCandle.close();
+        // Tick-triggered fires (from tryFireTriggeredPending) pass null for
+        // entryCandle — the live-LTP fallback below overwrites the 0 with
+        // the current spot, so no zero propagates into R:R or exposedRisk.
+        double entryFutures = entryCandle != null ? entryCandle.close() : 0;
         try {
             double live = marketDataService.getLtp(triggerSymbol);
             if (live > 0) entryFutures = live;

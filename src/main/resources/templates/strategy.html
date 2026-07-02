@@ -420,7 +420,7 @@
         <div style="margin-top:8px;">
             <div class="phase-row">
                 <div class="phase-tag">Phase 1</div>
-                <div class="phase-desc"><strong>Trigger</strong> — if a pending exists AND the current bar fires through the confirmation extreme in the same direction, place the SELL order. Bullish trigger = green bar, close &gt; confirmation high. Bearish = red bar, close &lt; confirmation low.</div>
+                <div class="phase-desc"><strong>Trigger</strong> — checked every fast-tick (~1.5 s) instead of on bar close. Fires the moment NIFTY spot touches <code>confirmHigh + (ATR × triggerAtrMult)</code> (bullish) or <code>confirmLow − (ATR × triggerAtrMult)</code> (bearish). The <code>camarillaTriggerAtrMult</code> setting (default 0.25) is a volatility-scaled confirmation cushion — 0 fires at the exact extreme, larger multipliers require a bigger breakout before firing. Uses the live NIFTY 5-min ATR (same service the SL buffer uses).</div>
             </div>
             <div class="phase-row">
                 <div class="phase-tag">Phase 2</div>
@@ -532,7 +532,7 @@
 <script src="/js/ticker.js?v=36"></script>
 <script src="/js/option-chain-modal.js?v=20"></script>
 <script src="/js/manual-terminal-modal.js?v=22"></script>
-<script src="/js/settings-modal.js?v=66"></script>
+<script src="/js/settings-modal.js?v=67"></script>
 <script>
     // Footer year
     document.getElementById('footerYear').textContent = new Date().getFullYear();
