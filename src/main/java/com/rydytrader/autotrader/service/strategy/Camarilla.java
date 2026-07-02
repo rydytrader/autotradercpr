@@ -1465,7 +1465,7 @@ public class Camarilla implements Strategy {
         // Each directional setup requires NIFTY RSI to sit inside a band that
         // matches the setup's thesis:
         //   H4_BREAKOUT  (bullish)  → 50 < RSI < 80   trending up but not exhausted
-        //   L4_BREAKDOWN (bearish)  → 20 < RSI < 40   trending down but not exhausted
+        //   L4_BREAKDOWN (bearish)  → 20 < RSI < 50   trending down but not exhausted
         //   L3_REVERSAL  (bullish)  → 40 < RSI < 60   neutral chop — reversal off L3
         //   H3_REVERSAL  (bearish)  → 40 < RSI < 60   neutral chop — reversal off H3
         // Breakouts skip when RSI is overbought/oversold (≥ 80 / ≤ 20) since
@@ -1487,7 +1487,7 @@ public class Camarilla implements Strategy {
                         double r = v;
                         boolean ok = switch (setup) {
                             case H4_BREAKOUT  -> r > 50 && r < 80;
-                            case L4_BREAKDOWN -> r < 40 && r > 20;
+                            case L4_BREAKDOWN -> r < 50 && r > 20;
                             case L3_REVERSAL  -> r > 40 && r < 60;
                             case H3_REVERSAL  -> r > 40 && r < 60;
                             default            -> true;
