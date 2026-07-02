@@ -585,16 +585,24 @@ public class Camarilla implements Strategy {
     public String closeManualByOrderId(String orderId, String reason) {
         if (orderId == null || orderId.isBlank()) return null;
         synchronized (this) {
-            String found = null;
+            // Keep the Position REFERENCE, not just its symbol. The old code
+            // stored p.symbol and then called closePosition(String, String),
+            // which walks openPositions and picks the FIRST match by symbol.
+            // With composite-key openPositions (Commit HH), a MANUAL and an
+            // AUTO position can coexist on the same Fyers option symbol —
+            // the string overload can accidentally close the AUTO one
+            // instead of the MANUAL the operator clicked.
+            Position manual = null;
             for (Position p : state.openPositions.values()) {
                 if (p != null && p.setup == ActiveSetup.MANUAL
                     && orderId.equals(p.entryOrderId)) {
-                    found = p.symbol;
+                    manual = p;
                     break;
                 }
             }
-            if (found == null) return null;
-            return closePosition(found, reason == null ? "MANUAL_CLOSE" : reason) ? found : null;
+            if (manual == null) return null;
+            String symbol = manual.symbol;
+            return closePosition(manual, reason == null ? "MANUAL_CLOSE" : reason) ? symbol : null;
         }
     }
 
@@ -2126,7 +2134,15 @@ public class Camarilla implements Strategy {
      *  <p>Back-compat shim: when only a symbol is known (legacy callers like
      *  the squareoff cron and the Options Scalper Terminal), resolve the first
      *  position whose {@code p.symbol} matches and route through the
-     *  Position-aware overload. */
+     *  Position-aware overload.
+     *
+     *  <p><strong>WARNING</strong> — this overload is AMBIGUOUS when both a
+     *  MANUAL and an AUTO position coexist on the same Fyers option symbol
+     *  (composite-key openPositions from Commit HH allows that). The
+     *  first-match iteration order may pick the wrong Position. Prefer
+     *  {@link #closePosition(Position, String)} with an explicit reference
+     *  whenever the caller has one. Only use this overload when the caller
+     *  genuinely has only a symbol string and there's no ambiguity risk. */
     private boolean closePosition(String symbol, String reason) {
         if (symbol == null || symbol.isBlank()) return false;
         Position p = null;
