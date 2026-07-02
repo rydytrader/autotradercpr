@@ -225,7 +225,7 @@
             Both engines share the same <strong>RSI-14 neutral-band gate (40 &lt; RSI &lt; 60)</strong>
             for reversal-style entries — the directional reversals AND the strangle agree that
             mean-reversion theses fail under strong trend. Breakouts use a wider trending-band
-            (60-80 / 20-40). Risk management is built in at three layers: per-trade R:R floor,
+            (50-80 / 20-40). Risk management is built in at three layers: per-trade R:R floor,
             per-day budget cap, and a daily squareoff time.
         </p>
         <p class="doc-p">
@@ -593,7 +593,7 @@
             reversals, &gt; 60 for bearish reversals).
         </p>
         <div class="band-grid" style="margin-top:14px;">
-            <div class="band-row"><span class="left" style="color:var(--accent-green);">H4_BREAKOUT</span><span class="right">60 &lt; RSI &lt; 80</span></div>
+            <div class="band-row"><span class="left" style="color:var(--accent-green);">H4_BREAKOUT</span><span class="right">50 &lt; RSI &lt; 80</span></div>
             <div class="band-row"><span class="left" style="color:var(--accent-red, #f87171);">L4_BREAKDOWN</span><span class="right">20 &lt; RSI &lt; 40</span></div>
             <div class="band-row"><span class="left" style="color:var(--accent-green);">L3_REVERSAL</span><span class="right">40 &lt; RSI &lt; 60</span></div>
             <div class="band-row"><span class="left" style="color:var(--accent-red, #f87171);">H3_REVERSAL</span><span class="right">40 &lt; RSI &lt; 60</span></div>
@@ -601,7 +601,8 @@
         </div>
         <p class="doc-p" style="margin-top:14px;">
             <strong>Breakouts</strong> require directional momentum WITH the trade (RSI in
-            the 60-80 / 20-40 band — trending but not exhausted). <strong>Reversals</strong>
+            the 50-80 band for bullish H4 breakouts, 20-40 band for bearish L4 breakdowns —
+            trending but not exhausted). <strong>Reversals</strong>
             require neutral momentum (RSI 40-60 — no strong trend in either direction, since
             a rejection thesis can't hold against a runaway move). The <strong>iron-wall
             strangle</strong> uses the same neutral 40-60 band — strong directional
@@ -682,7 +683,7 @@
 <script src="/js/ticker.js?v=36"></script>
 <script src="/js/option-chain-modal.js?v=20"></script>
 <script src="/js/manual-terminal-modal.js?v=22"></script>
-<script src="/js/settings-modal.js?v=63"></script>
+<script src="/js/settings-modal.js?v=64"></script>
 <script>
     // Footer year
     document.getElementById('footerYear').textContent = new Date().getFullYear();
