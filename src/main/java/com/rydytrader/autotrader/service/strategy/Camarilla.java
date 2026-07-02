@@ -1234,6 +1234,13 @@ public class Camarilla implements Strategy {
         if (state.l4SsSymbol == null || state.l4SsSymbol.isBlank()) return;
         if (state.futuresSymbol == null || state.futuresSymbol.isBlank()) return;
 
+        // Silent budget pre-flight — the strangle's half-lot allocation
+        // (lotsPerLeg / 2) must be at least 1. Without this early return
+        // both leg fires would skip inside fire() and the strangleFiredToday
+        // flag would flip on the WARNING path, blocking mid-day recovery
+        // if the operator bumps the setting.
+        if (riskSettings.getCamarillaLotsPerLeg() / 2 <= 0) return;
+
         double proximityMult = riskSettings.getCamarillaStrangleAtrProximity();
         if (proximityMult <= 0) return;   // setting = 0 disables the strangle
 
@@ -1528,9 +1535,22 @@ public class Camarilla implements Strategy {
             }
         }
 
+        // ── Split the lots-per-leg setting 50/50 between directional and strangle pools ──
+        // Half is allocated to directional setups, half to the iron-wall
+        // strangle. Both pools are independent (no cross-consumption), so
+        // directional + strangle can coexist at their pre-allocated sizes
+        // regardless of fire order. Each strangle leg gets the same qty as a
+        // single directional trade; pair-mutex accounting for ₹-risk is
+        // handled by exposedRiskNow's max() collapse (Commit RRR).
+        int lotsAllocation = riskSettings.getCamarillaLotsPerLeg() / 2;
+        if (lotsAllocation <= 0) {
+            event("[WARNING]", "Sizing", setup + " skip — needs lotsPerLeg ≥ 2 (current="
+                + riskSettings.getCamarillaLotsPerLeg() + ")");
+            return;
+        }
         // ── Project exposed-risk after this entry; block if it would exceed maxRisk ──
         // Per-position futures-equivalent risk = |entryFut − slFut| × qty.
-        int qty = riskSettings.getCamarillaLotsPerLeg() * LOT_SIZE;
+        int qty = lotsAllocation * LOT_SIZE;
         // Project the proposed trade's option-premium loss at SL: spot SL distance
         // × ATM_DELTA (≈ 0.5) × qty. A raw 1:1 spot×qty projection would overstate
         // option loss by ~2× and gate trades that wouldn't actually breach maxRisk.
