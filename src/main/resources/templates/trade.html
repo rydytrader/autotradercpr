@@ -257,15 +257,21 @@
                      market-stats cluster from the title. -->
                 <span style="border-left:1px solid var(--border); height:18px; display:inline-block;"></span>
                 <div style="display:flex; gap:14px; align-items:center; font-family:var(--font-mono); font-size:0.72rem; font-weight:normal; flex-wrap:wrap;">
-                    <!-- v2: NIFTY spot index — trigger feed for the four Camarilla
-                         setups. Change/%change render inline. Element IDs keep
-                         the legacy 'Fut' naming for back-compat with the JS. -->
-                    <span style="color:var(--text-muted);">NIFTY <span id="hdrFut" style="color:var(--text-primary);font-weight:700;cursor:help;">—</span>
+                    <!-- NIFTY cluster: LTP + change + 5m ATR. Amber label
+                         distinguishes it from BANKNIFTY (purple) below.
+                         Legacy 'Fut' IDs retained for back-compat with the JS. -->
+                    <span style="color:#fbbf24;">NIFTY <span id="hdrFut" style="color:var(--text-primary);font-weight:700;cursor:help;">—</span>
                         <span id="hdrFutChg" style="margin-left:4px;font-weight:600;"></span></span>
+                    <span style="color:var(--text-muted);" title="NIFTY 14-period ATR on 5-min spot bars">ATR<sub style="font-size:0.62em;">5m</sub> <span id="hdrNiftyAtr5m" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                    <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
+                    <!-- BANKNIFTY cluster: LTP + change + 5m ATR -->
+                    <span style="color:rgb(196,181,253);">BANKNIFTY <span id="hdrBankNifty" style="color:var(--text-primary);font-weight:700;cursor:help;">—</span>
+                        <span id="hdrBankNiftyChg" style="margin-left:4px;font-weight:600;"></span></span>
+                    <span style="color:var(--text-muted);" title="BANKNIFTY 14-period ATR on 5-min spot bars">ATR<sub style="font-size:0.62em;">5m</sub> <span id="hdrBankNiftyAtr5m" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                    <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
+                    <!-- VIX -->
                     <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
                         <span id="hdrVixChg" style="margin-left:4px;font-weight:600;"></span></span>
-                    <span style="color:var(--text-muted);" title="NIFTY ATM strike — rounds spot to nearest 50">ATM <span id="hdrAtm" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                    <span style="color:var(--text-muted);" title="NIFTY 14-period ATR on 5-min spot bars">ATR<sub style="font-size:0.62em;">5m</sub> <span id="hdrNiftyAtr5m" style="color:var(--text-primary);font-weight:700;">—</span></span>
                 </div>
             </div>
             <div style="display:flex; gap:10px; align-items:center;">
@@ -437,11 +443,11 @@
                 </div>
 
                 <div>
-                    <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;">NIFTY directional legs</div>
+                    <div style="font-family:var(--font-mono);font-size:0.66rem;color:#fbbf24;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;">NIFTY directional legs</div>
                     <div id="levelsModalLegsDir">
                         <div style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.72rem;">resolving…</div>
                     </div>
-                    <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;margin:14px 0 6px 0;">BANKNIFTY directional legs</div>
+                    <div style="font-family:var(--font-mono);font-size:0.66rem;color:rgb(196,181,253);letter-spacing:0.08em;text-transform:uppercase;margin:14px 0 6px 0;">BANKNIFTY directional legs</div>
                     <div id="levelsModalLegsDirBankNifty">
                         <div style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.72rem;">resolving…</div>
                     </div>
@@ -571,14 +577,19 @@
 
     function renderHeader(d) {
         // Initial / fallback render from the camarilla state stream (2 s heartbeat).
-        // VIX still rides the per-tick ticker SSE; ATM is owned by the backend.
-        // Futures cells are populated by renderFutTickerCells() in applyState() —
-        // no separate ticker-SSE writer needed since futures isn't in the ticker feed.
+        // VIX still rides the per-tick ticker SSE. Both NIFTY and BANKNIFTY ATR
+        // + BankNifty LTP come off dashboardState.
         var vxEl  = document.getElementById('hdrVix');
         if (vxEl)  vxEl.textContent  = d.indiaVix  != null ? Number(d.indiaVix).toFixed(2)  : '—';
         var atrEl = document.getElementById('hdrNiftyAtr5m');
         if (atrEl) atrEl.textContent = (d.niftyAtr5m != null && isFinite(Number(d.niftyAtr5m)))
             ? Number(d.niftyAtr5m).toFixed(2) : '—';
+        var bnAtrEl = document.getElementById('hdrBankNiftyAtr5m');
+        if (bnAtrEl) bnAtrEl.textContent = (d.bankNiftyAtr5m != null && isFinite(Number(d.bankNiftyAtr5m)))
+            ? Number(d.bankNiftyAtr5m).toFixed(2) : '—';
+        var bnEl = document.getElementById('hdrBankNifty');
+        if (bnEl) bnEl.textContent = (d.bankNiftyLtp != null && isFinite(Number(d.bankNiftyLtp)))
+            ? Number(d.bankNiftyLtp).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '—';
         captureLevelsState(d);
     }
 
@@ -681,7 +692,7 @@
         var headerHtml = '<div style="display:flex;align-items:center;gap:14px;padding:4px 14px 6px 14px;">'
             + '<span style="min-width:28px;"></span>'
             + '<span style="flex:1;"></span>'
-            + '<span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;font-weight:700;min-width:88px;text-align:right;">NIFTY</span>'
+            + '<span style="font-family:var(--font-mono);font-size:0.6rem;color:#fbbf24;letter-spacing:0.08em;text-transform:uppercase;font-weight:700;min-width:88px;text-align:right;">NIFTY</span>'
             + '<span style="font-family:var(--font-mono);font-size:0.6rem;color:rgb(196,181,253);letter-spacing:0.08em;text-transform:uppercase;font-weight:700;min-width:96px;text-align:right;">BANKNIFTY</span>'
             + '</div>';
         var rowsHtml = rows.map(function(r) {
@@ -691,7 +702,7 @@
                 return '<div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:rgba(125,211,252,0.06);border-left:3px solid var(--accent-cyan);border-radius:4px;">'
                      + '<span style="font-family:var(--font-mono);font-size:0.78rem;font-weight:700;color:var(--accent-cyan);min-width:28px;">P</span>'
                      + '<span style="flex:1;font-family:var(--font-mono);font-size:0.62rem;color:var(--text-muted);letter-spacing:0.04em;text-transform:uppercase;">pivot</span>'
-                     + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--accent-cyan);min-width:88px;text-align:right;">' + fmtNum(pN) + '</span>'
+                     + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:#fbbf24;min-width:88px;text-align:right;">' + fmtNum(pN) + '</span>'
                      + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:rgb(196,181,253);min-width:96px;text-align:right;">' + fmtNum(pB) + '</span>'
                      + '</div>';
             }
@@ -701,7 +712,7 @@
             return '<div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:rgba(255,255,255,0.015);border-left:3px solid ' + col + ';border-radius:4px;">'
                  + '<span style="font-family:var(--font-mono);font-size:0.78rem;font-weight:700;color:' + col + ';min-width:28px;">' + label + '</span>'
                  + '<span style="flex:1;font-family:var(--font-mono);font-size:0.62rem;color:var(--text-muted);letter-spacing:0.04em;text-transform:uppercase;">' + meaning + '</span>'
-                 + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--text-primary);min-width:88px;text-align:right;">' + fmtNum(vN) + '</span>'
+                 + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:#fbbf24;min-width:88px;text-align:right;">' + fmtNum(vN) + '</span>'
                  + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:rgb(196,181,253);min-width:96px;text-align:right;">' + fmtNum(vB) + '</span>'
                  + '</div>';
         }).join('');
@@ -816,14 +827,22 @@
         return ch >= 0 ? 'var(--accent-green,#34d399)' : 'var(--accent-red,#f87171)';
     }
     function setVixHeader(lp, ch, chp) {
-        var vxEl  = document.getElementById('hdrVix');
-        var chgEl = document.getElementById('hdrVixChg');
+        setTickerHeader('hdrVix', 'hdrVixChg', lp, ch, chp);
+    }
+    function setBankNiftyHeader(lp, ch, chp) {
+        setTickerHeader('hdrBankNifty', 'hdrBankNiftyChg', lp, ch, chp);
+    }
+    // Shared: writes LTP + change into the given pair of DOM elements. Blank
+    // cells when LTP is 0 or when both change values are 0 (pre-market before
+    // Fyers has published prev_close).
+    function setTickerHeader(ltpId, chgId, lp, ch, chp) {
+        var ltpEl = document.getElementById(ltpId);
+        var chgEl = document.getElementById(chgId);
         var v = Number(lp || 0), c = Number(ch || 0), p = Number(chp || 0);
-        if (vxEl) vxEl.textContent = v > 0 ? v.toFixed(2) : '—';
+        if (ltpEl) ltpEl.textContent = v > 0
+            ? v.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})
+            : '—';
         if (!chgEl) return;
-        // Match NIFTY's pre-market behaviour: blank cell when no LTP or when both
-        // change values are 0 (Fyers hasn't sent a tick with prev_close yet, so
-        // displaying "▲ 0.00 (0.00%)" is misleading).
         if (v <= 0 || (c === 0 && p === 0)) {
             chgEl.textContent = '';
             chgEl.style.color = '';
@@ -842,13 +861,12 @@
                 if (!arr || !arr.length) return;
                 for (var i = 0; i < arr.length; i++) {
                     var t = arr[i];
-                    // Only VIX rides the per-tick ticker SSE now — the v2 header replaced
-                    // NIFTY spot with the near-month future, which lands via the Camarilla
-                    // state event (2 s heartbeat) since it isn't part of the ticker feed.
                     var full = t.fyers || t.fullSymbol || '';
                     var shrt = t.symbol || '';
                     if (full === 'NSE:INDIAVIX-INDEX' || shrt === 'India VIX' || shrt === 'INDIA VIX') {
                         setVixHeader(t.lp, t.ch, t.chp);
+                    } else if (full === 'NSE:NIFTYBANK-INDEX' || shrt === 'BANKNIFTY' || shrt === 'Nifty Bank') {
+                        setBankNiftyHeader(t.lp, t.ch, t.chp);
                     }
                 }
             } catch (e) {}
@@ -1237,9 +1255,6 @@
         var p   = Number(pct  || 0);
         var ltpEl = document.getElementById('hdrFut');
         var chgEl = document.getElementById('hdrFutChg');
-        // ATM updates on every spot tick — round to NIFTY's STRIKE_STEP=50.
-        var atmEl = document.getElementById('hdrAtm');
-        if (atmEl) atmEl.textContent = v > 0 ? String(Math.round(v / 50) * 50) : '—';
         if (ltpEl) {
             ltpEl.textContent = v > 0 ? v.toFixed(2) : '—';
             var tip = symbol || 'NIFTY spot index';

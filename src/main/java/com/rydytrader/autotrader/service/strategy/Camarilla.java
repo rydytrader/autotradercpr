@@ -2571,6 +2571,16 @@ public class Camarilla implements Strategy {
             Double atr = atrSvc == null ? null : atrSvc.currentAtr();
             if (atr != null) m.put("niftyAtr5m", atr);
         } catch (Exception ignored) {}
+        try {
+            com.rydytrader.autotrader.service.BankNiftyAtrService bnAtrSvc = bankNiftyAtrProvider == null ? null
+                : bankNiftyAtrProvider.getIfAvailable();
+            Double bnAtr = bnAtrSvc == null ? null : bnAtrSvc.currentAtr();
+            if (bnAtr != null) m.put("bankNiftyAtr5m", bnAtr);
+        } catch (Exception ignored) {}
+        try {
+            double bnLtp = marketDataService.getLtp(BANKNIFTY_SYMBOL);
+            if (bnLtp > 0) m.put("bankNiftyLtp", round2(bnLtp));
+        } catch (Exception ignored) {}
         return m;
     }
 
