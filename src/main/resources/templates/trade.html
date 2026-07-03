@@ -425,32 +425,23 @@
             </div>
         </div>
         <div style="padding:18px 22px;">
-            <!-- 2×2 grid: NIFTY row (pivots + legs) then BANKNIFTY row.
-                 Falls back to single column on narrow viewports via grid auto. -->
-            <div style="display:grid;grid-template-columns:minmax(340px, 1fr) minmax(420px, 1.4fr);gap:24px 24px;align-items:start;">
-                <!-- Row 1: NIFTY pivots + legs -->
+            <!-- LEFT  — single pivot table with NIFTY + BANKNIFTY value columns
+                        side-by-side (like the retired daily/weekly layout).
+                 RIGHT — NIFTY legs on top, BANKNIFTY legs stacked directly below. -->
+            <div style="display:grid;grid-template-columns:minmax(360px, 1fr) minmax(420px, 1.4fr);gap:24px;align-items:start;">
                 <div>
-                    <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;">Camarilla pivots — NIFTY</div>
-                    <div id="levelsModalPivots" style="display:grid;grid-template-columns:repeat(2, 1fr);gap:6px 14px;font-family:var(--font-mono);font-size:0.76rem;">
-                        <div style="color:var(--text-muted);grid-column:span 2;">resolving…</div>
+                    <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;">Camarilla pivots</div>
+                    <div id="levelsModalPivots" style="display:flex;flex-direction:column;gap:6px;font-family:var(--font-mono);font-size:0.76rem;">
+                        <div style="color:var(--text-muted);">resolving…</div>
                     </div>
                 </div>
+
                 <div>
                     <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;">NIFTY directional legs</div>
                     <div id="levelsModalLegsDir">
                         <div style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.72rem;">resolving…</div>
                     </div>
-                </div>
-
-                <!-- Row 2: BANKNIFTY pivots + legs -->
-                <div>
-                    <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;">Camarilla pivots — BANKNIFTY</div>
-                    <div id="levelsModalPivotsBankNifty" style="display:grid;grid-template-columns:repeat(2, 1fr);gap:6px 14px;font-family:var(--font-mono);font-size:0.76rem;">
-                        <div style="color:var(--text-muted);grid-column:span 2;">resolving…</div>
-                    </div>
-                </div>
-                <div>
-                    <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;">BANKNIFTY directional legs</div>
+                    <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;margin:14px 0 6px 0;">BANKNIFTY directional legs</div>
                     <div id="levelsModalLegsDirBankNifty">
                         <div style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.72rem;">resolving…</div>
                     </div>
@@ -662,27 +653,27 @@
             } catch (e) {}
         });
     }
-    // Render Camarilla pivot rows for a single instrument into the given DOM
-    // container. Extracted so both NIFTY (levelsModalPivots) and BankNifty
-    // (levelsModalPivotsBankNifty) share the same rendering path.
-    function renderPivotBlock(wrapEl, pivots) {
+    // Render a single pivot table with two value columns (NIFTY + BANKNIFTY)
+    // side-by-side per row. Matches the visual pattern of the retired daily/
+    // weekly display so the operator can compare levels at a glance.
+    function renderPivotBlock(wrapEl, niftyPivots, bnPivots) {
         if (!wrapEl) return;
-        if (!pivots) {
-            wrapEl.innerHTML = '<div style="color:var(--text-muted);grid-column:span 2;">resolving…</div>';
+        if (!niftyPivots && !bnPivots) {
+            wrapEl.innerHTML = '<div style="color:var(--text-muted);">resolving…</div>';
             return;
         }
-        function dailyVal(key) { return Number(pivots[key]); }
+        function val(lv, key) { return lv ? Number(lv[key]) : NaN; }
         function fmtNum(n) { return (isFinite(n) && n > 0)
             ? n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
             : '—'; }
         var rows = [
-            ['H5', dailyVal('h5'), '#a78bfa', 'outer target'],
-            ['H4', dailyVal('h4'), '#34d399', 'bullish trigger'],
-            ['H3', dailyVal('h3'), '#f87171', 'bearish trigger'],
+            ['H5', 'h5', '#a78bfa', 'outer target'],
+            ['H4', 'h4', '#34d399', 'bullish trigger'],
+            ['H3', 'h3', '#f87171', 'bearish trigger'],
             'P',
-            ['L3', dailyVal('l3'), '#34d399', 'bullish trigger'],
-            ['L4', dailyVal('l4'), '#f87171', 'bearish trigger'],
-            ['L5', dailyVal('l5'), '#a78bfa', 'outer target']
+            ['L3', 'l3', '#34d399', 'bullish trigger'],
+            ['L4', 'l4', '#f87171', 'bearish trigger'],
+            ['L5', 'l5', '#a78bfa', 'outer target']
         ];
         wrapEl.style.display       = 'flex';
         wrapEl.style.flexDirection = 'column';
@@ -690,32 +681,37 @@
         var headerHtml = '<div style="display:flex;align-items:center;gap:14px;padding:4px 14px 6px 14px;">'
             + '<span style="min-width:28px;"></span>'
             + '<span style="flex:1;"></span>'
-            + '<span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;font-weight:700;min-width:96px;text-align:right;">Daily</span>'
+            + '<span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;font-weight:700;min-width:88px;text-align:right;">NIFTY</span>'
+            + '<span style="font-family:var(--font-mono);font-size:0.6rem;color:rgb(196,181,253);letter-spacing:0.08em;text-transform:uppercase;font-weight:700;min-width:96px;text-align:right;">BANKNIFTY</span>'
             + '</div>';
         var rowsHtml = rows.map(function(r) {
             if (r === 'P') {
-                var dP = dailyVal('priorClose');
+                var pN = val(niftyPivots, 'priorClose');
+                var pB = val(bnPivots, 'priorClose');
                 return '<div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:rgba(125,211,252,0.06);border-left:3px solid var(--accent-cyan);border-radius:4px;">'
                      + '<span style="font-family:var(--font-mono);font-size:0.78rem;font-weight:700;color:var(--accent-cyan);min-width:28px;">P</span>'
                      + '<span style="flex:1;font-family:var(--font-mono);font-size:0.62rem;color:var(--text-muted);letter-spacing:0.04em;text-transform:uppercase;">pivot</span>'
-                     + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--accent-cyan);min-width:96px;text-align:right;">' + fmtNum(dP) + '</span>'
+                     + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--accent-cyan);min-width:88px;text-align:right;">' + fmtNum(pN) + '</span>'
+                     + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:rgb(196,181,253);min-width:96px;text-align:right;">' + fmtNum(pB) + '</span>'
                      + '</div>';
             }
-            var label = r[0], dVal = r[1], col = r[2], meaning = r[3];
+            var label = r[0], key = r[1], col = r[2], meaning = r[3];
+            var vN = val(niftyPivots, key);
+            var vB = val(bnPivots, key);
             return '<div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:rgba(255,255,255,0.015);border-left:3px solid ' + col + ';border-radius:4px;">'
                  + '<span style="font-family:var(--font-mono);font-size:0.78rem;font-weight:700;color:' + col + ';min-width:28px;">' + label + '</span>'
                  + '<span style="flex:1;font-family:var(--font-mono);font-size:0.62rem;color:var(--text-muted);letter-spacing:0.04em;text-transform:uppercase;">' + meaning + '</span>'
-                 + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--text-primary);min-width:96px;text-align:right;">' + fmtNum(dVal) + '</span>'
+                 + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--text-primary);min-width:88px;text-align:right;">' + fmtNum(vN) + '</span>'
+                 + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:rgb(196,181,253);min-width:96px;text-align:right;">' + fmtNum(vB) + '</span>'
                  + '</div>';
         }).join('');
         wrapEl.innerHTML = headerHtml + rowsHtml;
     }
 
     function renderLevelsModal() {
-        // Row 1: NIFTY
-        renderPivotBlock(document.getElementById('levelsModalPivots'), _latestPivots);
-        // Row 2: BankNifty
-        renderPivotBlock(document.getElementById('levelsModalPivotsBankNifty'), _latestBankNiftyPivots);
+        // Single pivot table with NIFTY + BankNifty value columns per row.
+        renderPivotBlock(document.getElementById('levelsModalPivots'),
+                         _latestPivots, _latestBankNiftyPivots);
 
         var lgWrapDir           = document.getElementById('levelsModalLegsDir');
         var lgWrapDirBankNifty  = document.getElementById('levelsModalLegsDirBankNifty');
