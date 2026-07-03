@@ -73,52 +73,6 @@ public class NseIndicesBhavcopyService {
         return null;
     }
 
-    /** Aggregate the OHLC of the index across the most recent completed Mon-Fri trading
-     *  week before {@code asOf}, fetching each weekday's bhavcopy individually and combining:
-     *  <ul>
-     *    <li>{@code open}  — first weekday with a bhavcopy (typically Monday).</li>
-     *    <li>{@code high}  — max of all weekday highs in the window.</li>
-     *    <li>{@code low}   — min of all weekday lows in the window.</li>
-     *    <li>{@code close} — close of the LAST weekday with a bhavcopy (typically Friday).</li>
-     *    <li>{@code date}  — date of the last weekday with a bhavcopy (anchor for the week).</li>
-     *  </ul>
-     *  Holiday days (no bhavcopy) are silently skipped. Returns null when no weekday in the
-     *  prior-week window has a bhavcopy at all.
-     *
-     *  <p>"Prior week" = the Monday → Friday strictly before {@code asOf}'s week. If
-     *  {@code asOf} is Mon Jun 29, the window is Mon Jun 22 → Fri Jun 26. */
-    public Ohlc fetchPriorWeekOhlc(String indexName, LocalDate asOf) {
-        if (indexName == null || indexName.isBlank() || asOf == null) return null;
-        LocalDate priorFriday = asOf.with(java.time.temporal.TemporalAdjusters.previous(DayOfWeek.FRIDAY));
-        LocalDate priorMonday = priorFriday.minusDays(4);
-        log.info("[NseBhavcopy] fetchPriorWeekOhlc start — index='{}' window={}..{}",
-            indexName, priorMonday, priorFriday);
-        double weekHigh = Double.NEGATIVE_INFINITY;
-        double weekLow  = Double.POSITIVE_INFINITY;
-        double weekOpen = 0;
-        double weekClose = 0;
-        LocalDate latestDate = null;
-        boolean haveOpen = false;
-        for (LocalDate d = priorMonday; !d.isAfter(priorFriday); d = d.plusDays(1)) {
-            if (d.getDayOfWeek() == DayOfWeek.SATURDAY || d.getDayOfWeek() == DayOfWeek.SUNDAY) continue;
-            Ohlc o = tryFetch(indexName, d, 0);
-            if (o == null) continue;
-            if (!haveOpen) { weekOpen = o.open(); haveOpen = true; }
-            if (o.high() > weekHigh) weekHigh = o.high();
-            if (o.low()  < weekLow)  weekLow  = o.low();
-            weekClose = o.close();
-            latestDate = d;
-        }
-        if (latestDate == null) {
-            log.warn("[NseBhavcopy] no bhavcopy days found in prior week {}..{} for {}",
-                priorMonday, priorFriday, indexName);
-            return null;
-        }
-        log.info("[NseBhavcopy] prior-week OHLC for {} ({}..{}): O={} H={} L={} C={}",
-            indexName, priorMonday, latestDate, weekOpen, weekHigh, weekLow, weekClose);
-        return new Ohlc(weekOpen, weekHigh, weekLow, weekClose, latestDate);
-    }
-
     private static final String[] HOSTS = {
         // NSE has migrated their public archives over time — try the newer host
         // first, fall back to the legacy host on 404.

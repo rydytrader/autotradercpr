@@ -65,10 +65,6 @@ public class CamarillaService {
         .findAndRegisterModules();
 
     private final Map<String, CamarillaLevels> bySymbol = new ConcurrentHashMap<>();
-    /** Weekly Camarilla pivots — keyed by the same symbol as {@link #bySymbol}. Populated only
-     *  for {@code NSE:NIFTY50-INDEX} today (the only symbol whose levels surface in the
-     *  Levels modal). Computed from prior-week aggregated NSE bhavcopies. */
-    private final Map<String, CamarillaLevels> weeklyBySymbol = new ConcurrentHashMap<>();
     private final Map<String, AtomicBoolean>   refreshGates = new ConcurrentHashMap<>();
     private final AtomicBoolean warmUpInFlight = new AtomicBoolean(false);
 
@@ -144,18 +140,6 @@ public class CamarillaService {
     /** Snapshot of every cached entry (for /api/camarilla/levels). */
     public Map<String, CamarillaLevels> snapshot() {
         return Map.copyOf(bySymbol);
-    }
-
-    /** Read-through weekly accessor — symmetric to {@link #getLevels(String)} but reads
-     *  from the prior-week aggregated cache. Currently populated only for NIFTY. */
-    public CamarillaLevels getWeeklyLevels(String symbol) {
-        if (symbol == null || symbol.isBlank()) return null;
-        return weeklyBySymbol.get(symbol);
-    }
-
-    /** Snapshot of every cached weekly entry (currently NIFTY only). */
-    public Map<String, CamarillaLevels> snapshotWeekly() {
-        return Map.copyOf(weeklyBySymbol);
     }
 
     /** Hit Fyers {@code /data/quotes} for a comma-separated symbol list and
@@ -279,23 +263,6 @@ public class CamarillaService {
                 log.info("[CamarillaService] NIFTY levels from NSE bhavcopy ({}) — H={} L={} C={} → H3={} L3={}",
                     bhav.date(), bhav.high(), bhav.low(), bhav.close(),
                     fresh.h3(), fresh.l3());
-                // Also compute weekly Camarilla pivots from the prior Mon-Fri aggregate.
-                // Per-day bhavcopy fetches are cheap (5 calls once per session); failure is
-                // non-fatal — the Levels modal just won't show a Weekly column for this load.
-                CamarillaLevels cachedWeekly = weeklyBySymbol.get(symbol);
-                if (cachedWeekly == null || !today.equals(cachedWeekly.sessionDate())) {
-                    NseIndicesBhavcopyService.Ohlc weekly = nseBhavcopy.fetchPriorWeekOhlc("Nifty 50", today);
-                    if (weekly != null && weekly.high() > 0 && weekly.low() > 0 && weekly.close() > 0) {
-                        CamarillaLevels weeklyFresh = CamarillaLevels.compute(today, weekly.date(),
-                            weekly.high(), weekly.low(), weekly.close());
-                        weeklyBySymbol.put(symbol, weeklyFresh);
-                        log.info("[CamarillaService] NIFTY WEEKLY levels (anchor={}) — H={} L={} C={} → H3={} L3={}",
-                            weekly.date(), weekly.high(), weekly.low(), weekly.close(),
-                            weeklyFresh.h3(), weeklyFresh.l3());
-                    } else {
-                        log.warn("[CamarillaService] NIFTY weekly bhavcopy aggregate unavailable — Levels modal will show daily only");
-                    }
-                }
                 return true;
             }
             log.warn("[CamarillaService] NSE bhavcopy unavailable for NIFTY — falling back to Fyers history");

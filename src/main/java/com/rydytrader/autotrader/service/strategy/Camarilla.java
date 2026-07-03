@@ -2377,15 +2377,11 @@ public class Camarilla implements Strategy {
         // ALREADY spot prices, so per-option levels aren't useful here either.
         // Emit only the trigger symbol's levels — the trade.html LTP tooltip uses this.
         Map<String, CamarillaLevels> perSymbolLevels = new LinkedHashMap<>();
-        Map<String, CamarillaLevels> perSymbolWeeklyLevels = new LinkedHashMap<>();
         if (futSym != null && !futSym.isBlank()) {
             CamarillaLevels lv = camarillaService.getLevels(futSym);
             if (lv != null) perSymbolLevels.put(futSym, lv);
-            CamarillaLevels wk = camarillaService.getWeeklyLevels(futSym);
-            if (wk != null) perSymbolWeeklyLevels.put(futSym, wk);
         }
-        m.put("perSymbolLevels",        perSymbolLevels);
-        m.put("perSymbolWeeklyLevels",  perSymbolWeeklyLevels);
+        m.put("perSymbolLevels", perSymbolLevels);
 
         // Risk block — same shape as equities Positions page badges.
         double consumedRisk = consumedRiskNow();
