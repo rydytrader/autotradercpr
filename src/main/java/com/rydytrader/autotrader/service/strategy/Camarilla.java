@@ -64,7 +64,27 @@ public class Camarilla implements Strategy {
      *  day-modal, and Trade Log filter on this string so manual scalps stay distinguishable
      *  from algorithm trades while still aggregating into the same portfolio totals. */
     public  static final String MANUAL_STRATEGY_ID = "manual";
-    private static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
+    private static final String NIFTY_SYMBOL     = "NSE:NIFTY50-INDEX";
+    private static final String BANKNIFTY_SYMBOL = "NSE:NIFTYBANK-INDEX";
+
+    /** Per-instrument constants captured in one place so the strategy fires
+     *  can route via {@code InstrumentConfig.NIFTY} vs
+     *  {@code InstrumentConfig.BANKNIFTY} without threading disparate
+     *  parameters. Kept alongside the flat NIFTY_SYMBOL / STRIKE_STEP /
+     *  LOT_SIZE constants above rather than replacing them — legacy code
+     *  paths that reference the flat constants stay unchanged. */
+    public record InstrumentConfig(
+        String name,
+        String spotSymbol,
+        int    lotSize,
+        long   strikeStep,
+        String expiryCadence
+    ) {
+        public static final InstrumentConfig NIFTY = new InstrumentConfig(
+            "NIFTY", NIFTY_SYMBOL, 65, 50L, "WEEKLY");
+        public static final InstrumentConfig BANKNIFTY = new InstrumentConfig(
+            "BANKNIFTY", BANKNIFTY_SYMBOL, 30, 100L, "MONTHLY");
+    }
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final String STATE_FILE = "../store/cache/camarilla-state.json";
     private static final String LEGACY_STATE_FILE = "../store/data/camarilla-state.json";
@@ -2471,6 +2491,23 @@ public class Camarilla implements Strategy {
          *  doesn't match today, the scheduled retry refreshes them. */
         public String sessionLegsDayKey = "";
 
+        // ── BankNifty parallel state (safe additive layout) ─────────────────
+        // Rather than restructuring the top-level NIFTY fields into a nested
+        // InstrumentState (which would require a state-file migration and
+        // touch every read/write in the strategy), the BankNifty layer lives
+        // alongside as parallel-named fields. Each field mirrors its NIFTY
+        // twin; the strategy routes to the correct set based on the incoming
+        // symbol at fire time. Existing NIFTY state files load unchanged;
+        // BankNifty fields default to empty and populate on first
+        // resolveBankNiftySessionLegs() call.
+        public String bankNiftyFuturesSymbol = "";
+        public String bankNiftyH4bSymbol = "";  public long bankNiftyH4bStrike;  public double bankNiftyH4bRefLtp;
+        public String bankNiftyL3rSymbol = "";  public long bankNiftyL3rStrike;  public double bankNiftyL3rRefLtp;
+        public String bankNiftyH3rSymbol = "";  public long bankNiftyH3rStrike;  public double bankNiftyH3rRefLtp;
+        public String bankNiftyL4bSymbol = "";  public long bankNiftyL4bStrike;  public double bankNiftyL4bRefLtp;
+        public String bankNiftySessionLegsDayKey = "";
+        public PendingConfirmation bankNiftyPendingBullish;
+        public PendingConfirmation bankNiftyPendingBearish;
     }
 
     /** v2 two-candle entry — a bar that met the confirmation geometry of one of the
