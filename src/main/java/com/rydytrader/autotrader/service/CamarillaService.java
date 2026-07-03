@@ -53,7 +53,8 @@ public class CamarillaService {
     /** NIFTY spot index symbol — used as the v2 trigger feed for setup detection.
      *  Camarilla levels for this symbol need to be ready before the first 5-min
      *  spot bar of the new session closes. Pre-fetched on boot and at 08:00 IST. */
-    private static final String NIFTY_SPOT_SYMBOL = "NSE:NIFTY50-INDEX";
+    private static final String NIFTY_SPOT_SYMBOL     = "NSE:NIFTY50-INDEX";
+    private static final String BANKNIFTY_SPOT_SYMBOL = "NSE:NIFTYBANK-INDEX";
 
     private final FyersClientRouter   fyersClient;
     private final TokenStore          tokenStore;
@@ -88,12 +89,13 @@ public class CamarillaService {
             if (e.getValue() != null && e.getValue().sessionDate().equals(todayIst())) kept++;
         }
         log.info("[CamarillaService] booted — {} cached level entries valid for today", kept);
-        // v2 cleanup — drop any non-NIFTY entries that leaked in from v1's
-        // warmUpAroundAtm fan-out fetch. Only NIFTY spot levels are meaningful in
-        // v2; the rest are dead weight on disk + memory.
+        // v2 cleanup — drop any legacy option-strike entries that leaked in
+        // from v1's warmUpAroundAtm fan-out fetch. Only the two index-spot
+        // symbols are meaningful in v2 (NIFTY + BANKNIFTY); the rest are
+        // dead weight on disk + memory.
         int dropped = 0;
         for (String sym : new java.util.ArrayList<>(bySymbol.keySet())) {
-            if (!NIFTY_SPOT_SYMBOL.equals(sym)) {
+            if (!NIFTY_SPOT_SYMBOL.equals(sym) && !BANKNIFTY_SPOT_SYMBOL.equals(sym)) {
                 bySymbol.remove(sym);
                 dropped++;
             }
@@ -102,17 +104,21 @@ public class CamarillaService {
             log.info("[CamarillaService] cleaned {} legacy option-strike entries from cache", dropped);
             try { saveToDisk(); } catch (Exception ignored) {}
         }
-        // Invalidate any cached NIFTY entry at boot so the bhavcopy-preferred
+        // Invalidate any cached spot entries at boot so the bhavcopy-preferred
         // refresh path always runs. Without this, an entry cached from a previous
         // boot (which used Fyers history) would short-circuit the bhavcopy fetch
         // for today's session and we'd never see the higher-fidelity OHLC.
         if (bySymbol.remove(NIFTY_SPOT_SYMBOL) != null) {
             log.info("[CamarillaService] invalidated cached NIFTY entry at boot to force bhavcopy refresh");
         }
-        // Fetch NIFTY spot levels at boot so the trend tooltip + setup detector
-        // are armed before the first 5-min bar closes, regardless of when the server
-        // came up. Runs async so boot isn't blocked on Fyers REST.
+        if (bySymbol.remove(BANKNIFTY_SPOT_SYMBOL) != null) {
+            log.info("[CamarillaService] invalidated cached BANKNIFTY entry at boot to force bhavcopy refresh");
+        }
+        // Fetch both instrument spot levels at boot so the setup detector and
+        // trend tooltip are armed before the first 5-min bar closes. Runs
+        // async so boot isn't blocked on Fyers REST.
         triggerAsyncRefresh(NIFTY_SPOT_SYMBOL);
+        triggerAsyncRefresh(BANKNIFTY_SPOT_SYMBOL);
     }
 
     /** Cron daily at 08:00 IST — well before AtmTracker's 09:30 resolve. Prior-day daily
@@ -121,8 +127,9 @@ public class CamarillaService {
      *  trigger bar at 09:35 can evaluate immediately. */
     @Scheduled(cron = "0 0 8 * * MON-FRI", zone = "Asia/Kolkata")
     public void scheduledRefresh() {
-        log.info("[CamarillaService] daily refresh fired — priming NIFTY spot levels for today");
+        log.info("[CamarillaService] daily refresh fired — priming NIFTY + BANKNIFTY spot levels for today");
         triggerAsyncRefresh(NIFTY_SPOT_SYMBOL);
+        triggerAsyncRefresh(BANKNIFTY_SPOT_SYMBOL);
     }
 
     /** Returns cached levels for {@code symbol}, possibly null if not yet warmed. On miss,
@@ -266,6 +273,23 @@ public class CamarillaService {
                 return true;
             }
             log.warn("[CamarillaService] NSE bhavcopy unavailable for NIFTY — falling back to Fyers history");
+        }
+
+        // ── BANKNIFTY spot: prefer NSE indices bhavcopy ──
+        // Same TradingView-parity rationale as NIFTY. NSE archives publish
+        // "Nifty Bank" daily OHLC alongside "Nifty 50".
+        if ("NSE:NIFTYBANK-INDEX".equals(symbol)) {
+            NseIndicesBhavcopyService.Ohlc bhav = nseBhavcopy.fetchPriorDayOhlc("Nifty Bank", today);
+            if (bhav != null && bhav.high() > 0 && bhav.low() > 0 && bhav.close() > 0) {
+                CamarillaLevels fresh = CamarillaLevels.compute(today, bhav.date(),
+                    bhav.high(), bhav.low(), bhav.close());
+                bySymbol.put(symbol, fresh);
+                log.info("[CamarillaService] BANKNIFTY levels from NSE bhavcopy ({}) — H={} L={} C={} → H3={} L3={}",
+                    bhav.date(), bhav.high(), bhav.low(), bhav.close(),
+                    fresh.h3(), fresh.l3());
+                return true;
+            }
+            log.warn("[CamarillaService] NSE bhavcopy unavailable for BANKNIFTY — falling back to Fyers history");
         }
 
         // Pull 10 calendar days of daily candles so we always have a settled session.
