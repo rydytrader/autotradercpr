@@ -147,20 +147,31 @@ public class BalancedAtmSelector {
      * <p>For an unrecognised side, falls back to {@link #resolveStrikeAtLevel}.
      */
     public StrikeAtLevel resolveOtmStrikeAtLevel(double level, String side) {
+        return resolveOtmStrikeAtLevel(NIFTY_SYMBOL, STRIKE_STEP, level, side);
+    }
+
+    /** Per-instrument overload — takes the spot symbol + strike step so the
+     *  same routine works for both NIFTY (STRIKE_STEP=50, weekly chain) and
+     *  BANKNIFTY (STRIKE_STEP=100, monthly chain). Fyers returns the nearest
+     *  expiry when the timestamp param is empty, which naturally picks
+     *  BankNifty's monthly chain. */
+    public StrikeAtLevel resolveOtmStrikeAtLevel(String spotSymbol, long strikeStep,
+                                                  double level, String side) {
         if (level <= 0) return null;
         long targetStrike;
         if ("PE".equalsIgnoreCase(side)) {
-            targetStrike = (long) Math.floor(level / (double) STRIKE_STEP) * STRIKE_STEP;
+            targetStrike = (long) Math.floor(level / (double) strikeStep) * strikeStep;
         } else if ("CE".equalsIgnoreCase(side)) {
-            targetStrike = (long) Math.ceil(level / (double) STRIKE_STEP) * STRIKE_STEP;
+            targetStrike = (long) Math.ceil(level / (double) strikeStep) * strikeStep;
         } else {
             return resolveStrikeAtLevel(level);
         }
-        NavigableMap<Long, ChainRow> chain = fetchChain();
+        NavigableMap<Long, ChainRow> chain = fetchChain(spotSymbol);
         if (chain == null || chain.isEmpty()) return null;
         long chosen = nearestStrikeWithBothLegs(chain, targetStrike);
         if (chosen <= 0) {
-            log.warn("[atm-selector] resolveOtmStrikeAtLevel({}, {}): no quoted strike found", level, side);
+            log.warn("[atm-selector] resolveOtmStrikeAtLevel({}, {}, {}): no quoted strike found",
+                spotSymbol, level, side);
             return null;
         }
         ChainRow row = chain.get(chosen);
@@ -218,9 +229,16 @@ public class BalancedAtmSelector {
     }
 
     private NavigableMap<Long, ChainRow> fetchChain() {
+        return fetchChain(NIFTY_SYMBOL);
+    }
+
+    /** Per-symbol chain fetch. Empty {@code expiryTs} → Fyers returns nearest
+     *  expiry, which naturally maps to NIFTY weekly OR BANKNIFTY monthly
+     *  depending on the symbol. */
+    private NavigableMap<Long, ChainRow> fetchChain(String spotSymbol) {
         try {
             String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
-            JsonNode root = fyersClient.getOptionChain(NIFTY_SYMBOL, 30, auth);
+            JsonNode root = fyersClient.getOptionChain(spotSymbol, 30, auth);
             if (root == null) return null;
             JsonNode data = root.has("data") ? root.get("data") : null;
             JsonNode chain = data != null && data.has("optionsChain") ? data.get("optionsChain")
