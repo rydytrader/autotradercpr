@@ -39,9 +39,27 @@ import java.util.*;
 public class ManualTerminalController {
 
     private static final Logger log = LoggerFactory.getLogger(ManualTerminalController.class);
-    private static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
+    private static final String NIFTY_SYMBOL     = "NSE:NIFTY50-INDEX";
+    private static final String BANKNIFTY_SYMBOL = "NSE:NIFTYBANK-INDEX";
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    private static final long   STRIKE_STEP  = 50;
+    private static final long   NIFTY_STRIKE_STEP     = 50;
+    private static final long   BANKNIFTY_STRIKE_STEP = 100;
+    private static final int    NIFTY_LOT_SIZE     = 65;
+    private static final int    BANKNIFTY_LOT_SIZE = 30;
+
+    /** Resolve strike step for the given index spot symbol. */
+    private static long strikeStepFor(String symbol) {
+        return BANKNIFTY_SYMBOL.equals(symbol) ? BANKNIFTY_STRIKE_STEP : NIFTY_STRIKE_STEP;
+    }
+    /** Lot size for the given index spot symbol. */
+    private static int lotSizeFor(String symbol) {
+        return BANKNIFTY_SYMBOL.equals(symbol) ? BANKNIFTY_LOT_SIZE : NIFTY_LOT_SIZE;
+    }
+    /** Normalise the caller's symbol param — blank / unknown → NIFTY. */
+    private static String resolveSymbol(String raw) {
+        if (BANKNIFTY_SYMBOL.equals(raw)) return BANKNIFTY_SYMBOL;
+        return NIFTY_SYMBOL;
+    }
 
     private final Camarilla            strategy;
     private final FyersClientRouter    fyersClient;
@@ -65,17 +83,20 @@ public class ManualTerminalController {
 
     @GetMapping("/strikes")
     public ResponseEntity<?> strikes(@RequestParam(defaultValue = "10") int strikes,
-                                     @RequestParam(required = false) String expiryTs) {
+                                     @RequestParam(required = false) String expiryTs,
+                                     @RequestParam(required = false) String symbol) {
         if (!tokenStore.isTokenAvailable()) {
             return ResponseEntity.status(401).body(Map.of("error", "not_logged_in"));
         }
+        String indexSym = resolveSymbol(symbol);
+        long strikeStep = strikeStepFor(indexSym);
         try {
             String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
             int fetchCount = Math.max(30, strikes * 2 + 5);
             // expiryTs is the Fyers epoch-seconds timestamp for the desired weekly.
             // Blank/missing → nearest expiry (current week). The frontend uses
             // expiryOptions (returned below) to learn what the next-week timestamp is.
-            JsonNode root = fyersClient.getOptionChain(NIFTY_SYMBOL, fetchCount,
+            JsonNode root = fyersClient.getOptionChain(indexSym, fetchCount,
                 expiryTs == null ? "" : expiryTs, auth);
             if (root == null) {
                 return ResponseEntity.status(502).body(Map.of("error", "empty_response"));
@@ -93,17 +114,17 @@ public class ManualTerminalController {
                 String sym     = textField(row, "symbol");
                 String optType = textField(row, "option_type", "optionType");
                 double strike  = doubleField(row, "strike_price", "strikePrice");
-                if (sym.equalsIgnoreCase(NIFTY_SYMBOL)
+                if (sym.equalsIgnoreCase(indexSym)
                     || (optType.isEmpty() && (strike == 0 || strike == -1))) {
                     double ltp = doubleField(row, "ltp", "lp");
                     if (ltp > 0) { spot = ltp; break; }
                 }
             }
             if (spot <= 0) {
-                try { spot = marketDataService.getLtp(NIFTY_SYMBOL); }
+                try { spot = marketDataService.getLtp(indexSym); }
                 catch (Exception ignored) {}
             }
-            long spotAtm = spot > 0 ? Math.round(spot / (double) STRIKE_STEP) * STRIKE_STEP : 0;
+            long spotAtm = spot > 0 ? Math.round(spot / (double) strikeStep) * strikeStep : 0;
 
             NavigableMap<Long, String[]> byStrike    = new TreeMap<>();
             NavigableMap<Long, double[]> ltpByStrike = new TreeMap<>();
@@ -133,9 +154,9 @@ public class ManualTerminalController {
 
             List<Map<String, Object>> rows = new ArrayList<>();
             if (atm > 0) {
-                long lo = atm - (long) strikes * STRIKE_STEP;
-                long hi = atm + (long) strikes * STRIKE_STEP;
-                for (long s = lo; s <= hi; s += STRIKE_STEP) {
+                long lo = atm - (long) strikes * strikeStep;
+                long hi = atm + (long) strikes * strikeStep;
+                for (long s = lo; s <= hi; s += strikeStep) {
                     String[] pair = byStrike.get(s);
                     Map<String, Object> row = new LinkedHashMap<>();
                     row.put("strike", s);
@@ -212,7 +233,10 @@ public class ManualTerminalController {
         else return ResponseEntity.badRequest().body(Map.of(
             "success", false, "message", "side must be BUY or SELL"));
 
-        int qty = Math.max(1, lots) * com.rydytrader.autotrader.service.strategy.Camarilla.lotSize();
+        // Lot size is instrument-specific: 65 for NIFTY options,
+        // 30 for BANKNIFTY. Detect from the Fyers option symbol prefix.
+        int lotSize = symbol.startsWith("NSE:BANKNIFTY") ? BANKNIFTY_LOT_SIZE : NIFTY_LOT_SIZE;
+        int qty = Math.max(1, lots) * lotSize;
 
         Camarilla.ManualPlaceResult r = strategy.placeManual(symbol, sideCode, qty, 2, 0, slPts, product);
         Map<String, Object> out = new LinkedHashMap<>();
@@ -270,7 +294,9 @@ public class ManualTerminalController {
         if (p == null) {
             return ResponseEntity.ok(errorMap("position not found"));
         }
-        int qty = Math.abs(deltaLots) * Camarilla.lotSize();
+        // Lot size per position's underlying — 30 for BankNifty option contracts, 65 for NIFTY.
+        int lotSize = p.symbol != null && p.symbol.startsWith("NSE:BANKNIFTY") ? BANKNIFTY_LOT_SIZE : NIFTY_LOT_SIZE;
+        int qty = Math.abs(deltaLots) * lotSize;
         int side;
         if (deltaLots > 0) {
             side = p.isShort ? -1 : +1;     // add same direction
@@ -344,7 +370,10 @@ public class ManualTerminalController {
     @GetMapping("/dashboard")
     public ResponseEntity<Map<String, Object>> dashboard(
             @RequestParam(required = false) String ceSymbol,
-            @RequestParam(required = false) String peSymbol) {
+            @RequestParam(required = false) String peSymbol,
+            @RequestParam(required = false) String symbol) {
+
+        String indexSym = resolveSymbol(symbol);
 
         // Lazy-subscribe the dropdown-selected strikes so they receive live ticks.
         List<String> toSub = new ArrayList<>();
@@ -354,13 +383,13 @@ public class ManualTerminalController {
             try { marketDataService.subscribeAdditional(toSub); } catch (Exception ignored) {}
         }
 
-        // NIFTY ticker.
+        // Index ticker (NIFTY or BankNifty depending on the caller's symbol param).
         double niftyLtp = 0, niftyChange = 0, niftyChangePct = 0;
         try {
-            niftyLtp       = marketDataService.getDisplayLtp(NIFTY_SYMBOL);
-            niftyChange    = marketDataService.getDisplayChange(NIFTY_SYMBOL);
-            niftyChangePct = marketDataService.getDisplayChangePct(NIFTY_SYMBOL);
-            if (niftyLtp <= 0) niftyLtp = marketDataService.getLtp(NIFTY_SYMBOL);
+            niftyLtp       = marketDataService.getDisplayLtp(indexSym);
+            niftyChange    = marketDataService.getDisplayChange(indexSym);
+            niftyChangePct = marketDataService.getDisplayChangePct(indexSym);
+            if (niftyLtp <= 0) niftyLtp = marketDataService.getLtp(indexSym);
         } catch (Exception ignored) {}
 
         // Open MANUAL positions mapped to the modal's expected shape.

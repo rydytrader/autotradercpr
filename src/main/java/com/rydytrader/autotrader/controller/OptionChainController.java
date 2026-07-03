@@ -31,7 +31,14 @@ public class OptionChainController {
     private static final Logger log = LoggerFactory.getLogger(OptionChainController.class);
 
     private static final String DEFAULT_SYMBOL = "NSE:NIFTY50-INDEX";
-    private static final long   STRIKE_STEP    = 50;
+    private static final long   NIFTY_STRIKE_STEP     = 50;
+    private static final long   BANKNIFTY_STRIKE_STEP = 100;
+
+    /** Strike interval for the given index spot symbol. NIFTY = 50, BANKNIFTY = 100. */
+    private static long strikeStepFor(String symbol) {
+        if ("NSE:NIFTYBANK-INDEX".equals(symbol)) return BANKNIFTY_STRIKE_STEP;
+        return NIFTY_STRIKE_STEP;
+    }
 
     private final FyersClientRouter fyersClient;
     private final TokenStore        tokenStore;
@@ -54,6 +61,7 @@ public class OptionChainController {
         if (strikes < 1)  strikes = 1;
         if (strikes > 25) strikes = 25;
 
+        long strikeStep = strikeStepFor(symbol);
         String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
         int fetchCount = Math.max(30, strikes * 2 + 5);
 
@@ -85,7 +93,7 @@ public class OptionChainController {
         if (spot <= 0) {
             return ResponseEntity.status(502).body(Map.of("error", "spot_unresolved"));
         }
-        long atm = Math.round(spot / (double) STRIKE_STEP) * STRIKE_STEP;
+        long atm = Math.round(spot / (double) strikeStep) * strikeStep;
 
         NavigableMap<Long, Leg[]> byStrike = groupByStrike(chain);
 
@@ -103,7 +111,7 @@ public class OptionChainController {
         // renders. The gold band on the spot-ATM row stays (driven by isAtm against atm).
         long syntheticAtm = 0;
 
-        List<Map<String, Object>> outRows = sliceWindow(byStrike, atm, strikes, syntheticAtm);
+        List<Map<String, Object>> outRows = sliceWindow(byStrike, atm, strikes, syntheticAtm, strikeStep);
 
         // Resistance = max CE OI on strikes ABOVE spot (call writers defending a ceiling).
         // Support    = max PE OI on strikes BELOW spot (put writers defending a floor).
@@ -116,8 +124,8 @@ public class OptionChainController {
             if (strike > atm) peakCeOiAbove = Math.max(peakCeOiAbove, legOi(r, "ce"));
             if (strike < atm) peakPeOiBelow = Math.max(peakPeOiBelow, legOi(r, "pe"));
         }
-        List<Long> resistanceStrikes = pickDirectionalWalls(outRows, atm, "ce", peakCeOiAbove, true,  2);
-        List<Long> supportStrikes    = pickDirectionalWalls(outRows, atm, "pe", peakPeOiBelow, false, 2);
+        List<Long> resistanceStrikes = pickDirectionalWalls(outRows, atm, "ce", peakCeOiAbove, true,  2, strikeStep);
+        List<Long> supportStrikes    = pickDirectionalWalls(outRows, atm, "pe", peakPeOiBelow, false, 2, strikeStep);
 
         String expiry = resolveExpiry(outRows);
 
@@ -191,11 +199,11 @@ public class OptionChainController {
     }
 
     private List<Map<String, Object>> sliceWindow(NavigableMap<Long, Leg[]> byStrike,
-                                                  long atm, int strikes, long syntheticAtm) {
+                                                  long atm, int strikes, long syntheticAtm, long strikeStep) {
         List<Map<String, Object>> out = new ArrayList<>();
-        long lo = atm - (long) strikes * STRIKE_STEP;
-        long hi = atm + (long) strikes * STRIKE_STEP;
-        for (long s = lo; s <= hi; s += STRIKE_STEP) {
+        long lo = atm - (long) strikes * strikeStep;
+        long hi = atm + (long) strikes * strikeStep;
+        for (long s = lo; s <= hi; s += strikeStep) {
             Leg[] pair = byStrike.get(s);
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("strike",          s);
@@ -258,7 +266,7 @@ public class OptionChainController {
      *  </ul> */
     private List<Long> pickDirectionalWalls(List<Map<String, Object>> rows, long atm,
                                             String legKey, long peakOi, boolean aboveAtm,
-                                            int topN) {
+                                            int topN, long strikeStep) {
         if (peakOi <= 0 || topN <= 0) return Collections.emptyList();
         long threshold = Math.max(1, (long) (peakOi * WALL_THRESHOLD));
         List<long[]> candidates = new ArrayList<>();
@@ -285,7 +293,7 @@ public class OptionChainController {
 
         // R2 / S2 onwards — further from ATM than R1 (next level out), within proximity, then
         // rank by OI desc (closer to R1 breaks OI ties).
-        long proximityRange = (long) R2_PROXIMITY_STRIKES * STRIKE_STEP;
+        long proximityRange = (long) R2_PROXIMITY_STRIKES * strikeStep;
         List<long[]> near = new ArrayList<>();
         for (long[] c : candidates) {
             long s = c[0];

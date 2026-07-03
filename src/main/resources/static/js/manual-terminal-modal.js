@@ -23,7 +23,14 @@
     var tickCache       = {};
     var tickerListener  = null;
     var sseAttachTimer  = null;
-    var NIFTY_INDEX_SYM = 'NSE:NIFTY50-INDEX';
+    var NIFTY_INDEX_SYM     = 'NSE:NIFTY50-INDEX';
+    var BANKNIFTY_INDEX_SYM = 'NSE:NIFTYBANK-INDEX';
+    // Currently-selected index (NIFTY or BANKNIFTY). Persists across
+    // modal opens; drives strike-chain fetch, LTP banner, and lot size.
+    var currentIndexSym = NIFTY_INDEX_SYM;
+    function currentIndexLabel() {
+        return currentIndexSym === BANKNIFTY_INDEX_SYM ? 'BANKNIFTY' : 'NIFTY';
+    }
 
     function ensureBuilt() {
         if (overlayEl) return overlayEl;
@@ -111,7 +118,10 @@
     function buildControlsHtml() {
         return '<div style="display:grid;grid-template-columns:repeat(6,1fr) auto;gap:12px 16px;align-items:end;margin-bottom:18px;">' +
             '<div><label style="display:block;color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:5px;">Index</label>' +
-              '<div style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text-primary);font-family:var(--font-mono);font-size:0.78rem;">NIFTY</div></div>' +
+              '<select id="mtIndex" class="mt-select">' +
+                '<option value="NSE:NIFTY50-INDEX">NIFTY</option>' +
+                '<option value="NSE:NIFTYBANK-INDEX">BANKNIFTY</option>' +
+              '</select></div>' +
             '<div><label style="display:block;color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:5px;">Call Strike</label>' +
               '<select id="mtCeStrike" class="mt-select"></select></div>' +
             '<div><label style="display:block;color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:5px;">Put Strike</label>' +
@@ -148,7 +158,7 @@
               '</div>' +
             '</div>' +
             '<div style="text-align:center;">' +
-              '<div style="color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;text-transform:uppercase;">NIFTY</div>' +
+              '<div id="mtNiftyLabel" style="color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;text-transform:uppercase;">NIFTY</div>' +
               '<div style="display:flex;align-items:baseline;justify-content:center;gap:10px;">' +
                 '<span style="font-size:1.6rem;font-weight:700;color:var(--text-primary);" id="mtNiftyLtp">—</span>' +
                 '<span id="mtNiftyChange" style="font-family:var(--font-mono);font-size:0.8rem;color:var(--text-muted);">—</span>' +
@@ -213,6 +223,23 @@
 
     // ── Control wiring ────────────────────────────────────────────────────────
     function wireControls() {
+        // Index dropdown — swap between NIFTY and BankNifty. Refetches the
+        // option chain for the new index and updates the LTP banner label.
+        var indexSel = document.getElementById('mtIndex');
+        if (indexSel) {
+            indexSel.value = currentIndexSym;
+            indexSel.addEventListener('change', function() {
+                currentIndexSym = indexSel.value || NIFTY_INDEX_SYM;
+                // Update the LTP banner header to match.
+                var lbl = document.getElementById('mtNiftyLabel');
+                if (lbl) lbl.textContent = currentIndexLabel();
+                // Refetch strikes for the new index. Clear chainCache so the
+                // stale strike list doesn't linger.
+                chainCache = null;
+                refreshStrikes('');
+                pollOnce();
+            });
+        }
         document.getElementById('mtExpiry').addEventListener('change', function() {
             // (Single-expiry resolution today; placeholder for future weekly switch.)
             refreshSelectedSymbolLtps();
@@ -241,7 +268,10 @@
             // be on next-week and clicking ↻ ATM shouldn't pop them back to
             // current. Falls back to nearest when nothing is picked yet.
             var currentTs = (document.getElementById('mtExpiry') || {}).value || '';
-            var url = '/api/manual/strikes' + (currentTs ? ('?expiryTs=' + encodeURIComponent(currentTs)) : '');
+            var qs = [];
+            if (currentIndexSym) qs.push('symbol=' + encodeURIComponent(currentIndexSym));
+            if (currentTs)       qs.push('expiryTs=' + encodeURIComponent(currentTs));
+            var url = '/api/manual/strikes' + (qs.length ? ('?' + qs.join('&')) : '');
             fetch(url, { credentials: 'same-origin' })
                 .then(function(r) { return r.json(); })
                 .then(function(payload) {
@@ -349,8 +379,8 @@
     // Repaint banner + positions + header totals from tickCache (no network).
     function applyRealtime() {
         // NIFTY banner
-        var nifty = tickCache[NIFTY_INDEX_SYM];
-        if (nifty) renderQuote('mtNiftyLtp', 'mtNiftyChange', nifty.ltp, nifty.ch, nifty.chp);
+        var idx = tickCache[currentIndexSym];
+        if (idx) renderQuote('mtNiftyLtp', 'mtNiftyChange', idx.ltp, idx.ch, idx.chp);
         // CE / PE banner — drive off the currently-selected dropdown symbols.
         var ceSym = selectedCeSymbol();
         var peSym = selectedPeSymbol();
@@ -475,8 +505,16 @@
     // expiryTs is optional. Blank/null = nearest (current week). When the operator
     // picks "next" in the dropdown the change-handler calls loadChain(ts) with
     // the epoch-second timestamp from expiryOptions.
-    function loadChain(expiryTs) {
-        var url = '/api/manual/strikes' + (expiryTs ? ('?expiryTs=' + encodeURIComponent(expiryTs)) : '');
+    function loadChain(expiryTs) { refreshStrikes(expiryTs || ''); }
+
+    /** Shared chain fetch — passes the current instrument symbol AND the
+     *  optional expiry timestamp. Called by boot, index-swap, refresh-ATM,
+     *  and expiry-change flows. */
+    function refreshStrikes(expiryTs) {
+        var qs = [];
+        if (currentIndexSym) qs.push('symbol=' + encodeURIComponent(currentIndexSym));
+        if (expiryTs)        qs.push('expiryTs=' + encodeURIComponent(expiryTs));
+        var url = '/api/manual/strikes' + (qs.length ? ('?' + qs.join('&')) : '');
         fetch(url, { credentials: 'same-origin' })
             .then(function(r) { return r.json(); })
             .then(function(payload) {
@@ -667,6 +705,7 @@
         var ce = selectedCeSymbol();
         var pe = selectedPeSymbol();
         var qs = [];
+        if (currentIndexSym) qs.push('symbol=' + encodeURIComponent(currentIndexSym));
         if (ce) qs.push('ceSymbol=' + encodeURIComponent(ce));
         if (pe) qs.push('peSymbol=' + encodeURIComponent(pe));
         var url = '/api/manual/dashboard' + (qs.length ? ('?' + qs.join('&')) : '');

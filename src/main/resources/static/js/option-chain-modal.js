@@ -15,7 +15,10 @@
     var bodyEl     = null;
     var titleSubEl = null;
     var refreshBtn = null;
+    var symbolSelectEl = null;
     var refreshLockUntil = 0;
+    // Currently-selected instrument. Persists across modal opens.
+    var currentSymbol = 'NSE:NIFTY50-INDEX';
 
     function ensureBuilt() {
         if (overlayEl) return overlayEl;
@@ -25,7 +28,11 @@
                 '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--border);gap:12px;">' +
                   '<div style="flex:1;min-width:0;">' +
                     '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
-                      '<div style="font-family:var(--font-mono);font-size:0.92rem;font-weight:700;color:var(--text-primary);">⊞ NIFTY OPTIONS CHAIN</div>' +
+                      '<div style="font-family:var(--font-mono);font-size:0.92rem;font-weight:700;color:var(--text-primary);">⊞ OPTIONS CHAIN</div>' +
+                      '<select id="oc-symbol" style="background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-family:var(--font-mono);font-size:0.72rem;font-weight:700;cursor:pointer;outline:none;">' +
+                        '<option value="NSE:NIFTY50-INDEX">NIFTY</option>' +
+                        '<option value="NSE:NIFTYBANK-INDEX">BANKNIFTY</option>' +
+                      '</select>' +
                       '<span class="oc-chip oc-chip-ce">CALLS ←</span>' +
                       '<span class="oc-chip oc-chip-pe">→ PUTS</span>' +
                     '</div>' +
@@ -40,15 +47,24 @@
         var wrap = document.createElement('div');
         wrap.innerHTML = html;
         document.body.appendChild(wrap.firstChild);
-        overlayEl  = document.getElementById('ocOverlay');
-        bodyEl     = document.getElementById('oc-body');
-        titleSubEl = document.getElementById('oc-sub');
-        refreshBtn = document.getElementById('oc-refresh');
+        overlayEl      = document.getElementById('ocOverlay');
+        bodyEl         = document.getElementById('oc-body');
+        titleSubEl     = document.getElementById('oc-sub');
+        refreshBtn     = document.getElementById('oc-refresh');
+        symbolSelectEl = document.getElementById('oc-symbol');
 
         refreshBtn.addEventListener('click', function() {
             var now = Date.now();
             if (now < refreshLockUntil) return;
             refreshLockUntil = now + 1500;
+            fetchAndRender();
+        });
+
+        // Symbol dropdown — switch the fetched instrument. Persists across
+        // modal opens via the currentSymbol closure variable.
+        symbolSelectEl.value = currentSymbol;
+        symbolSelectEl.addEventListener('change', function() {
+            currentSymbol = symbolSelectEl.value || 'NSE:NIFTY50-INDEX';
             fetchAndRender();
         });
 
@@ -120,7 +136,8 @@
     function fetchAndRender() {
         bodyEl.innerHTML = '<div class="oc-msg">Loading chain…</div>';
         titleSubEl.textContent = '—';
-        fetch('/api/option-chain', { credentials: 'same-origin' })
+        var url = '/api/option-chain?symbol=' + encodeURIComponent(currentSymbol);
+        fetch(url, { credentials: 'same-origin' })
             .then(function(r) {
                 if (r.status === 401) return r.json().then(function(j) { throw { kind:'auth', msg:j.error || 'not_logged_in' }; });
                 if (!r.ok) return r.json().catch(function(){return{};}).then(function(j) { throw { kind:'svc', msg:(j && j.error) || ('HTTP ' + r.status), detail:j && j.message }; });
@@ -132,7 +149,7 @@
                 if (err && err.kind === 'auth') { msg = 'Not logged in'; hint = 'Please log in to Fyers first.'; }
                 else if (err && err.kind === 'svc') {
                     if (err.msg === 'empty_chain' || err.msg === 'empty_response') { msg = 'Chain is empty'; hint = 'No data returned for this expiry yet.'; }
-                    else if (err.msg === 'spot_unresolved') { msg = 'Spot price not resolved'; hint = 'Could not read NIFTY spot from the chain.'; }
+                    else if (err.msg === 'spot_unresolved') { msg = 'Spot price not resolved'; hint = 'Could not read index spot from the chain.'; }
                     else if (err.msg === 'fyers_unavailable') { msg = 'Fyers temporarily unavailable'; hint = err.detail || ''; }
                     else { msg = "Couldn't fetch chain · " + err.msg; hint = err.detail || ''; }
                 } else { msg = "Couldn't fetch chain"; hint = String(err && err.message || ''); }
