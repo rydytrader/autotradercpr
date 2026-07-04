@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TraderEdge — Systematic Camarilla short-options</title>
+<meta name="description" content="A rules-based short-options approach to Camarilla pivots on NIFTY and BankNifty. Two-candle confirmation, tick-cadence triggers, portfolio-aware sizing.">
+<style>
+  :root {
+    --bg: #FFFFFF;
+    --ink: #0A0A0A;
+    --muted: #666666;
+    --hairline: #E6E6E6;
+    --panel: #F6F6F6;
+    --nifty: #B87F1E;
+    --banknifty: #4A3F8F;
+    --serif: Georgia, "Times New Roman", serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-size: 18px;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  a { color: inherit; }
+  ::selection { background: var(--nifty); color: var(--bg); }
+
+  /* ── Layout ────────────────────────────────────────────────── */
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 32px; }
+  @media (max-width: 720px) {
+    .wrap { padding: 0 20px; }
+    body { font-size: 17px; }
+  }
+
+  /* ── Nav ───────────────────────────────────────────────────── */
+  .nav {
+    padding: 24px 0 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .mark {
+    font-weight: 700;
+    letter-spacing: -0.005em;
+    font-size: 1.6rem;
+    line-height: 1;
+  }
+  .mark span { color: var(--nifty); }
+  .nav-links {
+    display: flex;
+    gap: 28px;
+    font-size: 0.86rem;
+    text-transform: uppercase;
+    letter-spacing: 0.11em;
+    color: var(--muted);
+  }
+  .nav-links a { text-decoration: none; }
+  .nav-links a:hover { color: var(--ink); }
+  @media (max-width: 640px) { .nav-links { display: none; } }
+
+  /* ── Level ladder eyebrow (signature motif) ────────────────── */
+  .ladder {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin: 48px 0 20px;
+  }
+  .ladder .rung { padding: 3px 10px; border: 1px solid var(--hairline); border-radius: 999px; }
+  .ladder .rung.strong { color: var(--ink); border-color: var(--ink); }
+  .ladder .rung.pivot { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+  .ladder .rung.bear { color: var(--banknifty); border-color: var(--banknifty); }
+
+  /* ── Hero ──────────────────────────────────────────────────── */
+  .hero { padding: 8px 0 96px; }
+  .hero h1 {
+    font-size: clamp(2.4rem, 5.6vw, 4.8rem);
+    line-height: 1.03;
+    margin: 0 0 24px;
+    letter-spacing: -0.015em;
+    font-weight: 400;
+    max-width: 22ch;
+  }
+  .hero h1 em { font-style: italic; color: var(--nifty); }
+  .hero h1 strong { font-weight: 700; }
+  .hero .lede {
+    font-size: 1.18rem;
+    line-height: 1.55;
+    max-width: 44ch;
+    color: var(--muted);
+    margin: 0 0 40px;
+  }
+  .hero .lede b { font-weight: 700; color: var(--ink); }
+  .hero-cta { display: flex; gap: 20px; align-items: center; }
+  .btn {
+    display: inline-block;
+    padding: 14px 24px;
+    background: var(--ink);
+    color: var(--bg);
+    text-decoration: none;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    border: 1px solid var(--ink);
+    transition: transform 120ms ease;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn.ghost { background: transparent; color: var(--ink); }
+  .btn.ghost:hover { background: var(--ink); color: var(--bg); }
+
+  /* ── Chart panel ───────────────────────────────────────────── */
+  .chart-panel {
+    margin-top: 64px;
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    padding: 24px 28px 20px;
+    position: relative;
+  }
+  .chart-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--hairline);
+    margin-bottom: 12px;
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+  .chart-meta strong { color: var(--ink); }
+  .chart-panel svg { width: 100%; height: auto; display: block; }
+
+  /* ── Section shared ────────────────────────────────────────── */
+  section { padding: 96px 0; border-top: 1px solid var(--hairline); }
+  section:first-of-type { border-top: 0; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 20px;
+  }
+  h2 {
+    font-size: clamp(1.9rem, 3.4vw, 2.8rem);
+    line-height: 1.12;
+    letter-spacing: -0.01em;
+    margin: 0 0 20px;
+    font-weight: 400;
+    max-width: 20ch;
+  }
+  h2 em { color: var(--nifty); font-style: italic; }
+  .section-lede {
+    max-width: 56ch;
+    color: var(--muted);
+    margin: 0 0 56px;
+    font-size: 1.05rem;
+  }
+
+  /* ── Setups grid ───────────────────────────────────────────── */
+  .setups {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1px;
+    background: var(--hairline);
+    border: 1px solid var(--hairline);
+  }
+  @media (max-width: 720px) { .setups { grid-template-columns: 1fr; } }
+  .setup {
+    background: var(--bg);
+    padding: 32px 28px;
+  }
+  .setup-tag {
+    font-family: var(--mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    padding: 3px 8px;
+    display: inline-block;
+    border: 1px solid;
+  }
+  .setup-tag.bull { color: var(--nifty); border-color: var(--nifty); }
+  .setup-tag.bear { color: var(--banknifty); border-color: var(--banknifty); }
+  .setup h3 {
+    font-size: 1.5rem;
+    font-weight: 400;
+    margin: 6px 0 12px;
+    line-height: 1.2;
+  }
+  .setup h3 span { font-family: var(--mono); font-size: 1.0rem; color: var(--muted); margin-left: 6px; }
+  .setup p { margin: 0 0 20px; color: var(--muted); font-size: 0.98rem; }
+  .setup-rule {
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    padding: 10px 14px;
+    background: var(--panel);
+    border-left: 2px solid var(--ink);
+    color: var(--ink);
+  }
+  .setup-rule b { color: var(--nifty); }
+  .setup-rule.bear b { color: var(--banknifty); }
+
+  /* ── Mechanics numbered flow ───────────────────────────────── */
+  .flow {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0;
+  }
+  @media (max-width: 720px) { .flow { grid-template-columns: 1fr; } }
+  .step {
+    padding: 24px 24px 24px 0;
+    border-right: 1px solid var(--hairline);
+    position: relative;
+  }
+  .step:last-child { border-right: 0; }
+  @media (max-width: 720px) {
+    .step { border-right: 0; border-bottom: 1px solid var(--hairline); padding: 24px 0; }
+    .step:last-child { border-bottom: 0; }
+  }
+  .step-num {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    color: var(--nifty);
+    letter-spacing: 0.14em;
+    margin-bottom: 12px;
+  }
+  .step h4 {
+    margin: 0 0 12px;
+    font-size: 1.25rem;
+    font-weight: 400;
+  }
+  .step p { margin: 0; color: var(--muted); font-size: 0.98rem; }
+  .step code {
+    font-family: var(--mono);
+    font-size: 0.86rem;
+    background: var(--panel);
+    padding: 1px 6px;
+    color: var(--ink);
+  }
+
+  /* ── Risk two-col ──────────────────────────────────────────── */
+  .risk-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 48px 64px;
+  }
+  @media (max-width: 720px) { .risk-grid { grid-template-columns: 1fr; gap: 32px; } }
+  .risk-item h4 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin: 0 0 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--hairline);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .risk-item h4 span {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-weight: 400;
+  }
+  .risk-item p { margin: 12px 0 0; color: var(--muted); font-size: 0.98rem; }
+  .risk-item p em { color: var(--ink); font-style: normal; font-weight: 700; }
+
+  /* ── Instruments table ────────────────────────────────────── */
+  .instruments-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 0.92rem;
+    margin-top: 12px;
+  }
+  .instruments-table th, .instruments-table td {
+    text-align: left;
+    padding: 16px 12px;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .instruments-table th {
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 0.72rem;
+    font-weight: 400;
+    color: var(--muted);
+  }
+  .instruments-table td.name { font-weight: 700; }
+  .instruments-table td.name.nifty { color: var(--nifty); }
+  .instruments-table td.name.banknifty { color: var(--banknifty); }
+
+  /* ── Callout / not ─────────────────────────────────────────── */
+  .not {
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    padding: 44px 40px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+  }
+  @media (max-width: 720px) { .not { grid-template-columns: 1fr; padding: 32px 24px; gap: 28px; } }
+  .not h4 {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.16em;
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+  .not p { margin: 0; color: var(--ink); }
+
+  /* ── Footer ───────────────────────────────────────────────── */
+  footer {
+    border-top: 1px solid var(--hairline);
+    padding: 48px 0 64px;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 20px;
+    font-size: 0.9rem;
+    color: var(--muted);
+  }
+  footer .disclaimer {
+    max-width: 60ch;
+    font-size: 0.82rem;
+    font-style: italic;
+    line-height: 1.5;
+  }
+
+  /* ── SVG chart specifics ──────────────────────────────────── */
+  .lvl-line { stroke: #CCCCCC; stroke-width: 1; stroke-dasharray: 3 3; }
+  .lvl-line.strong { stroke: #0A0A0A; stroke-dasharray: none; }
+  .lvl-label {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px;
+    fill: #666666;
+    letter-spacing: 0.08em;
+  }
+  .price-line { fill: none; stroke: #0A0A0A; stroke-width: 1.8; }
+  .marker {
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <nav class="nav">
+    <div class="mark">Trader<span>Edge</span></div>
+    <div class="nav-links">
+      <a href="#strategy">Strategy</a>
+      <a href="#mechanics">Mechanics</a>
+      <a href="#risk">Risk</a>
+      <a href="#instruments">Instruments</a>
+    </div>
+  </nav>
+
+  <!-- ── Hero ────────────────────────────────────────────────── -->
+  <section class="hero">
+    <div class="ladder" aria-hidden="true">
+      <span class="rung">H5</span>
+      <span class="rung strong">H4</span>
+      <span class="rung">H3</span>
+      <span class="rung pivot">P</span>
+      <span class="rung">L3</span>
+      <span class="rung bear">L4</span>
+      <span class="rung">L5</span>
+    </div>
+    <h1>Selling options into <em>Camarilla pivots</em>, systematically.</h1>
+    <p class="lede">A rules-based short-options system on <b>NIFTY</b> and <b>BankNifty</b>. Two-candle confirmation. Tick-cadence triggers with an ATR cushion. Portfolio-aware sizing that shrinks lots when risk headroom tightens. Fully automated intraday — no discretionary clicks at the terminal.</p>
+    <div class="hero-cta">
+      <a href="#strategy" class="btn">Read the strategy</a>
+      <a href="#mechanics" class="btn ghost">See the mechanics</a>
+    </div>
+
+    <div class="chart-panel" aria-label="Illustrative NIFTY chart with Camarilla levels">
+      <div class="chart-meta">
+        <span><strong>NIFTY 50</strong> · Illustrative session</span>
+        <span>H5 · H4 · H3 · P · L3 · L4 · L5</span>
+      </div>
+      <svg viewBox="0 0 900 380" role="img" aria-label="Chart showing seven horizontal Camarilla levels and a price line with two setup markers.">
+        <!-- Level lines -->
+        <line class="lvl-line"        x1="0"  y1="30"  x2="820" y2="30"/>
+        <line class="lvl-line strong" x1="0"  y1="80"  x2="820" y2="80"/>
+        <line class="lvl-line"        x1="0"  y1="130" x2="820" y2="130"/>
+        <line class="lvl-line strong" x1="0"  y1="190" x2="820" y2="190"/>
+        <line class="lvl-line"        x1="0"  y1="250" x2="820" y2="250"/>
+        <line class="lvl-line strong" x1="0"  y1="300" x2="820" y2="300"/>
+        <line class="lvl-line"        x1="0"  y1="350" x2="820" y2="350"/>
+        <!-- Level labels -->
+        <text class="lvl-label" x="830" y="34">H5</text>
+        <text class="lvl-label" x="830" y="84">H4</text>
+        <text class="lvl-label" x="830" y="134">H3</text>
+        <text class="lvl-label" x="830" y="194">P</text>
+        <text class="lvl-label" x="830" y="254">L3</text>
+        <text class="lvl-label" x="830" y="304">L4</text>
+        <text class="lvl-label" x="830" y="354">L5</text>
+        <!-- Price line — a session drifting between L4 and H4, breaking H4 late -->
+        <polyline class="price-line" points="0,200 40,215 80,240 120,260 160,275 200,290 240,305 280,315 300,318 320,310 340,290 360,270 380,240 400,210 420,180 440,160 460,140 480,120 500,100 520,85 540,72 560,68 580,66 600,72 620,70 640,60 660,50 680,45 700,42"/>
+        <!-- L4 breakdown marker (spot pierces L4 near 300px) -->
+        <circle cx="300" cy="318" r="7" fill="#4A3F8F" stroke="#FFFFFF" stroke-width="2"/>
+        <line x1="300" y1="318" x2="300" y2="338" stroke="#4A3F8F" stroke-width="1"/>
+        <text class="marker" x="220" y="356" fill="#4A3F8F">L4 breakdown · sell CE</text>
+        <!-- H4 breakout marker (near 700px) -->
+        <circle cx="670" cy="55" r="7" fill="#B87F1E" stroke="#FFFFFF" stroke-width="2"/>
+        <line x1="670" y1="55" x2="670" y2="15" stroke="#B87F1E" stroke-width="1"/>
+        <text class="marker" x="590" y="12" fill="#B87F1E">H4 breakout · sell PE</text>
+      </svg>
+    </div>
+  </section>
+
+  <!-- ── The strategy ────────────────────────────────────────── -->
+  <section id="strategy">
+    <p class="eyebrow">The strategy · four setups</p>
+    <h2>Four rules at the four <em>outer</em> Camarilla levels.</h2>
+    <p class="section-lede">Camarilla pivots divide the intraday session into seven horizontal reference lines. The bot watches only the outer four — H4 and H3 above, L3 and L4 below — and fires one of four setups when spot interacts with them in a specific way. Every fire sells an OTM option one level further out.</p>
+
+    <div class="setups">
+      <div class="setup">
+        <span class="setup-tag bull">Bullish</span>
+        <h3>H4 Breakout <span>· sell PE</span></h3>
+        <p>Spot closes above H4 on the confirmation candle. Momentum is confirmed upward; further downside gets progressively unlikely as the session extends.</p>
+        <div class="setup-rule">Sell PE at strike near <b>H3</b> — one level below the breakout.</div>
+      </div>
+
+      <div class="setup">
+        <span class="setup-tag bear">Bearish</span>
+        <h3>L4 Breakdown <span>· sell CE</span></h3>
+        <p>Spot closes below L4. The market has broken through its lower support; a large rally back above L3 becomes progressively unlikely.</p>
+        <div class="setup-rule bear">Sell CE at strike near <b>L3</b> — one level above the breakdown.</div>
+      </div>
+
+      <div class="setup">
+        <span class="setup-tag bear">Bearish</span>
+        <h3>H3 Reversal <span>· sell CE</span></h3>
+        <p>Spot pokes above H3 then closes back below. A failed test of upper resistance — session bias shifts down; a push above H4 becomes progressively unlikely.</p>
+        <div class="setup-rule bear">Sell CE at strike near <b>H4</b> — one level above the failed poke.</div>
+      </div>
+
+      <div class="setup">
+        <span class="setup-tag bull">Bullish</span>
+        <h3>L3 Reversal <span>· sell PE</span></h3>
+        <p>Spot pokes below L3 then closes back above. A failed test of lower support — session bias shifts up; a break below L4 becomes progressively unlikely.</p>
+        <div class="setup-rule">Sell PE at strike near <b>L4</b> — one level below the failed poke.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Mechanics ───────────────────────────────────────────── -->
+  <section id="mechanics">
+    <p class="eyebrow">Entry mechanics · three phases</p>
+    <h2>Every fire is <em>confirmed twice</em> before capital leaves the account.</h2>
+    <p class="section-lede">A close through a Camarilla level is not enough on its own — the strategy waits for a second-candle confirmation, then tracks spot at tick cadence for the actual trigger. This double filter is deliberate: it kills the classic wick-and-reverse false breakout.</p>
+
+    <div class="flow">
+      <div class="step">
+        <div class="step-num">Phase 01</div>
+        <h4>Setup candle</h4>
+        <p>A candle closes through one of the four outer levels in the qualifying pattern. That candle's high and low become the reference range for the next phase — no order is placed yet.</p>
+      </div>
+      <div class="step" style="padding-left: 24px;">
+        <div class="step-num">Phase 02</div>
+        <h4>Tick trigger</h4>
+        <p>The bot watches spot tick-by-tick. Fire occurs only when spot exceeds <code>confirm ± (ATR × 0.25)</code> — a quarter-ATR cushion filters small wick pokes that would otherwise fire and immediately reverse.</p>
+      </div>
+      <div class="step" style="padding-left: 24px;">
+        <div class="step-num">Phase 03</div>
+        <h4>Order & exits</h4>
+        <p>A market or limit short is placed on the OTM option leg. Stop-loss and target are set relative to the underlying spot, not the option premium, with an ATR buffer below the confirmation extreme.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Risk ────────────────────────────────────────────────── -->
+  <section id="risk">
+    <p class="eyebrow">Risk management · five gates</p>
+    <h2>Every fire passes through <em>five</em> independent risk checks.</h2>
+    <p class="section-lede">The strategy is naked short options. That means unlimited theoretical loss on the wrong side of a gap — so the discipline that gates every order is not optional. It's the whole edge.</p>
+
+    <div class="risk-grid">
+      <div class="risk-item">
+        <h4>Portfolio daily loss cap <span>Gate 01</span></h4>
+        <p>A single <em>portfolio-wide</em> daily loss ceiling. Both instruments and all four setups share one pool. When the day's realized losses cross the cap, the strategy locks out until the next session.</p>
+      </div>
+      <div class="risk-item">
+        <h4>Exposure projection <span>Gate 02</span></h4>
+        <p>Before every fire, the strategy projects <em>combined exposed risk</em> at stop-loss and rejects if it would breach the cap. Existing open positions are counted; new fires cannot borrow risk against unrealized profit.</p>
+      </div>
+      <div class="risk-item">
+        <h4>50 % qty retry <span>Gate 03</span></h4>
+        <p>When the full-lot fire would breach the cap, the bot retries once at <em>half lots</em>. If the half-size fire still doesn't fit, the trade is skipped. No third try — position size never fragments below half.</p>
+      </div>
+      <div class="risk-item">
+        <h4>Risk-to-reward floor <span>Gate 04</span></h4>
+        <p>Every trigger computes reward and risk in spot points against the target level and stop-loss. Trades with <em>reward &lt; risk × floor</em> are rejected — even if they satisfy every other filter.</p>
+      </div>
+      <div class="risk-item">
+        <h4>RSI regime band <span>Gate 05</span></h4>
+        <p>Trend setups (H4 Breakout, L4 Breakdown) require RSI in the <em>trending band</em>. Reversal setups (H3, L3) require RSI in the <em>neutral chop band</em>. Mismatch skips the fire.</p>
+      </div>
+      <div class="risk-item">
+        <h4>Structural stop-loss <span>Always on</span></h4>
+        <p>Stop-loss lives on the underlying, not the premium. It sits <em>below the confirmation low</em> with a small ATR buffer — invalidated only when the setup thesis itself is broken by price action.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Instruments ─────────────────────────────────────────── -->
+  <section id="instruments">
+    <p class="eyebrow">Instruments · two indices, one strategy</p>
+    <h2>NIFTY and BankNifty <em>in parallel</em>.</h2>
+    <p class="section-lede">Both instruments run the same four setups against their own independent Camarilla levels, RSI, and ATR. Each fires without regard to the other, but they share the portfolio risk pool — a fire on one directly consumes headroom on the next.</p>
+
+    <table class="instruments-table">
+      <thead>
+        <tr>
+          <th>Instrument</th>
+          <th>Underlying</th>
+          <th>Options cycle</th>
+          <th>Lot size</th>
+          <th>Strike step</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="name nifty">NIFTY</td>
+          <td>NIFTY 50 index</td>
+          <td>Weekly (Tuesday)</td>
+          <td>65</td>
+          <td>50 pts</td>
+        </tr>
+        <tr>
+          <td class="name banknifty">BankNifty</td>
+          <td>NIFTY Bank index</td>
+          <td>Monthly (last Tuesday)</td>
+          <td>30</td>
+          <td>100 pts</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ── What this isn't ─────────────────────────────────────── -->
+  <section>
+    <p class="eyebrow">Context</p>
+    <h2>What this <em>is</em>, and what it isn't.</h2>
+
+    <div class="not">
+      <div>
+        <h4>What it is</h4>
+        <p>An operator's internal, automated trading system. Live-only, no simulator. Fyers broker integration via REST and WebSocket. Runs itself intraday from open to squareoff with no manual entries required.</p>
+      </div>
+      <div>
+        <h4>What it isn't</h4>
+        <p>Not a subscription. Not a signal service. Not financial advice. There are no accounts to open, no alerts to buy, and no plan to sell copies of the strategy. This page exists to describe how the system works.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div>Built by <strong style="color: var(--ink);">Prabhu Arumugham</strong> · <span style="font-family: var(--mono); font-size: 0.82rem;">rydytrader</span></div>
+    <div class="disclaimer">Trading in F&amp;O carries substantial risk of loss and is not suitable for every investor. Past performance of a systematic strategy is not indicative of future results. Nothing on this page is advice.</div>
+  </footer>
+
+</div>
+
+</body>
+</html>
