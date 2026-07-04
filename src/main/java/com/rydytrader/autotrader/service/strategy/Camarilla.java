@@ -890,7 +890,10 @@ public class Camarilla implements Strategy {
                                        InstrumentConfig ic,
                                        java.util.function.Consumer<PendingConfirmation> setBullish,
                                        java.util.function.Consumer<PendingConfirmation> setBearish) {
-        if (pb != null) {
+        // Tick trigger fires only for STRONG confirmations. WEAK pendings
+        // wait for a subsequent candle to close past the confirmation
+        // extreme — that check lives in processBarPhases (Phase 3.5).
+        if (pb != null && pb.strong) {
             double triggerPrice = pb.confirmHigh + triggerDelta;
             if (spot >= triggerPrice) {
                 double slWithBuffer = pb.confirmLow - slBuf;
@@ -903,7 +906,7 @@ public class Camarilla implements Strategy {
                 return true;
             }
         }
-        if (pr != null) {
+        if (pr != null && pr.strong) {
             double triggerPrice = pr.confirmLow - triggerDelta;
             if (spot <= triggerPrice) {
                 double slWithBuffer = pr.confirmHigh + slBuf;
@@ -915,6 +918,52 @@ public class Camarilla implements Strategy {
                 setBearish.accept(null);
                 return true;
             }
+        }
+        return false;
+    }
+
+    /** Phase 3.5 candle-close trigger for WEAK pendings only. Fires when
+     *  a subsequent bar CLOSES past the confirmation extreme
+     *  (close &gt; confirmHigh for a bullish weak pending, close &lt;
+     *  confirmLow for a bearish weak pending). The trigger candle
+     *  becomes the entry candle. No ATR buffer is added to the close
+     *  condition — a close is already a whole-bar filter. Returns true
+     *  when a fire happened. */
+    private boolean tryFireOnWeakClose(Candle c, InstrumentConfig ic,
+                                        PendingConfirmation pb, PendingConfirmation pr,
+                                        String triggerSym,
+                                        java.util.function.Consumer<PendingConfirmation> setBullish,
+                                        java.util.function.Consumer<PendingConfirmation> setBearish) {
+        Double atr;
+        if (InstrumentConfig.BANKNIFTY.equals(ic)) {
+            var svc = bankNiftyAtrProvider == null ? null : bankNiftyAtrProvider.getIfAvailable();
+            atr = svc == null ? null : svc.currentAtr();
+        } else {
+            var svc = niftyAtrProvider == null ? null : niftyAtrProvider.getIfAvailable();
+            atr = svc == null ? null : svc.currentAtr();
+        }
+        double atrVal = (atr != null && atr > 0) ? atr : 0;
+        double slBuf  = atrVal * Math.max(0, riskSettings.getCamarillaDirectionalSlBufferAtrMult());
+
+        if (pb != null && !pb.strong && c.close() > pb.confirmHigh) {
+            double slWithBuffer = pb.confirmLow - slBuf;
+            double rr = computeRR(c.close(), pb.targetLevel, slWithBuffer);
+            event("[INFO]", "Setup", "[" + ic.name() + "] " + pb.setup + " weak-close trigger @ " + round2(c.close())
+                + " (SL " + round2(slWithBuffer) + ", TGT " + round2(pb.targetLevel)
+                + ", R:R " + (Double.isNaN(rr) ? "—" : round2(rr)) + ")");
+            fire(triggerSym, pb.setup, pb.targetLevel, slWithBuffer, c, pb.lockedAtm, ic);
+            setBullish.accept(null);
+            return true;
+        }
+        if (pr != null && !pr.strong && c.close() < pr.confirmLow) {
+            double slWithBuffer = pr.confirmHigh + slBuf;
+            double rr = computeRR(c.close(), pr.targetLevel, slWithBuffer);
+            event("[INFO]", "Setup", "[" + ic.name() + "] " + pr.setup + " weak-close trigger @ " + round2(c.close())
+                + " (SL " + round2(slWithBuffer) + ", TGT " + round2(pr.targetLevel)
+                + ", R:R " + (Double.isNaN(rr) ? "—" : round2(rr)) + ")");
+            fire(triggerSym, pr.setup, pr.targetLevel, slWithBuffer, c, pr.lockedAtm, ic);
+            setBearish.accept(null);
+            return true;
         }
         return false;
     }
@@ -991,18 +1040,26 @@ public class Camarilla implements Strategy {
             event("[INFO]", "Setup", "[NIFTY] " + state.pendingBearish.setup + " nullified @ " + round2(c.close()));
             state.pendingBearish = null;
         }
+        // --- Phase 3.5: WEAK-confirmation candle-close trigger ---
+        // If a pending survived invalidation and is WEAK, check whether
+        // this bar's close broke past the confirmation extreme. If so,
+        // fire immediately with this bar as the entry candle. Fired
+        // pendings are cleared, so Phase 4 won't seed a new one on top.
+        boolean firedOnClose = tryFireOnWeakClose(c, InstrumentConfig.NIFTY,
+            state.pendingBullish, state.pendingBearish,
+            state.futuresSymbol,
+            p -> state.pendingBullish = p,
+            p -> state.pendingBearish = p);
         // --- Phase 4: NEW CONFIRMATION ---
-        if (state.pendingBullish == null
+        if (!firedOnClose
+            && state.pendingBullish == null
             && state.pendingBearish == null
             && !hasOpenAutoPosition()) {
             PendingConfirmation fresh = detectConfirmation(c, lv);
             if (fresh != null) {
-                boolean bullish = isBullishBet(fresh.setup);
-                event("[INFO]", "Setup", "[NIFTY] " + fresh.setup + " confirmed (H "
-                    + round2(fresh.confirmHigh) + ", L " + round2(fresh.confirmLow)
-                    + ", TGT " + round2(fresh.targetLevel) + ")");
-                if (bullish) state.pendingBullish = fresh;
-                else         state.pendingBearish = fresh;
+                classifyAndSeed(fresh, c, InstrumentConfig.NIFTY);
+                if (isBullishBet(fresh.setup)) state.pendingBullish = fresh;
+                else                            state.pendingBearish = fresh;
             }
         }
     }
@@ -1029,17 +1086,21 @@ public class Camarilla implements Strategy {
             event("[INFO]", "Setup", "[BANKNIFTY] " + state.bankNiftyPendingBearish.setup + " nullified @ " + round2(c.close()));
             state.bankNiftyPendingBearish = null;
         }
-        if (state.bankNiftyPendingBullish == null
+        // Phase 3.5 — WEAK-confirmation candle-close trigger, BankNifty branch.
+        boolean firedOnClose = tryFireOnWeakClose(c, InstrumentConfig.BANKNIFTY,
+            state.bankNiftyPendingBullish, state.bankNiftyPendingBearish,
+            state.bankNiftyFuturesSymbol,
+            p -> state.bankNiftyPendingBullish = p,
+            p -> state.bankNiftyPendingBearish = p);
+        if (!firedOnClose
+            && state.bankNiftyPendingBullish == null
             && state.bankNiftyPendingBearish == null
             && !hasOpenAutoPosition()) {
             PendingConfirmation fresh = detectConfirmation(c, lv);
             if (fresh != null) {
-                boolean bullish = isBullishBet(fresh.setup);
-                event("[INFO]", "Setup", "[BANKNIFTY] " + fresh.setup + " confirmed (H "
-                    + round2(fresh.confirmHigh) + ", L " + round2(fresh.confirmLow)
-                    + ", TGT " + round2(fresh.targetLevel) + ")");
-                if (bullish) state.bankNiftyPendingBullish = fresh;
-                else         state.bankNiftyPendingBearish = fresh;
+                classifyAndSeed(fresh, c, InstrumentConfig.BANKNIFTY);
+                if (isBullishBet(fresh.setup)) state.bankNiftyPendingBullish = fresh;
+                else                            state.bankNiftyPendingBearish = fresh;
             }
         }
     }
@@ -1386,6 +1447,66 @@ public class Camarilla implements Strategy {
         pc.confirmLow  = c.low();
         pc.targetLevel = target;
         return pc;
+    }
+
+    /** Classify a freshly-detected confirmation candle as STRONG or WEAK
+     *  against the two configured gates (close-position within top/bottom
+     *  N% of range AND body ≥ 5-min ATR × mult), stamp the result on
+     *  {@code fresh.strong}, and emit a class-dependent event log line:
+     *  STRONG prints the exact tick trigger price; WEAK prints the
+     *  confirmation extreme a subsequent bar close must break for the
+     *  trade to fire. Called once per fresh confirmation from the NIFTY
+     *  and BankNifty processBarPhases methods. */
+    private void classifyAndSeed(PendingConfirmation fresh, Candle c, InstrumentConfig ic) {
+        boolean bullish = isBullishBet(fresh.setup);
+        double range = c.high() - c.low();
+        double closePos = range > 0
+            ? (bullish ? (c.close() - c.low()) : (c.high() - c.close())) / range
+            : 1.0;
+        boolean closeStrong = closePos >= riskSettings.getCamarillaStrongCandleCloseThreshold();
+
+        Double atr;
+        if (InstrumentConfig.BANKNIFTY.equals(ic)) {
+            var svc = bankNiftyAtrProvider == null ? null : bankNiftyAtrProvider.getIfAvailable();
+            atr = svc == null ? null : svc.currentAtr();
+        } else {
+            var svc = niftyAtrProvider == null ? null : niftyAtrProvider.getIfAvailable();
+            atr = svc == null ? null : svc.currentAtr();
+        }
+        double atrVal = (atr != null && atr > 0) ? atr : 0;
+        double body = Math.abs(c.close() - c.open());
+        double bodyMult = riskSettings.getCamarillaStrongCandleBodyAtrMult();
+        boolean bodyStrong = atrVal > 0 && body >= atrVal * bodyMult;
+
+        fresh.strong = closeStrong && bodyStrong;
+
+        String bodyRatio = atrVal > 0 ? round2(body / atrVal) + "×ATR" : "n/a";
+        String tag = "[" + (fresh.strong ? "STRONG" : "WEAK")
+            + " close@" + round2(closePos)
+            + " body@" + bodyRatio + "]";
+
+        if (fresh.strong) {
+            double triggerMult  = Math.max(0, riskSettings.getCamarillaTriggerAtrMult());
+            double triggerDelta = atrVal * triggerMult;
+            double triggerPrice = bullish
+                ? fresh.confirmHigh + triggerDelta
+                : fresh.confirmLow  - triggerDelta;
+            String op    = bullish ? ">=" : "<=";
+            String extLbl = bullish ? "confirmHigh " : "confirmLow ";
+            double extVal = bullish ? fresh.confirmHigh : fresh.confirmLow;
+            String opSign = bullish ? " + " : " − ";
+            event("[INFO]", "Setup",
+                "[" + ic.name() + "] " + fresh.setup + " " + tag
+                + " — will fire when spot " + op + " " + round2(triggerPrice)
+                + " (" + extLbl + round2(extVal) + opSign
+                + "ATR×" + round2(triggerMult) + " buffer " + round2(triggerDelta) + ")");
+        } else {
+            String edge = bullish ? "above confirmHigh " : "below confirmLow ";
+            double level = bullish ? fresh.confirmHigh : fresh.confirmLow;
+            event("[INFO]", "Setup",
+                "[" + ic.name() + "] " + fresh.setup + " " + tag
+                + " — waiting for trigger candle to close " + edge + round2(level));
+        }
     }
 
     private boolean canFireNewEntry() {
@@ -2713,6 +2834,15 @@ public class Camarilla implements Strategy {
          *  in the header chip and so invalidation/expiry knows what to unsubscribe. */
         public String ceSymbol;
         public String peSymbol;
+        /** STRONG (true) vs WEAK (false) classification of the confirmation
+         *  candle. STRONG candles fire on the tick trigger
+         *  (spot ≥ confirmHigh + ATR×mult / spot ≤ confirmLow − ATR×mult).
+         *  WEAK candles suppress the tick trigger and wait for a subsequent
+         *  bar to CLOSE past the confirmation extreme.
+         *  Legacy pendings on disk deserialize with {@code strong=false},
+         *  which safely downgrades any mid-flight pending to WEAK across
+         *  the upgrade (waits for a next-bar close instead of tick-firing). */
+        public boolean strong;
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

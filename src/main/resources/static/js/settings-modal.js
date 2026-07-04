@@ -20,28 +20,36 @@
                 '<div id="sm-tabstrip" style="display:flex;border-bottom:1px solid var(--border);padding:0 24px;overflow-x:auto;"></div>' +
                 '<div class="sm-body" id="sm-body" style="flex:1;overflow-y:auto;padding:20px 24px;">' +
                   '<div class="sm-pane" data-pane="camarilla" style="display:none;">' +
-                    '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-camarillaLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 65 NIFTY.</div></div>' +
-                    '<div class="sm-field"><label>Order Type</label><select id="sm-camarillaOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select></div>' +
-                    '<div class="sm-field"><label>Trading Start Time (HH:mm IST)</label><input type="time" id="sm-camarillaTradingStartTime" step="60"><div class="sm-hint">New entries only fire on candle closes after this time. Default 09:30. Exits and position management run independently.</div></div>' +
-                    '<div class="sm-field"><label>Trading End Time (HH:mm IST)</label><input type="time" id="sm-camarillaTradingEndTime" step="60"><div class="sm-hint">No new entries fire on candle closes after this time. Default 13:30. Existing positions keep running until target / SL / squareoff.</div></div>' +
-                    '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-camarillaSquareOffTime" step="60"><div class="sm-hint">Hard exit if neither target nor SL has triggered.</div></div>' +
-                    '<div class="sm-field"><label><input type="checkbox" id="sm-camarillaMomentumCheckEnabled"> &nbsp;Momentum (RSI) Check</label><div class="sm-hint">When ON: each directional setup requires NIFTY RSI(14) to sit inside a setup-specific band — H4 breakout 50-70, L4 breakdown 30-50, reversals (H3/L3) 40-60. Filters out late-entry breakouts at exhaustion and reversals against a strong trend. When OFF: the momentum gate is skipped entirely. Default ON.</div></div>' +
+                    '<div class="sm-grid-2col">' +
+                      '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-camarillaLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 65 NIFTY / 30 BankNifty.</div></div>' +
+                      '<div class="sm-field"><label>Order Type</label><select id="sm-camarillaOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select></div>' +
+                      '<div class="sm-field"><label>Trading Start (HH:mm IST)</label><input type="time" id="sm-camarillaTradingStartTime" step="60"><div class="sm-hint">Entries fire only after this time. Default 09:30.</div></div>' +
+                      '<div class="sm-field"><label>Trading End (HH:mm IST)</label><input type="time" id="sm-camarillaTradingEndTime" step="60"><div class="sm-hint">No new entries after this time. Default 13:30.</div></div>' +
+                      '<div class="sm-field sm-full"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-camarillaSquareOffTime" step="60"><div class="sm-hint">Hard exit if target/SL didn\'t trigger.</div></div>' +
+                      '<div class="sm-field sm-full"><label><input type="checkbox" id="sm-camarillaMomentumCheckEnabled"> &nbsp;Momentum (RSI) Check</label><div class="sm-hint">Requires RSI(14) inside a setup-specific band: H4 breakout 50-70, L4 breakdown 30-50, H3/L3 reversals 40-60. Default ON.</div></div>' +
+                    '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
-                    '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline used by the Home analytics page (capital growth %, equity curve, return %). Default ₹10,00,000.</div></div>' +
-                    '<div class="sm-field"><label>Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Global kill switch trigger. When net day P&L drops below this % of Initial Capital, the strategy is flattened. 0 disables.</div></div>' +
-                    '<div class="sm-field"><label>Max Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto-calculated from Initial Capital × Daily Risk %.</div></div>' +
-                    '<div class="sm-field"><label>Min R:R Ratio</label><input type="number" id="sm-camarillaMinRRRatio" step="0.1" min="0" max="10"><div class="sm-hint">Reward must be at least this multiple of risk to fire a trade. 1.0 = 1:1, 2.0 = 1:2 (reward ≥ 2 × risk). Set to 0 to disable the R:R check entirely and rely solely on the budget gate. Default 2.0 — premium-selling needs an asymmetric floor since winning trades capture small theta while losing trades hit a wider SL.</div></div>' +
-                    '<div class="sm-field"><label>Directional SL Buffer (× 5m ATR)</label><input type="number" id="sm-camarillaDirectionalSlBufferAtrMult" step="0.1" min="0" max="10"><div class="sm-hint">Widens stop-loss beyond the confirmation candle\'s edge by this multiple of the live NIFTY 5-min ATR. Applies to all four directional setups (H4 Breakout, L3 Reversal, H3 Reversal, L4 Breakdown). Default 0.5 (half an ATR); set to 0 to use the candle extreme exactly. Buffer self-adjusts to volatility — wider on noisy days, tighter on calm days.</div></div>' +
-                    '<div class="sm-field"><label>Trigger Cushion (× 5m ATR)</label><input type="number" id="sm-camarillaTriggerAtrMult" step="0.05" min="0" max="5"><div class="sm-hint">ATR-scaled cushion added to the confirmation candle\'s extreme when tick-checking the Phase 1 trigger. Bullish setups fire when spot ≥ confirmHigh + (ATR × this), bearish when spot ≤ confirmLow − (ATR × this). Default 0.25 (a quarter of the live 5-min NIFTY ATR). 0 fires at the exact extreme with no cushion. Larger multipliers require a bigger breakout before firing.</div></div>' +
+                    '<div class="sm-grid-2col">' +
+                      '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline for Home analytics. Default ₹10L.</div></div>' +
+                      '<div class="sm-field"><label>Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Kill switch when net day P&L drops below this % of capital. 0 = off.</div></div>' +
+                      '<div class="sm-field"><label>Max Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto from Capital × Risk %.</div></div>' +
+                      '<div class="sm-field"><label>Min R:R Ratio</label><input type="number" id="sm-camarillaMinRRRatio" step="0.1" min="0" max="10"><div class="sm-hint">Reward ≥ risk × this. Default 2.0. 0 = disabled.</div></div>' +
+                      '<div class="sm-field"><label>Directional SL Buffer (× 5m ATR)</label><input type="number" id="sm-camarillaDirectionalSlBufferAtrMult" step="0.1" min="0" max="10"><div class="sm-hint">Widens SL beyond confirm extreme by ATR × this. Default 0.5.</div></div>' +
+                      '<div class="sm-field"><label>Trigger Cushion (× 5m ATR)</label><input type="number" id="sm-camarillaTriggerAtrMult" step="0.05" min="0" max="5"><div class="sm-hint">Cushion added to confirm extreme for tick trigger. Default 0.25.</div></div>' +
+                      '<div class="sm-field"><label>Strong Candle · Close Position</label><input type="number" id="sm-camarillaStrongCandleCloseThreshold" step="0.05" min="0.5" max="1"><div class="sm-hint">Close within top/bottom N of range. Default 0.75 = top/bottom 25%.</div></div>' +
+                      '<div class="sm-field"><label>Strong Candle · Body (× 5m ATR)</label><input type="number" id="sm-camarillaStrongCandleBodyAtrMult" step="0.05" min="0" max="2"><div class="sm-hint">Body ≥ ATR × this. Default 0.6. 0 = disabled.</div></div>' +
+                    '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
-                    '<div class="sm-field"><label>Brokerage per Order (₹)</label><input type="number" id="sm-brokeragePerOrder" step="1" min="0"><div class="sm-hint">Flat per-order brokerage. Drives charge estimates on every dashboard + session row.</div></div>' +
-                    '<div class="sm-field"><label>STT Rate (%)</label><input type="number" id="sm-sttRate" step="0.0001" min="0"></div>' +
-                    '<div class="sm-field"><label>Exchange Rate (%)</label><input type="number" id="sm-exchangeRate" step="0.0001" min="0"></div>' +
-                    '<div class="sm-field"><label>GST Rate (%)</label><input type="number" id="sm-gstRate" step="0.01" min="0"></div>' +
-                    '<div class="sm-field"><label>SEBI Rate (%)</label><input type="number" id="sm-sebiRate" step="0.0001" min="0"></div>' +
-                    '<div class="sm-field"><label>Stamp Duty Rate (%)</label><input type="number" id="sm-stampDutyRate" step="0.0001" min="0"></div>' +
+                    '<div class="sm-grid-2col">' +
+                      '<div class="sm-field"><label>Brokerage per Order (₹)</label><input type="number" id="sm-brokeragePerOrder" step="1" min="0"><div class="sm-hint">Flat per-order brokerage.</div></div>' +
+                      '<div class="sm-field"><label>STT Rate (%)</label><input type="number" id="sm-sttRate" step="0.0001" min="0"></div>' +
+                      '<div class="sm-field"><label>Exchange Rate (%)</label><input type="number" id="sm-exchangeRate" step="0.0001" min="0"></div>' +
+                      '<div class="sm-field"><label>GST Rate (%)</label><input type="number" id="sm-gstRate" step="0.01" min="0"></div>' +
+                      '<div class="sm-field"><label>SEBI Rate (%)</label><input type="number" id="sm-sebiRate" step="0.0001" min="0"></div>' +
+                      '<div class="sm-field"><label>Stamp Duty Rate (%)</label><input type="number" id="sm-stampDutyRate" step="0.0001" min="0"></div>' +
+                    '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="users" style="display:none;">' +
                     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
@@ -111,6 +119,10 @@
             '.sm-field input[type=checkbox] { width:auto; }' +
             '.sm-readonly { width:100%;padding:8px 12px;border-radius:6px;border:1px dashed var(--border);background:var(--bg-card);color:var(--accent-cyan);font-family:var(--font-mono);font-size:0.82rem;font-weight:700;letter-spacing:0.04em; }' +
             '.sm-hint { color:var(--text-muted);font-size:0.7rem;margin-top:4px; }' +
+            '.sm-grid-2col { display:grid;grid-template-columns:1fr 1fr;gap:14px 20px; }' +
+            '.sm-grid-2col > .sm-field { margin-bottom:0; }' +
+            '.sm-grid-2col > .sm-field.sm-full { grid-column: 1 / -1; }' +
+            '@media (max-width: 640px) { .sm-grid-2col { grid-template-columns: 1fr; } }' +
             '.sm-btn-primary { background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.4);color:var(--accent-green);padding:8px 18px;border-radius:6px;font-family:var(--font-mono);font-size:0.74rem;font-weight:700;cursor:pointer; }' +
             '.sm-btn-secondary { background:transparent;border:1px solid var(--border);color:var(--text-secondary);padding:8px 18px;border-radius:6px;font-family:var(--font-mono);font-size:0.74rem;cursor:pointer; }' +
             '.sm-user-row { display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px;background:var(--bg-card-hover); }' +
@@ -203,7 +215,9 @@
             portfolioMaxRiskPct:      parseFloat(document.getElementById('sm-portfolioMaxRiskPct').value) || 0,
             camarillaMinRRRatio:        Math.max(0, parseFloat(document.getElementById('sm-camarillaMinRRRatio').value) || 0),
             camarillaDirectionalSlBufferAtrMult: Math.max(0, parseFloat(document.getElementById('sm-camarillaDirectionalSlBufferAtrMult').value) || 0),
-            camarillaTriggerAtrMult:    Math.max(0, parseFloat(document.getElementById('sm-camarillaTriggerAtrMult').value) || 0)
+            camarillaTriggerAtrMult:    Math.max(0, parseFloat(document.getElementById('sm-camarillaTriggerAtrMult').value) || 0),
+            camarillaStrongCandleCloseThreshold: Math.min(1, Math.max(0, parseFloat(document.getElementById('sm-camarillaStrongCandleCloseThreshold').value) || 0)),
+            camarillaStrongCandleBodyAtrMult:    Math.max(0, parseFloat(document.getElementById('sm-camarillaStrongCandleBodyAtrMult').value) || 0)
         };
         postSettings('/api/settings/risk', body);
     }
@@ -264,6 +278,10 @@
             if (slBuf) slBuf.value = d.camarillaDirectionalSlBufferAtrMult != null ? d.camarillaDirectionalSlBufferAtrMult : 1.0;
             var trigMult = document.getElementById('sm-camarillaTriggerAtrMult');
             if (trigMult) trigMult.value = d.camarillaTriggerAtrMult != null ? d.camarillaTriggerAtrMult : 0.25;
+            var closeThr = document.getElementById('sm-camarillaStrongCandleCloseThreshold');
+            if (closeThr) closeThr.value = d.camarillaStrongCandleCloseThreshold != null ? d.camarillaStrongCandleCloseThreshold : 0.75;
+            var bodyMult = document.getElementById('sm-camarillaStrongCandleBodyAtrMult');
+            if (bodyMult) bodyMult.value = d.camarillaStrongCandleBodyAtrMult != null ? d.camarillaStrongCandleBodyAtrMult : 0.6;
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {
                 updatePortfolioRiskHint(parseFloat(capInput.value) || 0, parseFloat(pctInput && pctInput.value) || 0);

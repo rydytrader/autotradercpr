@@ -70,6 +70,19 @@ public class RiskSettingsStore {
          *  cushion. Larger multipliers add breakout confirmation at the cost
          *  of a slightly worse entry price. */
         volatile double camarillaTriggerAtrMult = 0.25;
+        /** STRONG confirmation candle — close position within its own range.
+         *  Bullish: (close − low) / (high − low) ≥ threshold. Bearish:
+         *  (high − close) / (high − low) ≥ threshold. Default 0.75 (close in
+         *  top/bottom 25% of range). Setting to 0.5 or lower makes every
+         *  candle qualify on this gate. Setting to 1.0 requires a marubozu.
+         *  Feeds one of two gates that jointly decide STRONG vs WEAK. */
+        volatile double camarillaStrongCandleCloseThreshold = 0.75;
+        /** STRONG confirmation candle — body size vs 5-min ATR.
+         *  |close − open| ≥ ATR × mult. Default 0.6. Filters small doji-like
+         *  bars whose close-position happens to qualify but which carried no
+         *  real energy. Setting to 0 disables this gate (classification then
+         *  depends only on close position). */
+        volatile double camarillaStrongCandleBodyAtrMult = 0.6;
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
         /** Initial capital used as the baseline for the Analytics Home page (capital growth %,
@@ -431,6 +444,8 @@ public class RiskSettingsStore {
     public boolean isCamarillaMomentumCheckEnabled()    { return cfg().camarillaMomentumCheckEnabled; }
     public double  getCamarillaDirectionalSlBufferAtrMult() { return cfg().camarillaDirectionalSlBufferAtrMult; }
     public double  getCamarillaTriggerAtrMult()             { return cfg().camarillaTriggerAtrMult; }
+    public double  getCamarillaStrongCandleCloseThreshold() { return cfg().camarillaStrongCandleCloseThreshold; }
+    public double  getCamarillaStrongCandleBodyAtrMult()    { return cfg().camarillaStrongCandleBodyAtrMult; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getStartingCapital()      { return cfg().startingCapital; }
@@ -630,6 +645,12 @@ public class RiskSettingsStore {
     public void setCamarillaTriggerAtrMult(double v) {
         cfg().camarillaTriggerAtrMult = Math.max(0, v);
     }
+    public void setCamarillaStrongCandleCloseThreshold(double v) {
+        cfg().camarillaStrongCandleCloseThreshold = Math.max(0, Math.min(1, v));
+    }
+    public void setCamarillaStrongCandleBodyAtrMult(double v) {
+        cfg().camarillaStrongCandleBodyAtrMult = Math.max(0, v);
+    }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setStartingCapital(double v)      { cfg().startingCapital = Math.max(0, v); }
@@ -739,6 +760,8 @@ public class RiskSettingsStore {
     public boolean isCamarillaMomentumCheckEnabled(String mode)    { return cfgFor(mode).camarillaMomentumCheckEnabled; }
     public double  getCamarillaDirectionalSlBufferAtrMult(String mode) { return cfgFor(mode).camarillaDirectionalSlBufferAtrMult; }
     public double  getCamarillaTriggerAtrMult(String mode)             { return cfgFor(mode).camarillaTriggerAtrMult; }
+    public double  getCamarillaStrongCandleCloseThreshold(String mode) { return cfgFor(mode).camarillaStrongCandleCloseThreshold; }
+    public double  getCamarillaStrongCandleBodyAtrMult(String mode)    { return cfgFor(mode).camarillaStrongCandleBodyAtrMult; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
     public double getStartingCapital(String mode)      { return cfgFor(mode).startingCapital; }
@@ -776,6 +799,12 @@ public class RiskSettingsStore {
     }
     public void setCamarillaTriggerAtrMult(String mode, double v) {
         cfgFor(mode).camarillaTriggerAtrMult = Math.max(0, v);
+    }
+    public void setCamarillaStrongCandleCloseThreshold(String mode, double v) {
+        cfgFor(mode).camarillaStrongCandleCloseThreshold = Math.max(0, Math.min(1, v));
+    }
+    public void setCamarillaStrongCandleBodyAtrMult(String mode, double v) {
+        cfgFor(mode).camarillaStrongCandleBodyAtrMult = Math.max(0, v);
     }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
     public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
@@ -821,6 +850,8 @@ public class RiskSettingsStore {
             upsert("camarillaMomentumCheckEnabled", String.valueOf(c.camarillaMomentumCheckEnabled));
             upsert("camarillaDirectionalSlBufferAtrMult", String.valueOf(c.camarillaDirectionalSlBufferAtrMult));
             upsert("camarillaTriggerAtrMult", String.valueOf(c.camarillaTriggerAtrMult));
+            upsert("camarillaStrongCandleCloseThreshold", String.valueOf(c.camarillaStrongCandleCloseThreshold));
+            upsert("camarillaStrongCandleBodyAtrMult",    String.valueOf(c.camarillaStrongCandleBodyAtrMult));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("startingCapital",      String.valueOf(c.startingCapital));
@@ -997,6 +1028,8 @@ public class RiskSettingsStore {
                     case "camarillaDirectionalSlBufferPoints" -> { /* retired in favour of camarillaDirectionalSlBufferAtrMult; silently consumed */ }
                     case "camarillaDirectionalSlBufferAtrMult" -> c.camarillaDirectionalSlBufferAtrMult = Double.parseDouble(v);
                     case "camarillaTriggerAtrMult"             -> c.camarillaTriggerAtrMult = Double.parseDouble(v);
+                    case "camarillaStrongCandleCloseThreshold" -> c.camarillaStrongCandleCloseThreshold = Double.parseDouble(v);
+                    case "camarillaStrongCandleBodyAtrMult"    -> c.camarillaStrongCandleBodyAtrMult = Double.parseDouble(v);
                     // Retired keys silently consumed so legacy JSON files load without
                     // FAIL_ON_UNKNOWN_PROPERTIES errors. portfolioMaxDailyLoss is the
                     // canonical max-risk knob now (derived ₹ from startingCapital ×
