@@ -393,8 +393,7 @@ public class OptionChainController {
      *        (1-9 for Jan-Sep, O/N/D for Oct/Nov/Dec), 2-char day.</li>
      *    <li><b>Monthly</b> {@code NSE:NIFTYYYMMMXXXXXCE} — 3-letter month abbrev
      *        (JAN, FEB, ..., DEC). Day defaults to the last Tuesday of that month
-     *        (NIFTY's current weekly+monthly expiry day; coupled with
-     *        {@code weeklyExpiryDayOfWeek} setting).</li>
+     *        (NIFTY's current weekly+monthly expiry day).</li>
      *  </ul>
      *  Disambiguation: try the 3-letter monthly format first (chars [2..5] match a
      *  known month abbrev), else fall through to single-char weekly format.

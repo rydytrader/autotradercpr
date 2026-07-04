@@ -31,13 +31,6 @@
                     '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline used by the Home analytics page (capital growth %, equity curve, return %). Default ₹10,00,000.</div></div>' +
                     '<div class="sm-field"><label>Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Global kill switch trigger. When net day P&L drops below this % of Initial Capital, the strategy is flattened. 0 disables.</div></div>' +
                     '<div class="sm-field"><label>Max Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto-calculated from Initial Capital × Daily Risk %.</div></div>' +
-                    '<div class="sm-field"><label>Weekly Expiry Day</label><select id="sm-weeklyExpiryDayOfWeek">' +
-                        '<option value="MONDAY">Monday</option>' +
-                        '<option value="TUESDAY">Tuesday</option>' +
-                        '<option value="WEDNESDAY">Wednesday</option>' +
-                        '<option value="THURSDAY">Thursday</option>' +
-                        '<option value="FRIDAY">Friday</option>' +
-                        '</select><div class="sm-hint">NIFTY weekly expiry day. Drives the Expiry vs Non-Expiry analytics split.</div></div>' +
                     '<div class="sm-field"><label>Min R:R Ratio</label><input type="number" id="sm-camarillaMinRRRatio" step="0.1" min="0" max="10"><div class="sm-hint">Reward must be at least this multiple of risk to fire a trade. 1.0 = 1:1, 2.0 = 1:2 (reward ≥ 2 × risk). Set to 0 to disable the R:R check entirely and rely solely on the budget gate. Default 2.0 — premium-selling needs an asymmetric floor since winning trades capture small theta while losing trades hit a wider SL.</div></div>' +
                     '<div class="sm-field"><label>Directional SL Buffer (× 5m ATR)</label><input type="number" id="sm-camarillaDirectionalSlBufferAtrMult" step="0.1" min="0" max="10"><div class="sm-hint">Widens stop-loss beyond the confirmation candle\'s edge by this multiple of the live NIFTY 5-min ATR. Applies to all four directional setups (H4 Breakout, L3 Reversal, H3 Reversal, L4 Breakdown). Default 0.5 (half an ATR); set to 0 to use the candle extreme exactly. Buffer self-adjusts to volatility — wider on noisy days, tighter on calm days.</div></div>' +
                     '<div class="sm-field"><label>Trigger Cushion (× 5m ATR)</label><input type="number" id="sm-camarillaTriggerAtrMult" step="0.05" min="0" max="5"><div class="sm-hint">ATR-scaled cushion added to the confirmation candle\'s extreme when tick-checking the Phase 1 trigger. Bullish setups fire when spot ≥ confirmHigh + (ATR × this), bearish when spot ≤ confirmLow − (ATR × this). Default 0.25 (a quarter of the live 5-min NIFTY ATR). 0 fires at the exact extreme with no cushion. Larger multipliers require a bigger breakout before firing.</div></div>' +
@@ -208,7 +201,6 @@
         var body = {
             startingCapital:          parseFloat(document.getElementById('sm-startingCapital').value) || 0,
             portfolioMaxRiskPct:      parseFloat(document.getElementById('sm-portfolioMaxRiskPct').value) || 0,
-            weeklyExpiryDayOfWeek:    (document.getElementById('sm-weeklyExpiryDayOfWeek').value || 'TUESDAY').trim().toUpperCase(),
             camarillaMinRRRatio:        Math.max(0, parseFloat(document.getElementById('sm-camarillaMinRRRatio').value) || 0),
             camarillaDirectionalSlBufferAtrMult: Math.max(0, parseFloat(document.getElementById('sm-camarillaDirectionalSlBufferAtrMult').value) || 0),
             camarillaTriggerAtrMult:    Math.max(0, parseFloat(document.getElementById('sm-camarillaTriggerAtrMult').value) || 0)
@@ -264,10 +256,8 @@
             if (!d) return;
             var capInput = document.getElementById('sm-startingCapital');
             var pctInput = document.getElementById('sm-portfolioMaxRiskPct');
-            var expSel   = document.getElementById('sm-weeklyExpiryDayOfWeek');
             if (capInput) capInput.value = d.startingCapital != null ? d.startingCapital : 1000000;
             if (pctInput) pctInput.value = d.portfolioMaxRiskPct != null ? d.portfolioMaxRiskPct : 0;
-            if (expSel)   expSel.value   = d.weeklyExpiryDayOfWeek || 'TUESDAY';
             var rrRatio = document.getElementById('sm-camarillaMinRRRatio');
             if (rrRatio) rrRatio.value = d.camarillaMinRRRatio != null ? d.camarillaMinRRRatio : 2.0;
             var slBuf = document.getElementById('sm-camarillaDirectionalSlBufferAtrMult');

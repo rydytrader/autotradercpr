@@ -70,12 +70,6 @@ public class RiskSettingsStore {
          *  cushion. Larger multipliers add breakout confirmation at the cost
          *  of a slightly worse entry price. */
         volatile double camarillaTriggerAtrMult = 0.25;
-        /** NIFTY weekly options expiry day-of-week (uppercase English name —
-         *  MONDAY/TUESDAY/WEDNESDAY/THURSDAY/FRIDAY). NSE has changed this in the past
-         *  (Thursday → Tuesday) and may change it again; making it a setting means future
-         *  changes are a one-click flip in the Settings UI, no code change needed. Used by
-         *  the Analytics "Expiry vs Non-Expiry" breakdown card. */
-        volatile String weeklyExpiryDayOfWeek = "TUESDAY";
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
         /** Initial capital used as the baseline for the Analytics Home page (capital growth %,
@@ -437,7 +431,6 @@ public class RiskSettingsStore {
     public boolean isCamarillaMomentumCheckEnabled()    { return cfg().camarillaMomentumCheckEnabled; }
     public double  getCamarillaDirectionalSlBufferAtrMult() { return cfg().camarillaDirectionalSlBufferAtrMult; }
     public double  getCamarillaTriggerAtrMult()             { return cfg().camarillaTriggerAtrMult; }
-    public String  getWeeklyExpiryDayOfWeek()           { return cfg().weeklyExpiryDayOfWeek; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getStartingCapital()      { return cfg().startingCapital; }
@@ -637,10 +630,6 @@ public class RiskSettingsStore {
     public void setCamarillaTriggerAtrMult(double v) {
         cfg().camarillaTriggerAtrMult = Math.max(0, v);
     }
-    public void setWeeklyExpiryDayOfWeek(String v) {
-        if (v == null || v.isBlank()) { cfg().weeklyExpiryDayOfWeek = "TUESDAY"; return; }
-        cfg().weeklyExpiryDayOfWeek = v.trim().toUpperCase();
-    }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setStartingCapital(double v)      { cfg().startingCapital = Math.max(0, v); }
@@ -750,7 +739,6 @@ public class RiskSettingsStore {
     public boolean isCamarillaMomentumCheckEnabled(String mode)    { return cfgFor(mode).camarillaMomentumCheckEnabled; }
     public double  getCamarillaDirectionalSlBufferAtrMult(String mode) { return cfgFor(mode).camarillaDirectionalSlBufferAtrMult; }
     public double  getCamarillaTriggerAtrMult(String mode)             { return cfgFor(mode).camarillaTriggerAtrMult; }
-    public String  getWeeklyExpiryDayOfWeek(String mode)           { return cfgFor(mode).weeklyExpiryDayOfWeek; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
     public double getStartingCapital(String mode)      { return cfgFor(mode).startingCapital; }
@@ -788,10 +776,6 @@ public class RiskSettingsStore {
     }
     public void setCamarillaTriggerAtrMult(String mode, double v) {
         cfgFor(mode).camarillaTriggerAtrMult = Math.max(0, v);
-    }
-    public void setWeeklyExpiryDayOfWeek(String mode, String v) {
-        if (v == null || v.isBlank()) { cfgFor(mode).weeklyExpiryDayOfWeek = "TUESDAY"; return; }
-        cfgFor(mode).weeklyExpiryDayOfWeek = v.trim().toUpperCase();
     }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
     public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
@@ -837,7 +821,6 @@ public class RiskSettingsStore {
             upsert("camarillaMomentumCheckEnabled", String.valueOf(c.camarillaMomentumCheckEnabled));
             upsert("camarillaDirectionalSlBufferAtrMult", String.valueOf(c.camarillaDirectionalSlBufferAtrMult));
             upsert("camarillaTriggerAtrMult", String.valueOf(c.camarillaTriggerAtrMult));
-            upsert("weeklyExpiryDayOfWeek", c.weeklyExpiryDayOfWeek);
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("startingCapital",      String.valueOf(c.startingCapital));
@@ -1023,7 +1006,7 @@ public class RiskSettingsStore {
                     case "camarillaVwapFilterEnabled"   -> { /* retired — VWAP gate dropped */ }
                     case "moveSlToBreakevenEnabled"     -> { /* retired — SL never trails */ }
                     case "h4BreakoutBuyingEnabled"      -> { /* retired — H4 buying setup removed */ }
-                    case "weeklyExpiryDayOfWeek" -> c.weeklyExpiryDayOfWeek = (v == null || v.isBlank()) ? "TUESDAY" : v.trim().toUpperCase();
+                    case "weeklyExpiryDayOfWeek" -> { /* retired — replaced by NIFTY/BankNifty analytics split */ }
                     case "camarillaMaxTradesPerDay"        -> { /* retired */ }
                     case "camarillaPauseAfterNLosses"      -> { /* retired */ }
                     case "camarillaDailyRiskBudget"        -> { /* retired — now uses portfolio max daily loss */ }

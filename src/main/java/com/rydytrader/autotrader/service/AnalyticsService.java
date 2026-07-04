@@ -223,11 +223,11 @@ public class AnalyticsService {
                          /** OI bias state captured at fire-time. Null for legacy rows
                           *  and for any cycle where the tracker wasn't yet baselined. */
                          String entryOiBias,
-                         /** True/false frozen at write-time based on the then-current
-                          *  weekly expiry day setting. Null for legacy rows persisted
-                          *  before the column existed — analytics falls back to the
-                          *  current setting for those rows. */
-                         Boolean wasExpiryDay,
+                         /** Underlying instrument for this cycle — NIFTY or BANKNIFTY.
+                          *  Drives the analytics NIFTY vs BankNifty split. Null for
+                          *  legacy rows persisted before the column existed — analytics
+                          *  falls back to parsing the leg {@link #symbol} prefix. */
+                         String instrument,
                          /** Setup name (L4_BREAKDOWN / H3_REVERSAL / H4_BREAKOUT). Drives
                           *  the analytics direction split — H4_BREAKOUT = Buy, others = Sell.
                           *  Null for legacy rows persisted before this column existed. */
@@ -268,7 +268,7 @@ public class AnalyticsService {
             out.add(new Trade(e.getStrategyId(), e.getSessionDate(), e.getClosedAtMillis(),
                               e.getGrossPnl(), e.getCharges(), e.getNetPnl(), e.getCloseReason(), sl,
                               e.getSymbol(), openedAt == null ? 0L : openedAt, e.getEntryOiBias(),
-                              e.getWasExpiryDay(), e.getSetup()));
+                              e.getInstrument(), e.getSetup()));
         }
         // Live overlay: today's in-progress closes from in-memory state.
         if (windowIncludesToday(cutoff, rangeFrom, rangeTo, today)) {
@@ -715,7 +715,7 @@ public class AnalyticsService {
         return s.isBlank() ? null : s;
     }
 
-    // ── BREAKDOWN: By Setup / AM vs PM / Expiry vs Non-expiry ─
+    // ── BREAKDOWN: By Setup / AM vs PM / NIFTY vs BankNifty ─
 
     /** Renders three side-by-side comparison cards. Each card returns
      *  {@code { groupName: { trades, wins, losses, netPnl, winRate } }}. Filters out the
@@ -724,7 +724,7 @@ public class AnalyticsService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("bySetup",        splitBySetup(trades));
         out.put("amVsPm",         splitAmVsPm(trades));
-        out.put("expiryVsNon",    splitExpiryVsNon(trades));
+        out.put("niftyVsBankNifty", splitNiftyVsBankNifty(trades));
         return out;
     }
 
@@ -770,35 +770,31 @@ public class AnalyticsService {
         return summariseBins(bins);
     }
 
-    /** Expiry bucket = the trade's persisted {@code wasExpiryDay} flag, frozen at write time
-     *  against the then-current weekly expiry day setting. Legacy rows that lack the flag
-     *  fall back to comparing their session date's day-of-week against the CURRENTLY-configured
-     *  expiry day — best-effort; the analytics will silently update for those legacy rows
-     *  when the operator changes the expiry-day setting. */
-    private Map<String, Map<String, Object>> splitExpiryVsNon(List<Trade> trades) {
-        java.time.DayOfWeek fallbackExpiryDay = parseExpiryDay(riskSettings.getWeeklyExpiryDayOfWeek());
+    /** NIFTY vs BankNifty bucket = the trade's persisted {@code instrument} column. Legacy
+     *  rows that lack it fall back to parsing the leg {@link Trade#symbol()} prefix
+     *  ({@code NSE:BANKNIFTY...} → BankNifty, {@code NSE:NIFTY...} → NIFTY). Rows we can't
+     *  classify (no symbol, non-index symbols) are skipped. */
+    private Map<String, Map<String, Object>> splitNiftyVsBankNifty(List<Trade> trades) {
         Map<String, List<Trade>> bins = new LinkedHashMap<>();
-        bins.put("Expiry",     new ArrayList<>());
-        bins.put("Non-Expiry", new ArrayList<>());
+        bins.put("NIFTY",     new ArrayList<>());
+        bins.put("BankNifty", new ArrayList<>());
         for (Trade t : trades) {
             if (!isClosedStraddle(t)) continue;
-            boolean expiry;
-            if (t.wasExpiryDay() != null) {
-                expiry = t.wasExpiryDay();
-            } else {
-                try {
-                    expiry = LocalDate.parse(t.sessionDate()).getDayOfWeek() == fallbackExpiryDay;
-                } catch (Exception e) { continue; }
-            }
-            (expiry ? bins.get("Expiry") : bins.get("Non-Expiry")).add(t);
+            String ins = t.instrument();
+            if (ins == null || ins.isBlank()) ins = classifyInstrument(t.symbol());
+            if (ins == null) continue;
+            if ("BANKNIFTY".equals(ins))      bins.get("BankNifty").add(t);
+            else if ("NIFTY".equals(ins))     bins.get("NIFTY").add(t);
         }
         return summariseBins(bins);
     }
 
-    private static java.time.DayOfWeek parseExpiryDay(String s) {
-        if (s == null || s.isBlank()) return java.time.DayOfWeek.TUESDAY;
-        try { return java.time.DayOfWeek.valueOf(s.trim().toUpperCase()); }
-        catch (Exception e) { return java.time.DayOfWeek.TUESDAY; }
+    private static String classifyInstrument(String symbol) {
+        if (symbol == null) return null;
+        String s = symbol.toUpperCase();
+        if (s.contains("BANKNIFTY") || s.contains("NIFTYBANK")) return "BANKNIFTY";
+        if (s.contains("NIFTY")) return "NIFTY";
+        return null;
     }
 
     private Map<String, Map<String, Object>> summariseBins(Map<String, List<Trade>> bins) {

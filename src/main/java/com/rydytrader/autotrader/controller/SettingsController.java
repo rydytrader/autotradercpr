@@ -55,7 +55,6 @@ public class SettingsController {
         result.put("startingCapital",       riskSettings.getStartingCapital(effectiveMode));
         result.put("portfolioMaxRiskPct",   riskSettings.getPortfolioMaxRiskPct(effectiveMode));
         result.put("portfolioMaxDailyLoss", riskSettings.getPortfolioMaxDailyLoss()); // derived ₹ for display
-        result.put("weeklyExpiryDayOfWeek",    riskSettings.getWeeklyExpiryDayOfWeek(effectiveMode));
         // Charges
         result.put("brokeragePerOrder",   riskSettings.getBrokeragePerOrder(effectiveMode));
         result.put("sttRate",             riskSettings.getSttRate(effectiveMode));
@@ -102,7 +101,6 @@ public class SettingsController {
             // Portfolio Risk (global)
             if (body.containsKey("startingCapital"))     riskSettings.setStartingCapital(effectiveMode, Double.parseDouble(body.get("startingCapital").toString()));
             if (body.containsKey("portfolioMaxRiskPct")) riskSettings.setPortfolioMaxRiskPct(effectiveMode, Double.parseDouble(body.get("portfolioMaxRiskPct").toString()));
-            if (body.containsKey("weeklyExpiryDayOfWeek"))    riskSettings.setWeeklyExpiryDayOfWeek(effectiveMode, body.get("weeklyExpiryDayOfWeek").toString());
             // Charges
             if (body.containsKey("brokeragePerOrder")) riskSettings.setBrokeragePerOrder(effectiveMode, Double.parseDouble(body.get("brokeragePerOrder").toString()));
             if (body.containsKey("sttRate"))           riskSettings.setSttRate(effectiveMode, Double.parseDouble(body.get("sttRate").toString()));

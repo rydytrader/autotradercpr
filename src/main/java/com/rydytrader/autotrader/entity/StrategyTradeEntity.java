@@ -54,14 +54,17 @@ public class StrategyTradeEntity {
     @Column(name = "entry_oi_bias", length = 32)
     private String entryOiBias;
 
-    /** True when this trade's session date matched the weekly expiry day-of-week THAT WAS
-     *  CONFIGURED AT CLOSE TIME. Persisted per trade so subsequent changes to the expiry
-     *  day setting (NSE has moved it before — Thursday → Tuesday) don't retroactively
-     *  re-bucket historical rows. Null for legacy rows persisted before this column
-     *  existed — readers fall back to comparing the row's session day-of-week against the
-     *  currently-configured expiry day for those rows only. */
+    /** Retired: replaced by {@link #instrument} for the analytics split. Column kept so
+     *  ddl-auto=update doesn't error on existing DBs; no new rows populate it. */
     @Column(name = "was_expiry_day")
     private Boolean wasExpiryDay;
+
+    /** The instrument that traded this cycle — {@code NIFTY} or {@code BANKNIFTY}. Drives
+     *  the analytics "NIFTY vs BankNifty" breakdown. Derived from the leg symbol at
+     *  write time (NSE:BANKNIFTY* → BANKNIFTY, NSE:NIFTY* → NIFTY). Null for legacy rows;
+     *  readers backfill by inspecting {@link #symbol} for those rows. */
+    @Column(name = "instrument", length = 16)
+    private String instrument;
 
     /** ISO yyyy-MM-dd of the trading day. */
     @Column(name = "session_date", nullable = false, length = 10)
@@ -118,6 +121,8 @@ public class StrategyTradeEntity {
     public void   setEntryOiBias(String v) { this.entryOiBias = v; }
     public Boolean getWasExpiryDay() { return wasExpiryDay; }
     public void    setWasExpiryDay(Boolean v) { this.wasExpiryDay = v; }
+    public String  getInstrument()      { return instrument; }
+    public void    setInstrument(String v) { this.instrument = v; }
     public String getSessionDate() { return sessionDate; }
     public void setSessionDate(String v) { this.sessionDate = v; }
     public long getClosedAtMillis() { return closedAtMillis; }

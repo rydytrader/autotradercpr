@@ -1125,19 +1125,16 @@ public class Camarilla implements Strategy {
             return true;
         }
         if (lv == null) return false;
-        // OTM-aware, per-setup strike resolution. Each setup gets the
-        // strike on the OTM side of its own Camarilla level:
-        //   PE sellers (H4_BREAKOUT, L3_REVERSAL) → floor(level)
-        //   CE sellers (H3_REVERSAL, L4_BREAKDOWN) → ceil(level)
-        // Previously we round-to-nearest, which picked the ATM/ITM strike when
-        // the level sat closer to the strike ABOVE it (e.g. H4 = 23979 rounded
-        // to 24000 for a PE seller — with spot > 23979 at breakout, that PE is
-        // ATM/ITM, not OTM). Direction-aware floor/ceil fixes this — for H4
-        // = 23979 the PE seller now correctly picks strike 23950.
-        var h4bRow = atmSelector.resolveOtmStrikeAtLevel(lv.h4(), "PE");
-        var l3rRow = atmSelector.resolveOtmStrikeAtLevel(lv.l3(), "PE");
-        var h3rRow = atmSelector.resolveOtmStrikeAtLevel(lv.h3(), "CE");
-        var l4bRow = atmSelector.resolveOtmStrikeAtLevel(lv.l4(), "CE");
+        // OTM-aware, per-setup strike resolution. Each setup's strike is one
+        // Camarilla level FURTHER OTM than its own trigger level:
+        //   H4_BREAKOUT  (bullish, PE)  → floor(H3)  — deep OTM PE below the breakout
+        //   L3_REVERSAL  (bullish, PE)  → floor(L4)  — deep OTM PE below the reversal
+        //   H3_REVERSAL  (bearish, CE)  → ceil (H4)  — deep OTM CE above the reversal
+        //   L4_BREAKDOWN (bearish, CE)  → ceil (L3)  — deep OTM CE above the breakdown
+        var h4bRow = atmSelector.resolveOtmStrikeAtLevel(lv.h3(), "PE");
+        var l3rRow = atmSelector.resolveOtmStrikeAtLevel(lv.l4(), "PE");
+        var h3rRow = atmSelector.resolveOtmStrikeAtLevel(lv.h4(), "CE");
+        var l4bRow = atmSelector.resolveOtmStrikeAtLevel(lv.l3(), "CE");
         if (h4bRow == null || l3rRow == null || h3rRow == null || l4bRow == null) {
             log.debug("[Camarilla] session legs deferred — one or more chain rows null "
                 + "(H4B={}, L3R={}, H3R={}, L4B={})",
@@ -1176,18 +1173,21 @@ public class Camarilla implements Strategy {
     private synchronized boolean resolveBankNiftySessionLegs() {
         String today = LocalDate.now(IST).toString();
         CamarillaLevels lv = camarillaService.getLevels(BANKNIFTY_SYMBOL);
+        boolean persistedStrikesAreOtmAware = lv != null && bankNiftyStrikesMatchOtmRule(lv);
         if (today.equals(state.bankNiftySessionLegsDayKey)
             && !state.bankNiftyH4bSymbol.isBlank() && !state.bankNiftyL3rSymbol.isBlank()
-            && !state.bankNiftyH3rSymbol.isBlank() && !state.bankNiftyL4bSymbol.isBlank()) {
+            && !state.bankNiftyH3rSymbol.isBlank() && !state.bankNiftyL4bSymbol.isBlank()
+            && persistedStrikesAreOtmAware) {
             ensureBankNiftySessionLegsSubscribed();
             return true;
         }
         if (lv == null) return false;
         long step = InstrumentConfig.BANKNIFTY.strikeStep();
-        var h4bRow = atmSelector.resolveOtmStrikeAtLevel(BANKNIFTY_SYMBOL, step, lv.h4(), "PE");
-        var l3rRow = atmSelector.resolveOtmStrikeAtLevel(BANKNIFTY_SYMBOL, step, lv.l3(), "PE");
-        var h3rRow = atmSelector.resolveOtmStrikeAtLevel(BANKNIFTY_SYMBOL, step, lv.h3(), "CE");
-        var l4bRow = atmSelector.resolveOtmStrikeAtLevel(BANKNIFTY_SYMBOL, step, lv.l4(), "CE");
+        // Same one-level-further OTM rule as NIFTY resolveSessionLegs().
+        var h4bRow = atmSelector.resolveOtmStrikeAtLevel(BANKNIFTY_SYMBOL, step, lv.h3(), "PE");
+        var l3rRow = atmSelector.resolveOtmStrikeAtLevel(BANKNIFTY_SYMBOL, step, lv.l4(), "PE");
+        var h3rRow = atmSelector.resolveOtmStrikeAtLevel(BANKNIFTY_SYMBOL, step, lv.h4(), "CE");
+        var l4bRow = atmSelector.resolveOtmStrikeAtLevel(BANKNIFTY_SYMBOL, step, lv.l3(), "CE");
         if (h4bRow == null || l3rRow == null || h3rRow == null || l4bRow == null) {
             log.debug("[Camarilla] BankNifty session legs deferred — one or more chain rows null "
                 + "(H4B={}, L3R={}, H3R={}, L4B={})", h4bRow, l3rRow, h3rRow, l4bRow);
@@ -1228,14 +1228,34 @@ public class Camarilla implements Strategy {
      *  cache isn't loaded (defensive — caller will fall through and re-resolve). */
     private boolean strikesMatchOtmRule(CamarillaLevels lv) {
         if (lv == null) return false;
-        long expH4B = (long) Math.floor(lv.h4() / STRIKE_STEP) * STRIKE_STEP;
-        long expL3R = (long) Math.floor(lv.l3() / STRIKE_STEP) * STRIKE_STEP;
-        long expH3R = (long) Math.ceil (lv.h3() / STRIKE_STEP) * STRIKE_STEP;
-        long expL4B = (long) Math.ceil (lv.l4() / STRIKE_STEP) * STRIKE_STEP;
+        // Each setup's strike is one Camarilla level FURTHER OTM than its own
+        // trigger level (H4B→H3, L3R→L4, H3R→H4, L4B→L3). Keep in sync with
+        // resolveSessionLegs() — this validator forces a re-resolve when a
+        // persisted state file was written under an older mapping.
+        long expH4B = (long) Math.floor(lv.h3() / STRIKE_STEP) * STRIKE_STEP;
+        long expL3R = (long) Math.floor(lv.l4() / STRIKE_STEP) * STRIKE_STEP;
+        long expH3R = (long) Math.ceil (lv.h4() / STRIKE_STEP) * STRIKE_STEP;
+        long expL4B = (long) Math.ceil (lv.l3() / STRIKE_STEP) * STRIKE_STEP;
         return state.h4bStrike == expH4B
             && state.l3rStrike == expL3R
             && state.h3rStrike == expH3R
             && state.l4bStrike == expL4B;
+    }
+
+    /** BankNifty companion to {@link #strikesMatchOtmRule(CamarillaLevels)}. Uses
+     *  the BankNifty strike step (100) and validates against the same
+     *  one-level-further OTM mapping. */
+    private boolean bankNiftyStrikesMatchOtmRule(CamarillaLevels lv) {
+        if (lv == null) return false;
+        long step = InstrumentConfig.BANKNIFTY.strikeStep();
+        long expH4B = (long) Math.floor(lv.h3() / step) * step;
+        long expL3R = (long) Math.floor(lv.l4() / step) * step;
+        long expH3R = (long) Math.ceil (lv.h4() / step) * step;
+        long expL4B = (long) Math.ceil (lv.l3() / step) * step;
+        return state.bankNiftyH4bStrike == expH4B
+            && state.bankNiftyL3rStrike == expL3R
+            && state.bankNiftyH3rStrike == expH3R
+            && state.bankNiftyL4bStrike == expL4B;
     }
 
     /** Pull last-quoted prices from Fyers {@code /data/quotes} via
@@ -1545,15 +1565,31 @@ public class Camarilla implements Strategy {
 
         // ── Project exposed-risk after this entry; block if it would exceed maxRisk ──
         // Per-position futures-equivalent risk = |entryFut − slFut| × qty.
-        int qty = riskSettings.getCamarillaLotsPerLeg() * ic.lotSize();
+        int fullLots = riskSettings.getCamarillaLotsPerLeg();
+        int qty = fullLots * ic.lotSize();
         // Project the proposed trade's option-premium loss at SL: spot SL distance
         // × ATM_DELTA (≈ 0.5) × qty. A raw 1:1 spot×qty projection would overstate
         // option loss by ~2× and gate trades that wouldn't actually breach maxRisk.
-        double newExposureDelta = Math.abs(entryFutures - slFutures) * ATM_DELTA * qty;
+        double perShareRisk = Math.abs(entryFutures - slFutures) * ATM_DELTA;
+        double newExposureDelta = perShareRisk * qty;
         if (maxRisk > 0 && (exposedRiskNow() + newExposureDelta) > maxRisk) {
-            event("[WARNING]", "Risk", setup + " skip — exposed ₹"
-                + round2(exposedRiskNow() + newExposureDelta) + " > ₹" + round2(maxRisk));
-            return;
+            // One retry at 50% capacity (floored to a whole-lot count, min 1 lot).
+            // Skip only if the halved size still won't fit.
+            int halfLots = Math.max(1, fullLots / 2);
+            int halfQty  = halfLots * ic.lotSize();
+            double halfExposureDelta = perShareRisk * halfQty;
+            if (halfLots < fullLots
+                    && (exposedRiskNow() + halfExposureDelta) <= maxRisk) {
+                event("[WARNING]", "Risk", "[" + ic.name() + "] " + setup + " downsized "
+                    + fullLots + "→" + halfLots + " lots — full exposure ₹"
+                    + round2(exposedRiskNow() + newExposureDelta) + " > ₹" + round2(maxRisk));
+                qty = halfQty;
+                newExposureDelta = halfExposureDelta;
+            } else {
+                event("[WARNING]", "Risk", "[" + ic.name() + "] " + setup + " skip — exposed ₹"
+                    + round2(exposedRiskNow() + newExposureDelta) + " > ₹" + round2(maxRisk));
+                return;
+            }
         }
 
         // ── Place the SELL (SHORT) order on the option leg ──
@@ -2262,11 +2298,7 @@ public class Camarilla implements Strategy {
             row.setClosedAtMillis(closedAtMillis);
             row.setOpenedAtMillis(openedAtMillis);
             row.setEntryOiBias(entryOiBias == null || entryOiBias.isBlank() ? null : entryOiBias);
-            // Freeze whether the close happened on the currently-configured weekly expiry
-            // day. NSE has changed this day before (Thursday → Tuesday) and may change it
-            // again; storing the flag at write time keeps historical bucketing accurate
-            // regardless of future setting changes.
-            row.setWasExpiryDay(isExpiryDayNow(sessionDate));
+            row.setInstrument(instrumentFromSymbol(symbol));
             row.setQty(qty);
             row.setGrossPnl(round2(gross));
             row.setCharges(round2(charges));
@@ -2279,16 +2311,14 @@ public class Camarilla implements Strategy {
         }
     }
 
-    /** Compare the session date's day-of-week against the operator-configured weekly expiry
-     *  day. Defaults to TUESDAY when the setting is blank or unparseable. */
-    private boolean isExpiryDayNow(LocalDate sessionDate) {
-        String configured = riskSettings.getWeeklyExpiryDayOfWeek();
-        if (configured == null || configured.isBlank()) configured = "TUESDAY";
-        try {
-            return sessionDate.getDayOfWeek() == java.time.DayOfWeek.valueOf(configured.toUpperCase());
-        } catch (Exception e) {
-            return sessionDate.getDayOfWeek() == java.time.DayOfWeek.TUESDAY;
-        }
+    /** Classify a Fyers option leg symbol into its underlying instrument for analytics.
+     *  BANKNIFTY prefix wins because "NIFTY" is a substring of "NIFTYBANK". */
+    private static String instrumentFromSymbol(String symbol) {
+        if (symbol == null) return null;
+        String s = symbol.toUpperCase();
+        if (s.contains("BANKNIFTY") || s.contains("NIFTYBANK")) return "BANKNIFTY";
+        if (s.contains("NIFTY")) return "NIFTY";
+        return null;
     }
 
     // ── Day rollover ─────────────────────────────────────────────────────────

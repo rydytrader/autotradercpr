@@ -344,7 +344,7 @@
         </div>
     </div>
 
-    <!-- ── Breakdown cards (By Setup, AM vs PM, Expiry vs Non) ── -->
+    <!-- ── Breakdown cards (By Setup, AM vs PM, NIFTY vs BankNifty) ── -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-bottom:20px;" id="ahBreakdowns">
         <div class="section-card fade-in" style="margin:0;">
             <div class="section-header">
@@ -361,10 +361,10 @@
         </div>
         <div class="section-card fade-in" style="margin:0;">
             <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:#34d399;"></div> Expiry vs Non-Expiry</div>
-                <span class="section-badge" style="font-size:0.58rem;margin-left:auto;">Tue = Expiry</span>
+                <div class="section-title"><div class="section-title-dot" style="background:#34d399;"></div> NIFTY vs BankNifty</div>
+                <span class="section-badge" style="font-size:0.58rem;margin-left:auto;">By instrument</span>
             </div>
-            <div id="ahBreakdownExpiryVsNon" style="padding:14px 18px;"></div>
+            <div id="ahBreakdownNiftyVsBankNifty" style="padding:14px 18px;"></div>
         </div>
     </div>
 
@@ -380,7 +380,7 @@
 
 <script src="/js/common.js?v=41"></script>
 <script src="/js/ticker.js?v=4"></script>
-<script src="/js/settings-modal.js?v=68"></script>
+<script src="/js/settings-modal.js?v=69"></script>
 <script src="/js/option-chain-modal.js?v=27"></script>
 <script src="/js/manual-terminal-modal.js?v=46"></script>
 
@@ -750,9 +750,9 @@
     }
 
     function renderBreakdowns(b) {
-        renderBin('ahBreakdownBySetup',        b.bySetup        || {});
-        renderBin('ahBreakdownAmVsPm',         b.amVsPm         || {});
-        renderBin('ahBreakdownExpiryVsNon',    b.expiryVsNon    || {});
+        renderBin('ahBreakdownBySetup',           b.bySetup          || {});
+        renderBin('ahBreakdownAmVsPm',            b.amVsPm           || {});
+        renderBin('ahBreakdownNiftyVsBankNifty',  b.niftyVsBankNifty || {});
     }
 
     /** Render a {groupName: {trades, wins, losses, netPnl, winRate}} object as a small
