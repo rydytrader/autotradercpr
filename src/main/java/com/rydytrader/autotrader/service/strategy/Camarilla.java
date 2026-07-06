@@ -1050,16 +1050,37 @@ public class Camarilla implements Strategy {
             state.futuresSymbol,
             p -> state.pendingBullish = p,
             p -> state.pendingBearish = p);
-        // --- Phase 4: NEW CONFIRMATION ---
-        if (!firedOnClose
-            && state.pendingBullish == null
-            && state.pendingBearish == null
-            && !hasOpenAutoPosition()) {
+        // --- Phase 4: NEW CONFIRMATION (with opposite-direction swap) ---
+        // The blocking guard is now just "no open trade + didn't just fire on
+        // this bar" — the swap logic below handles the pending-slot cases.
+        // Rules:
+        //  - Fresh confirmation OPPOSITE the current pending → discard the
+        //    stale pending, seed the fresh one. Applies at any age within
+        //    the pending window, not just the next bar.
+        //  - Fresh confirmation SAME direction as the current pending →
+        //    ignore (do not overwrite). Preserves the existing behaviour
+        //    where H4_BREAKOUT stays put when a follow-up L3_REVERSAL prints.
+        if (!firedOnClose && !hasOpenAutoPosition()) {
             PendingConfirmation fresh = detectConfirmation(c, lv);
             if (fresh != null) {
-                classifyAndSeed(fresh, c, InstrumentConfig.NIFTY);
-                if (isBullishBet(fresh.setup)) state.pendingBullish = fresh;
-                else                            state.pendingBearish = fresh;
+                boolean freshBullish = isBullishBet(fresh.setup);
+                if (freshBullish && state.pendingBearish != null) {
+                    event("[INFO]", "Setup", "[NIFTY] " + state.pendingBearish.setup
+                        + " superseded — fresh bullish " + fresh.setup + " confirmed");
+                    state.pendingBearish = null;
+                }
+                if (!freshBullish && state.pendingBullish != null) {
+                    event("[INFO]", "Setup", "[NIFTY] " + state.pendingBullish.setup
+                        + " superseded — fresh bearish " + fresh.setup + " confirmed");
+                    state.pendingBullish = null;
+                }
+                boolean sameSlotEmpty = freshBullish
+                    ? state.pendingBullish == null
+                    : state.pendingBearish == null;
+                if (sameSlotEmpty && classifyAndSeed(fresh, c, InstrumentConfig.NIFTY)) {
+                    if (freshBullish) state.pendingBullish = fresh;
+                    else              state.pendingBearish = fresh;
+                }
             }
         }
     }
@@ -1092,15 +1113,28 @@ public class Camarilla implements Strategy {
             state.bankNiftyFuturesSymbol,
             p -> state.bankNiftyPendingBullish = p,
             p -> state.bankNiftyPendingBearish = p);
-        if (!firedOnClose
-            && state.bankNiftyPendingBullish == null
-            && state.bankNiftyPendingBearish == null
-            && !hasOpenAutoPosition()) {
+        // Phase 4 with opposite-direction swap (see NIFTY branch for rules).
+        if (!firedOnClose && !hasOpenAutoPosition()) {
             PendingConfirmation fresh = detectConfirmation(c, lv);
             if (fresh != null) {
-                classifyAndSeed(fresh, c, InstrumentConfig.BANKNIFTY);
-                if (isBullishBet(fresh.setup)) state.bankNiftyPendingBullish = fresh;
-                else                            state.bankNiftyPendingBearish = fresh;
+                boolean freshBullish = isBullishBet(fresh.setup);
+                if (freshBullish && state.bankNiftyPendingBearish != null) {
+                    event("[INFO]", "Setup", "[BANKNIFTY] " + state.bankNiftyPendingBearish.setup
+                        + " superseded — fresh bullish " + fresh.setup + " confirmed");
+                    state.bankNiftyPendingBearish = null;
+                }
+                if (!freshBullish && state.bankNiftyPendingBullish != null) {
+                    event("[INFO]", "Setup", "[BANKNIFTY] " + state.bankNiftyPendingBullish.setup
+                        + " superseded — fresh bearish " + fresh.setup + " confirmed");
+                    state.bankNiftyPendingBullish = null;
+                }
+                boolean sameSlotEmpty = freshBullish
+                    ? state.bankNiftyPendingBullish == null
+                    : state.bankNiftyPendingBearish == null;
+                if (sameSlotEmpty && classifyAndSeed(fresh, c, InstrumentConfig.BANKNIFTY)) {
+                    if (freshBullish) state.bankNiftyPendingBullish = fresh;
+                    else              state.bankNiftyPendingBearish = fresh;
+                }
             }
         }
     }
@@ -1457,14 +1491,10 @@ public class Camarilla implements Strategy {
      *  confirmation extreme a subsequent bar close must break for the
      *  trade to fire. Called once per fresh confirmation from the NIFTY
      *  and BankNifty processBarPhases methods. */
-    private void classifyAndSeed(PendingConfirmation fresh, Candle c, InstrumentConfig ic) {
+    private boolean classifyAndSeed(PendingConfirmation fresh, Candle c, InstrumentConfig ic) {
         boolean bullish = isBullishBet(fresh.setup);
-        double range = c.high() - c.low();
-        double closePos = range > 0
-            ? (bullish ? (c.close() - c.low()) : (c.high() - c.close())) / range
-            : 1.0;
-        boolean closeStrong = closePos >= riskSettings.getCamarillaStrongCandleCloseThreshold();
 
+        // ATR — needed for both R:R projection AND body-strength gate below.
         Double atr;
         if (InstrumentConfig.BANKNIFTY.equals(ic)) {
             var svc = bankNiftyAtrProvider == null ? null : bankNiftyAtrProvider.getIfAvailable();
@@ -1474,6 +1504,47 @@ public class Camarilla implements Strategy {
             atr = svc == null ? null : svc.currentAtr();
         }
         double atrVal = (atr != null && atr > 0) ? atr : 0;
+
+        // Projected R:R gate at the OPTIMISTIC entry — earliest possible
+        // tick-fire price (confirmHigh + ATR×triggerMult for bullish,
+        // confirmLow − ATR×triggerMult for bearish). Any actual fire will
+        // land at an equal-or-worse entry (WEAK path closes above/below
+        // that projection; STRONG path fires exactly at it), so R:R at
+        // the projected entry is an upper bound on any real fire R:R.
+        // Fails here ⇒ can never rescue itself. Only runs when the R:R
+        // floor is enabled (minRR > 0) and ATR is seeded (atrVal > 0).
+        double minRR = riskSettings.getCamarillaMinRRRatio();
+        if (minRR > 0 && atrVal > 0) {
+            double triggerBuf = atrVal * Math.max(0, riskSettings.getCamarillaTriggerAtrMult());
+            double slBuf      = atrVal * Math.max(0, riskSettings.getCamarillaDirectionalSlBufferAtrMult());
+            double optEntry   = bullish
+                ? fresh.confirmHigh + triggerBuf
+                : fresh.confirmLow  - triggerBuf;
+            double sl         = bullish
+                ? fresh.confirmLow  - slBuf
+                : fresh.confirmHigh + slBuf;
+            double reward = Math.abs(fresh.targetLevel - optEntry);
+            double risk   = Math.abs(optEntry - sl);
+            if (risk > 0) {
+                double rr = reward / risk;
+                if (rr < minRR) {
+                    event("[WARNING]", "Setup",
+                        "[" + ic.name() + "] " + fresh.setup + " rejected — projected R:R "
+                        + round2(rr) + " < floor " + round2(minRR)
+                        + " (optEntry " + round2(optEntry)
+                        + ", TGT " + round2(fresh.targetLevel)
+                        + ", SL " + round2(sl) + ")");
+                    return false;
+                }
+            }
+        }
+
+        double range = c.high() - c.low();
+        double closePos = range > 0
+            ? (bullish ? (c.close() - c.low()) : (c.high() - c.close())) / range
+            : 1.0;
+        boolean closeStrong = closePos >= riskSettings.getCamarillaStrongCandleCloseThreshold();
+
         double body = Math.abs(c.close() - c.open());
         double bodyMult = riskSettings.getCamarillaStrongCandleBodyAtrMult();
         boolean bodyStrong = atrVal > 0 && body >= atrVal * bodyMult;
@@ -1507,6 +1578,7 @@ public class Camarilla implements Strategy {
                 "[" + ic.name() + "] " + fresh.setup + " " + tag
                 + " — waiting for trigger candle to close " + edge + round2(level));
         }
+        return true;
     }
 
     private boolean canFireNewEntry() {
