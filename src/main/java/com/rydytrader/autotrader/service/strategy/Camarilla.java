@@ -160,6 +160,71 @@ public class Camarilla implements Strategy {
             || s == ActiveSetup.H4_BREAKOUT;
     }
 
+    /** True for the breakout / breakdown setups (H4 breaks up, L4 breaks down).
+     *  Complement of "reversal" setups (L3 / H3). Drives CPR-classification
+     *  probability sizing — see {@link #biasedLotsForCpr}. */
+    private static boolean isBreakoutSetup(ActiveSetup s) {
+        return s == ActiveSetup.H4_BREAKOUT
+            || s == ActiveSetup.L4_BREAKDOWN;
+    }
+
+    /** Adjust {@code fullLots} for today's CPR classification. Two axes
+     *  (WIDTH class × VALUE class) collapse to a bias state:
+     *  <ul>
+     *    <li><b>NARROW_BIAS</b> — WIDTH = NARROW OR (WIDTH = NORMAL AND VALUE = INSIDE_VALUE).
+     *        Breakouts get HPT full lots; reversals get LPT half lots.</li>
+     *    <li><b>WIDE_BIAS</b> — WIDTH = WIDE OR (WIDTH = NORMAL AND VALUE = OUTSIDE_VALUE).
+     *        Reversals get HPT full lots; breakouts get LPT half lots.</li>
+     *    <li><b>NEUTRAL</b> — WIDTH = NORMAL AND VALUE = OVERLAP. All setups full.</li>
+     *  </ul>
+     *  Width axis wins any conflict — it's a 100-day-percentile signal,
+     *  more statistically robust than the single-day value comparison.
+     *  Fails safe to {@code fullLots} when classification isn't available. */
+    private int biasedLotsForCpr(int fullLots, InstrumentConfig ic, ActiveSetup setup) {
+        if (!riskSettings.isCamarillaCprSizingEnabled()) {
+            return fullLots;
+        }
+        CamarillaLevels lv = camarillaService.getLevels(ic.spotSymbol());
+        if (lv == null || lv.cprClass() == null) {
+            return fullLots;
+        }
+        String cprClass = lv.cprClass();
+        boolean narrowBucket = cprClass.startsWith("NARROW");   // "NARROW" or "NARROW+INSIDE"
+        boolean wideBucket   = cprClass.startsWith("WIDE");     // "WIDE" or "WIDE+OUTSIDE"
+        if (!narrowBucket && !wideBucket) return fullLots;      // NORMAL → no bias
+        boolean breakout = isBreakoutSetup(setup);
+        boolean isHpt = narrowBucket ? breakout : !breakout;
+        int lots = isHpt ? fullLots : Math.max(1, fullLots / 2);
+        event("[INFO]", "Sizing",
+            "[" + ic.name() + "] " + setup + " " + (isHpt ? "HPT" : "LPT")
+            + " (" + cprClass + ") — " + lots + " lots");
+        return lots;
+    }
+
+    /** Last reason string reported to the event log for a BankNifty
+     *  session-leg deferral. Transient (not persisted). Comparing the
+     *  new reason against this dedupes the 30-second scheduled retry so
+     *  the operator gets a single event log line per state change instead
+     *  of one per retry cycle. Cleared on successful resolve. */
+    private volatile String bankNiftyLegsLastFailReason = null;
+
+    /** Emit a "BankNifty session legs deferred — <reason>" event log line
+     *  ONLY when the reason differs from the last one reported (dedupe
+     *  against the scheduled 30 s retry). Called from the two failure
+     *  paths in resolveBankNiftySessionLegs. */
+    private void reportBankNiftyLegsDeferral(String reason) {
+        if (reason == null) return;
+        if (reason.equals(bankNiftyLegsLastFailReason)) return;
+        bankNiftyLegsLastFailReason = reason;
+        event("[WARNING]", "Session", "BankNifty session legs deferred — " + reason);
+    }
+
+    /** Boot-time "restored from state" logging dedupe. Set to true after
+     *  the short-circuit branch of the resolve methods emits its restored
+     *  event so the scheduled 30 s retry doesn't re-emit it. Transient. */
+    private volatile boolean niftyLegsRestoreLogged     = false;
+    private volatile boolean bankNiftyLegsRestoreLogged = false;
+
     /** Composite key {@code "setup|symbol"} for {@code state.openPositions}.
      *  Allows a MANUAL Options-Scalper-Terminal position to coexist with a
      *  bot-managed directional fire on the same Fyers option symbol —
@@ -518,6 +583,25 @@ public class Camarilla implements Strategy {
             if (p == null) continue;
             if (p.setup == ActiveSetup.MANUAL) continue;
             return true;
+        }
+        return false;
+    }
+
+    /** Instrument-scoped variant. Returns true only when an auto position
+     *  on the SAME instrument as {@code ic} is open. Used by Phase 4
+     *  detection so an open BankNifty trade doesn't block fresh NIFTY
+     *  confirmation seeding (and vice versa). Fyers option leg symbols
+     *  contain the underlying ticker (NIFTY / BANKNIFTY / NIFTYBANK), so
+     *  we can match by symbol prefix without adding a new instrument
+     *  field to Position. */
+    private boolean hasOpenAutoPositionFor(InstrumentConfig ic) {
+        boolean wantBankNifty = InstrumentConfig.BANKNIFTY.equals(ic);
+        for (Position p : state.openPositions.values()) {
+            if (p == null) continue;
+            if (p.setup == ActiveSetup.MANUAL) continue;
+            String sym = p.symbol == null ? "" : p.symbol.toUpperCase();
+            boolean positionIsBankNifty = sym.contains("BANKNIFTY") || sym.contains("NIFTYBANK");
+            if (positionIsBankNifty == wantBankNifty) return true;
         }
         return false;
     }
@@ -1060,7 +1144,7 @@ public class Camarilla implements Strategy {
         //  - Fresh confirmation SAME direction as the current pending →
         //    ignore (do not overwrite). Preserves the existing behaviour
         //    where H4_BREAKOUT stays put when a follow-up L3_REVERSAL prints.
-        if (!firedOnClose && !hasOpenAutoPosition()) {
+        if (!firedOnClose && !hasOpenAutoPositionFor(InstrumentConfig.NIFTY)) {
             PendingConfirmation fresh = detectConfirmation(c, lv);
             if (fresh != null) {
                 boolean freshBullish = isBullishBet(fresh.setup);
@@ -1114,7 +1198,7 @@ public class Camarilla implements Strategy {
             p -> state.bankNiftyPendingBullish = p,
             p -> state.bankNiftyPendingBearish = p);
         // Phase 4 with opposite-direction swap (see NIFTY branch for rules).
-        if (!firedOnClose && !hasOpenAutoPosition()) {
+        if (!firedOnClose && !hasOpenAutoPositionFor(InstrumentConfig.BANKNIFTY)) {
             PendingConfirmation fresh = detectConfirmation(c, lv);
             if (fresh != null) {
                 boolean freshBullish = isBullishBet(fresh.setup);
@@ -1217,6 +1301,13 @@ public class Camarilla implements Strategy {
             // again. Idempotent at the WS layer, cheap insurance against
             // any restart gap.
             ensureSessionLegsSubscribed();
+            if (!niftyLegsRestoreLogged) {
+                niftyLegsRestoreLogged = true;
+                event("[INFO]", "Session", "NIFTY session legs restored from state — H4B PE " + state.h4bStrike
+                    + " | L3R PE " + state.l3rStrike
+                    + " | H3R CE " + state.h3rStrike
+                    + " | L4B CE " + state.l4bStrike);
+            }
             return true;
         }
         if (lv == null) return false;
@@ -1274,9 +1365,24 @@ public class Camarilla implements Strategy {
             && !state.bankNiftyH3rSymbol.isBlank() && !state.bankNiftyL4bSymbol.isBlank()
             && persistedStrikesAreOtmAware) {
             ensureBankNiftySessionLegsSubscribed();
+            if (!bankNiftyLegsRestoreLogged) {
+                bankNiftyLegsRestoreLogged = true;
+                event("[INFO]", "Session", "BANKNIFTY session legs restored from state — H4B PE " + state.bankNiftyH4bStrike
+                    + " | L3R PE " + state.bankNiftyL3rStrike
+                    + " | H3R CE " + state.bankNiftyH3rStrike
+                    + " | L4B CE " + state.bankNiftyL4bStrike);
+            }
             return true;
         }
-        if (lv == null) return false;
+        if (lv == null) {
+            // Transient at boot — Fyers getHistory hasn't returned yet.
+            // Not surfaced as an event log entry because the 30 s retry
+            // will pick it up as soon as the fetch completes, and either
+            // "restored from state" or "Leg Strikes Resolved" will fire
+            // on that pass. Only console-visible for debugging.
+            log.debug("[Camarilla] BankNifty session legs deferred — Camarilla levels not yet loaded");
+            return false;
+        }
         long step = InstrumentConfig.BANKNIFTY.strikeStep();
         // Same one-level-further OTM rule as NIFTY resolveSessionLegs().
         var h4bRow = atmSelector.resolveOtmStrikeAtLevel(BANKNIFTY_SYMBOL, step, lv.h3(), "PE");
@@ -1284,8 +1390,12 @@ public class Camarilla implements Strategy {
         var h3rRow = atmSelector.resolveOtmStrikeAtLevel(BANKNIFTY_SYMBOL, step, lv.h4(), "CE");
         var l4bRow = atmSelector.resolveOtmStrikeAtLevel(BANKNIFTY_SYMBOL, step, lv.l3(), "CE");
         if (h4bRow == null || l3rRow == null || h3rRow == null || l4bRow == null) {
-            log.debug("[Camarilla] BankNifty session legs deferred — one or more chain rows null "
-                + "(H4B={}, L3R={}, H3R={}, L4B={})", h4bRow, l3rRow, h3rRow, l4bRow);
+            String reason = "option chain row null — H4B(H3 PE)=" + (h4bRow == null ? "MISS" : "ok")
+                + ", L3R(L4 PE)=" + (l3rRow == null ? "MISS" : "ok")
+                + ", H3R(H4 CE)=" + (h3rRow == null ? "MISS" : "ok")
+                + ", L4B(L3 CE)=" + (l4bRow == null ? "MISS" : "ok");
+            reportBankNiftyLegsDeferral(reason);
+            log.warn("[Camarilla] BankNifty session legs deferred — {}", reason);
             return false;
         }
         state.bankNiftyH4bSymbol = h4bRow.peSymbol(); state.bankNiftyH4bStrike = h4bRow.resolvedStrike(); state.bankNiftyH4bRefLtp = h4bRow.peLtp();
@@ -1294,6 +1404,7 @@ public class Camarilla implements Strategy {
         state.bankNiftyL4bSymbol = l4bRow.ceSymbol(); state.bankNiftyL4bStrike = l4bRow.resolvedStrike(); state.bankNiftyL4bRefLtp = l4bRow.ceLtp();
         state.bankNiftySessionLegsDayKey = today;
         ensureBankNiftySessionLegsSubscribed();
+        bankNiftyLegsLastFailReason = null;
         event("[INFO]", "Session", "BANKNIFTY Leg Strikes Resolved — H4B PE " + state.bankNiftyH4bStrike
             + " | L3R PE " + state.bankNiftyL3rStrike
             + " | H3R CE " + state.bankNiftyH3rStrike
@@ -1504,6 +1615,25 @@ public class Camarilla implements Strategy {
             atr = svc == null ? null : svc.currentAtr();
         }
         double atrVal = (atr != null && atr > 0) ? atr : 0;
+
+        // Target buffer — pull the target IN toward the entry by ATR × mult.
+        // Bullish: target sits ABOVE entry → subtract (magnetically stop just
+        // short of the Camarilla level). Bearish: target sits BELOW entry →
+        // add. Muted by ATR unavailability (buffer=0). Applied BEFORE the
+        // R:R gate below so the projection uses the actual target the fire
+        // will chase. Setting to 0 in Settings disables the buffer.
+        double tgtBufMult = Math.max(0, riskSettings.getCamarillaTargetBufferAtrMult());
+        if (atrVal > 0 && tgtBufMult > 0) {
+            double tgtBuf = atrVal * tgtBufMult;
+            double origTarget = fresh.targetLevel;
+            fresh.targetLevel = bullish
+                ? fresh.targetLevel - tgtBuf
+                : fresh.targetLevel + tgtBuf;
+            event("[INFO]", "Setup",
+                "[" + ic.name() + "] " + fresh.setup + " target buffered "
+                + round2(origTarget) + " → " + round2(fresh.targetLevel)
+                + " (ATR×" + round2(tgtBufMult) + " = " + round2(tgtBuf) + ")");
+        }
 
         // Projected R:R gate at the OPTIMISTIC entry — earliest possible
         // tick-fire price (confirmHigh + ATR×triggerMult for bullish,
@@ -1758,7 +1888,11 @@ public class Camarilla implements Strategy {
 
         // ── Project exposed-risk after this entry; block if it would exceed maxRisk ──
         // Per-position futures-equivalent risk = |entryFut − slFut| × qty.
-        int fullLots = riskSettings.getCamarillaLotsPerLeg();
+        // CPR classification sizing bias — NARROW / INSIDE VALUE favors
+        // breakouts (full lots) and downsizes reversals; WIDE / OUTSIDE
+        // VALUE flips it. Runs BEFORE the risk retry below so the
+        // 50 %-qty fallback still has room to shrink further if needed.
+        int fullLots = biasedLotsForCpr(riskSettings.getCamarillaLotsPerLeg(), ic, setup);
         int qty = fullLots * ic.lotSize();
         // Project the proposed trade's option-premium loss at SL: spot SL distance
         // × ATM_DELTA (≈ 0.5) × qty. A raw 1:1 spot×qty projection would overstate

@@ -39,6 +39,8 @@
                       '<div class="sm-field"><label>Trigger Cushion (× 5m ATR)</label><input type="number" id="sm-camarillaTriggerAtrMult" step="0.05" min="0" max="5"><div class="sm-hint">Cushion added to confirm extreme for tick trigger. Default 0.25.</div></div>' +
                       '<div class="sm-field"><label>Strong Candle · Close Position</label><input type="number" id="sm-camarillaStrongCandleCloseThreshold" step="0.05" min="0.5" max="1"><div class="sm-hint">Close within top/bottom N of range. Default 0.75 = top/bottom 25%.</div></div>' +
                       '<div class="sm-field"><label>Strong Candle · Body (× 5m ATR)</label><input type="number" id="sm-camarillaStrongCandleBodyAtrMult" step="0.05" min="0" max="2"><div class="sm-hint">Body ≥ ATR × this. Default 0.6. 0 = disabled.</div></div>' +
+                      '<div class="sm-field sm-full"><label><input type="checkbox" id="sm-camarillaCprSizingEnabled"> &nbsp;CPR Sizing Bias</label><div class="sm-hint">NARROW / INSIDE ⇒ breakouts full, reversals half. WIDE / OUTSIDE ⇒ reversed. Uncheck to size every setup at full lots.</div></div>' +
+                      '<div class="sm-field"><label>Target Buffer (× 5m ATR)</label><input type="number" id="sm-camarillaTargetBufferAtrMult" step="0.05" min="0" max="2"><div class="sm-hint">Pulls target IN toward entry by ATR × this. Bullish tgt − buffer; bearish tgt + buffer. Default 0.2. 0 = target at exact Camarilla level.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
@@ -217,7 +219,9 @@
             camarillaDirectionalSlBufferAtrMult: Math.max(0, parseFloat(document.getElementById('sm-camarillaDirectionalSlBufferAtrMult').value) || 0),
             camarillaTriggerAtrMult:    Math.max(0, parseFloat(document.getElementById('sm-camarillaTriggerAtrMult').value) || 0),
             camarillaStrongCandleCloseThreshold: Math.min(1, Math.max(0, parseFloat(document.getElementById('sm-camarillaStrongCandleCloseThreshold').value) || 0)),
-            camarillaStrongCandleBodyAtrMult:    Math.max(0, parseFloat(document.getElementById('sm-camarillaStrongCandleBodyAtrMult').value) || 0)
+            camarillaStrongCandleBodyAtrMult:    Math.max(0, parseFloat(document.getElementById('sm-camarillaStrongCandleBodyAtrMult').value) || 0),
+            camarillaCprSizingEnabled:           !!document.getElementById('sm-camarillaCprSizingEnabled').checked,
+            camarillaTargetBufferAtrMult:        Math.max(0, parseFloat(document.getElementById('sm-camarillaTargetBufferAtrMult').value) || 0)
         };
         postSettings('/api/settings/risk', body);
     }
@@ -282,6 +286,10 @@
             if (closeThr) closeThr.value = d.camarillaStrongCandleCloseThreshold != null ? d.camarillaStrongCandleCloseThreshold : 0.75;
             var bodyMult = document.getElementById('sm-camarillaStrongCandleBodyAtrMult');
             if (bodyMult) bodyMult.value = d.camarillaStrongCandleBodyAtrMult != null ? d.camarillaStrongCandleBodyAtrMult : 0.6;
+            var cprEnabled = document.getElementById('sm-camarillaCprSizingEnabled');
+            if (cprEnabled) cprEnabled.checked = d.camarillaCprSizingEnabled !== false;
+            var tgtBuf = document.getElementById('sm-camarillaTargetBufferAtrMult');
+            if (tgtBuf) tgtBuf.value = d.camarillaTargetBufferAtrMult != null ? d.camarillaTargetBufferAtrMult : 0.2;
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {
                 updatePortfolioRiskHint(parseFloat(capInput.value) || 0, parseFloat(pctInput && pctInput.value) || 0);

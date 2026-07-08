@@ -200,19 +200,31 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot"></span> Overview</h2>
         <p class="doc-p">
-            The bot trades <strong>NIFTY weekly options</strong> on the Indian market, using
-            <strong>Camarilla pivots</strong> derived from the previous day's high, low, and close
-            to identify high-probability reversal and breakout levels. Every trade is a
-            <strong>premium-selling</strong> position — the bot sells out-of-the-money (OTM) calls
-            or puts depending on the directional bias of the setup, profiting from time decay and
-            the underlying staying within an expected range.
+            The bot trades <strong>NIFTY weekly options</strong> and <strong>BankNifty monthly options</strong>
+            on the Indian market, running the same four Camarilla setups against each instrument in parallel
+            with independent state, pivots, RSI and ATR. Every trade is a <strong>premium-selling</strong>
+            position — the bot sells out-of-the-money (OTM) calls or puts depending on the directional
+            bias of the setup, profiting from time decay and the underlying staying within an expected range.
         </p>
         <p class="doc-p">
-            Entries are gated by a strict <strong>two-candle confirmation + trigger</strong> model
-            on 5-minute NIFTY spot bars, plus an <strong>RSI-14 momentum band</strong> filter that
-            ensures the broader spot momentum agrees with the setup's thesis. Risk management is
-            built in at three layers: per-trade R:R floor, per-day budget cap, and a daily
-            squareoff time.
+            Entries are gated by a <strong>two-candle confirmation + trigger</strong> model on 5-minute
+            spot bars. The confirmation candle is classified as <strong>STRONG</strong> or
+            <strong>WEAK</strong> — STRONG confirmations arm a tick-cadence trigger; WEAK ones wait for
+            a subsequent candle to CLOSE past the confirmation extreme. A projected-R:R gate at
+            confirmation time drops candidates whose optimistic entry can never satisfy the R:R floor,
+            freeing the pending slot for a better next-bar candidate.
+        </p>
+        <p class="doc-p">
+            Position sizing is biased by the day's <strong>CPR classification</strong> — a single
+            label out of <code>NARROW+INSIDE / NARROW / NORMAL / WIDE / WIDE+OUTSIDE</code>.
+            <code>NARROW*</code> days favor breakouts (full lots) and downsize reversals to half
+            lots; <code>WIDE*</code> days do the reverse; <code>NORMAL</code> fires everything at
+            full lots. The bias can be disabled from the Risk pane.
+        </p>
+        <p class="doc-p">
+            Risk management is layered: per-trade R:R floor, per-day loss cap with a 50 %-qty retry
+            when a full-size fire would breach the cap, portfolio exposure projection, RSI momentum
+            band, and a daily squareoff time.
         </p>
     </div>
 
@@ -241,6 +253,21 @@
                 <div class="formula-role">upper reversal zone</div>
             </div>
             <div class="formula-row">
+                <div class="formula-chip" style="background:rgba(125,211,252,0.10);color:rgb(125,211,252);border-color:rgba(125,211,252,0.35);">TC</div>
+                <div class="formula-eq">2 × P − BC</div>
+                <div class="formula-role">CPR upper edge</div>
+            </div>
+            <div class="formula-row">
+                <div class="formula-chip" style="background:rgba(125,211,252,0.15);color:rgb(125,211,252);border-color:rgba(125,211,252,0.45);">P</div>
+                <div class="formula-eq">(H + L + C) / 3</div>
+                <div class="formula-role">central pivot</div>
+            </div>
+            <div class="formula-row">
+                <div class="formula-chip" style="background:rgba(125,211,252,0.10);color:rgb(125,211,252);border-color:rgba(125,211,252,0.35);">BC</div>
+                <div class="formula-eq">(H + L) / 2</div>
+                <div class="formula-role">CPR lower edge</div>
+            </div>
+            <div class="formula-row">
                 <div class="formula-chip l3">L3</div>
                 <div class="formula-eq">C − k/4</div>
                 <div class="formula-role">lower reversal zone</div>
@@ -261,6 +288,13 @@
             tends to mean-revert. The <strong>H4 / L4 levels</strong> mark the structural edges —
             a sustained break beyond them signals a directional regime change. <strong>H5 / L5</strong>
             are extreme-move targets, reached only on strong-trend days.
+        </p>
+        <p class="doc-p">
+            The <strong>TC / P / BC</strong> triple defines the day's <strong>Central Pivot Range
+            (CPR)</strong>. Its width (TC − BC) is fingerprinted daily against the last 100 sessions'
+            widths and collapsed to a single label — <strong>NARROW+INSIDE / NARROW / NORMAL /
+            WIDE / WIDE+OUTSIDE</strong> — that biases position sizing per setup. See the CPR
+            Classification section.
         </p>
     </div>
 
@@ -412,27 +446,40 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-green);"></span> Two-Candle Entry Model</h2>
         <p class="doc-p">
-            Every 5-minute bar close on NIFTY spot runs a four-phase walk. A bar must FIRST seed
-            a pending confirmation, then a SUBSEQUENT bar must trigger it before the trade fires.
-            The two-bar gate filters out single-bar noise: roughly 60% of confirmations fail to
-            trigger and get dropped without trading.
+            Every 5-minute bar close on the instrument's spot runs a walk through five gates. A bar
+            must FIRST seed a pending confirmation, then a SUBSEQUENT event (a tick or a bar close)
+            must trigger it before the trade fires. The two-bar gate filters out single-bar noise;
+            a projected-R:R gate at confirmation drops candidates that can't satisfy the R:R floor
+            even at their optimistic entry.
         </p>
         <div style="margin-top:8px;">
             <div class="phase-row">
-                <div class="phase-tag">Phase 1</div>
-                <div class="phase-desc"><strong>Trigger</strong> — checked every fast-tick (~1.5 s) instead of on bar close. Fires the moment NIFTY spot touches <code>confirmHigh + (ATR × triggerAtrMult)</code> (bullish) or <code>confirmLow − (ATR × triggerAtrMult)</code> (bearish). The <code>camarillaTriggerAtrMult</code> setting (default 0.25) is a volatility-scaled confirmation cushion — 0 fires at the exact extreme, larger multipliers require a bigger breakout before firing. Uses the live NIFTY 5-min ATR (same service the SL buffer uses).</div>
+                <div class="phase-tag">Detect</div>
+                <div class="phase-desc"><strong>Confirmation candle</strong> — the current bar's geometry matches one of the four setups (wicked through the level AND closed back across it). Independent per instrument (NIFTY spot uses NIFTY levels; BankNifty spot uses BankNifty levels).</div>
             </div>
             <div class="phase-row">
-                <div class="phase-tag">Phase 2</div>
-                <div class="phase-desc"><strong>Expiry</strong> — a pending older than 6 bars (30 min) is dropped without trading. The confirmation went stale; the move it predicted didn't materialize.</div>
+                <div class="phase-tag">Classify</div>
+                <div class="phase-desc"><strong>STRONG or WEAK</strong> — a confirmation candle is STRONG when BOTH conditions hold: (a) the close sits within the top/bottom 25 % of its own range (bullish: <code>(close − low) / (high − low) ≥ 0.75</code>) AND (b) the body ≥ 0.6 × the 5-min ATR (filters small doji-like bars). Either failing → WEAK. Both thresholds live in Risk settings.</div>
             </div>
             <div class="phase-row">
-                <div class="phase-tag">Phase 3</div>
-                <div class="phase-desc"><strong>Invalidate</strong> — if the current bar's close moves AGAINST the pending's wicked extreme, the thesis is broken and the pending is dropped immediately.</div>
+                <div class="phase-tag">Buffer</div>
+                <div class="phase-desc"><strong>Target buffer</strong> — the target level is pulled IN toward the entry by <code>ATR × camarillaTargetBufferAtrMult</code> (default 0.2). Bullish targets shrink downward; bearish targets shrink upward. Matches the "Camarilla level as magnet" pattern — price frequently reverses just before touching the exact level. Set to 0 to disable.</div>
             </div>
             <div class="phase-row">
-                <div class="phase-tag">Phase 4</div>
-                <div class="phase-desc"><strong>Detect</strong> — if nothing fired/expired this bar, check whether the CURRENT bar's geometry matches any setup's confirmation pattern (wicked through a level AND closed back across it). If yes, seed a new pending. Bar color does NOT matter at confirmation — the trigger candle's color filter handles direction.</div>
+                <div class="phase-tag">R:R Gate</div>
+                <div class="phase-desc"><strong>Projected R:R</strong> — at confirmation, R:R is computed against the OPTIMISTIC entry (<code>confirmHigh + ATR × triggerMult</code> bullish / <code>confirmLow − ATR × triggerMult</code> bearish). Any actual fire lands at an equal-or-worse entry, so this projection is an upper bound. If it fails <code>camarillaMinRRRatio</code>, the pending is not seeded — the next bar gets a fresh chance to seed a better candidate.</div>
+            </div>
+            <div class="phase-row">
+                <div class="phase-tag">Trigger</div>
+                <div class="phase-desc"><strong>STRONG → tick.</strong> Fires the moment spot touches <code>confirmHigh + (ATR × triggerMult)</code> (bullish) or <code>confirmLow − (ATR × triggerMult)</code> (bearish), checked every fast-tick (~1.5 s). Default trigger multiplier 0.25 (a quarter of one 5-min ATR). <br><strong>WEAK → candle close.</strong> Waits for a subsequent 5-min bar to CLOSE past <code>confirmHigh</code> (bullish) or <code>confirmLow</code> (bearish). No ATR buffer on the close condition — a close is already a whole-bar filter.</div>
+            </div>
+            <div class="phase-row">
+                <div class="phase-tag">Invalidate</div>
+                <div class="phase-desc"><strong>Same-thesis invalidation</strong> — if a subsequent bar's close crosses the OPPOSITE extreme of the confirmation (close &lt; confirmLow for bullish; close &gt; confirmHigh for bearish), the pending is dropped. <br><strong>Opposite-direction swap</strong> — if a subsequent bar produces a fresh confirmation whose direction is OPPOSITE the currently-held pending, the old pending is discarded and the new one takes its slot, at any age within the expiry window. Same-direction fresh confirmations are ignored (older pending stays put).</div>
+            </div>
+            <div class="phase-row">
+                <div class="phase-tag">Expire</div>
+                <div class="phase-desc"><strong>Age-out</strong> — a pending older than <code>MAX_PENDING_BARS</code> bars is dropped without trading. The confirmation went stale; the move it predicted didn't materialize in time.</div>
             </div>
         </div>
     </div>
@@ -472,26 +519,69 @@
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-purple, #a78bfa);"></span> Order Flow &amp; Exit Logic</h2>
         <p class="doc-p">
             When a trigger fires and all gates pass, the bot places a single SELL order on the
-            pre-resolved OTM option leg for that setup. Position size = lots-per-leg × NIFTY lot
-            size (default 1 lot × 65 contracts). No SL or target orders are placed on the option
-            premium directly — both are <strong>monitored against the NIFTY spot futures</strong>
-            and the bot exits via a market order when either threshold is crossed.
+            pre-resolved OTM option leg for that setup. Position size = lots-per-leg × instrument
+            lot size (NIFTY 65, BankNifty 30), possibly halved by the CPR sizing bias or the risk
+            retry. No SL or target orders are placed on the option premium directly — both are
+            <strong>monitored against the spot futures</strong> and the bot exits via a market
+            order when either threshold is crossed.
         </p>
         <ul class="doc-list">
-            <li><strong>Target</strong> — spot reaches the setup's Camarilla target level (H3 / L3 / H5 / L5). Position closes with profit; theta + favorable spot move both contribute.</li>
-            <li><strong>Stop loss</strong> — spot crosses the confirmation candle's far extreme (plus a configurable buffer in points, default 5). Position closes with loss; the spot moved against the thesis.</li>
+            <li><strong>Target</strong> — spot reaches the setup's Camarilla target level (H5 for H4_BREAKOUT, L5 for L4_BREAKDOWN, H3 for L3_REVERSAL, L3 for H3_REVERSAL), <em>minus</em> the target buffer (bullish) or <em>plus</em> the buffer (bearish). Position closes with profit; theta + favorable spot move both contribute.</li>
+            <li><strong>Stop loss</strong> — spot crosses the confirmation candle's far extreme with an <code>ATR × camarillaDirectionalSlBufferAtrMult</code> cushion (default 0.5 × ATR). Position closes with loss; the spot moved against the thesis.</li>
             <li><strong>3-tick SL confirmation</strong> — to avoid wick-driven false exits, the SL only fires after 3 consecutive sub-second polls confirm the level is breached.</li>
             <li><strong>Timed squareoff</strong> — at the configured squareoff time (default 15:15 IST), all open positions are flattened regardless of SL/target state.</li>
         </ul>
+    </div>
+
+    <!-- ── CPR Classification ── -->
+    <div class="doc-section fade-in">
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:rgb(125,211,252);"></span> CPR Classification &amp; Sizing Bias</h2>
+        <p class="doc-p">
+            Every session's CPR (Central Pivot Range = TC / P / BC) collapses to a
+            <strong>single label</strong> that biases position sizing. Only WIDTH matters as the
+            primary signal (ranked against a 100-day percentile of prior CPR widths); the
+            relationship to yesterday's CPR (INSIDE / OUTSIDE) refines the label but doesn't add
+            a new bucket.
+        </p>
+        <h3 class="doc-h3" style="margin-top:22px;">The five classes</h3>
+        <div class="band-grid" style="margin-top:12px;">
+            <div class="band-row"><span class="left" style="color:var(--accent-green);">NARROW+INSIDE</span><span class="right">width in bottom 25 % of last 100 days AND today's CPR fully inside yesterday's — strongest compression breakout signal</span></div>
+            <div class="band-row"><span class="left" style="color:var(--accent-green);">NARROW</span><span class="right">width in bottom 25 % of last 100 days — compression breakout expected</span></div>
+            <div class="band-row"><span class="left" style="color:var(--text-muted);">NORMAL</span><span class="right">width in middle 50 % (25 &lt; pctl &lt; 75) — no directional bias</span></div>
+            <div class="band-row"><span class="left" style="color:#f87171;">WIDE</span><span class="right">width in top 25 % of last 100 days — rangebound reversal expected</span></div>
+            <div class="band-row"><span class="left" style="color:#f87171;">WIDE+OUTSIDE</span><span class="right">width in top 25 % AND today's CPR fully engulfs yesterday's — strongest expansion reversal signal</span></div>
+        </div>
+        <p class="doc-p" style="margin-top:14px;">
+            The percentile is volatility-adaptive — absolute thresholds move with the regime, so
+            NARROW on a low-vol week isn't the same absolute width as NARROW on a high-vol week.
+            The 100-day history is fetched once per day from Fyers (one <code>getHistory</code> call
+            per instrument) alongside today's Camarilla levels. Everything not matching one of the
+            NARROW*/WIDE* buckets collapses to NORMAL — including gap-up / gap-down trend days
+            that don't have a WIDE or NARROW width.
+        </p>
+        <h3 class="doc-h3" style="margin-top:22px;">Bias → HPT / LPT</h3>
+        <ul class="doc-list">
+            <li><strong>NARROW</strong> or <strong>NARROW+INSIDE</strong> → breakouts favored. H4_BREAKOUT / L4_BREAKDOWN fire at full lots (HPT). L3_REVERSAL / H3_REVERSAL fire at half lots (LPT).</li>
+            <li><strong>WIDE</strong> or <strong>WIDE+OUTSIDE</strong> → reversals favored. Reversals full (HPT). Breakouts half (LPT).</li>
+            <li><strong>NORMAL</strong> → no bias. All setups fire at full lots.</li>
+        </ul>
+        <p class="doc-p">
+            Half lots = <code>max(1, fullLots / 2)</code> — same pattern as the portfolio risk retry.
+            The entire bias can be disabled from Risk settings; when off, every setup fires at full
+            lots regardless of the day's CPR classification.
+        </p>
     </div>
 
     <!-- ── Risk Management ── -->
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-red, #f87171);"></span> Risk Management</h2>
         <ul class="doc-list">
-            <li><strong>Per-trade R:R floor</strong> — every fire computes reward (entry → target) and risk (entry → SL). If R:R &lt; 1:1, the trade is rejected. Toggleable in Settings → Risk pane.</li>
-            <li><strong>Per-day exposed-risk cap</strong> — running total of projected losses across all open positions is checked against <code style="font-family:var(--font-mono);color:var(--accent-cyan);background:rgba(125,211,252,0.10);padding:1px 5px;border-radius:3px;">portfolioMaxDailyRisk</code>. If exceeded, the session is force-locked and all open positions are flattened.</li>
-            <li><strong>Concurrent position cap</strong> — at most N simultaneous bot-managed positions (default 4).</li>
+            <li><strong>Per-trade R:R floor</strong> — every fire computes reward (entry → target) and risk (entry → SL). If R:R &lt; <code>camarillaMinRRRatio</code> (default 2.0), the trade is rejected. The projected-R:R gate at confirmation time uses the same floor against the optimistic entry, dropping doomed candidates before they occupy a pending slot.</li>
+            <li><strong>CPR sizing bias</strong> — days classified as <code>NARROW</code> or <code>NARROW+INSIDE</code> favor breakouts (full lots) and downsize reversals to half lots; <code>WIDE</code> or <code>WIDE+OUTSIDE</code> days do the reverse. <code>NORMAL</code> fires everything at full lots. Disable via the <em>CPR Sizing Bias</em> checkbox in Risk settings.</li>
+            <li><strong>Portfolio exposure cap</strong> — before every fire, the strategy projects the combined exposed risk (existing open positions + this new fire's <em>|entryFut − slFut| × ATM_DELTA × qty</em>) and rejects if it would breach <code>portfolioMaxDailyLoss</code>. Shared across both instruments — a BankNifty fire consumes headroom from the same pool NIFTY uses.</li>
+            <li><strong>50 % qty retry</strong> — when the full-lot fire would breach the portfolio cap, the bot retries once at half lots (rounded to whole lots, min 1). If the halved size still doesn't fit, the trade is skipped. No third try — position size never fragments below half.</li>
+            <li><strong>Realized-loss lockout</strong> — if today's <em>closed</em> losses exceed <code>portfolioMaxDailyLoss</code>, the strategy locks out for the rest of the session — no new fires on either instrument.</li>
+            <li><strong>RSI momentum gate</strong> — see the RSI Momentum Gate section above. Setup-specific bands rule out late-entry breakouts at exhaustion and reversals against strong trends.</li>
             <li><strong>Trading window</strong> — new entries only fire between configured Trading Start (09:30 IST default) and Trading End (13:30 IST default). Existing positions continue to be managed until squareoff.</li>
         </ul>
     </div>
@@ -532,7 +622,7 @@
 <script src="/js/ticker.js?v=36"></script>
 <script src="/js/option-chain-modal.js?v=20"></script>
 <script src="/js/manual-terminal-modal.js?v=22"></script>
-<script src="/js/settings-modal.js?v=71"></script>
+<script src="/js/settings-modal.js?v=72"></script>
 <script>
     // Footer year
     document.getElementById('footerYear').textContent = new Date().getFullYear();

@@ -60,7 +60,6 @@ public class CamarillaService {
     private final TokenStore          tokenStore;
     private final FyersProperties     fyersProperties;
     private final BalancedAtmSelector atmSelector;
-    private final NseIndicesBhavcopyService nseBhavcopy;
     private final ObjectMapper        mapper = new ObjectMapper()
         .registerModule(new JavaTimeModule())
         .findAndRegisterModules();
@@ -69,16 +68,25 @@ public class CamarillaService {
     private final Map<String, AtomicBoolean>   refreshGates = new ConcurrentHashMap<>();
     private final AtomicBoolean warmUpInFlight = new AtomicBoolean(false);
 
+    // ── CPR classification state ──────────────────────────────────────────
+    // 100-day rolling CPR-width history per instrument, most-recent last.
+    // Refreshed once per day when fetchAndStore runs. Used for percentile
+    // rank of today's cprWidth (top 25 % → WIDE, bottom 25 % → NARROW).
+    private final Map<String, java.util.List<Double>> cprWidthHistoryBySymbol = new ConcurrentHashMap<>();
+    // Yesterday's [bc, tc] for INSIDE_VALUE / OUTSIDE_VALUE classification
+    // of today's CPR vs prior-session CPR.
+    private final Map<String, double[]> priorCprBySymbol = new ConcurrentHashMap<>();
+    // Day-key for lazy per-day refresh of the history above.
+    private final Map<String, LocalDate> historyDayBySymbol = new ConcurrentHashMap<>();
+
     public CamarillaService(FyersClientRouter fyersClient,
                             TokenStore tokenStore,
                             FyersProperties fyersProperties,
-                            BalancedAtmSelector atmSelector,
-                            NseIndicesBhavcopyService nseBhavcopy) {
+                            BalancedAtmSelector atmSelector) {
         this.fyersClient     = fyersClient;
         this.tokenStore      = tokenStore;
         this.fyersProperties = fyersProperties;
         this.atmSelector     = atmSelector;
-        this.nseBhavcopy     = nseBhavcopy;
     }
 
     @PostConstruct
@@ -109,10 +117,10 @@ public class CamarillaService {
         // boot (which used Fyers history) would short-circuit the bhavcopy fetch
         // for today's session and we'd never see the higher-fidelity OHLC.
         if (bySymbol.remove(NIFTY_SPOT_SYMBOL) != null) {
-            log.info("[CamarillaService] invalidated cached NIFTY entry at boot to force bhavcopy refresh");
+            log.info("[CamarillaService] invalidated cached NIFTY entry at boot to force fresh Fyers refresh");
         }
         if (bySymbol.remove(BANKNIFTY_SPOT_SYMBOL) != null) {
-            log.info("[CamarillaService] invalidated cached BANKNIFTY entry at boot to force bhavcopy refresh");
+            log.info("[CamarillaService] invalidated cached BANKNIFTY entry at boot to force fresh Fyers refresh");
         }
         // Fetch both instrument spot levels at boot so the setup detector and
         // trend tooltip are armed before the first 5-min bar closes. Runs
@@ -255,41 +263,12 @@ public class CamarillaService {
         CamarillaLevels cached = bySymbol.get(symbol);
         if (cached != null && today.equals(cached.sessionDate())) return true;
 
-        // ── NIFTY spot: prefer NSE indices bhavcopy ──
-        // Fyers history "D" close for index symbols is the NSE settlement WAP which
-        // can differ a few points from TradingView's last-tick close. The NSE
-        // archives publish the official OHLC for "Nifty 50" by ~17:00 IST same day —
-        // that's what TradingView's cash chart sources from, so using the bhavcopy
-        // keeps our pivots aligned with what the operator sees on TV.
-        if ("NSE:NIFTY50-INDEX".equals(symbol)) {
-            NseIndicesBhavcopyService.Ohlc bhav = nseBhavcopy.fetchPriorDayOhlc("Nifty 50", today);
-            if (bhav != null && bhav.high() > 0 && bhav.low() > 0 && bhav.close() > 0) {
-                CamarillaLevels fresh = CamarillaLevels.compute(today, bhav.date(),
-                    bhav.high(), bhav.low(), bhav.close());
-                bySymbol.put(symbol, fresh);
-                log.info("[CamarillaService] NIFTY levels from NSE bhavcopy ({}) — H={} L={} C={} → H3={} L3={}",
-                    bhav.date(), bhav.high(), bhav.low(), bhav.close(),
-                    fresh.h3(), fresh.l3());
-                return true;
-            }
-            log.warn("[CamarillaService] NSE bhavcopy unavailable for NIFTY — falling back to Fyers history");
-        }
-
-        // ── BANKNIFTY spot: prefer NSE indices bhavcopy ──
-        // Same TradingView-parity rationale as NIFTY. NSE archives publish
-        // "Nifty Bank" daily OHLC alongside "Nifty 50".
-        if ("NSE:NIFTYBANK-INDEX".equals(symbol)) {
-            NseIndicesBhavcopyService.Ohlc bhav = nseBhavcopy.fetchPriorDayOhlc("Nifty Bank", today);
-            if (bhav != null && bhav.high() > 0 && bhav.low() > 0 && bhav.close() > 0) {
-                CamarillaLevels fresh = CamarillaLevels.compute(today, bhav.date(),
-                    bhav.high(), bhav.low(), bhav.close());
-                bySymbol.put(symbol, fresh);
-                log.info("[CamarillaService] BANKNIFTY levels from NSE bhavcopy ({}) — H={} L={} C={} → H3={} L3={}",
-                    bhav.date(), bhav.high(), bhav.low(), bhav.close(),
-                    fresh.h3(), fresh.l3());
-                return true;
-            }
-            log.warn("[CamarillaService] NSE bhavcopy unavailable for BANKNIFTY — falling back to Fyers history");
+        // ── Indexed spots: single Fyers 150-day getHistory call gives us
+        // both today's Camarilla levels AND the 100-day CPR-width history
+        // for classification, in one shot. Same source for both →
+        // apples-to-apples percentile ranking.
+        if (NIFTY_SPOT_SYMBOL.equals(symbol) || BANKNIFTY_SPOT_SYMBOL.equals(symbol)) {
+            return fetchIndexLevelsAndClassify(symbol, today);
         }
 
         // Pull 10 calendar days of daily candles so we always have a settled session.
@@ -330,9 +309,128 @@ public class CamarillaService {
             log.debug("[CamarillaService] no usable prior-day candle for {} (size={})", symbol, candles.size());
             return false;
         }
+        // Non-index symbols (option strikes, futures) — bare levels only,
+        // no CPR classification (only the two spot indices need that).
         CamarillaLevels fresh = CamarillaLevels.compute(today, resolvedPrior, priorHigh, priorLow, priorClose);
         bySymbol.put(symbol, fresh);
         return true;
+    }
+
+    /** Consolidated index handler — one Fyers {@code getHistory} call for ~150
+     *  calendar days gives us today's Camarilla levels (from yesterday's OHLC,
+     *  the last row in the response) AND the 100-day CPR-width history for
+     *  percentile classification, all from the same data source. Used for
+     *  {@link #NIFTY_SPOT_SYMBOL} and {@link #BANKNIFTY_SPOT_SYMBOL} only. */
+    private boolean fetchIndexLevelsAndClassify(String symbol, LocalDate today) {
+        if (!tokenStore.isTokenAvailable()) return false;
+        LocalDate from = today.minusDays(150);
+        String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
+        JsonNode root;
+        try { root = fyersClient.getHistory(symbol, "D", from.toString(), today.toString(), auth); }
+        catch (Exception e) {
+            log.warn("[CamarillaService] history fetch failed for {}: {}", symbol, e.getMessage());
+            return false;
+        }
+        if (root == null || !root.has("candles") || !root.get("candles").isArray()) {
+            log.warn("[CamarillaService] no candles in history response for {}", symbol);
+            return false;
+        }
+        JsonNode candles = root.get("candles");
+        // Collect chronologically-ordered [high, low, close] rows before today.
+        java.util.List<LocalDate> dates = new java.util.ArrayList<>();
+        java.util.List<double[]> ohlc = new java.util.ArrayList<>();
+        for (int i = 0; i < candles.size(); i++) {
+            JsonNode row = candles.get(i);
+            if (!row.isArray() || row.size() < 5) continue;
+            long epochSec = row.get(0).asLong();
+            LocalDate d = ZonedDateTime.ofInstant(java.time.Instant.ofEpochSecond(epochSec), IST).toLocalDate();
+            if (!d.isBefore(today)) continue;
+            double h = row.get(2).asDouble();
+            double l = row.get(3).asDouble();
+            double c = row.get(4).asDouble();
+            if (h <= 0 || l <= 0 || c <= 0) continue;
+            dates.add(d);
+            ohlc.add(new double[]{h, l, c});
+        }
+        if (ohlc.isEmpty()) {
+            log.warn("[CamarillaService] no usable candles from Fyers history for {}", symbol);
+            return false;
+        }
+        // Today's Camarilla levels use YESTERDAY's OHLC — the last row.
+        LocalDate priorDate = dates.get(dates.size() - 1);
+        double[] priorOhlc  = ohlc.get(ohlc.size() - 1);
+        CamarillaLevels fresh = CamarillaLevels.compute(today, priorDate,
+            priorOhlc[0], priorOhlc[1], priorOhlc[2]);
+        log.info("[CamarillaService] {} levels from Fyers history ({}) — H={} L={} C={} → H3={} L3={}",
+            symbol, priorDate, priorOhlc[0], priorOhlc[1], priorOhlc[2], fresh.h3(), fresh.l3());
+
+        // Historical widths: session-day i's CPR uses ohlc[i-1] as prior OHLC.
+        // The last iteration (i = ohlc.size()-1) gives us YESTERDAY's session
+        // width — the last "history" entry AND the prior [bc, tc] used for
+        // today's INSIDE/OUTSIDE_VALUE classification.
+        java.util.ArrayList<Double> widths = new java.util.ArrayList<>();
+        double lastBc = 0, lastTc = 0;
+        for (int i = 1; i < ohlc.size(); i++) {
+            double[] prior = ohlc.get(i - 1);
+            double pp = (prior[0] + prior[1] + prior[2]) / 3.0;
+            double bc = (prior[0] + prior[1]) / 2.0;
+            double tc = 2.0 * pp - bc;
+            widths.add(Math.abs(tc - bc));
+            lastBc = bc;
+            lastTc = tc;
+        }
+        while (widths.size() > 100) widths.remove(0);
+        cprWidthHistoryBySymbol.put(symbol, widths);
+        priorCprBySymbol.put(symbol, new double[]{lastBc, lastTc});
+        historyDayBySymbol.put(symbol, today);
+
+        // Classify today's cprWidth against the 100-day history + compare
+        // today's [bc, tc] vs yesterday's for the value class.
+        CamarillaLevels enriched = fresh;
+        if (!widths.isEmpty()) {
+            double percentile = percentileRank(fresh.cprWidth(), widths);
+            String widthClass = percentile >= 75.0 ? "WIDE"
+                             : percentile <= 25.0 ? "NARROW"
+                             : "NORMAL";
+            String valueClass = classifyValue(fresh.bc(), fresh.tc(), new double[]{lastBc, lastTc});
+            enriched = fresh.withClassification(percentile, widthClass, valueClass);
+            log.info("[CamarillaService] {} classification — cprWidth={} pctl={} → {} / {} (history={} days)",
+                symbol, round(fresh.cprWidth(), 2), round(percentile, 1),
+                widthClass, valueClass, widths.size());
+        } else {
+            log.warn("[CamarillaService] {} classification skipped — insufficient history", symbol);
+        }
+        bySymbol.put(symbol, enriched);
+        return true;
+    }
+
+    /** Rank {@code value} within {@code history} — percentage of historical
+     *  entries whose width is less than or equal to today's width. Returns
+     *  0-100. Empty history returns 50 (neutral). */
+    private static double percentileRank(double value, java.util.List<Double> history) {
+        if (history == null || history.isEmpty()) return 50.0;
+        int belowOrEqual = 0;
+        for (Double v : history) if (v != null && v <= value) belowOrEqual++;
+        return 100.0 * belowOrEqual / history.size();
+    }
+
+    /** Compare today's [bc, tc] against yesterday's. Only three relations
+     *  matter for the consolidated CPR classification — INSIDE_VALUE (breakout
+     *  signal), OUTSIDE_VALUE (reversal signal), OVERLAP (everything else,
+     *  including gap-up/gap-down trend days which collapse to NORMAL cprClass
+     *  when width is NORMAL). */
+    private static String classifyValue(double todayBc, double todayTc, double[] priorCpr) {
+        if (priorCpr == null || priorCpr.length < 2) return "OVERLAP";
+        double pBc = priorCpr[0], pTc = priorCpr[1];
+        if (pBc == 0 && pTc == 0) return "OVERLAP";
+        if (todayTc <= pTc && todayBc >= pBc)       return "INSIDE_VALUE";
+        if (todayTc >= pTc && todayBc <= pBc)       return "OUTSIDE_VALUE";
+        return "OVERLAP";
+    }
+
+    private static double round(double v, int decimals) {
+        double scale = Math.pow(10, decimals);
+        return Math.round(v * scale) / scale;
     }
 
     private static LocalDate todayIst() {

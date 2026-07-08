@@ -430,6 +430,19 @@
                         style="background:transparent;border:none;color:var(--text-muted);font-size:1.2rem;cursor:pointer;line-height:1;">×</button>
             </div>
         </div>
+        <div id="levelsModalCprBar" style="display:none;padding:10px 22px;border-bottom:1px solid var(--border);font-family:var(--font-mono);font-size:0.72rem;">
+            <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;">
+                <span style="display:flex;align-items:center;gap:8px;">
+                    <span style="color:#fbbf24;letter-spacing:0.08em;font-weight:700;text-transform:uppercase;">NIFTY CPR</span>
+                    <span id="levelsModalNiftyCprClass" style="color:var(--text-muted);font-weight:700;">—</span>
+                </span>
+                <span style="border-left:1px solid var(--border);height:14px;"></span>
+                <span style="display:flex;align-items:center;gap:8px;">
+                    <span style="color:rgb(196,181,253);letter-spacing:0.08em;font-weight:700;text-transform:uppercase;">BANKNIFTY CPR</span>
+                    <span id="levelsModalBankNiftyCprClass" style="color:var(--text-muted);font-weight:700;">—</span>
+                </span>
+            </div>
+        </div>
         <div style="padding:18px 22px;">
             <!-- LEFT  — single pivot table with NIFTY + BANKNIFTY value columns
                         side-by-side (like the retired daily/weekly layout).
@@ -681,7 +694,9 @@
             ['H5', 'h5', '#a78bfa', 'outer target'],
             ['H4', 'h4', '#34d399', 'bullish trigger'],
             ['H3', 'h3', '#f87171', 'bearish trigger'],
+            ['TC', 'tc', '#7dd3fc', 'CPR top'],
             'P',
+            ['BC', 'bc', '#7dd3fc', 'CPR bottom'],
             ['L3', 'l3', '#34d399', 'bullish trigger'],
             ['L4', 'l4', '#f87171', 'bearish trigger'],
             ['L5', 'l5', '#a78bfa', 'outer target']
@@ -697,8 +712,12 @@
             + '</div>';
         var rowsHtml = rows.map(function(r) {
             if (r === 'P') {
-                var pN = val(niftyPivots, 'priorClose');
-                var pB = val(bnPivots, 'priorClose');
+                // CPR pivot = (priorHigh + priorLow + priorClose) / 3 — the
+                // actual Central Pivot, midpoint of the TC / BC band. The
+                // record's `pp` field carries this value; do NOT read
+                // priorClose (that's yesterday's closing price, not the pivot).
+                var pN = val(niftyPivots, 'pp');
+                var pB = val(bnPivots, 'pp');
                 return '<div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:rgba(125,211,252,0.06);border-left:3px solid var(--accent-cyan);border-radius:4px;">'
                      + '<span style="font-family:var(--font-mono);font-size:0.78rem;font-weight:700;color:var(--accent-cyan);min-width:28px;">P</span>'
                      + '<span style="flex:1;font-family:var(--font-mono);font-size:0.62rem;color:var(--text-muted);letter-spacing:0.04em;text-transform:uppercase;">pivot</span>'
@@ -723,6 +742,7 @@
         // Single pivot table with NIFTY + BankNifty value columns per row.
         renderPivotBlock(document.getElementById('levelsModalPivots'),
                          _latestPivots, _latestBankNiftyPivots);
+        renderLevelsModalCprBar();
 
         var lgWrapDir           = document.getElementById('levelsModalLegsDir');
         var lgWrapDirBankNifty  = document.getElementById('levelsModalLegsDirBankNifty');
@@ -744,20 +764,8 @@
                 if (dir === 'BEARISH') return { fg: '#f87171', bg: 'rgba(248,113,113,0.12)', bd: 'rgba(248,113,113,0.40)' };
                 return { fg: 'var(--text-secondary)', bg: 'rgba(148,163,184,0.12)', bd: 'rgba(148,163,184,0.30)' };
             }
-            // Live NIFTY spot for time-value calculation. Falls back to 0
-            // (which yields "—" via fmtNum2) when state hasn't landed yet.
-            var spotForTv = (lastState && lastState.atmVwap && lastState.atmVwap.futLtp) || 0;
-            function timeValue(side, strike, ltp) {
-                var s = Number(spotForTv), k = Number(strike), p = Number(ltp);
-                if (!isFinite(s) || s <= 0 || !isFinite(k) || k <= 0 || !isFinite(p) || p <= 0) return null;
-                var intrinsic = 0;
-                if (side === 'CE')      intrinsic = Math.max(0, s - k);
-                else if (side === 'PE') intrinsic = Math.max(0, k - s);
-                return Math.max(0, p - intrinsic);
-            }
             function renderLegRow(L) {
                 var col = pillColors(L.dir);
-                var tv = timeValue(L.side, L.strike, L.ltp);
                 // Setup label = full enum name with underscores → spaces.
                 //   H4_BREAKOUT  → "H4 BREAKOUT"
                 //   L3_REVERSAL  → "L3 REVERSAL"
@@ -779,22 +787,16 @@
                     // knows we're in a non-trading session via the market
                     // clock card already on the page.
                     '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--text-primary);min-width:78px;text-align:right;">' + fmtNum2(L.ltp) + '</span>' +
-                    // Time value = LTP − intrinsic. For CE intrinsic = max(0, spot−strike),
-                    // for PE intrinsic = max(0, strike−spot). When the strike is OTM
-                    // this equals LTP; when ITM it shows the pure theta+vega component.
-                    '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--text-secondary);min-width:78px;text-align:right;" title="Time value = LTP − intrinsic">' + (tv != null ? fmtNum2(tv) : '—') + '</span>' +
                 '</div>';
             }
-            // Header row mirroring the pivots' "Daily | Weekly" header — gives
-            // the LTP and TV columns a label so the operator knows what each
-            // number is. Padding/min-widths match renderLegRow so columns align.
+            // Header row labelling the LTP column so the operator knows what
+            // the number is. Padding/min-widths match renderLegRow so columns align.
             function legsHeaderHtml() {
                 return '<div style="display:flex;align-items:center;gap:14px;padding:4px 14px 6px 14px;">'
                     + '<span style="min-width:120px;"></span>'                           // setup-label spacer (matches renderLegRow)
                     + '<span style="min-width:120px;"></span>'                           // "Sell PE 24550" spacer
                     + '<span style="flex:1;"></span>'                                    // levelRef spacer
                     + '<span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;font-weight:700;min-width:78px;text-align:right;">LTP</span>'
-                    + '<span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;font-weight:700;min-width:78px;text-align:right;">TV</span>'
                     + '</div>';
             }
             // Partition rows by instrument tag emitted by the backend.
@@ -814,6 +816,36 @@
                 lgWrapDirBankNifty.innerHTML = bankNiftyLegs.length ? (legsHeaderHtml() + bankNiftyLegs.map(renderLegRow).join('')) : loadingHtml;
             }
         }
+    }
+
+    /** Populate the CPR width/value bar in the Levels modal header from
+     *  the latest captured pivots. Called on every modal render. Hides
+     *  the bar entirely if neither instrument has classification data
+     *  (fresh boot before the 100-day history has loaded). */
+    function renderLevelsModalCprBar() {
+        function colorFor(cls) {
+            if (!cls) return 'var(--text-muted)';
+            if (cls.indexOf('NARROW') === 0) return '#34d399';   // green — breakout day
+            if (cls.indexOf('WIDE')   === 0) return '#f87171';   // red — reversal day
+            return 'var(--text-muted)';                          // NORMAL
+        }
+        function setBadge(elId, cprClass, pctlForTitle) {
+            var el = document.getElementById(elId);
+            if (!el) return;
+            if (!cprClass) { el.textContent = '—'; el.style.color = 'var(--text-muted)'; el.title = ''; return; }
+            el.textContent = cprClass;
+            el.style.color = colorFor(cprClass);
+            el.title = (pctlForTitle != null && isFinite(pctlForTitle))
+                ? 'Width at ' + Math.round(pctlForTitle) + 'th percentile of last 100 days'
+                : '';
+        }
+        var nLv = _latestPivots || null;
+        var bLv = _latestBankNiftyPivots || null;
+        var anyClass = (nLv && nLv.cprClass) || (bLv && bLv.cprClass);
+        var bar = document.getElementById('levelsModalCprBar');
+        if (bar) bar.style.display = anyClass ? '' : 'none';
+        setBadge('levelsModalNiftyCprClass',     nLv && nLv.cprClass, nLv && nLv.cprWidthPercentile);
+        setBadge('levelsModalBankNiftyCprClass', bLv && bLv.cprClass, bLv && bLv.cprWidthPercentile);
     }
 
     // ── Tick-level NIFTY / VIX / ATM updates via the shared ticker SSE ─────
@@ -1633,7 +1665,7 @@
 
 <script src="/js/common.js?v=41"></script>
 <script src="/js/ticker.js?v=36"></script>
-<script src="/js/settings-modal.js?v=71"></script>
+<script src="/js/settings-modal.js?v=72"></script>
 <script src="/js/option-chain-modal.js?v=27"></script>
 <script src="/js/manual-terminal-modal.js?v=46"></script>
 </body>
