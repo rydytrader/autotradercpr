@@ -715,28 +715,29 @@ public class AnalyticsService {
         return s.isBlank() ? null : s;
     }
 
-    // ── BREAKDOWN: By Setup / AM vs PM ─
+    // ── BREAKDOWN: By Setup / AM vs PM / By Day ─
 
-    /** Renders two side-by-side comparison cards. Each card returns
+    /** Renders three side-by-side comparison cards. Each card returns
      *  {@code { groupName: { trades, wins, losses, netPnl, winRate } }}. Filters out the
      *  synthetic OPEN_POSITION_MTM row everywhere. */
     private Map<String, Object> breakdowns(List<Trade> trades) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("bySetup", splitBySetup(trades));
         out.put("amVsPm",  splitAmVsPm(trades));
+        out.put("byDay",   splitByDayOfWeek(trades));
         return out;
     }
 
     /** 4-way split by setup tag (H4_BREAKOUT, L3_REVERSAL, H3_REVERSAL, L4_BREAKDOWN).
-     *  Legacy / MANUAL rows fall into the "Other" bin. Each setup card displays the
-     *  display label (e.g. "H4 Breakout") rather than the raw enum name. */
+     *  Non-matching rows (legacy / retired setups) are dropped rather than binned into
+     *  an "Other" bucket. Each setup card displays the display label (e.g. "H4 Breakout")
+     *  rather than the raw enum name. */
     private Map<String, Map<String, Object>> splitBySetup(List<Trade> trades) {
         Map<String, List<Trade>> bins = new LinkedHashMap<>();
         bins.put("H4 Breakout",  new ArrayList<>());
         bins.put("L3 Reversal",  new ArrayList<>());
         bins.put("H3 Reversal",  new ArrayList<>());
         bins.put("L4 Breakdown", new ArrayList<>());
-        bins.put("Other",        new ArrayList<>());
         for (Trade t : trades) {
             if (!isClosedStraddle(t)) continue;
             String setup = t.setup() == null ? "" : t.setup();
@@ -745,8 +746,39 @@ public class AnalyticsService {
                 case "L3_REVERSAL"  -> bins.get("L3 Reversal").add(t);
                 case "H3_REVERSAL"  -> bins.get("H3 Reversal").add(t);
                 case "L4_BREAKDOWN" -> bins.get("L4 Breakdown").add(t);
-                default              -> bins.get("Other").add(t);
+                default              -> { /* dropped — no "Other" bin */ }
             }
+        }
+        return summariseBins(bins);
+    }
+
+    /** 5-way split by day of week (Mon-Fri). Uses {@code sessionDate} to derive
+     *  the day. Bins are pre-declared in weekday order so the card renders
+     *  Mon → Fri consistently regardless of which days had trades. Rows with
+     *  invalid session dates are skipped. Weekend days aren't declared —
+     *  NSE doesn't trade weekends. */
+    private Map<String, Map<String, Object>> splitByDayOfWeek(List<Trade> trades) {
+        Map<String, List<Trade>> bins = new LinkedHashMap<>();
+        bins.put("Mon", new ArrayList<>());
+        bins.put("Tue", new ArrayList<>());
+        bins.put("Wed", new ArrayList<>());
+        bins.put("Thu", new ArrayList<>());
+        bins.put("Fri", new ArrayList<>());
+        for (Trade t : trades) {
+            if (!isClosedStraddle(t)) continue;
+            String iso = t.sessionDate();
+            if (iso == null) continue;
+            try {
+                java.time.DayOfWeek dow = LocalDate.parse(iso).getDayOfWeek();
+                switch (dow) {
+                    case MONDAY    -> bins.get("Mon").add(t);
+                    case TUESDAY   -> bins.get("Tue").add(t);
+                    case WEDNESDAY -> bins.get("Wed").add(t);
+                    case THURSDAY  -> bins.get("Thu").add(t);
+                    case FRIDAY    -> bins.get("Fri").add(t);
+                    default         -> { /* weekend — no bin */ }
+                }
+            } catch (Exception ignored) {}
         }
         return summariseBins(bins);
     }

@@ -28,10 +28,6 @@ public class RiskSettingsStore {
         volatile double maxRiskPerDayPct  = 1.0;  // max risk per day as % of totalCapital
         volatile double riskPerTrade      = 1000;  // max ₹ loss per trade if SL hits
         volatile String autoSquareOffTime = "";  // empty = disabled, e.g. "15:15"
-        /** Auto-squareoff time for manual-terminal (adjustment) trades. Independent from the
-         *  strategy {@code autoSquareOffTime} so the operator can flatten manual hedges at a
-         *  different time than the bot's straddles/strangles. Empty = disabled. */
-        volatile String manualAutoSquareOffTime = "";
         // ── Camarilla strategy settings (singleton) ──────────────────────────
         volatile boolean camarillaEnabled         = true;
         volatile int     camarillaLotsPerLeg      = 1;       // 1 lot = 65 NIFTY
@@ -447,7 +443,6 @@ public class RiskSettingsStore {
     public double getRiskPerTrade()      { return cfg().riskPerTrade; }
     public double getMaxDailyLoss()      { return cfg().totalCapital * cfg().maxRiskPerDayPct / 100.0; }
     public String getAutoSquareOffTime() { return cfg().autoSquareOffTime; }
-    public String getManualAutoSquareOffTime() { return cfg().manualAutoSquareOffTime; }
     public boolean isCamarillaEnabled()           { return cfg().camarillaEnabled; }
     public int     getCamarillaLotsPerLeg()       { return cfg().camarillaLotsPerLeg; }
     public String  getCamarillaOrderType()        { return cfg().camarillaOrderType; }
@@ -646,7 +641,6 @@ public class RiskSettingsStore {
     public void setMaxRiskPerDayPct(double v)  { cfg().maxRiskPerDayPct = v; }
     public void setRiskPerTrade(double v)      { cfg().riskPerTrade = v; }
     public void setAutoSquareOffTime(String v) { cfg().autoSquareOffTime = v; }
-    public void setManualAutoSquareOffTime(String v) { cfg().manualAutoSquareOffTime = v == null ? "" : v.trim(); }
     public void setCamarillaEnabled(boolean v)            { cfg().camarillaEnabled = v; }
     public void setCamarillaLotsPerLeg(int v)             { cfg().camarillaLotsPerLeg = Math.max(1, v); }
     public void setCamarillaOrderType(String v)           { cfg().camarillaOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
@@ -771,7 +765,6 @@ public class RiskSettingsStore {
     public double getRiskPerTrade(String mode)      { return cfgFor(mode).riskPerTrade; }
     public double getMaxDailyLoss(String mode)      { return cfgFor(mode).totalCapital * cfgFor(mode).maxRiskPerDayPct / 100.0; }
     public String getAutoSquareOffTime(String mode) { return cfgFor(mode).autoSquareOffTime; }
-    public String getManualAutoSquareOffTime(String mode) { return cfgFor(mode).manualAutoSquareOffTime; }
     public boolean isCamarillaEnabled(String mode)            { return cfgFor(mode).camarillaEnabled; }
     public int     getCamarillaLotsPerLeg(String mode)        { return cfgFor(mode).camarillaLotsPerLeg; }
     public String  getCamarillaOrderType(String mode)         { return cfgFor(mode).camarillaOrderType; }
@@ -809,7 +802,6 @@ public class RiskSettingsStore {
     public void setMaxRiskPerDayPct(String mode, double v)  { cfgFor(mode).maxRiskPerDayPct = v; }
     public void setRiskPerTrade(String mode, double v)      { cfgFor(mode).riskPerTrade = v; }
     public void setAutoSquareOffTime(String mode, String v) { cfgFor(mode).autoSquareOffTime = v; }
-    public void setManualAutoSquareOffTime(String mode, String v) { cfgFor(mode).manualAutoSquareOffTime = v == null ? "" : v.trim(); }
     public void setCamarillaEnabled(String mode, boolean v)            { cfgFor(mode).camarillaEnabled = v; }
     public void setCamarillaLotsPerLeg(String mode, int v)             { cfgFor(mode).camarillaLotsPerLeg = Math.max(1, v); }
     public void setCamarillaOrderType(String mode, String v)           { cfgFor(mode).camarillaOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
@@ -869,7 +861,6 @@ public class RiskSettingsStore {
             upsert("maxRiskPerDayPct", String.valueOf(c.maxRiskPerDayPct));
             upsert("riskPerTrade", String.valueOf(c.riskPerTrade));
             upsert("autoSquareOffTime", c.autoSquareOffTime);
-            upsert("manualAutoSquareOffTime", c.manualAutoSquareOffTime);
             upsert("camarillaEnabled",          String.valueOf(c.camarillaEnabled));
             upsert("camarillaLotsPerLeg",       String.valueOf(c.camarillaLotsPerLeg));
             upsert("camarillaOrderType",         c.camarillaOrderType);
@@ -1043,7 +1034,7 @@ public class RiskSettingsStore {
                     case "maxRiskPerDayPct"  -> c.maxRiskPerDayPct = Double.parseDouble(v);
                     case "riskPerTrade"      -> c.riskPerTrade = Double.parseDouble(v);
                     case "autoSquareOffTime" -> c.autoSquareOffTime = v;
-                    case "manualAutoSquareOffTime" -> c.manualAutoSquareOffTime = v;
+                    case "manualAutoSquareOffTime"    -> { /* retired */ }
                     case "camarillaEnabled"           -> c.camarillaEnabled = Boolean.parseBoolean(v);
                     case "camarillaLotsPerLeg"        -> c.camarillaLotsPerLeg = Integer.parseInt(v);
                     case "camarillaOrderType"         -> c.camarillaOrderType = v;

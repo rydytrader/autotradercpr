@@ -31,7 +31,6 @@ public class SettingsController {
         result.put("tradingStartTime",    riskSettings.getTradingStartTime(effectiveMode));
         result.put("tradingEndTime",      riskSettings.getTradingEndTime(effectiveMode));
         result.put("autoSquareOffTime",   riskSettings.getAutoSquareOffTime(effectiveMode));
-        result.put("manualAutoSquareOffTime", riskSettings.getManualAutoSquareOffTime(effectiveMode));
         // Camarilla
         result.put("camarillaEnabled",            riskSettings.isCamarillaEnabled(effectiveMode));
         result.put("camarillaLotsPerLeg",         riskSettings.getCamarillaLotsPerLeg(effectiveMode));
@@ -83,7 +82,6 @@ public class SettingsController {
             if (body.containsKey("tradingStartTime"))  riskSettings.setTradingStartTime(effectiveMode, body.get("tradingStartTime").toString());
             if (body.containsKey("tradingEndTime"))    riskSettings.setTradingEndTime(effectiveMode, body.get("tradingEndTime").toString());
             if (body.containsKey("autoSquareOffTime")) riskSettings.setAutoSquareOffTime(effectiveMode, body.get("autoSquareOffTime").toString());
-            if (body.containsKey("manualAutoSquareOffTime")) riskSettings.setManualAutoSquareOffTime(effectiveMode, body.get("manualAutoSquareOffTime") == null ? "" : body.get("manualAutoSquareOffTime").toString());
             // Camarilla
             if (body.containsKey("camarillaEnabled"))           riskSettings.setCamarillaEnabled(effectiveMode, Boolean.parseBoolean(body.get("camarillaEnabled").toString()));
             if (body.containsKey("camarillaLotsPerLeg"))        riskSettings.setCamarillaLotsPerLeg(effectiveMode, Integer.parseInt(body.get("camarillaLotsPerLeg").toString()));

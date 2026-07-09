@@ -76,7 +76,7 @@
                   '<div class="sm-pane" data-pane="maintenance" style="display:none;">' +
                     '<div style="padding:18px;border:1px solid rgba(248,113,113,0.35);border-radius:8px;background:rgba(248,113,113,0.05);margin-bottom:14px;">' +
                       '<div style="font-family:var(--font-mono);font-size:0.92rem;font-weight:700;color:var(--accent-red, #f87171);margin-bottom:8px;">⚠ Clear Today\'s Records</div>' +
-                      '<div class="sm-hint" style="margin:0 0 14px;">Wipes today\'s closed-trade records (both ALGO and MANUAL), today\'s event-log entries, and the corresponding DB rows. <b>Open positions are preserved</b> — they keep running at the broker and the bot continues to manage their SL / squareoff. Useful after a test session before going live. <b>Irreversible.</b></div>' +
+                      '<div class="sm-hint" style="margin:0 0 14px;">Wipes today\'s closed-trade records, today\'s event-log entries, and the corresponding DB rows. <b>Open positions are preserved</b> — they keep running at the broker and the bot continues to manage their SL / squareoff. Useful after a test session before going live. <b>Irreversible.</b></div>' +
                       '<div id="sm-clear-today-status" style="font-family:var(--font-mono);font-size:0.78rem;margin-bottom:12px;"></div>' +
                       '<button class="sm-btn-primary" id="sm-clear-today-btn" onclick="SettingsModal.clearToday()" style="background:rgba(248,113,113,0.15);border-color:rgba(248,113,113,0.45);color:var(--accent-red, #f87171);">Clear Today\'s Records</button>' +
                     '</div>' +

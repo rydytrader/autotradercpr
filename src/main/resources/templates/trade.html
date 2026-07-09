@@ -124,7 +124,6 @@
         <div class="nav-right">
             <button class="theme-toggle" id="settingsBtn" title="Settings" onclick="SettingsModal.open()" style="font-size:1rem;">⚙</button>
             <button class="theme-toggle" id="chainBtn" title="Options Chain" onclick="OptionChainModal.open()" style="font-size:1rem;">⊞</button>
-            <button class="theme-toggle" id="manualTerminalBtn" title="Options Terminal" onclick="ManualTerminal.open()" style="font-size:1rem;color:var(--accent-purple, #8b5cf6);">▲</button>
             <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
             <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
         </div>
@@ -315,8 +314,8 @@
         </div>
     </div>
 
-    <!-- ── Row 1: NIFTY Momentum card (BankNifty was retired) ──────────── -->
-    <div id="chartRow" style="margin-top:18px;">
+    <!-- ── NIFTY Momentum + Event Log — side by side ────────────────────── -->
+    <div id="chartRow" style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px;">
         <div id="momentumCard" class="section-card fixed-card-log fade-in" style="margin:0;">
             <div class="section-header">
                 <div class="section-title">
@@ -341,10 +340,7 @@
                 </div>
             </div>
         </div>
-    </div>
 
-    <!-- ── Row 2: Event Log (full width, below momentum charts) ────────── -->
-    <div style="margin-top:18px;">
         <div class="section-card fixed-card-log fade-in" style="margin:0;">
             <div class="section-header">
                 <div class="section-title">
@@ -1461,6 +1457,5 @@
 <script src="/js/ticker.js?v=36"></script>
 <script src="/js/settings-modal.js?v=73"></script>
 <script src="/js/option-chain-modal.js?v=99"></script>
-<script src="/js/manual-terminal-modal.js?v=99"></script>
 </body>
 </html>
