@@ -213,13 +213,6 @@
             freeing the pending slot for a better next-bar candidate.
         </p>
         <p class="doc-p">
-            Position sizing is biased by the day's <strong>CPR classification</strong> — a single
-            label out of <code>NARROW+INSIDE / NARROW / NORMAL / WIDE / WIDE+OUTSIDE</code>.
-            <code>NARROW*</code> days favor breakouts (full lots) and downsize reversals to half
-            lots; <code>WIDE*</code> days do the reverse; <code>NORMAL</code> fires everything at
-            full lots. The bias can be disabled from the Risk pane.
-        </p>
-        <p class="doc-p">
             Risk management is layered: per-trade R:R floor, per-day loss cap with a 50 %-qty retry
             when a full-size fire would breach the cap, portfolio exposure projection, RSI momentum
             band, and a daily squareoff time.
@@ -289,10 +282,8 @@
         </p>
         <p class="doc-p">
             The <strong>TC / P / BC</strong> triple defines the day's <strong>Central Pivot Range
-            (CPR)</strong>. Its width (TC − BC) is fingerprinted daily against the last 100 sessions'
-            widths and collapsed to a single label — <strong>NARROW+INSIDE / NARROW / NORMAL /
-            WIDE / WIDE+OUTSIDE</strong> — that biases position sizing per setup. See the CPR
-            Classification section.
+            (CPR)</strong>. Width = <code>TC − BC</code> and its ratio to <code>P</code> gauge
+            the day's compression; the raw levels themselves are not traded — only H3 / H4 / L3 / L4.
         </p>
     </div>
 
@@ -457,7 +448,7 @@
             </div>
             <div class="phase-row">
                 <div class="phase-tag">Classify</div>
-                <div class="phase-desc"><strong>STRONG or WEAK</strong> — a confirmation candle is STRONG when BOTH conditions hold: (a) the close sits within the top/bottom 25 % of its own range (bullish: <code>(close − low) / (high − low) ≥ 0.75</code>) AND (b) the body ≥ 0.6 × the 5-min ATR (filters small doji-like bars). Either failing → WEAK. Both thresholds live in Risk settings.</div>
+                <div class="phase-desc"><strong>STRONG or WEAK</strong> — a confirmation candle is STRONG when ALL THREE conditions hold: (a) the close sits within the top/bottom 25 % of its own range (bullish: <code>(close − low) / (high − low) ≥ 0.75</code>), (b) the body ≥ <code>0.6 × 5-min ATR</code> (filters small doji-like bars), AND (c) at least <code>25 %</code> of the body sits PAST the setup's test level — <code>above H4</code> / <code>above L3</code> for bullish, <code>below L4</code> / <code>below H3</code> for bearish. Any one failing → WEAK. Zero-body doji bars fail (c) automatically. All three thresholds live in Risk settings (<em>Strong Candle · Close Position</em>, <em>Strong Candle · Body</em>, <em>Body Past Level</em>). Setting any of them to 0 disables that gate.</div>
             </div>
             <div class="phase-row">
                 <div class="phase-tag">Buffer</div>
@@ -518,8 +509,9 @@
         <p class="doc-p">
             When a trigger fires and all gates pass, the bot places a single SELL order on the
             pre-resolved OTM option leg for that setup. Position size = lots-per-leg × instrument
-            lot size (NIFTY 65), possibly halved by the CPR sizing bias or the risk
-            retry. No SL or target orders are placed on the option premium directly — both are
+            lot size (NIFTY 65), possibly halved by the portfolio-risk retry when a full-size
+            fire would breach the daily loss cap. No SL or target orders are placed on the
+            option premium directly — both are
             <strong>monitored against the spot futures</strong> and the bot exits via a market
             order when either threshold is crossed.
         </p>
@@ -531,51 +523,11 @@
         </ul>
     </div>
 
-    <!-- ── CPR Classification ── -->
-    <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:rgb(125,211,252);"></span> CPR Classification &amp; Sizing Bias</h2>
-        <p class="doc-p">
-            Every session's CPR (Central Pivot Range = TC / P / BC) collapses to a
-            <strong>single label</strong> that biases position sizing. Only WIDTH matters as the
-            primary signal (ranked against a 100-day percentile of prior CPR widths); the
-            relationship to yesterday's CPR (INSIDE / OUTSIDE) refines the label but doesn't add
-            a new bucket.
-        </p>
-        <h3 class="doc-h3" style="margin-top:22px;">The five classes</h3>
-        <div class="band-grid" style="margin-top:12px;">
-            <div class="band-row"><span class="left" style="color:var(--accent-green);">NARROW+INSIDE</span><span class="right">width in bottom 25 % of last 100 days AND today's CPR fully inside yesterday's — strongest compression breakout signal</span></div>
-            <div class="band-row"><span class="left" style="color:var(--accent-green);">NARROW</span><span class="right">width in bottom 25 % of last 100 days — compression breakout expected</span></div>
-            <div class="band-row"><span class="left" style="color:var(--text-muted);">NORMAL</span><span class="right">width in middle 50 % (25 &lt; pctl &lt; 75) — no directional bias</span></div>
-            <div class="band-row"><span class="left" style="color:#f87171;">WIDE</span><span class="right">width in top 25 % of last 100 days — rangebound reversal expected</span></div>
-            <div class="band-row"><span class="left" style="color:#f87171;">WIDE+OUTSIDE</span><span class="right">width in top 25 % AND today's CPR fully engulfs yesterday's — strongest expansion reversal signal</span></div>
-        </div>
-        <p class="doc-p" style="margin-top:14px;">
-            The percentile is volatility-adaptive — absolute thresholds move with the regime, so
-            NARROW on a low-vol week isn't the same absolute width as NARROW on a high-vol week.
-            The 100-day history is fetched once per day from Fyers (one <code>getHistory</code> call
-            per instrument) alongside today's Camarilla levels. Everything not matching one of the
-            NARROW*/WIDE* buckets collapses to NORMAL — including gap-up / gap-down trend days
-            that don't have a WIDE or NARROW width.
-        </p>
-        <h3 class="doc-h3" style="margin-top:22px;">Bias → HPT / LPT</h3>
-        <ul class="doc-list">
-            <li><strong>NARROW</strong> or <strong>NARROW+INSIDE</strong> → breakouts favored. H4_BREAKOUT / L4_BREAKDOWN fire at full lots (HPT). L3_REVERSAL / H3_REVERSAL fire at half lots (LPT).</li>
-            <li><strong>WIDE</strong> or <strong>WIDE+OUTSIDE</strong> → reversals favored. Reversals full (HPT). Breakouts half (LPT).</li>
-            <li><strong>NORMAL</strong> → no bias. All setups fire at full lots.</li>
-        </ul>
-        <p class="doc-p">
-            Half lots = <code>max(1, fullLots / 2)</code> — same pattern as the portfolio risk retry.
-            The entire bias can be disabled from Risk settings; when off, every setup fires at full
-            lots regardless of the day's CPR classification.
-        </p>
-    </div>
-
     <!-- ── Risk Management ── -->
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-red, #f87171);"></span> Risk Management</h2>
         <ul class="doc-list">
             <li><strong>Per-trade R:R floor</strong> — every fire computes reward (entry → target) and risk (entry → SL). If R:R &lt; <code>camarillaMinRRRatio</code> (default 2.0), the trade is rejected. The projected-R:R gate at confirmation time uses the same floor against the optimistic entry, dropping doomed candidates before they occupy a pending slot.</li>
-            <li><strong>CPR sizing bias</strong> — days classified as <code>NARROW</code> or <code>NARROW+INSIDE</code> favor breakouts (full lots) and downsize reversals to half lots; <code>WIDE</code> or <code>WIDE+OUTSIDE</code> days do the reverse. <code>NORMAL</code> fires everything at full lots. Disable via the <em>CPR Sizing Bias</em> checkbox in Risk settings.</li>
             <li><strong>Portfolio exposure cap</strong> — before every fire, the strategy projects the combined exposed risk (existing open positions + this new fire's <em>|entryFut − slFut| × ATM_DELTA × qty</em>) and rejects if it would breach <code>portfolioMaxDailyLoss</code>.</li>
             <li><strong>50 % qty retry</strong> — when the full-lot fire would breach the portfolio cap, the bot retries once at half lots (rounded to whole lots, min 1). If the halved size still doesn't fit, the trade is skipped. No third try — position size never fragments below half.</li>
             <li><strong>Realized-loss lockout</strong> — if today's <em>closed</em> losses exceed <code>portfolioMaxDailyLoss</code>, the strategy locks out for the rest of the session — no new fires on either instrument.</li>
