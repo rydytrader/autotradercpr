@@ -79,11 +79,6 @@ public class RiskSettingsStore {
          *  real energy. Setting to 0 disables this gate (classification then
          *  depends only on close position). */
         volatile double camarillaStrongCandleBodyAtrMult = 0.6;
-        /** Master toggle for CPR-classification lot sizing. When true (default)
-         *  the biasedLotsForCpr helper reduces LPT-side setups to half lots
-         *  based on today's WIDTH_CLASS + VALUE_CLASS. When false, every setup
-         *  fires at full lots regardless of CPR context. */
-        volatile boolean camarillaCprSizingEnabled = true;
         /** ATR-scaled buffer pulled OFF the target level toward the entry.
          *  Applied at classifyAndSeed time to fresh.targetLevel:
          *    Bullish setups (H4_BREAKOUT, L3_REVERSAL): target −= ATR × mult.
@@ -456,7 +451,6 @@ public class RiskSettingsStore {
     public double  getCamarillaTriggerAtrMult()             { return cfg().camarillaTriggerAtrMult; }
     public double  getCamarillaStrongCandleCloseThreshold() { return cfg().camarillaStrongCandleCloseThreshold; }
     public double  getCamarillaStrongCandleBodyAtrMult()    { return cfg().camarillaStrongCandleBodyAtrMult; }
-    public boolean isCamarillaCprSizingEnabled()            { return cfg().camarillaCprSizingEnabled; }
     public double  getCamarillaTargetBufferAtrMult()        { return cfg().camarillaTargetBufferAtrMult; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
@@ -662,9 +656,6 @@ public class RiskSettingsStore {
     public void setCamarillaStrongCandleBodyAtrMult(double v) {
         cfg().camarillaStrongCandleBodyAtrMult = Math.max(0, v);
     }
-    public void setCamarillaCprSizingEnabled(boolean v) {
-        cfg().camarillaCprSizingEnabled = v;
-    }
     public void setCamarillaTargetBufferAtrMult(double v) {
         cfg().camarillaTargetBufferAtrMult = Math.max(0, v);
     }
@@ -778,7 +769,6 @@ public class RiskSettingsStore {
     public double  getCamarillaTriggerAtrMult(String mode)             { return cfgFor(mode).camarillaTriggerAtrMult; }
     public double  getCamarillaStrongCandleCloseThreshold(String mode) { return cfgFor(mode).camarillaStrongCandleCloseThreshold; }
     public double  getCamarillaStrongCandleBodyAtrMult(String mode)    { return cfgFor(mode).camarillaStrongCandleBodyAtrMult; }
-    public boolean isCamarillaCprSizingEnabled(String mode)            { return cfgFor(mode).camarillaCprSizingEnabled; }
     public double  getCamarillaTargetBufferAtrMult(String mode)        { return cfgFor(mode).camarillaTargetBufferAtrMult; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
@@ -822,9 +812,6 @@ public class RiskSettingsStore {
     }
     public void setCamarillaStrongCandleBodyAtrMult(String mode, double v) {
         cfgFor(mode).camarillaStrongCandleBodyAtrMult = Math.max(0, v);
-    }
-    public void setCamarillaCprSizingEnabled(String mode, boolean v) {
-        cfgFor(mode).camarillaCprSizingEnabled = v;
     }
     public void setCamarillaTargetBufferAtrMult(String mode, double v) {
         cfgFor(mode).camarillaTargetBufferAtrMult = Math.max(0, v);
@@ -874,7 +861,6 @@ public class RiskSettingsStore {
             upsert("camarillaTriggerAtrMult", String.valueOf(c.camarillaTriggerAtrMult));
             upsert("camarillaStrongCandleCloseThreshold", String.valueOf(c.camarillaStrongCandleCloseThreshold));
             upsert("camarillaStrongCandleBodyAtrMult",    String.valueOf(c.camarillaStrongCandleBodyAtrMult));
-            upsert("camarillaCprSizingEnabled",           String.valueOf(c.camarillaCprSizingEnabled));
             upsert("camarillaTargetBufferAtrMult",        String.valueOf(c.camarillaTargetBufferAtrMult));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
@@ -1054,7 +1040,7 @@ public class RiskSettingsStore {
                     case "camarillaTriggerAtrMult"             -> c.camarillaTriggerAtrMult = Double.parseDouble(v);
                     case "camarillaStrongCandleCloseThreshold" -> c.camarillaStrongCandleCloseThreshold = Double.parseDouble(v);
                     case "camarillaStrongCandleBodyAtrMult"    -> c.camarillaStrongCandleBodyAtrMult = Double.parseDouble(v);
-                    case "camarillaCprSizingEnabled"           -> c.camarillaCprSizingEnabled = Boolean.parseBoolean(v);
+                    case "camarillaCprSizingEnabled"           -> { /* retired with the CPR sizing bias; silently consumed */ }
                     case "camarillaTargetBufferAtrMult"        -> c.camarillaTargetBufferAtrMult = Double.parseDouble(v);
                     // Retired keys silently consumed so legacy JSON files load without
                     // FAIL_ON_UNKNOWN_PROPERTIES errors. portfolioMaxDailyLoss is the

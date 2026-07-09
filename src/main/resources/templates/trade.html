@@ -393,12 +393,6 @@
                         style="background:transparent;border:none;color:var(--text-muted);font-size:1.2rem;cursor:pointer;line-height:1;">×</button>
             </div>
         </div>
-        <div id="levelsModalCprBar" style="display:none;padding:10px 22px;border-bottom:1px solid var(--border);font-family:var(--font-mono);font-size:0.72rem;">
-            <div style="display:flex;align-items:center;gap:8px;">
-                <span style="color:#fbbf24;letter-spacing:0.08em;font-weight:700;text-transform:uppercase;">NIFTY CPR</span>
-                <span id="levelsModalNiftyCprClass" style="color:var(--text-muted);font-weight:700;">—</span>
-            </div>
-        </div>
         <div style="padding:18px 22px;">
             <div style="display:grid;grid-template-columns:minmax(360px, 1fr) minmax(420px, 1.4fr);gap:24px;align-items:start;">
                 <div>
@@ -670,7 +664,6 @@
     function renderLevelsModal() {
         // Single pivot table with NIFTY value column per row.
         renderPivotBlock(document.getElementById('levelsModalPivots'), _latestPivots);
-        renderLevelsModalCprBar();
 
         var lgWrapDir = document.getElementById('levelsModalLegsDir');
         if (lgWrapDir) {
@@ -731,32 +724,6 @@
             lgWrapDir.style.gap           = '6px';
             lgWrapDir.innerHTML = niftyLegs.length ? (legsHeaderHtml() + niftyLegs.map(renderLegRow).join('')) : loadingHtml;
         }
-    }
-
-    /** Populate the CPR classification chip in the Levels modal header
-     *  from the latest captured pivots. Called on every modal render.
-     *  Hides the bar entirely until classification data lands. */
-    function renderLevelsModalCprBar() {
-        function colorFor(cls) {
-            if (!cls) return 'var(--text-muted)';
-            if (cls.indexOf('NARROW') === 0) return '#34d399';   // green — breakout day
-            if (cls.indexOf('WIDE')   === 0) return '#f87171';   // red — reversal day
-            return 'var(--text-muted)';                          // NORMAL
-        }
-        function setBadge(elId, cprClass, pctlForTitle) {
-            var el = document.getElementById(elId);
-            if (!el) return;
-            if (!cprClass) { el.textContent = '—'; el.style.color = 'var(--text-muted)'; el.title = ''; return; }
-            el.textContent = cprClass;
-            el.style.color = colorFor(cprClass);
-            el.title = (pctlForTitle != null && isFinite(pctlForTitle))
-                ? 'Width at ' + Math.round(pctlForTitle) + 'th percentile of last 100 days'
-                : '';
-        }
-        var nLv = _latestPivots || null;
-        var bar = document.getElementById('levelsModalCprBar');
-        if (bar) bar.style.display = (nLv && nLv.cprClass) ? '' : 'none';
-        setBadge('levelsModalNiftyCprClass', nLv && nLv.cprClass, nLv && nLv.cprWidthPercentile);
     }
 
     // ── Tick-level NIFTY / VIX / ATM updates via the shared ticker SSE ─────

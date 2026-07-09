@@ -61,22 +61,14 @@ public class CamarillaService {
     private final BalancedAtmSelector atmSelector;
     private final ObjectMapper        mapper = new ObjectMapper()
         .registerModule(new JavaTimeModule())
+        // Legacy disk cache entries may carry retired classification fields
+        // (widthClass/valueClass/cprClass/cprWidthPercentile) — accept and drop them.
+        .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
         .findAndRegisterModules();
 
     private final Map<String, CamarillaLevels> bySymbol = new ConcurrentHashMap<>();
     private final Map<String, AtomicBoolean>   refreshGates = new ConcurrentHashMap<>();
     private final AtomicBoolean warmUpInFlight = new AtomicBoolean(false);
-
-    // ── CPR classification state ──────────────────────────────────────────
-    // 100-day rolling CPR-width history per instrument, most-recent last.
-    // Refreshed once per day when fetchAndStore runs. Used for percentile
-    // rank of today's cprWidth (top 25 % → WIDE, bottom 25 % → NARROW).
-    private final Map<String, java.util.List<Double>> cprWidthHistoryBySymbol = new ConcurrentHashMap<>();
-    // Yesterday's [bc, tc] for INSIDE_VALUE / OUTSIDE_VALUE classification
-    // of today's CPR vs prior-session CPR.
-    private final Map<String, double[]> priorCprBySymbol = new ConcurrentHashMap<>();
-    // Day-key for lazy per-day refresh of the history above.
-    private final Map<String, LocalDate> historyDayBySymbol = new ConcurrentHashMap<>();
 
     public CamarillaService(FyersClientRouter fyersClient,
                             TokenStore tokenStore,
@@ -354,74 +346,8 @@ public class CamarillaService {
             priorOhlc[0], priorOhlc[1], priorOhlc[2]);
         log.info("[CamarillaService] {} levels from Fyers history ({}) — H={} L={} C={} → H3={} L3={}",
             symbol, priorDate, priorOhlc[0], priorOhlc[1], priorOhlc[2], fresh.h3(), fresh.l3());
-
-        // Historical widths: session-day i's CPR uses ohlc[i-1] as prior OHLC.
-        // The last iteration (i = ohlc.size()-1) gives us YESTERDAY's session
-        // width — the last "history" entry AND the prior [bc, tc] used for
-        // today's INSIDE/OUTSIDE_VALUE classification.
-        java.util.ArrayList<Double> widths = new java.util.ArrayList<>();
-        double lastBc = 0, lastTc = 0;
-        for (int i = 1; i < ohlc.size(); i++) {
-            double[] prior = ohlc.get(i - 1);
-            double pp = (prior[0] + prior[1] + prior[2]) / 3.0;
-            double bc = (prior[0] + prior[1]) / 2.0;
-            double tc = 2.0 * pp - bc;
-            widths.add(Math.abs(tc - bc));
-            lastBc = bc;
-            lastTc = tc;
-        }
-        while (widths.size() > 100) widths.remove(0);
-        cprWidthHistoryBySymbol.put(symbol, widths);
-        priorCprBySymbol.put(symbol, new double[]{lastBc, lastTc});
-        historyDayBySymbol.put(symbol, today);
-
-        // Classify today's cprWidth against the 100-day history + compare
-        // today's [bc, tc] vs yesterday's for the value class.
-        CamarillaLevels enriched = fresh;
-        if (!widths.isEmpty()) {
-            double percentile = percentileRank(fresh.cprWidth(), widths);
-            String widthClass = percentile >= 75.0 ? "WIDE"
-                             : percentile <= 25.0 ? "NARROW"
-                             : "NORMAL";
-            String valueClass = classifyValue(fresh.bc(), fresh.tc(), new double[]{lastBc, lastTc});
-            enriched = fresh.withClassification(percentile, widthClass, valueClass);
-            log.info("[CamarillaService] {} classification — cprWidth={} pctl={} → {} / {} (history={} days)",
-                symbol, round(fresh.cprWidth(), 2), round(percentile, 1),
-                widthClass, valueClass, widths.size());
-        } else {
-            log.warn("[CamarillaService] {} classification skipped — insufficient history", symbol);
-        }
-        bySymbol.put(symbol, enriched);
+        bySymbol.put(symbol, fresh);
         return true;
-    }
-
-    /** Rank {@code value} within {@code history} — percentage of historical
-     *  entries whose width is less than or equal to today's width. Returns
-     *  0-100. Empty history returns 50 (neutral). */
-    private static double percentileRank(double value, java.util.List<Double> history) {
-        if (history == null || history.isEmpty()) return 50.0;
-        int belowOrEqual = 0;
-        for (Double v : history) if (v != null && v <= value) belowOrEqual++;
-        return 100.0 * belowOrEqual / history.size();
-    }
-
-    /** Compare today's [bc, tc] against yesterday's. Only three relations
-     *  matter for the consolidated CPR classification — INSIDE_VALUE (breakout
-     *  signal), OUTSIDE_VALUE (reversal signal), OVERLAP (everything else,
-     *  including gap-up/gap-down trend days which collapse to NORMAL cprClass
-     *  when width is NORMAL). */
-    private static String classifyValue(double todayBc, double todayTc, double[] priorCpr) {
-        if (priorCpr == null || priorCpr.length < 2) return "OVERLAP";
-        double pBc = priorCpr[0], pTc = priorCpr[1];
-        if (pBc == 0 && pTc == 0) return "OVERLAP";
-        if (todayTc <= pTc && todayBc >= pBc)       return "INSIDE_VALUE";
-        if (todayTc >= pTc && todayBc <= pBc)       return "OUTSIDE_VALUE";
-        return "OVERLAP";
-    }
-
-    private static double round(double v, int decimals) {
-        double scale = Math.pow(10, decimals);
-        return Math.round(v * scale) / scale;
     }
 
     private static LocalDate todayIst() {
@@ -430,7 +356,6 @@ public class CamarillaService {
 
     // ── Disk cache ────────────────────────────────────────────────────────────
 
-    @SuppressWarnings("unchecked")
     private synchronized void loadFromDisk() {
         try {
             Path p = Path.of(STATE_FILE);

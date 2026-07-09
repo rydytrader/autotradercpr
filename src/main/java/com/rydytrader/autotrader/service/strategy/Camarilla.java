@@ -156,47 +156,6 @@ public class Camarilla implements Strategy {
             || s == ActiveSetup.H4_BREAKOUT;
     }
 
-    /** True for the breakout / breakdown setups (H4 breaks up, L4 breaks down).
-     *  Complement of "reversal" setups (L3 / H3). Drives CPR-classification
-     *  probability sizing — see {@link #biasedLotsForCpr}. */
-    private static boolean isBreakoutSetup(ActiveSetup s) {
-        return s == ActiveSetup.H4_BREAKOUT
-            || s == ActiveSetup.L4_BREAKDOWN;
-    }
-
-    /** Adjust {@code fullLots} for today's CPR classification. Two axes
-     *  (WIDTH class × VALUE class) collapse to a bias state:
-     *  <ul>
-     *    <li><b>NARROW_BIAS</b> — WIDTH = NARROW OR (WIDTH = NORMAL AND VALUE = INSIDE_VALUE).
-     *        Breakouts get HPT full lots; reversals get LPT half lots.</li>
-     *    <li><b>WIDE_BIAS</b> — WIDTH = WIDE OR (WIDTH = NORMAL AND VALUE = OUTSIDE_VALUE).
-     *        Reversals get HPT full lots; breakouts get LPT half lots.</li>
-     *    <li><b>NEUTRAL</b> — WIDTH = NORMAL AND VALUE = OVERLAP. All setups full.</li>
-     *  </ul>
-     *  Width axis wins any conflict — it's a 100-day-percentile signal,
-     *  more statistically robust than the single-day value comparison.
-     *  Fails safe to {@code fullLots} when classification isn't available. */
-    private int biasedLotsForCpr(int fullLots, InstrumentConfig ic, ActiveSetup setup) {
-        if (!riskSettings.isCamarillaCprSizingEnabled()) {
-            return fullLots;
-        }
-        CamarillaLevels lv = camarillaService.getLevels(ic.spotSymbol());
-        if (lv == null || lv.cprClass() == null) {
-            return fullLots;
-        }
-        String cprClass = lv.cprClass();
-        boolean narrowBucket = cprClass.startsWith("NARROW");   // "NARROW" or "NARROW+INSIDE"
-        boolean wideBucket   = cprClass.startsWith("WIDE");     // "WIDE" or "WIDE+OUTSIDE"
-        if (!narrowBucket && !wideBucket) return fullLots;      // NORMAL → no bias
-        boolean breakout = isBreakoutSetup(setup);
-        boolean isHpt = narrowBucket ? breakout : !breakout;
-        int lots = isHpt ? fullLots : Math.max(1, fullLots / 2);
-        event("[INFO]", "Sizing",
-            "[" + ic.name() + "] " + setup + " " + (isHpt ? "HPT" : "LPT")
-            + " (" + cprClass + ") — " + lots + " lots");
-        return lots;
-    }
-
     /** Composite key {@code "setup|symbol"} for {@code state.openPositions}.
      *  Allows a MANUAL Options-Scalper-Terminal position to coexist with a
      *  bot-managed directional fire on the same Fyers option symbol —
@@ -1526,11 +1485,7 @@ public class Camarilla implements Strategy {
 
         // ── Project exposed-risk after this entry; block if it would exceed maxRisk ──
         // Per-position futures-equivalent risk = |entryFut − slFut| × qty.
-        // CPR classification sizing bias — NARROW / INSIDE VALUE favors
-        // breakouts (full lots) and downsizes reversals; WIDE / OUTSIDE
-        // VALUE flips it. Runs BEFORE the risk retry below so the
-        // 50 %-qty fallback still has room to shrink further if needed.
-        int fullLots = biasedLotsForCpr(riskSettings.getCamarillaLotsPerLeg(), ic, setup);
+        int fullLots = riskSettings.getCamarillaLotsPerLeg();
         int qty = fullLots * ic.lotSize();
         // Project the proposed trade's option-premium loss at SL: spot SL distance
         // × ATM_DELTA (≈ 0.5) × qty. A raw 1:1 spot×qty projection would overstate
