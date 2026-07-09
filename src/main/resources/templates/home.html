@@ -175,14 +175,6 @@
                         title="Clear the year/month picker and go back to the period selection above."
                         style="display:none;">Clear</button>
             </div>
-            <div style="display:flex; align-items:center; gap:12px;">
-                <span class="ah-stat-label" style="font-weight:700;">Mode</span>
-                <div class="pill-row" id="sourcePills">
-                    <button class="scope-pill active" data-strategy="all"      title="Aggregate algo + manual trades.">All</button>
-                    <button class="scope-pill"        data-strategy="camarilla" title="Camarilla algorithm trades only.">Algo</button>
-                    <button class="scope-pill"        data-strategy="manual"   title="Manual scalper trades only.">Manual</button>
-                </div>
-            </div>
         </div>
     </div>
 
@@ -446,6 +438,8 @@
 
     // ── Selectors ────────────────────────────────────────────────────────────
     var currentPeriod   = 'today';
+    // Manual trading was retired; all rows are algo. Kept as a constant so
+    // the /api/analytics/* URL parameter format stays stable.
     var currentStrategy = 'all';
     var currentIncludeAdjustments = false;   // Options Terminal removed — always off
     var lastEquityRenderMs = 0;
@@ -470,14 +464,8 @@
         clearPicker(false);
         loadSummary(true);
     });
-    // Source pills — All / Algo / Manual. Sets currentStrategy which feeds the
-    // /api/analytics/* endpoints' strategyId filter. All=>aggregate, camarilla=>algo only,
-    // manual=>manual only. The DB strategyId column was populated when each trade closed
-    // (camarilla for algo trades, manual for Options Terminal trades).
-    bindPills('sourcePills', function(btn) {
-        currentStrategy = btn.getAttribute('data-strategy') || 'all';
-        loadSummary(true);
-    });
+    // Source-pill wiring removed with the ALGO / MANUAL toggle — every
+    // trade is now algo. currentStrategy stays at 'all' permanently.
 
     // ── Month/Year picker ────────────────────────────────────────────────────
     // Populate the year dropdown from current calendar year going back 5 years. Could be
