@@ -31,12 +31,11 @@ public class OptionChainController {
     private static final Logger log = LoggerFactory.getLogger(OptionChainController.class);
 
     private static final String DEFAULT_SYMBOL = "NSE:NIFTY50-INDEX";
-    private static final long   NIFTY_STRIKE_STEP     = 50;
-    private static final long   BANKNIFTY_STRIKE_STEP = 100;
+    private static final long   NIFTY_STRIKE_STEP = 50;
 
-    /** Strike interval for the given index spot symbol. NIFTY = 50, BANKNIFTY = 100. */
+    /** Strike interval for the given index spot symbol. NIFTY only after
+     *  BankNifty was retired. Kept as a lookup for signature stability. */
     private static long strikeStepFor(String symbol) {
-        if ("NSE:NIFTYBANK-INDEX".equals(symbol)) return BANKNIFTY_STRIKE_STEP;
         return NIFTY_STRIKE_STEP;
     }
 

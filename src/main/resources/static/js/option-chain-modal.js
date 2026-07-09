@@ -15,7 +15,6 @@
     var bodyEl     = null;
     var titleSubEl = null;
     var refreshBtn = null;
-    var symbolSelectEl = null;
     var refreshLockUntil = 0;
     // Currently-selected instrument. Persists across modal opens.
     var currentSymbol = 'NSE:NIFTY50-INDEX';
@@ -28,11 +27,7 @@
                 '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--border);gap:12px;">' +
                   '<div style="flex:1;min-width:0;">' +
                     '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
-                      '<div style="font-family:var(--font-mono);font-size:0.92rem;font-weight:700;color:var(--text-primary);">⊞ OPTIONS CHAIN</div>' +
-                      '<select id="oc-symbol" style="background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:4px;padding:3px 8px;font-family:var(--font-mono);font-size:0.72rem;font-weight:700;cursor:pointer;outline:none;">' +
-                        '<option value="NSE:NIFTY50-INDEX">NIFTY</option>' +
-                        '<option value="NSE:NIFTYBANK-INDEX">BANKNIFTY</option>' +
-                      '</select>' +
+                      '<div style="font-family:var(--font-mono);font-size:0.92rem;font-weight:700;color:var(--text-primary);">⊞ NIFTY OPTIONS CHAIN</div>' +
                       '<span class="oc-chip oc-chip-ce">CALLS ←</span>' +
                       '<span class="oc-chip oc-chip-pe">→ PUTS</span>' +
                     '</div>' +
@@ -47,24 +42,15 @@
         var wrap = document.createElement('div');
         wrap.innerHTML = html;
         document.body.appendChild(wrap.firstChild);
-        overlayEl      = document.getElementById('ocOverlay');
-        bodyEl         = document.getElementById('oc-body');
-        titleSubEl     = document.getElementById('oc-sub');
-        refreshBtn     = document.getElementById('oc-refresh');
-        symbolSelectEl = document.getElementById('oc-symbol');
+        overlayEl  = document.getElementById('ocOverlay');
+        bodyEl     = document.getElementById('oc-body');
+        titleSubEl = document.getElementById('oc-sub');
+        refreshBtn = document.getElementById('oc-refresh');
 
         refreshBtn.addEventListener('click', function() {
             var now = Date.now();
             if (now < refreshLockUntil) return;
             refreshLockUntil = now + 1500;
-            fetchAndRender();
-        });
-
-        // Symbol dropdown — switch the fetched instrument. Persists across
-        // modal opens via the currentSymbol closure variable.
-        symbolSelectEl.value = currentSymbol;
-        symbolSelectEl.addEventListener('change', function() {
-            currentSymbol = symbolSelectEl.value || 'NSE:NIFTY50-INDEX';
             fetchAndRender();
         });
 

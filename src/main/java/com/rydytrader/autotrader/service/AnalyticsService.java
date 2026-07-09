@@ -715,16 +715,15 @@ public class AnalyticsService {
         return s.isBlank() ? null : s;
     }
 
-    // ── BREAKDOWN: By Setup / AM vs PM / NIFTY vs BankNifty ─
+    // ── BREAKDOWN: By Setup / AM vs PM ─
 
-    /** Renders three side-by-side comparison cards. Each card returns
+    /** Renders two side-by-side comparison cards. Each card returns
      *  {@code { groupName: { trades, wins, losses, netPnl, winRate } }}. Filters out the
      *  synthetic OPEN_POSITION_MTM row everywhere. */
     private Map<String, Object> breakdowns(List<Trade> trades) {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("bySetup",        splitBySetup(trades));
-        out.put("amVsPm",         splitAmVsPm(trades));
-        out.put("niftyVsBankNifty", splitNiftyVsBankNifty(trades));
+        out.put("bySetup", splitBySetup(trades));
+        out.put("amVsPm",  splitAmVsPm(trades));
         return out;
     }
 
@@ -768,33 +767,6 @@ public class AnalyticsService {
             (mod < cutoffMinuteOfDay ? bins.get("Morning") : bins.get("Afternoon")).add(t);
         }
         return summariseBins(bins);
-    }
-
-    /** NIFTY vs BankNifty bucket = the trade's persisted {@code instrument} column. Legacy
-     *  rows that lack it fall back to parsing the leg {@link Trade#symbol()} prefix
-     *  ({@code NSE:BANKNIFTY...} → BankNifty, {@code NSE:NIFTY...} → NIFTY). Rows we can't
-     *  classify (no symbol, non-index symbols) are skipped. */
-    private Map<String, Map<String, Object>> splitNiftyVsBankNifty(List<Trade> trades) {
-        Map<String, List<Trade>> bins = new LinkedHashMap<>();
-        bins.put("NIFTY",     new ArrayList<>());
-        bins.put("BankNifty", new ArrayList<>());
-        for (Trade t : trades) {
-            if (!isClosedStraddle(t)) continue;
-            String ins = t.instrument();
-            if (ins == null || ins.isBlank()) ins = classifyInstrument(t.symbol());
-            if (ins == null) continue;
-            if ("BANKNIFTY".equals(ins))      bins.get("BankNifty").add(t);
-            else if ("NIFTY".equals(ins))     bins.get("NIFTY").add(t);
-        }
-        return summariseBins(bins);
-    }
-
-    private static String classifyInstrument(String symbol) {
-        if (symbol == null) return null;
-        String s = symbol.toUpperCase();
-        if (s.contains("BANKNIFTY") || s.contains("NIFTYBANK")) return "BANKNIFTY";
-        if (s.contains("NIFTY")) return "NIFTY";
-        return null;
     }
 
     private Map<String, Map<String, Object>> summariseBins(Map<String, List<Trade>> bins) {

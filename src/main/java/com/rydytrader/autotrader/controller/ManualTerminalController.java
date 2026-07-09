@@ -39,25 +39,21 @@ import java.util.*;
 public class ManualTerminalController {
 
     private static final Logger log = LoggerFactory.getLogger(ManualTerminalController.class);
-    private static final String NIFTY_SYMBOL     = "NSE:NIFTY50-INDEX";
-    private static final String BANKNIFTY_SYMBOL = "NSE:NIFTYBANK-INDEX";
+    private static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    private static final long   NIFTY_STRIKE_STEP     = 50;
-    private static final long   BANKNIFTY_STRIKE_STEP = 100;
-    private static final int    NIFTY_LOT_SIZE     = 65;
-    private static final int    BANKNIFTY_LOT_SIZE = 30;
+    private static final long   NIFTY_STRIKE_STEP = 50;
+    private static final int    NIFTY_LOT_SIZE    = 65;
 
-    /** Resolve strike step for the given index spot symbol. */
+    /** Resolve strike step for the given index spot symbol. NIFTY-only. */
     private static long strikeStepFor(String symbol) {
-        return BANKNIFTY_SYMBOL.equals(symbol) ? BANKNIFTY_STRIKE_STEP : NIFTY_STRIKE_STEP;
+        return NIFTY_STRIKE_STEP;
     }
-    /** Lot size for the given index spot symbol. */
+    /** Lot size for the given index spot symbol. NIFTY-only. */
     private static int lotSizeFor(String symbol) {
-        return BANKNIFTY_SYMBOL.equals(symbol) ? BANKNIFTY_LOT_SIZE : NIFTY_LOT_SIZE;
+        return NIFTY_LOT_SIZE;
     }
-    /** Normalise the caller's symbol param — blank / unknown → NIFTY. */
+    /** Normalise the caller's symbol param — always NIFTY now. */
     private static String resolveSymbol(String raw) {
-        if (BANKNIFTY_SYMBOL.equals(raw)) return BANKNIFTY_SYMBOL;
         return NIFTY_SYMBOL;
     }
 
@@ -233,10 +229,8 @@ public class ManualTerminalController {
         else return ResponseEntity.badRequest().body(Map.of(
             "success", false, "message", "side must be BUY or SELL"));
 
-        // Lot size is instrument-specific: 65 for NIFTY options,
-        // 30 for BANKNIFTY. Detect from the Fyers option symbol prefix.
-        int lotSize = symbol.startsWith("NSE:BANKNIFTY") ? BANKNIFTY_LOT_SIZE : NIFTY_LOT_SIZE;
-        int qty = Math.max(1, lots) * lotSize;
+        // NIFTY-only after BankNifty was retired — lot size is fixed at 65.
+        int qty = Math.max(1, lots) * NIFTY_LOT_SIZE;
 
         Camarilla.ManualPlaceResult r = strategy.placeManual(symbol, sideCode, qty, 2, 0, slPts, product);
         Map<String, Object> out = new LinkedHashMap<>();
@@ -294,9 +288,8 @@ public class ManualTerminalController {
         if (p == null) {
             return ResponseEntity.ok(errorMap("position not found"));
         }
-        // Lot size per position's underlying — 30 for BankNifty option contracts, 65 for NIFTY.
-        int lotSize = p.symbol != null && p.symbol.startsWith("NSE:BANKNIFTY") ? BANKNIFTY_LOT_SIZE : NIFTY_LOT_SIZE;
-        int qty = Math.abs(deltaLots) * lotSize;
+        // NIFTY-only after BankNifty was retired — lot size is fixed at 65.
+        int qty = Math.abs(deltaLots) * NIFTY_LOT_SIZE;
         int side;
         if (deltaLots > 0) {
             side = p.isShort ? -1 : +1;     // add same direction
@@ -383,7 +376,7 @@ public class ManualTerminalController {
             try { marketDataService.subscribeAdditional(toSub); } catch (Exception ignored) {}
         }
 
-        // Index ticker (NIFTY or BankNifty depending on the caller's symbol param).
+        // NIFTY index ticker (BankNifty was retired).
         double niftyLtp = 0, niftyChange = 0, niftyChangePct = 0;
         try {
             niftyLtp       = marketDataService.getDisplayLtp(indexSym);

@@ -64,15 +64,13 @@ public class Camarilla implements Strategy {
      *  day-modal, and Trade Log filter on this string so manual scalps stay distinguishable
      *  from algorithm trades while still aggregating into the same portfolio totals. */
     public  static final String MANUAL_STRATEGY_ID = "manual";
-    private static final String NIFTY_SYMBOL     = "NSE:NIFTY50-INDEX";
-    private static final String BANKNIFTY_SYMBOL = "NSE:NIFTYBANK-INDEX";
+    private static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
 
-    /** Per-instrument constants captured in one place so the strategy fires
-     *  can route via {@code InstrumentConfig.NIFTY} vs
-     *  {@code InstrumentConfig.BANKNIFTY} without threading disparate
-     *  parameters. Kept alongside the flat NIFTY_SYMBOL / STRIKE_STEP /
-     *  LOT_SIZE constants above rather than replacing them — legacy code
-     *  paths that reference the flat constants stay unchanged. */
+    /** Per-instrument constants captured in one place. Currently NIFTY-only
+     *  — BankNifty trading was retired in a later revision. The record type
+     *  is retained because the fire path and detection helpers thread
+     *  {@code InstrumentConfig ic} through their signatures; simplifying
+     *  those signatures further is a separate refactor. */
     public record InstrumentConfig(
         String name,
         String spotSymbol,
@@ -82,8 +80,6 @@ public class Camarilla implements Strategy {
     ) {
         public static final InstrumentConfig NIFTY = new InstrumentConfig(
             "NIFTY", NIFTY_SYMBOL, 65, 50L, "WEEKLY");
-        public static final InstrumentConfig BANKNIFTY = new InstrumentConfig(
-            "BANKNIFTY", BANKNIFTY_SYMBOL, 30, 100L, "MONTHLY");
     }
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final String STATE_FILE = "../store/cache/camarilla-state.json";
@@ -201,29 +197,10 @@ public class Camarilla implements Strategy {
         return lots;
     }
 
-    /** Last reason string reported to the event log for a BankNifty
-     *  session-leg deferral. Transient (not persisted). Comparing the
-     *  new reason against this dedupes the 30-second scheduled retry so
-     *  the operator gets a single event log line per state change instead
-     *  of one per retry cycle. Cleared on successful resolve. */
-    private volatile String bankNiftyLegsLastFailReason = null;
-
-    /** Emit a "BankNifty session legs deferred — <reason>" event log line
-     *  ONLY when the reason differs from the last one reported (dedupe
-     *  against the scheduled 30 s retry). Called from the two failure
-     *  paths in resolveBankNiftySessionLegs. */
-    private void reportBankNiftyLegsDeferral(String reason) {
-        if (reason == null) return;
-        if (reason.equals(bankNiftyLegsLastFailReason)) return;
-        bankNiftyLegsLastFailReason = reason;
-        event("[WARNING]", "Session", "BankNifty session legs deferred — " + reason);
-    }
-
     /** Boot-time "restored from state" logging dedupe. Set to true after
-     *  the short-circuit branch of the resolve methods emits its restored
+     *  the short-circuit branch of resolveSessionLegs emits its restored
      *  event so the scheduled 30 s retry doesn't re-emit it. Transient. */
-    private volatile boolean niftyLegsRestoreLogged     = false;
-    private volatile boolean bankNiftyLegsRestoreLogged = false;
+    private volatile boolean niftyLegsRestoreLogged = false;
 
     /** Composite key {@code "setup|symbol"} for {@code state.openPositions}.
      *  Allows a MANUAL Options-Scalper-Terminal position to coexist with a
@@ -258,8 +235,6 @@ public class Camarilla implements Strategy {
     private final ObjectProvider<CamarillaStreamBroker>   streamBrokerProvider;
     private final ObjectProvider<com.rydytrader.autotrader.service.NiftyRsiService> niftyRsiProvider;
     private final ObjectProvider<com.rydytrader.autotrader.service.NiftyAtrService> niftyAtrProvider;
-    private final ObjectProvider<com.rydytrader.autotrader.service.BankNiftyRsiService> bankNiftyRsiProvider;
-    private final ObjectProvider<com.rydytrader.autotrader.service.BankNiftyAtrService> bankNiftyAtrProvider;
     // Tolerate unknown fields on read so a state file written by a different
     // branch (e.g. a future v3 or v1's older shape) doesn't wipe today's
     // in-memory ring on boot. Without this guard Jackson throws
@@ -287,9 +262,7 @@ public class Camarilla implements Strategy {
                      ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
                      ObjectProvider<CamarillaStreamBroker> streamBrokerProvider,
                      ObjectProvider<com.rydytrader.autotrader.service.NiftyRsiService> niftyRsiProvider,
-                     ObjectProvider<com.rydytrader.autotrader.service.NiftyAtrService> niftyAtrProvider,
-                     ObjectProvider<com.rydytrader.autotrader.service.BankNiftyRsiService> bankNiftyRsiProvider,
-                     ObjectProvider<com.rydytrader.autotrader.service.BankNiftyAtrService> bankNiftyAtrProvider) {
+                     ObjectProvider<com.rydytrader.autotrader.service.NiftyAtrService> niftyAtrProvider) {
         this.camarillaService     = camarillaService;
         this.candleAggregator     = candleAggregator;
         this.atmTracker           = atmTracker;
@@ -302,8 +275,6 @@ public class Camarilla implements Strategy {
         this.streamBrokerProvider = streamBrokerProvider;
         this.niftyRsiProvider     = niftyRsiProvider;
         this.niftyAtrProvider     = niftyAtrProvider;
-        this.bankNiftyRsiProvider = bankNiftyRsiProvider;
-        this.bankNiftyAtrProvider = bankNiftyAtrProvider;
     }
 
     /** Push the latest dashboard state to every SSE-connected browser. No-op when no clients. */
@@ -334,26 +305,22 @@ public class Camarilla implements Strategy {
         // The ATM strike is computed live at fire time from the current spot LTP.
         final String triggerSym = NIFTY_SYMBOL;
         state.futuresSymbol = triggerSym;
-        state.bankNiftyFuturesSymbol = BANKNIFTY_SYMBOL;
         state.symbolRole.put(triggerSym, WatchRole.ATM_L4);
         candleAggregator.subscribe(triggerSym, c -> onCandleClose(triggerSym, c));
-        candleAggregator.subscribe(BANKNIFTY_SYMBOL, c -> onCandleClose(BANKNIFTY_SYMBOL, c));
-        try { marketDataService.subscribeAdditional(java.util.List.of(triggerSym, BANKNIFTY_SYMBOL)); }
+        try { marketDataService.subscribeAdditional(java.util.List.of(triggerSym)); }
         catch (Exception ignored) {}
-        log.info("[Camarilla] v2 boot — trigger feeds subscribed: {} + {}", triggerSym, BANKNIFTY_SYMBOL);
+        log.info("[Camarilla] v2 boot — trigger feed subscribed: {}", triggerSym);
 
         // AtmTracker listener — Camarilla no longer depends on AtmChange for
         // strike resolution (fire() looks up the pre-resolved session leg),
         // but keeping the registration is harmless and lets any future
         // AtmChange consumer hook in cleanly.
         atmTracker.setListener(this::onAtmChange);
-        // Best-effort attempt to resolve today's session-static OTM legs for
-        // both instruments. Fails silently when Camarilla levels or the
-        // option chain aren't warmed yet; the scheduled retry catches up.
+        // Best-effort attempt to resolve today's session-static OTM legs.
+        // Fails silently when Camarilla levels or the option chain aren't
+        // warmed yet; the scheduled retry catches up.
         try { resolveSessionLegs(); }
         catch (Exception e) { log.warn("[Camarilla] NIFTY session-legs boot resolve failed: {}", e.getMessage()); }
-        try { resolveBankNiftySessionLegs(); }
-        catch (Exception e) { log.warn("[Camarilla] BANKNIFTY session-legs boot resolve failed: {}", e.getMessage()); }
         log.info("[Camarilla] booted — enabled={}, lots={}, squareoff={}, restoredPositions={}",
             riskSettings.isCamarillaEnabled(), riskSettings.getCamarillaLotsPerLeg(),
             riskSettings.getCamarillaSquareOffTime(), state.openPositions.size());
@@ -583,25 +550,6 @@ public class Camarilla implements Strategy {
             if (p == null) continue;
             if (p.setup == ActiveSetup.MANUAL) continue;
             return true;
-        }
-        return false;
-    }
-
-    /** Instrument-scoped variant. Returns true only when an auto position
-     *  on the SAME instrument as {@code ic} is open. Used by Phase 4
-     *  detection so an open BankNifty trade doesn't block fresh NIFTY
-     *  confirmation seeding (and vice versa). Fyers option leg symbols
-     *  contain the underlying ticker (NIFTY / BANKNIFTY / NIFTYBANK), so
-     *  we can match by symbol prefix without adding a new instrument
-     *  field to Position. */
-    private boolean hasOpenAutoPositionFor(InstrumentConfig ic) {
-        boolean wantBankNifty = InstrumentConfig.BANKNIFTY.equals(ic);
-        for (Position p : state.openPositions.values()) {
-            if (p == null) continue;
-            if (p.setup == ActiveSetup.MANUAL) continue;
-            String sym = p.symbol == null ? "" : p.symbol.toUpperCase();
-            boolean positionIsBankNifty = sym.contains("BANKNIFTY") || sym.contains("NIFTYBANK");
-            if (positionIsBankNifty == wantBankNifty) return true;
         }
         return false;
     }
@@ -941,28 +889,6 @@ public class Camarilla implements Strategy {
             }
         }
 
-        // ── BankNifty leg ──
-        if ((state.bankNiftyPendingBullish != null || state.bankNiftyPendingBearish != null)
-            && state.bankNiftyFuturesSymbol != null && !state.bankNiftyFuturesSymbol.isBlank()) {
-            double spot;
-            try { spot = marketDataService.getLtp(BANKNIFTY_SYMBOL); }
-            catch (Exception e) { spot = 0; }
-            if (spot > 0) {
-                com.rydytrader.autotrader.service.BankNiftyAtrService atrSvc =
-                    bankNiftyAtrProvider == null ? null : bankNiftyAtrProvider.getIfAvailable();
-                Double atr = atrSvc == null ? null : atrSvc.currentAtr();
-                double atrVal = (atr != null && atr > 0) ? atr : 0;
-                double triggerDelta = atrVal * triggerAtrMult;
-                double slBuf        = atrVal * slAtrMult;
-                if (tryFireOnePending(state.bankNiftyFuturesSymbol, spot, triggerDelta, slBuf,
-                        state.bankNiftyPendingBullish, state.bankNiftyPendingBearish,
-                        InstrumentConfig.BANKNIFTY,
-                        p -> state.bankNiftyPendingBullish = p,
-                        p -> state.bankNiftyPendingBearish = p)) {
-                    saveToDisk();
-                }
-            }
-        }
     }
 
     /** Shared trigger logic for one instrument. Returns true when a fire
@@ -1018,14 +944,8 @@ public class Camarilla implements Strategy {
                                         String triggerSym,
                                         java.util.function.Consumer<PendingConfirmation> setBullish,
                                         java.util.function.Consumer<PendingConfirmation> setBearish) {
-        Double atr;
-        if (InstrumentConfig.BANKNIFTY.equals(ic)) {
-            var svc = bankNiftyAtrProvider == null ? null : bankNiftyAtrProvider.getIfAvailable();
-            atr = svc == null ? null : svc.currentAtr();
-        } else {
-            var svc = niftyAtrProvider == null ? null : niftyAtrProvider.getIfAvailable();
-            atr = svc == null ? null : svc.currentAtr();
-        }
+        var svc = niftyAtrProvider == null ? null : niftyAtrProvider.getIfAvailable();
+        Double atr = svc == null ? null : svc.currentAtr();
         double atrVal = (atr != null && atr > 0) ? atr : 0;
         double slBuf  = atrVal * Math.max(0, riskSettings.getCamarillaDirectionalSlBufferAtrMult());
 
@@ -1080,18 +1000,12 @@ public class Camarilla implements Strategy {
             if (state.dailyLossLockout) return;
             if (!canFireNewEntry()) return;
 
-            // Route by symbol to the correct instrument's pending slots. Both
-            // instruments run the same Phase 2/3/4 logic — expiry, invalidation,
-            // new-confirmation detection — but against their own pending fields.
+            // Only route NIFTY candles — the strategy is NIFTY-only after
+            // BankNifty was retired.
             String niftySym = state.futuresSymbol;
             if (niftySym != null && !niftySym.isBlank() && niftySym.equals(symbol)) {
                 CamarillaLevels lv = camarillaService.getLevels(niftySym);
                 if (lv != null) processNiftyBarPhases(c, lv);
-            }
-            String bnSym = state.bankNiftyFuturesSymbol;
-            if (bnSym != null && !bnSym.isBlank() && bnSym.equals(symbol)) {
-                CamarillaLevels lv = camarillaService.getLevels(bnSym);
-                if (lv != null) processBankNiftyBarPhases(c, lv);
             }
 
             saveToDisk();
@@ -1144,7 +1058,7 @@ public class Camarilla implements Strategy {
         //  - Fresh confirmation SAME direction as the current pending →
         //    ignore (do not overwrite). Preserves the existing behaviour
         //    where H4_BREAKOUT stays put when a follow-up L3_REVERSAL prints.
-        if (!firedOnClose && !hasOpenAutoPositionFor(InstrumentConfig.NIFTY)) {
+        if (!firedOnClose && !hasOpenAutoPosition()) {
             PendingConfirmation fresh = detectConfirmation(c, lv);
             if (fresh != null) {
                 boolean freshBullish = isBullishBet(fresh.setup);
@@ -1164,60 +1078,6 @@ public class Camarilla implements Strategy {
                 if (sameSlotEmpty && classifyAndSeed(fresh, c, InstrumentConfig.NIFTY)) {
                     if (freshBullish) state.pendingBullish = fresh;
                     else              state.pendingBearish = fresh;
-                }
-            }
-        }
-    }
-
-    /** BankNifty companion to {@link #processNiftyBarPhases}. Same three
-     *  phases against the bankNifty*Pending slots. */
-    private void processBankNiftyBarPhases(Candle c, CamarillaLevels lv) {
-        long maxPendingAgeMs = MAX_PENDING_BARS * BAR_LENGTH_MS;
-        if (state.bankNiftyPendingBullish != null
-            && c.startMillis() - state.bankNiftyPendingBullish.barStartMs >= maxPendingAgeMs) {
-            event("[INFO]", "Setup", "[BANKNIFTY] " + state.bankNiftyPendingBullish.setup + " expired (" + MAX_PENDING_BARS + " bars)");
-            state.bankNiftyPendingBullish = null;
-        }
-        if (state.bankNiftyPendingBearish != null
-            && c.startMillis() - state.bankNiftyPendingBearish.barStartMs >= maxPendingAgeMs) {
-            event("[INFO]", "Setup", "[BANKNIFTY] " + state.bankNiftyPendingBearish.setup + " expired (" + MAX_PENDING_BARS + " bars)");
-            state.bankNiftyPendingBearish = null;
-        }
-        if (state.bankNiftyPendingBullish != null && c.close() < state.bankNiftyPendingBullish.confirmLow) {
-            event("[INFO]", "Setup", "[BANKNIFTY] " + state.bankNiftyPendingBullish.setup + " nullified @ " + round2(c.close()));
-            state.bankNiftyPendingBullish = null;
-        }
-        if (state.bankNiftyPendingBearish != null && c.close() > state.bankNiftyPendingBearish.confirmHigh) {
-            event("[INFO]", "Setup", "[BANKNIFTY] " + state.bankNiftyPendingBearish.setup + " nullified @ " + round2(c.close()));
-            state.bankNiftyPendingBearish = null;
-        }
-        // Phase 3.5 — WEAK-confirmation candle-close trigger, BankNifty branch.
-        boolean firedOnClose = tryFireOnWeakClose(c, InstrumentConfig.BANKNIFTY,
-            state.bankNiftyPendingBullish, state.bankNiftyPendingBearish,
-            state.bankNiftyFuturesSymbol,
-            p -> state.bankNiftyPendingBullish = p,
-            p -> state.bankNiftyPendingBearish = p);
-        // Phase 4 with opposite-direction swap (see NIFTY branch for rules).
-        if (!firedOnClose && !hasOpenAutoPositionFor(InstrumentConfig.BANKNIFTY)) {
-            PendingConfirmation fresh = detectConfirmation(c, lv);
-            if (fresh != null) {
-                boolean freshBullish = isBullishBet(fresh.setup);
-                if (freshBullish && state.bankNiftyPendingBearish != null) {
-                    event("[INFO]", "Setup", "[BANKNIFTY] " + state.bankNiftyPendingBearish.setup
-                        + " superseded — fresh bullish " + fresh.setup + " confirmed");
-                    state.bankNiftyPendingBearish = null;
-                }
-                if (!freshBullish && state.bankNiftyPendingBullish != null) {
-                    event("[INFO]", "Setup", "[BANKNIFTY] " + state.bankNiftyPendingBullish.setup
-                        + " superseded — fresh bearish " + fresh.setup + " confirmed");
-                    state.bankNiftyPendingBullish = null;
-                }
-                boolean sameSlotEmpty = freshBullish
-                    ? state.bankNiftyPendingBullish == null
-                    : state.bankNiftyPendingBearish == null;
-                if (sameSlotEmpty && classifyAndSeed(fresh, c, InstrumentConfig.BANKNIFTY)) {
-                    if (freshBullish) state.bankNiftyPendingBullish = fresh;
-                    else              state.bankNiftyPendingBearish = fresh;
                 }
             }
         }
@@ -1349,81 +1209,6 @@ public class Camarilla implements Strategy {
         return true;
     }
 
-    /** BankNifty companion to {@link #resolveSessionLegs()}. Same
-     *  direction-aware OTM strike selection but reads the BankNifty
-     *  Camarilla levels and writes into the bankNifty*Symbol / *Strike /
-     *  *RefLtp state fields. Uses the InstrumentConfig.BANKNIFTY strike
-     *  step (100) and the BANKNIFTY spot symbol for the option chain fetch.
-     *  Fyers returns the nearest expiry when timestamp is empty — that's
-     *  BankNifty's monthly. */
-    private synchronized boolean resolveBankNiftySessionLegs() {
-        String today = LocalDate.now(IST).toString();
-        CamarillaLevels lv = camarillaService.getLevels(BANKNIFTY_SYMBOL);
-        boolean persistedStrikesAreOtmAware = lv != null && bankNiftyStrikesMatchOtmRule(lv);
-        if (today.equals(state.bankNiftySessionLegsDayKey)
-            && !state.bankNiftyH4bSymbol.isBlank() && !state.bankNiftyL3rSymbol.isBlank()
-            && !state.bankNiftyH3rSymbol.isBlank() && !state.bankNiftyL4bSymbol.isBlank()
-            && persistedStrikesAreOtmAware) {
-            ensureBankNiftySessionLegsSubscribed();
-            if (!bankNiftyLegsRestoreLogged) {
-                bankNiftyLegsRestoreLogged = true;
-                event("[INFO]", "Session", "BANKNIFTY session legs restored from state — H4B PE " + state.bankNiftyH4bStrike
-                    + " | L3R PE " + state.bankNiftyL3rStrike
-                    + " | H3R CE " + state.bankNiftyH3rStrike
-                    + " | L4B CE " + state.bankNiftyL4bStrike);
-            }
-            return true;
-        }
-        if (lv == null) {
-            // Transient at boot — Fyers getHistory hasn't returned yet.
-            // Not surfaced as an event log entry because the 30 s retry
-            // will pick it up as soon as the fetch completes, and either
-            // "restored from state" or "Leg Strikes Resolved" will fire
-            // on that pass. Only console-visible for debugging.
-            log.debug("[Camarilla] BankNifty session legs deferred — Camarilla levels not yet loaded");
-            return false;
-        }
-        long step = InstrumentConfig.BANKNIFTY.strikeStep();
-        // Same one-level-further OTM rule as NIFTY resolveSessionLegs().
-        var h4bRow = atmSelector.resolveOtmStrikeAtLevel(BANKNIFTY_SYMBOL, step, lv.h3(), "PE");
-        var l3rRow = atmSelector.resolveOtmStrikeAtLevel(BANKNIFTY_SYMBOL, step, lv.l4(), "PE");
-        var h3rRow = atmSelector.resolveOtmStrikeAtLevel(BANKNIFTY_SYMBOL, step, lv.h4(), "CE");
-        var l4bRow = atmSelector.resolveOtmStrikeAtLevel(BANKNIFTY_SYMBOL, step, lv.l3(), "CE");
-        if (h4bRow == null || l3rRow == null || h3rRow == null || l4bRow == null) {
-            String reason = "option chain row null — H4B(H3 PE)=" + (h4bRow == null ? "MISS" : "ok")
-                + ", L3R(L4 PE)=" + (l3rRow == null ? "MISS" : "ok")
-                + ", H3R(H4 CE)=" + (h3rRow == null ? "MISS" : "ok")
-                + ", L4B(L3 CE)=" + (l4bRow == null ? "MISS" : "ok");
-            reportBankNiftyLegsDeferral(reason);
-            log.warn("[Camarilla] BankNifty session legs deferred — {}", reason);
-            return false;
-        }
-        state.bankNiftyH4bSymbol = h4bRow.peSymbol(); state.bankNiftyH4bStrike = h4bRow.resolvedStrike(); state.bankNiftyH4bRefLtp = h4bRow.peLtp();
-        state.bankNiftyL3rSymbol = l3rRow.peSymbol(); state.bankNiftyL3rStrike = l3rRow.resolvedStrike(); state.bankNiftyL3rRefLtp = l3rRow.peLtp();
-        state.bankNiftyH3rSymbol = h3rRow.ceSymbol(); state.bankNiftyH3rStrike = h3rRow.resolvedStrike(); state.bankNiftyH3rRefLtp = h3rRow.ceLtp();
-        state.bankNiftyL4bSymbol = l4bRow.ceSymbol(); state.bankNiftyL4bStrike = l4bRow.resolvedStrike(); state.bankNiftyL4bRefLtp = l4bRow.ceLtp();
-        state.bankNiftySessionLegsDayKey = today;
-        ensureBankNiftySessionLegsSubscribed();
-        bankNiftyLegsLastFailReason = null;
-        event("[INFO]", "Session", "BANKNIFTY Leg Strikes Resolved — H4B PE " + state.bankNiftyH4bStrike
-            + " | L3R PE " + state.bankNiftyL3rStrike
-            + " | H3R CE " + state.bankNiftyH3rStrike
-            + " | L4B CE " + state.bankNiftyL4bStrike);
-        saveToDisk();
-        return true;
-    }
-
-    /** BankNifty companion to {@link #ensureSessionLegsSubscribed()}. */
-    private void ensureBankNiftySessionLegsSubscribed() {
-        java.util.List<String> legs = new java.util.ArrayList<>(4);
-        if (state.bankNiftyH4bSymbol != null && !state.bankNiftyH4bSymbol.isBlank()) legs.add(state.bankNiftyH4bSymbol);
-        if (state.bankNiftyL3rSymbol != null && !state.bankNiftyL3rSymbol.isBlank()) legs.add(state.bankNiftyL3rSymbol);
-        if (state.bankNiftyH3rSymbol != null && !state.bankNiftyH3rSymbol.isBlank()) legs.add(state.bankNiftyH3rSymbol);
-        if (state.bankNiftyL4bSymbol != null && !state.bankNiftyL4bSymbol.isBlank()) legs.add(state.bankNiftyL4bSymbol);
-        if (legs.isEmpty()) return;
-        try { marketDataService.subscribeAdditional(legs); }
-        catch (Exception ignored) {}
-    }
 
     /** Verify each persisted session-leg strike matches the current OTM-aware
      *  rule (floor for PE-sellers, ceil for CE-sellers). Used by
@@ -1446,22 +1231,6 @@ public class Camarilla implements Strategy {
             && state.l3rStrike == expL3R
             && state.h3rStrike == expH3R
             && state.l4bStrike == expL4B;
-    }
-
-    /** BankNifty companion to {@link #strikesMatchOtmRule(CamarillaLevels)}. Uses
-     *  the BankNifty strike step (100) and validates against the same
-     *  one-level-further OTM mapping. */
-    private boolean bankNiftyStrikesMatchOtmRule(CamarillaLevels lv) {
-        if (lv == null) return false;
-        long step = InstrumentConfig.BANKNIFTY.strikeStep();
-        long expH4B = (long) Math.floor(lv.h3() / step) * step;
-        long expL3R = (long) Math.floor(lv.l4() / step) * step;
-        long expH3R = (long) Math.ceil (lv.h4() / step) * step;
-        long expL4B = (long) Math.ceil (lv.l3() / step) * step;
-        return state.bankNiftyH4bStrike == expH4B
-            && state.bankNiftyL3rStrike == expL3R
-            && state.bankNiftyH3rStrike == expH3R
-            && state.bankNiftyL4bStrike == expL4B;
     }
 
     /** Pull last-quoted prices from Fyers {@code /data/quotes} via
@@ -1542,15 +1311,15 @@ public class Camarilla implements Strategy {
         return legSymbolFor(setup, InstrumentConfig.NIFTY);
     }
 
-    /** Per-instrument leg lookup. */
+    /** Per-instrument leg lookup. NIFTY-only after BankNifty retirement,
+     *  but the {@code ic} parameter is retained for signature stability. */
     private String legSymbolFor(ActiveSetup setup, InstrumentConfig ic) {
         if (setup == null) return "";
-        boolean bn = "BANKNIFTY".equals(ic.name());
         return switch (setup) {
-            case H4_BREAKOUT  -> bn ? state.bankNiftyH4bSymbol : state.h4bSymbol;
-            case L3_REVERSAL  -> bn ? state.bankNiftyL3rSymbol : state.l3rSymbol;
-            case H3_REVERSAL  -> bn ? state.bankNiftyH3rSymbol : state.h3rSymbol;
-            case L4_BREAKDOWN -> bn ? state.bankNiftyL4bSymbol : state.l4bSymbol;
+            case H4_BREAKOUT  -> state.h4bSymbol;
+            case L3_REVERSAL  -> state.l3rSymbol;
+            case H3_REVERSAL  -> state.h3rSymbol;
+            case L4_BREAKDOWN -> state.l4bSymbol;
             default            -> "";
         };
     }
@@ -1560,15 +1329,14 @@ public class Camarilla implements Strategy {
         return strikeFor(setup, InstrumentConfig.NIFTY);
     }
 
-    /** Per-instrument strike lookup. */
+    /** Per-instrument strike lookup. NIFTY-only after BankNifty retirement. */
     private long strikeFor(ActiveSetup setup, InstrumentConfig ic) {
         if (setup == null) return 0;
-        boolean bn = "BANKNIFTY".equals(ic.name());
         return switch (setup) {
-            case H4_BREAKOUT  -> bn ? state.bankNiftyH4bStrike : state.h4bStrike;
-            case L3_REVERSAL  -> bn ? state.bankNiftyL3rStrike : state.l3rStrike;
-            case H3_REVERSAL  -> bn ? state.bankNiftyH3rStrike : state.h3rStrike;
-            case L4_BREAKDOWN -> bn ? state.bankNiftyL4bStrike : state.l4bStrike;
+            case H4_BREAKOUT  -> state.h4bStrike;
+            case L3_REVERSAL  -> state.l3rStrike;
+            case H3_REVERSAL  -> state.h3rStrike;
+            case L4_BREAKDOWN -> state.l4bStrike;
             default            -> 0;
         };
     }
@@ -1580,8 +1348,6 @@ public class Camarilla implements Strategy {
     public void retrySessionLegsIfNeeded() {
         try { resolveSessionLegs(); }
         catch (Exception e) { log.warn("[Camarilla] NIFTY session-legs retry failed: {}", e.getMessage()); }
-        try { resolveBankNiftySessionLegs(); }
-        catch (Exception e) { log.warn("[Camarilla] BANKNIFTY session-legs retry failed: {}", e.getMessage()); }
     }
 
     private static PendingConfirmation mkConfirmation(ActiveSetup setup, Candle c, double target) {
@@ -1606,14 +1372,8 @@ public class Camarilla implements Strategy {
         boolean bullish = isBullishBet(fresh.setup);
 
         // ATR — needed for both R:R projection AND body-strength gate below.
-        Double atr;
-        if (InstrumentConfig.BANKNIFTY.equals(ic)) {
-            var svc = bankNiftyAtrProvider == null ? null : bankNiftyAtrProvider.getIfAvailable();
-            atr = svc == null ? null : svc.currentAtr();
-        } else {
-            var svc = niftyAtrProvider == null ? null : niftyAtrProvider.getIfAvailable();
-            atr = svc == null ? null : svc.currentAtr();
-        }
+        var atrSvc = niftyAtrProvider == null ? null : niftyAtrProvider.getIfAvailable();
+        Double atr = atrSvc == null ? null : atrSvc.currentAtr();
         double atrVal = (atr != null && atr > 0) ? atr : 0;
 
         // Target buffer — pull the target IN toward the entry by ATR × mult.
@@ -1830,13 +1590,8 @@ public class Camarilla implements Strategy {
         if (riskSettings.isCamarillaMomentumCheckEnabled()) {
             try {
                 Double v = null;
-                if ("BANKNIFTY".equals(ic.name())) {
-                    var rsi = bankNiftyRsiProvider == null ? null : bankNiftyRsiProvider.getIfAvailable();
-                    if (rsi != null) v = rsi.currentRsi();
-                } else {
-                    var rsi = niftyRsiProvider == null ? null : niftyRsiProvider.getIfAvailable();
-                    if (rsi != null) v = rsi.currentRsi();
-                }
+                var rsi = niftyRsiProvider == null ? null : niftyRsiProvider.getIfAvailable();
+                if (rsi != null) v = rsi.currentRsi();
                 if (v != null) {
                     double r = v;
                     boolean ok = switch (setup) {
@@ -2789,15 +2544,6 @@ public class Camarilla implements Strategy {
                        state.h3rStrike, state.h3rSymbol, "CE", state.h3rRefLtp);
         addSetupLegRow(setupLegs, "NIFTY", ActiveSetup.L4_BREAKDOWN, "BEARISH", "L4",
                        state.l4bStrike, state.l4bSymbol, "CE", state.l4bRefLtp);
-        // BANKNIFTY legs — same setup enum values; UI groups by instrument tag.
-        addSetupLegRow(setupLegs, "BANKNIFTY", ActiveSetup.H4_BREAKOUT,  "BULLISH", "H4",
-                       state.bankNiftyH4bStrike, state.bankNiftyH4bSymbol, "PE", state.bankNiftyH4bRefLtp);
-        addSetupLegRow(setupLegs, "BANKNIFTY", ActiveSetup.L3_REVERSAL,  "BULLISH", "L3",
-                       state.bankNiftyL3rStrike, state.bankNiftyL3rSymbol, "PE", state.bankNiftyL3rRefLtp);
-        addSetupLegRow(setupLegs, "BANKNIFTY", ActiveSetup.H3_REVERSAL,  "BEARISH", "H3",
-                       state.bankNiftyH3rStrike, state.bankNiftyH3rSymbol, "CE", state.bankNiftyH3rRefLtp);
-        addSetupLegRow(setupLegs, "BANKNIFTY", ActiveSetup.L4_BREAKDOWN, "BEARISH", "L4",
-                       state.bankNiftyL4bStrike, state.bankNiftyL4bSymbol, "CE", state.bankNiftyL4bRefLtp);
         m.put("setupLegs", setupLegs);
         m.put("watchlistSize",     state.symbolRole.size());
         m.put("watchlistRoles",    new LinkedHashMap<>(state.symbolRole));
@@ -2893,13 +2639,6 @@ public class Camarilla implements Strategy {
             CamarillaLevels lv = camarillaService.getLevels(futSym);
             if (lv != null) perSymbolLevels.put(futSym, lv);
         }
-        // Emit BankNifty levels alongside NIFTY so the Levels modal can
-        // render both instruments in the 2×2 UI (Commit KKKK).
-        String bnSym = state.bankNiftyFuturesSymbol;
-        if (bnSym != null && !bnSym.isBlank()) {
-            CamarillaLevels bnLv = camarillaService.getLevels(bnSym);
-            if (bnLv != null) perSymbolLevels.put(bnSym, bnLv);
-        }
         m.put("perSymbolLevels", perSymbolLevels);
 
         // Risk block — same shape as equities Positions page badges.
@@ -2927,16 +2666,6 @@ public class Camarilla implements Strategy {
                 : niftyAtrProvider.getIfAvailable();
             Double atr = atrSvc == null ? null : atrSvc.currentAtr();
             if (atr != null) m.put("niftyAtr5m", atr);
-        } catch (Exception ignored) {}
-        try {
-            com.rydytrader.autotrader.service.BankNiftyAtrService bnAtrSvc = bankNiftyAtrProvider == null ? null
-                : bankNiftyAtrProvider.getIfAvailable();
-            Double bnAtr = bnAtrSvc == null ? null : bnAtrSvc.currentAtr();
-            if (bnAtr != null) m.put("bankNiftyAtr5m", bnAtr);
-        } catch (Exception ignored) {}
-        try {
-            double bnLtp = marketDataService.getLtp(BANKNIFTY_SYMBOL);
-            if (bnLtp > 0) m.put("bankNiftyLtp", round2(bnLtp));
         } catch (Exception ignored) {}
         return m;
     }
@@ -2999,24 +2728,6 @@ public class Camarilla implements Strategy {
         /** YYYY-MM-DD on which the four legs above were resolved. When this
          *  doesn't match today, the scheduled retry refreshes them. */
         public String sessionLegsDayKey = "";
-
-        // ── BankNifty parallel state (safe additive layout) ─────────────────
-        // Rather than restructuring the top-level NIFTY fields into a nested
-        // InstrumentState (which would require a state-file migration and
-        // touch every read/write in the strategy), the BankNifty layer lives
-        // alongside as parallel-named fields. Each field mirrors its NIFTY
-        // twin; the strategy routes to the correct set based on the incoming
-        // symbol at fire time. Existing NIFTY state files load unchanged;
-        // BankNifty fields default to empty and populate on first
-        // resolveBankNiftySessionLegs() call.
-        public String bankNiftyFuturesSymbol = "";
-        public String bankNiftyH4bSymbol = "";  public long bankNiftyH4bStrike;  public double bankNiftyH4bRefLtp;
-        public String bankNiftyL3rSymbol = "";  public long bankNiftyL3rStrike;  public double bankNiftyL3rRefLtp;
-        public String bankNiftyH3rSymbol = "";  public long bankNiftyH3rStrike;  public double bankNiftyH3rRefLtp;
-        public String bankNiftyL4bSymbol = "";  public long bankNiftyL4bStrike;  public double bankNiftyL4bRefLtp;
-        public String bankNiftySessionLegsDayKey = "";
-        public PendingConfirmation bankNiftyPendingBullish;
-        public PendingConfirmation bankNiftyPendingBearish;
     }
 
     /** v2 two-candle entry — a bar that met the confirmation geometry of one of the

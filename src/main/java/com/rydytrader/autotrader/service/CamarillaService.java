@@ -53,8 +53,7 @@ public class CamarillaService {
     /** NIFTY spot index symbol — used as the v2 trigger feed for setup detection.
      *  Camarilla levels for this symbol need to be ready before the first 5-min
      *  spot bar of the new session closes. Pre-fetched on boot and at 08:00 IST. */
-    private static final String NIFTY_SPOT_SYMBOL     = "NSE:NIFTY50-INDEX";
-    private static final String BANKNIFTY_SPOT_SYMBOL = "NSE:NIFTYBANK-INDEX";
+    private static final String NIFTY_SPOT_SYMBOL = "NSE:NIFTY50-INDEX";
 
     private final FyersClientRouter   fyersClient;
     private final TokenStore          tokenStore;
@@ -97,36 +96,30 @@ public class CamarillaService {
             if (e.getValue() != null && e.getValue().sessionDate().equals(todayIst())) kept++;
         }
         log.info("[CamarillaService] booted — {} cached level entries valid for today", kept);
-        // v2 cleanup — drop any legacy option-strike entries that leaked in
-        // from v1's warmUpAroundAtm fan-out fetch. Only the two index-spot
-        // symbols are meaningful in v2 (NIFTY + BANKNIFTY); the rest are
-        // dead weight on disk + memory.
+        // v2 cleanup — drop any entries that aren't the NIFTY spot symbol.
+        // Legacy option-strike entries (from v1's warmUpAroundAtm) and any
+        // retired BankNifty index entry both get purged here.
         int dropped = 0;
         for (String sym : new java.util.ArrayList<>(bySymbol.keySet())) {
-            if (!NIFTY_SPOT_SYMBOL.equals(sym) && !BANKNIFTY_SPOT_SYMBOL.equals(sym)) {
+            if (!NIFTY_SPOT_SYMBOL.equals(sym)) {
                 bySymbol.remove(sym);
                 dropped++;
             }
         }
         if (dropped > 0) {
-            log.info("[CamarillaService] cleaned {} legacy option-strike entries from cache", dropped);
+            log.info("[CamarillaService] cleaned {} legacy / retired entries from cache", dropped);
             try { saveToDisk(); } catch (Exception ignored) {}
         }
-        // Invalidate any cached spot entries at boot so the bhavcopy-preferred
-        // refresh path always runs. Without this, an entry cached from a previous
-        // boot (which used Fyers history) would short-circuit the bhavcopy fetch
-        // for today's session and we'd never see the higher-fidelity OHLC.
+        // Invalidate any cached NIFTY entry at boot so the fresh Fyers refresh
+        // always runs — a stale entry from a previous boot would otherwise
+        // short-circuit today's fetch.
         if (bySymbol.remove(NIFTY_SPOT_SYMBOL) != null) {
             log.info("[CamarillaService] invalidated cached NIFTY entry at boot to force fresh Fyers refresh");
         }
-        if (bySymbol.remove(BANKNIFTY_SPOT_SYMBOL) != null) {
-            log.info("[CamarillaService] invalidated cached BANKNIFTY entry at boot to force fresh Fyers refresh");
-        }
-        // Fetch both instrument spot levels at boot so the setup detector and
-        // trend tooltip are armed before the first 5-min bar closes. Runs
-        // async so boot isn't blocked on Fyers REST.
+        // Fetch NIFTY spot levels at boot so the setup detector is armed
+        // before the first 5-min bar closes. Runs async so boot isn't
+        // blocked on Fyers REST.
         triggerAsyncRefresh(NIFTY_SPOT_SYMBOL);
-        triggerAsyncRefresh(BANKNIFTY_SPOT_SYMBOL);
     }
 
     /** Cron daily at 08:00 IST — well before AtmTracker's 09:30 resolve. Prior-day daily
@@ -135,9 +128,8 @@ public class CamarillaService {
      *  trigger bar at 09:35 can evaluate immediately. */
     @Scheduled(cron = "0 0 8 * * MON-FRI", zone = "Asia/Kolkata")
     public void scheduledRefresh() {
-        log.info("[CamarillaService] daily refresh fired — priming NIFTY + BANKNIFTY spot levels for today");
+        log.info("[CamarillaService] daily refresh fired — priming NIFTY spot levels for today");
         triggerAsyncRefresh(NIFTY_SPOT_SYMBOL);
-        triggerAsyncRefresh(BANKNIFTY_SPOT_SYMBOL);
     }
 
     /** Returns cached levels for {@code symbol}, possibly null if not yet warmed. On miss,
@@ -263,11 +255,10 @@ public class CamarillaService {
         CamarillaLevels cached = bySymbol.get(symbol);
         if (cached != null && today.equals(cached.sessionDate())) return true;
 
-        // ── Indexed spots: single Fyers 150-day getHistory call gives us
+        // ── NIFTY spot: single Fyers 150-day getHistory call gives us
         // both today's Camarilla levels AND the 100-day CPR-width history
-        // for classification, in one shot. Same source for both →
-        // apples-to-apples percentile ranking.
-        if (NIFTY_SPOT_SYMBOL.equals(symbol) || BANKNIFTY_SPOT_SYMBOL.equals(symbol)) {
+        // for classification, in one shot.
+        if (NIFTY_SPOT_SYMBOL.equals(symbol)) {
             return fetchIndexLevelsAndClassify(symbol, today);
         }
 
@@ -320,7 +311,7 @@ public class CamarillaService {
      *  calendar days gives us today's Camarilla levels (from yesterday's OHLC,
      *  the last row in the response) AND the 100-day CPR-width history for
      *  percentile classification, all from the same data source. Used for
-     *  {@link #NIFTY_SPOT_SYMBOL} and {@link #BANKNIFTY_SPOT_SYMBOL} only. */
+     *  {@link #NIFTY_SPOT_SYMBOL} only. */
     private boolean fetchIndexLevelsAndClassify(String symbol, LocalDate today) {
         if (!tokenStore.isTokenAvailable()) return false;
         LocalDate from = today.minusDays(150);

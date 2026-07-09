@@ -23,14 +23,11 @@
     var tickCache       = {};
     var tickerListener  = null;
     var sseAttachTimer  = null;
-    var NIFTY_INDEX_SYM     = 'NSE:NIFTY50-INDEX';
-    var BANKNIFTY_INDEX_SYM = 'NSE:NIFTYBANK-INDEX';
-    // Currently-selected index (NIFTY or BANKNIFTY). Persists across
-    // modal opens; drives strike-chain fetch, LTP banner, and lot size.
+    var NIFTY_INDEX_SYM = 'NSE:NIFTY50-INDEX';
+    // NIFTY-only after BankNifty was retired. Kept as a variable for
+    // signature stability with callers below.
     var currentIndexSym = NIFTY_INDEX_SYM;
-    function currentIndexLabel() {
-        return currentIndexSym === BANKNIFTY_INDEX_SYM ? 'BANKNIFTY' : 'NIFTY';
-    }
+    function currentIndexLabel() { return 'NIFTY'; }
 
     function ensureBuilt() {
         if (overlayEl) return overlayEl;
@@ -118,10 +115,7 @@
     function buildControlsHtml() {
         return '<div style="display:grid;grid-template-columns:repeat(6,1fr) auto;gap:12px 16px;align-items:end;margin-bottom:18px;">' +
             '<div><label style="display:block;color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:5px;">Index</label>' +
-              '<select id="mtIndex" class="mt-select">' +
-                '<option value="NSE:NIFTY50-INDEX">NIFTY</option>' +
-                '<option value="NSE:NIFTYBANK-INDEX">BANKNIFTY</option>' +
-              '</select></div>' +
+              '<div style="padding:8px 12px;border-radius:6px;border:1px solid var(--border);background-color:var(--bg-card);color:var(--text-primary);font-family:var(--font-mono);font-size:0.78rem;">NIFTY</div></div>' +
             '<div><label style="display:block;color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:5px;">Call Strike</label>' +
               '<select id="mtCeStrike" class="mt-select"></select></div>' +
             '<div><label style="display:block;color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;text-transform:uppercase;margin-bottom:5px;">Put Strike</label>' +
@@ -223,23 +217,8 @@
 
     // ── Control wiring ────────────────────────────────────────────────────────
     function wireControls() {
-        // Index dropdown — swap between NIFTY and BankNifty. Refetches the
-        // option chain for the new index and updates the LTP banner label.
-        var indexSel = document.getElementById('mtIndex');
-        if (indexSel) {
-            indexSel.value = currentIndexSym;
-            indexSel.addEventListener('change', function() {
-                currentIndexSym = indexSel.value || NIFTY_INDEX_SYM;
-                // Update the LTP banner header to match.
-                var lbl = document.getElementById('mtNiftyLabel');
-                if (lbl) lbl.textContent = currentIndexLabel();
-                // Refetch strikes for the new index. Clear chainCache so the
-                // stale strike list doesn't linger.
-                chainCache = null;
-                refreshStrikes('');
-                pollOnce();
-            });
-        }
+        // Index selection is NIFTY-only after BankNifty was retired — no
+        // dropdown to wire; currentIndexSym is fixed.
         document.getElementById('mtExpiry').addEventListener('change', function() {
             // (Single-expiry resolution today; placeholder for future weekly switch.)
             refreshSelectedSymbolLtps();

@@ -200,9 +200,8 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot"></span> Overview</h2>
         <p class="doc-p">
-            The bot trades <strong>NIFTY weekly options</strong> and <strong>BankNifty monthly options</strong>
-            on the Indian market, running the same four Camarilla setups against each instrument in parallel
-            with independent state, pivots, RSI and ATR. Every trade is a <strong>premium-selling</strong>
+            The bot trades <strong>NIFTY weekly options</strong> on the Indian market, running four
+            Camarilla setups against the spot index. Every trade is a <strong>premium-selling</strong>
             position — the bot sells out-of-the-money (OTM) calls or puts depending on the directional
             bias of the setup, profiting from time decay and the underlying staying within an expected range.
         </p>
@@ -455,7 +454,7 @@
         <div style="margin-top:8px;">
             <div class="phase-row">
                 <div class="phase-tag">Detect</div>
-                <div class="phase-desc"><strong>Confirmation candle</strong> — the current bar's geometry matches one of the four setups (wicked through the level AND closed back across it). Independent per instrument (NIFTY spot uses NIFTY levels; BankNifty spot uses BankNifty levels).</div>
+                <div class="phase-desc"><strong>Confirmation candle</strong> — the current bar's geometry matches one of the four setups (wicked through the level AND closed back across it).</div>
             </div>
             <div class="phase-row">
                 <div class="phase-tag">Classify</div>
@@ -520,7 +519,7 @@
         <p class="doc-p">
             When a trigger fires and all gates pass, the bot places a single SELL order on the
             pre-resolved OTM option leg for that setup. Position size = lots-per-leg × instrument
-            lot size (NIFTY 65, BankNifty 30), possibly halved by the CPR sizing bias or the risk
+            lot size (NIFTY 65), possibly halved by the CPR sizing bias or the risk
             retry. No SL or target orders are placed on the option premium directly — both are
             <strong>monitored against the spot futures</strong> and the bot exits via a market
             order when either threshold is crossed.
@@ -578,7 +577,7 @@
         <ul class="doc-list">
             <li><strong>Per-trade R:R floor</strong> — every fire computes reward (entry → target) and risk (entry → SL). If R:R &lt; <code>camarillaMinRRRatio</code> (default 2.0), the trade is rejected. The projected-R:R gate at confirmation time uses the same floor against the optimistic entry, dropping doomed candidates before they occupy a pending slot.</li>
             <li><strong>CPR sizing bias</strong> — days classified as <code>NARROW</code> or <code>NARROW+INSIDE</code> favor breakouts (full lots) and downsize reversals to half lots; <code>WIDE</code> or <code>WIDE+OUTSIDE</code> days do the reverse. <code>NORMAL</code> fires everything at full lots. Disable via the <em>CPR Sizing Bias</em> checkbox in Risk settings.</li>
-            <li><strong>Portfolio exposure cap</strong> — before every fire, the strategy projects the combined exposed risk (existing open positions + this new fire's <em>|entryFut − slFut| × ATM_DELTA × qty</em>) and rejects if it would breach <code>portfolioMaxDailyLoss</code>. Shared across both instruments — a BankNifty fire consumes headroom from the same pool NIFTY uses.</li>
+            <li><strong>Portfolio exposure cap</strong> — before every fire, the strategy projects the combined exposed risk (existing open positions + this new fire's <em>|entryFut − slFut| × ATM_DELTA × qty</em>) and rejects if it would breach <code>portfolioMaxDailyLoss</code>.</li>
             <li><strong>50 % qty retry</strong> — when the full-lot fire would breach the portfolio cap, the bot retries once at half lots (rounded to whole lots, min 1). If the halved size still doesn't fit, the trade is skipped. No third try — position size never fragments below half.</li>
             <li><strong>Realized-loss lockout</strong> — if today's <em>closed</em> losses exceed <code>portfolioMaxDailyLoss</code>, the strategy locks out for the rest of the session — no new fires on either instrument.</li>
             <li><strong>RSI momentum gate</strong> — see the RSI Momentum Gate section above. Setup-specific bands rule out late-entry breakouts at exhaustion and reversals against strong trends.</li>
@@ -622,7 +621,7 @@
 <script src="/js/ticker.js?v=36"></script>
 <script src="/js/option-chain-modal.js?v=20"></script>
 <script src="/js/manual-terminal-modal.js?v=22"></script>
-<script src="/js/settings-modal.js?v=72"></script>
+<script src="/js/settings-modal.js?v=73"></script>
 <script>
     // Footer year
     document.getElementById('footerYear').textContent = new Date().getFullYear();

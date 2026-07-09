@@ -257,17 +257,11 @@
                      market-stats cluster from the title. -->
                 <span style="border-left:1px solid var(--border); height:18px; display:inline-block;"></span>
                 <div style="display:flex; gap:14px; align-items:center; font-family:var(--font-mono); font-size:0.72rem; font-weight:normal; flex-wrap:wrap;">
-                    <!-- NIFTY cluster: LTP + change + 5m ATR. Amber label
-                         distinguishes it from BANKNIFTY (purple) below.
+                    <!-- NIFTY cluster: LTP + change + 5m ATR. Amber label.
                          Legacy 'Fut' IDs retained for back-compat with the JS. -->
                     <span style="color:#fbbf24;">NIFTY <span id="hdrFut" style="color:var(--text-primary);font-weight:700;cursor:help;">—</span>
                         <span id="hdrFutChg" style="margin-left:4px;font-weight:600;"></span></span>
                     <span style="color:var(--text-muted);" title="NIFTY 14-period ATR on 5-min spot bars">ATR<sub style="font-size:0.62em;">5m</sub> <span id="hdrNiftyAtr5m" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                    <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
-                    <!-- BANKNIFTY cluster: LTP + change + 5m ATR -->
-                    <span style="color:rgb(196,181,253);">BANKNIFTY <span id="hdrBankNifty" style="color:var(--text-primary);font-weight:700;cursor:help;">—</span>
-                        <span id="hdrBankNiftyChg" style="margin-left:4px;font-weight:600;"></span></span>
-                    <span style="color:var(--text-muted);" title="BANKNIFTY 14-period ATR on 5-min spot bars">ATR<sub style="font-size:0.62em;">5m</sub> <span id="hdrBankNiftyAtr5m" style="color:var(--text-primary);font-weight:700;">—</span></span>
                     <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
                     <!-- VIX -->
                     <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
@@ -321,9 +315,8 @@
         </div>
     </div>
 
-    <!-- ── Row 1: Two Momentum cards side by side (NIFTY | BANKNIFTY) ──── -->
-    <div id="chartRow" style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px;">
-        <!-- NIFTY momentum card -->
+    <!-- ── Row 1: NIFTY Momentum card (BankNifty was retired) ──────────── -->
+    <div id="chartRow" style="margin-top:18px;">
         <div id="momentumCard" class="section-card fixed-card-log fade-in" style="margin:0;">
             <div class="section-header">
                 <div class="section-title">
@@ -345,32 +338,6 @@
             <div style="padding:14px 18px;height:100%;display:flex;flex-direction:column;">
                 <div style="position:relative;flex:1;width:100%;min-height:260px;">
                     <canvas id="niftyRsiChart"></canvas>
-                </div>
-            </div>
-        </div>
-
-        <!-- BANKNIFTY momentum card -->
-        <div id="bankNiftyMomentumCard" class="section-card fixed-card-log fade-in" style="margin:0;">
-            <div class="section-header">
-                <div class="section-title">
-                    <div class="section-title-dot" style="background: rgb(196,181,253)"></div>
-                    BANKNIFTY Momentum
-                </div>
-                <div style="display:flex;align-items:center;gap:14px;margin-left:auto;font-family:var(--font-mono);font-size:0.72rem;">
-                    <span style="color:var(--text-muted);">RSI <span id="hdrBankNiftyRsi"
-                          style="color:var(--text-primary);font-weight:700;">—</span></span>
-                    <span id="hdrBankNiftyRsiMomentum"
-                          style="padding:2px 10px;border-radius:999px;font-weight:700;font-size:0.62rem;letter-spacing:0.05em;
-                                 background:rgba(148,163,184,0.10);color:var(--text-secondary);border:1px solid rgba(148,163,184,0.30);">—</span>
-                    <button onclick="if(window.BankNiftyRsiChart) BankNiftyRsiChart.refresh()" title="Refresh"
-                            style="background:rgba(196,181,253,0.10);border:1px solid rgba(196,181,253,0.30);color:rgb(196,181,253);
-                                   padding:4px 10px;border-radius:6px;font-family:var(--font-mono);font-size:0.66rem;font-weight:700;
-                                   letter-spacing:0.05em;cursor:pointer;">⟳</button>
-                </div>
-            </div>
-            <div style="padding:14px 18px;height:100%;display:flex;flex-direction:column;">
-                <div style="position:relative;flex:1;width:100%;min-height:260px;">
-                    <canvas id="bankNiftyRsiChart"></canvas>
                 </div>
             </div>
         </div>
@@ -431,22 +398,12 @@
             </div>
         </div>
         <div id="levelsModalCprBar" style="display:none;padding:10px 22px;border-bottom:1px solid var(--border);font-family:var(--font-mono);font-size:0.72rem;">
-            <div style="display:flex;align-items:center;gap:18px;flex-wrap:wrap;">
-                <span style="display:flex;align-items:center;gap:8px;">
-                    <span style="color:#fbbf24;letter-spacing:0.08em;font-weight:700;text-transform:uppercase;">NIFTY CPR</span>
-                    <span id="levelsModalNiftyCprClass" style="color:var(--text-muted);font-weight:700;">—</span>
-                </span>
-                <span style="border-left:1px solid var(--border);height:14px;"></span>
-                <span style="display:flex;align-items:center;gap:8px;">
-                    <span style="color:rgb(196,181,253);letter-spacing:0.08em;font-weight:700;text-transform:uppercase;">BANKNIFTY CPR</span>
-                    <span id="levelsModalBankNiftyCprClass" style="color:var(--text-muted);font-weight:700;">—</span>
-                </span>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span style="color:#fbbf24;letter-spacing:0.08em;font-weight:700;text-transform:uppercase;">NIFTY CPR</span>
+                <span id="levelsModalNiftyCprClass" style="color:var(--text-muted);font-weight:700;">—</span>
             </div>
         </div>
         <div style="padding:18px 22px;">
-            <!-- LEFT  — single pivot table with NIFTY + BANKNIFTY value columns
-                        side-by-side (like the retired daily/weekly layout).
-                 RIGHT — NIFTY legs on top, BANKNIFTY legs stacked directly below. -->
             <div style="display:grid;grid-template-columns:minmax(360px, 1fr) minmax(420px, 1.4fr);gap:24px;align-items:start;">
                 <div>
                     <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;">Camarilla pivots</div>
@@ -458,10 +415,6 @@
                 <div>
                     <div style="font-family:var(--font-mono);font-size:0.66rem;color:#fbbf24;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;">NIFTY directional legs</div>
                     <div id="levelsModalLegsDir">
-                        <div style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.72rem;">resolving…</div>
-                    </div>
-                    <div style="font-family:var(--font-mono);font-size:0.66rem;color:rgb(196,181,253);letter-spacing:0.08em;text-transform:uppercase;margin:14px 0 6px 0;">BANKNIFTY directional legs</div>
-                    <div id="levelsModalLegsDirBankNifty">
                         <div style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.72rem;">resolving…</div>
                     </div>
                 </div>
@@ -590,19 +543,12 @@
 
     function renderHeader(d) {
         // Initial / fallback render from the camarilla state stream (2 s heartbeat).
-        // VIX still rides the per-tick ticker SSE. Both NIFTY and BANKNIFTY ATR
-        // + BankNifty LTP come off dashboardState.
+        // VIX still rides the per-tick ticker SSE. NIFTY ATR comes off dashboardState.
         var vxEl  = document.getElementById('hdrVix');
         if (vxEl)  vxEl.textContent  = d.indiaVix  != null ? Number(d.indiaVix).toFixed(2)  : '—';
         var atrEl = document.getElementById('hdrNiftyAtr5m');
         if (atrEl) atrEl.textContent = (d.niftyAtr5m != null && isFinite(Number(d.niftyAtr5m)))
             ? Number(d.niftyAtr5m).toFixed(2) : '—';
-        var bnAtrEl = document.getElementById('hdrBankNiftyAtr5m');
-        if (bnAtrEl) bnAtrEl.textContent = (d.bankNiftyAtr5m != null && isFinite(Number(d.bankNiftyAtr5m)))
-            ? Number(d.bankNiftyAtr5m).toFixed(2) : '—';
-        var bnEl = document.getElementById('hdrBankNifty');
-        if (bnEl) bnEl.textContent = (d.bankNiftyLtp != null && isFinite(Number(d.bankNiftyLtp)))
-            ? Number(d.bankNiftyLtp).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '—';
         captureLevelsState(d);
     }
 
@@ -610,16 +556,12 @@
     //    Opens via the "◎ Levels" button next to the kill switch. Both the
     //    pivots block and the legs block are refreshed whenever a fresh state
     //    payload lands AND the modal is currently visible. ────────────────────
-    var _latestSetupLegs        = [];
-    var _latestPivots           = null;
-    var _latestBankNiftyPivots  = null;
+    var _latestSetupLegs = [];
+    var _latestPivots    = null;
     function captureLevelsState(d) {
         _latestSetupLegs = d.setupLegs || [];
         if (d.atmVwap && d.perSymbolLevels) {
             _latestPivots = d.perSymbolLevels[d.atmVwap.futSymbol] || null;
-        }
-        if (d.perSymbolLevels) {
-            _latestBankNiftyPivots = d.perSymbolLevels['NSE:NIFTYBANK-INDEX'] || null;
         }
         // If the modal is open, refresh its body immediately so the operator
         // sees live LTP/VWAP movement without closing + reopening.
@@ -677,12 +619,10 @@
             } catch (e) {}
         });
     }
-    // Render a single pivot table with two value columns (NIFTY + BANKNIFTY)
-    // side-by-side per row. Matches the visual pattern of the retired daily/
-    // weekly display so the operator can compare levels at a glance.
-    function renderPivotBlock(wrapEl, niftyPivots, bnPivots) {
+    // Render the NIFTY pivot table.
+    function renderPivotBlock(wrapEl, niftyPivots) {
         if (!wrapEl) return;
-        if (!niftyPivots && !bnPivots) {
+        if (!niftyPivots) {
             wrapEl.innerHTML = '<div style="color:var(--text-muted);">resolving…</div>';
             return;
         }
@@ -708,50 +648,40 @@
             + '<span style="min-width:28px;"></span>'
             + '<span style="flex:1;"></span>'
             + '<span style="font-family:var(--font-mono);font-size:0.6rem;color:#fbbf24;letter-spacing:0.08em;text-transform:uppercase;font-weight:700;min-width:88px;text-align:right;">NIFTY</span>'
-            + '<span style="font-family:var(--font-mono);font-size:0.6rem;color:rgb(196,181,253);letter-spacing:0.08em;text-transform:uppercase;font-weight:700;min-width:96px;text-align:right;">BANKNIFTY</span>'
             + '</div>';
         var rowsHtml = rows.map(function(r) {
             if (r === 'P') {
                 // CPR pivot = (priorHigh + priorLow + priorClose) / 3 — the
-                // actual Central Pivot, midpoint of the TC / BC band. The
-                // record's `pp` field carries this value; do NOT read
-                // priorClose (that's yesterday's closing price, not the pivot).
+                // actual Central Pivot, midpoint of the TC / BC band.
                 var pN = val(niftyPivots, 'pp');
-                var pB = val(bnPivots, 'pp');
                 return '<div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:rgba(125,211,252,0.06);border-left:3px solid var(--accent-cyan);border-radius:4px;">'
                      + '<span style="font-family:var(--font-mono);font-size:0.78rem;font-weight:700;color:var(--accent-cyan);min-width:28px;">P</span>'
                      + '<span style="flex:1;font-family:var(--font-mono);font-size:0.62rem;color:var(--text-muted);letter-spacing:0.04em;text-transform:uppercase;">pivot</span>'
                      + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:#fbbf24;min-width:88px;text-align:right;">' + fmtNum(pN) + '</span>'
-                     + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:rgb(196,181,253);min-width:96px;text-align:right;">' + fmtNum(pB) + '</span>'
                      + '</div>';
             }
             var label = r[0], key = r[1], col = r[2], meaning = r[3];
             var vN = val(niftyPivots, key);
-            var vB = val(bnPivots, key);
             return '<div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:rgba(255,255,255,0.015);border-left:3px solid ' + col + ';border-radius:4px;">'
                  + '<span style="font-family:var(--font-mono);font-size:0.78rem;font-weight:700;color:' + col + ';min-width:28px;">' + label + '</span>'
                  + '<span style="flex:1;font-family:var(--font-mono);font-size:0.62rem;color:var(--text-muted);letter-spacing:0.04em;text-transform:uppercase;">' + meaning + '</span>'
                  + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:#fbbf24;min-width:88px;text-align:right;">' + fmtNum(vN) + '</span>'
-                 + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:rgb(196,181,253);min-width:96px;text-align:right;">' + fmtNum(vB) + '</span>'
                  + '</div>';
         }).join('');
         wrapEl.innerHTML = headerHtml + rowsHtml;
     }
 
     function renderLevelsModal() {
-        // Single pivot table with NIFTY + BankNifty value columns per row.
-        renderPivotBlock(document.getElementById('levelsModalPivots'),
-                         _latestPivots, _latestBankNiftyPivots);
+        // Single pivot table with NIFTY value column per row.
+        renderPivotBlock(document.getElementById('levelsModalPivots'), _latestPivots);
         renderLevelsModalCprBar();
 
-        var lgWrapDir           = document.getElementById('levelsModalLegsDir');
-        var lgWrapDirBankNifty  = document.getElementById('levelsModalLegsDirBankNifty');
-        if (lgWrapDir || lgWrapDirBankNifty) {
+        var lgWrapDir = document.getElementById('levelsModalLegsDir');
+        if (lgWrapDir) {
             var legs = _latestSetupLegs;
             var loadingHtml = '<div style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.72rem;">resolving…</div>';
             if (!legs || !legs.length) {
-                if (lgWrapDir)          lgWrapDir.innerHTML          = loadingHtml;
-                if (lgWrapDirBankNifty) lgWrapDirBankNifty.innerHTML = loadingHtml;
+                lgWrapDir.innerHTML = loadingHtml;
                 return;
             }
             var fmtNum2 = function(v) {
@@ -799,29 +729,17 @@
                     + '<span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;font-weight:700;min-width:78px;text-align:right;">LTP</span>'
                     + '</div>';
             }
-            // Partition rows by instrument tag emitted by the backend.
-            var niftyLegs     = legs.filter(function(L){ return (L.instrument || 'NIFTY') === 'NIFTY'; });
-            var bankNiftyLegs = legs.filter(function(L){ return L.instrument === 'BANKNIFTY'; });
-
-            if (lgWrapDir) {
-                lgWrapDir.style.display       = 'flex';
-                lgWrapDir.style.flexDirection = 'column';
-                lgWrapDir.style.gap           = '6px';
-                lgWrapDir.innerHTML = niftyLegs.length ? (legsHeaderHtml() + niftyLegs.map(renderLegRow).join('')) : loadingHtml;
-            }
-            if (lgWrapDirBankNifty) {
-                lgWrapDirBankNifty.style.display       = 'flex';
-                lgWrapDirBankNifty.style.flexDirection = 'column';
-                lgWrapDirBankNifty.style.gap           = '6px';
-                lgWrapDirBankNifty.innerHTML = bankNiftyLegs.length ? (legsHeaderHtml() + bankNiftyLegs.map(renderLegRow).join('')) : loadingHtml;
-            }
+            var niftyLegs = legs.filter(function(L){ return (L.instrument || 'NIFTY') === 'NIFTY'; });
+            lgWrapDir.style.display       = 'flex';
+            lgWrapDir.style.flexDirection = 'column';
+            lgWrapDir.style.gap           = '6px';
+            lgWrapDir.innerHTML = niftyLegs.length ? (legsHeaderHtml() + niftyLegs.map(renderLegRow).join('')) : loadingHtml;
         }
     }
 
-    /** Populate the CPR width/value bar in the Levels modal header from
-     *  the latest captured pivots. Called on every modal render. Hides
-     *  the bar entirely if neither instrument has classification data
-     *  (fresh boot before the 100-day history has loaded). */
+    /** Populate the CPR classification chip in the Levels modal header
+     *  from the latest captured pivots. Called on every modal render.
+     *  Hides the bar entirely until classification data lands. */
     function renderLevelsModalCprBar() {
         function colorFor(cls) {
             if (!cls) return 'var(--text-muted)';
@@ -840,12 +758,9 @@
                 : '';
         }
         var nLv = _latestPivots || null;
-        var bLv = _latestBankNiftyPivots || null;
-        var anyClass = (nLv && nLv.cprClass) || (bLv && bLv.cprClass);
         var bar = document.getElementById('levelsModalCprBar');
-        if (bar) bar.style.display = anyClass ? '' : 'none';
-        setBadge('levelsModalNiftyCprClass',     nLv && nLv.cprClass, nLv && nLv.cprWidthPercentile);
-        setBadge('levelsModalBankNiftyCprClass', bLv && bLv.cprClass, bLv && bLv.cprWidthPercentile);
+        if (bar) bar.style.display = (nLv && nLv.cprClass) ? '' : 'none';
+        setBadge('levelsModalNiftyCprClass', nLv && nLv.cprClass, nLv && nLv.cprWidthPercentile);
     }
 
     // ── Tick-level NIFTY / VIX / ATM updates via the shared ticker SSE ─────
@@ -860,9 +775,6 @@
     }
     function setVixHeader(lp, ch, chp) {
         setTickerHeader('hdrVix', 'hdrVixChg', lp, ch, chp);
-    }
-    function setBankNiftyHeader(lp, ch, chp) {
-        setTickerHeader('hdrBankNifty', 'hdrBankNiftyChg', lp, ch, chp);
     }
     // Shared: writes LTP + change into the given pair of DOM elements. Blank
     // cells when LTP is 0 or when both change values are 0 (pre-market before
@@ -897,8 +809,6 @@
                     var shrt = t.symbol || '';
                     if (full === 'NSE:INDIAVIX-INDEX' || shrt === 'India VIX' || shrt === 'INDIA VIX') {
                         setVixHeader(t.lp, t.ch, t.chp);
-                    } else if (full === 'NSE:NIFTYBANK-INDEX' || shrt === 'BANKNIFTY' || shrt === 'Nifty Bank') {
-                        setBankNiftyHeader(t.lp, t.ch, t.chp);
                     }
                 }
             } catch (e) {}
@@ -1337,7 +1247,6 @@
         checkConnection();
         setInterval(checkConnection, 5000);
         NiftyRsiChart.init();
-        if (window.BankNiftyRsiChart) BankNiftyRsiChart.init();
         loadWelcome();
     });
 </script>
@@ -1545,128 +1454,13 @@
         }
     };
 
-    // ── BANKNIFTY RSI(14) chart ─────────────────────────────────────────
-    // Near-verbatim mirror of NiftyRsiChart — same session grid, same
-    // reference-line construction, same SSE tip flow. Only the endpoint
-    // and DOM ids differ. Kept as a separate window global so both
-    // charts refresh independently without cross-contaminating state.
-    let bnRsiChart = null;
-    window.BankNiftyRsiChart = {
-        init() {
-            this.refresh();
-            if (window.EventSource) {
-                try {
-                    var self = this;
-                    var es = new EventSource('/api/banknifty-rsi/stream');
-                    es.addEventListener('tip', function(evt) {
-                        try { self._applyTip(JSON.parse(evt.data)); } catch (e) {}
-                    });
-                    es.onerror = function() {};
-                } catch (e) {
-                    setInterval(() => this.refresh(), 5000);
-                }
-            } else {
-                setInterval(() => this.refresh(), 5000);
-            }
-        },
-        _applyTip(d) {
-            if (!bnRsiChart || !d) return;
-            var labels = NiftyRsiChart._grid || (function(){
-                var g = []; for (var mins = 9*60+15; mins <= 15*60+25; mins += 5) {
-                    var h = Math.floor(mins/60), m = mins - h*60;
-                    g.push((h<10?'0':'')+h+':'+(m<10?'0':'')+m);
-                } return g;
-            })();
-            var dataArr = bnRsiChart.data.datasets[0].data;
-            var mutated = false;
-            if (d.tip && d.tip.t && d.tip.rsi != null) {
-                var tipIdx = labels.indexOf(d.tip.t);
-                if (tipIdx >= 0) { dataArr[tipIdx] = Number(d.tip.rsi); mutated = true; }
-            }
-            if (d.lastClosed && d.lastClosed.t && d.lastClosed.rsi != null) {
-                var lcIdx = labels.indexOf(d.lastClosed.t);
-                if (lcIdx >= 0) { dataArr[lcIdx] = Number(d.lastClosed.rsi); mutated = true; }
-            }
-            if (mutated) bnRsiChart.update('none');
-            var hdr = (d.tip && d.tip.rsi != null) ? d.tip.rsi
-                    : (d.lastClosed && d.lastClosed.rsi != null) ? d.lastClosed.rsi
-                    : null;
-            if (hdr != null) {
-                var lr = Number(hdr);
-                var m  = rsiMomentum(lr);
-                var chip = $('hdrBankNiftyRsi'); var pill = $('hdrBankNiftyRsiMomentum');
-                if (chip) { chip.textContent = lr.toFixed(2); chip.style.color = m.valueColor; }
-                if (pill) { pill.textContent = m.label; pill.style.background = m.bg; pill.style.color = m.fg; pill.style.borderColor = m.bd; }
-            }
-        },
-        refresh() {
-            fetch('/api/banknifty-rsi/history').then(r => r.ok ? r.json() : null).then(d => {
-                if (!d) return;
-                var samples = d.samples || [];
-                var labels = [];
-                for (var mins = 9*60+15; mins <= 15*60+25; mins += 5) {
-                    var h = Math.floor(mins/60), m = mins - h*60;
-                    labels.push((h<10?'0':'')+h+':'+(m<10?'0':'')+m);
-                }
-                var n = labels.length;
-                var bucketIdx = {};
-                for (var i = 0; i < n; i++) bucketIdx[labels[i]] = i;
-                var rsiData = new Array(n).fill(null);
-                for (var j = 0; j < samples.length; j++) {
-                    var idx = bucketIdx[samples[j].t];
-                    if (idx != null) rsiData[idx] = samples[j].rsi;
-                }
-                var line60 = new Array(n).fill(60);
-                var line50 = new Array(n).fill(50);
-                var line40 = new Array(n).fill(40);
-                var chip = $('hdrBankNiftyRsi');
-                var pill = $('hdrBankNiftyRsiMomentum');
-                var lr = (d.lastRsi != null && isFinite(d.lastRsi)) ? Number(d.lastRsi) : NaN;
-                var m  = rsiMomentum(lr);
-                if (chip) { chip.textContent = isFinite(lr) ? lr.toFixed(2) : '—'; chip.style.color = m.valueColor; }
-                if (pill) { pill.textContent = m.label; pill.style.background = m.bg; pill.style.color = m.fg; pill.style.borderColor = m.bd; }
-                if (!bnRsiChart) {
-                    var ctx = $('bankNiftyRsiChart').getContext('2d');
-                    bnRsiChart = new Chart(ctx, {
-                        type: 'line',
-                        data: {
-                            labels: labels,
-                            datasets: [
-                                { label: 'RSI(14)', data: rsiData, borderColor: 'rgb(196,181,253)', backgroundColor: 'rgba(196,181,253,0.10)', tension: 0.25, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2 },
-                                { label: '60',      data: line60,  borderColor: '#34d399', borderDash: [4,4], borderWidth: 1, pointRadius: 0, pointHoverRadius: 0, fill: false, tension: 0 },
-                                { label: '50',      data: line50,  borderColor: '#9ca3af', borderDash: [4,4], borderWidth: 1, pointRadius: 0, pointHoverRadius: 0, fill: false, tension: 0 },
-                                { label: '40',      data: line40,  borderColor: '#f87171', borderDash: [4,4], borderWidth: 1, pointRadius: 0, pointHoverRadius: 0, fill: false, tension: 0 }
-                            ]
-                        },
-                        options: {
-                            responsive: true, maintainAspectRatio: false, animation: false,
-                            animations: { colors: false, x: false, y: false },
-                            transitions: { active: { animation: { duration: 0 } } },
-                            interaction: { mode: 'index', intersect: false },
-                            plugins: {
-                                legend: { labels: { color: '#9ca3af', font: { family: 'monospace', size: 11 }, filter: it => it.text === 'RSI(14)' } },
-                                tooltip: { filter: c => c.dataset.label === 'RSI(14)', callbacks: { label: c => 'RSI: ' + Number(c.parsed.y).toFixed(2) } }
-                            },
-                            scales: {
-                                x: { ticks: { color: '#6b7280', maxRotation: 0, autoSkipPadding: 12 }, grid: { color: 'rgba(128,128,128,0.08)' } },
-                                y: { min: 20, max: 80, ticks: { color: '#6b7280', stepSize: 10 }, grid: { color: 'rgba(128,128,128,0.08)' } }
-                            }
-                        }
-                    });
-                } else {
-                    bnRsiChart.data.datasets[0].data = rsiData;
-                    bnRsiChart.update('none');
-                }
-            }).catch(() => {});
-        }
-    };
 })();
 </script>
 
 <script src="/js/common.js?v=41"></script>
 <script src="/js/ticker.js?v=36"></script>
-<script src="/js/settings-modal.js?v=72"></script>
-<script src="/js/option-chain-modal.js?v=27"></script>
-<script src="/js/manual-terminal-modal.js?v=46"></script>
+<script src="/js/settings-modal.js?v=73"></script>
+<script src="/js/option-chain-modal.js?v=99"></script>
+<script src="/js/manual-terminal-modal.js?v=99"></script>
 </body>
 </html>
