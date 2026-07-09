@@ -39,6 +39,7 @@
                       '<div class="sm-field"><label>Trigger Cushion (× 5m ATR)</label><input type="number" id="sm-camarillaTriggerAtrMult" step="0.05" min="0" max="5"><div class="sm-hint">Cushion added to confirm extreme for tick trigger. Default 0.25.</div></div>' +
                       '<div class="sm-field"><label>Strong Candle · Close Position</label><input type="number" id="sm-camarillaStrongCandleCloseThreshold" step="0.05" min="0.5" max="1"><div class="sm-hint">Close within top/bottom N of range. Default 0.75 = top/bottom 25%.</div></div>' +
                       '<div class="sm-field"><label>Strong Candle · Body (× 5m ATR)</label><input type="number" id="sm-camarillaStrongCandleBodyAtrMult" step="0.05" min="0" max="2"><div class="sm-hint">Body ≥ ATR × this. Default 0.6. 0 = disabled.</div></div>' +
+                      '<div class="sm-field"><label>Body Past Level (%)</label><input type="number" id="sm-camarillaBodyPastLevelPct" step="1" min="0" max="100"><div class="sm-hint">All four setups — the candle body must sit at least this % past the test level (H4/L3/H3/L4) to qualify as STRONG. Failing bars are downgraded to WEAK, not rejected. Default 25. 0 = disabled.</div></div>' +
                       '<div class="sm-field"><label>Target Buffer (× 5m ATR)</label><input type="number" id="sm-camarillaTargetBufferAtrMult" step="0.05" min="0" max="2"><div class="sm-hint">Pulls target IN toward entry by ATR × this. Bullish tgt − buffer; bearish tgt + buffer. Default 0.2. 0 = target at exact Camarilla level.</div></div>' +
                     '</div>' +
                   '</div>' +
@@ -219,6 +220,7 @@
             camarillaTriggerAtrMult:    Math.max(0, parseFloat(document.getElementById('sm-camarillaTriggerAtrMult').value) || 0),
             camarillaStrongCandleCloseThreshold: Math.min(1, Math.max(0, parseFloat(document.getElementById('sm-camarillaStrongCandleCloseThreshold').value) || 0)),
             camarillaStrongCandleBodyAtrMult:    Math.max(0, parseFloat(document.getElementById('sm-camarillaStrongCandleBodyAtrMult').value) || 0),
+            camarillaBodyPastLevelPct:           Math.min(100, Math.max(0, parseFloat(document.getElementById('sm-camarillaBodyPastLevelPct').value) || 0)),
             camarillaTargetBufferAtrMult:        Math.max(0, parseFloat(document.getElementById('sm-camarillaTargetBufferAtrMult').value) || 0)
         };
         postSettings('/api/settings/risk', body);
@@ -284,6 +286,8 @@
             if (closeThr) closeThr.value = d.camarillaStrongCandleCloseThreshold != null ? d.camarillaStrongCandleCloseThreshold : 0.75;
             var bodyMult = document.getElementById('sm-camarillaStrongCandleBodyAtrMult');
             if (bodyMult) bodyMult.value = d.camarillaStrongCandleBodyAtrMult != null ? d.camarillaStrongCandleBodyAtrMult : 0.6;
+            var boPct = document.getElementById('sm-camarillaBodyPastLevelPct');
+            if (boPct) boPct.value = d.camarillaBodyPastLevelPct != null ? d.camarillaBodyPastLevelPct : 25;
             var tgtBuf = document.getElementById('sm-camarillaTargetBufferAtrMult');
             if (tgtBuf) tgtBuf.value = d.camarillaTargetBufferAtrMult != null ? d.camarillaTargetBufferAtrMult : 0.2;
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);

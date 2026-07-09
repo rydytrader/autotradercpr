@@ -920,7 +920,7 @@ public class Camarilla implements Strategy {
                 boolean sameSlotEmpty = freshBullish
                     ? state.pendingBullish == null
                     : state.pendingBearish == null;
-                if (sameSlotEmpty && classifyAndSeed(fresh, c, InstrumentConfig.NIFTY)) {
+                if (sameSlotEmpty && classifyAndSeed(fresh, c, lv, InstrumentConfig.NIFTY)) {
                     if (freshBullish) state.pendingBullish = fresh;
                     else              state.pendingBearish = fresh;
                 }
@@ -962,6 +962,22 @@ public class Camarilla implements Strategy {
             return mkConfirmation(ActiveSetup.L4_BREAKDOWN, c, lv.l5());
         }
         return null;
+    }
+
+    /** Body-past-level share for the H4 / L4 confirmation candle. Portion of
+     *  the body (open→close range) that sits past the broken level, as a %
+     *  of body length. Returns NaN on a zero-body doji so the caller can
+     *  downgrade to WEAK. Only meaningful for H4_BREAKOUT / L4_BREAKDOWN. */
+    private static double bodyPastLevelPct(Candle c, double level, boolean bullish) {
+        double bodyHi = Math.max(c.open(), c.close());
+        double bodyLo = Math.min(c.open(), c.close());
+        double body   = bodyHi - bodyLo;
+        if (body <= 0) return Double.NaN;
+        double past = bullish
+            ? bodyHi - Math.max(bodyLo, level)   // portion of body above H4
+            : Math.min(bodyHi, level) - bodyLo;  // portion of body below L4
+        if (past < 0) past = 0;
+        return past / body * 100.0;
     }
 
     /** Pre-subscribe BOTH the CE and PE leg at the locked ATM strike. The side
@@ -1210,7 +1226,7 @@ public class Camarilla implements Strategy {
      *  confirmation extreme a subsequent bar close must break for the
      *  trade to fire. Called once per fresh confirmation from the NIFTY
      *  and BankNifty processBarPhases methods. */
-    private boolean classifyAndSeed(PendingConfirmation fresh, Candle c, InstrumentConfig ic) {
+    private boolean classifyAndSeed(PendingConfirmation fresh, Candle c, CamarillaLevels lv, InstrumentConfig ic) {
         boolean bullish = isBullishBet(fresh.setup);
 
         // ATR — needed for both R:R projection AND body-strength gate below.
@@ -1282,6 +1298,33 @@ public class Camarilla implements Strategy {
         boolean bodyStrong = atrVal > 0 && body >= atrVal * bodyMult;
 
         fresh.strong = closeStrong && bodyStrong;
+
+        // Body-past-level gate — the candle body must sit at least the
+        // configured share PAST the setup's test level. Failing this
+        // downgrades STRONG → WEAK regardless of the two gates above.
+        // Reversals bullish? L3 (up); breakouts bullish? H4 (up).
+        // Reversals bearish? H3 (down); breakdowns bearish? L4 (down).
+        double minPastPct = riskSettings.getCamarillaBodyPastLevelPct();
+        if (minPastPct > 0 && fresh.strong && lv != null) {
+            double testLevel = switch (fresh.setup) {
+                case L3_REVERSAL  -> lv.l3();
+                case H4_BREAKOUT  -> lv.h4();
+                case H3_REVERSAL  -> lv.h3();
+                case L4_BREAKDOWN -> lv.l4();
+                default           -> Double.NaN;
+            };
+            if (!Double.isNaN(testLevel)) {
+                double pastPct = bodyPastLevelPct(c, testLevel, bullish);
+                if (Double.isNaN(pastPct) || pastPct + 1e-6 < minPastPct) {
+                    fresh.strong = false;
+                    String detail = Double.isNaN(pastPct)
+                        ? "zero-body doji"
+                        : "body " + round2(pastPct) + "% past level (min " + round2(minPastPct) + "%)";
+                    event("[INFO]", "Setup",
+                        "[" + ic.name() + "] " + fresh.setup + " downgraded WEAK — " + detail);
+                }
+            }
+        }
 
         String bodyRatio = atrVal > 0 ? round2(body / atrVal) + "×ATR" : "n/a";
         String tag = "[" + (fresh.strong ? "STRONG" : "WEAK")
