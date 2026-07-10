@@ -43,9 +43,6 @@ public class SettingsController {
         result.put("camarillaMomentumCheckEnabled", riskSettings.isCamarillaMomentumCheckEnabled(effectiveMode));
         result.put("camarillaDirectionalSlBufferAtrMult", riskSettings.getCamarillaDirectionalSlBufferAtrMult(effectiveMode));
         result.put("camarillaTriggerAtrMult", riskSettings.getCamarillaTriggerAtrMult(effectiveMode));
-        result.put("camarillaStrongCandleCloseThreshold", riskSettings.getCamarillaStrongCandleCloseThreshold(effectiveMode));
-        result.put("camarillaStrongCandleBodyAtrMult",    riskSettings.getCamarillaStrongCandleBodyAtrMult(effectiveMode));
-        result.put("camarillaBodyPastLevelPct",           riskSettings.getCamarillaBodyPastLevelPct(effectiveMode));
         result.put("camarillaTargetBufferAtrMult",        riskSettings.getCamarillaTargetBufferAtrMult(effectiveMode));
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
@@ -94,9 +91,6 @@ public class SettingsController {
             if (body.containsKey("camarillaMomentumCheckEnabled"))   riskSettings.setCamarillaMomentumCheckEnabled(effectiveMode, Boolean.parseBoolean(body.get("camarillaMomentumCheckEnabled").toString()));
             if (body.containsKey("camarillaDirectionalSlBufferAtrMult")) riskSettings.setCamarillaDirectionalSlBufferAtrMult(effectiveMode, Double.parseDouble(body.get("camarillaDirectionalSlBufferAtrMult").toString()));
             if (body.containsKey("camarillaTriggerAtrMult"))            riskSettings.setCamarillaTriggerAtrMult(effectiveMode, Double.parseDouble(body.get("camarillaTriggerAtrMult").toString()));
-            if (body.containsKey("camarillaStrongCandleCloseThreshold")) riskSettings.setCamarillaStrongCandleCloseThreshold(effectiveMode, Double.parseDouble(body.get("camarillaStrongCandleCloseThreshold").toString()));
-            if (body.containsKey("camarillaStrongCandleBodyAtrMult"))    riskSettings.setCamarillaStrongCandleBodyAtrMult(effectiveMode, Double.parseDouble(body.get("camarillaStrongCandleBodyAtrMult").toString()));
-            if (body.containsKey("camarillaBodyPastLevelPct"))           riskSettings.setCamarillaBodyPastLevelPct(effectiveMode, Double.parseDouble(body.get("camarillaBodyPastLevelPct").toString()));
             if (body.containsKey("camarillaTargetBufferAtrMult"))        riskSettings.setCamarillaTargetBufferAtrMult(effectiveMode, Double.parseDouble(body.get("camarillaTargetBufferAtrMult").toString()));
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));

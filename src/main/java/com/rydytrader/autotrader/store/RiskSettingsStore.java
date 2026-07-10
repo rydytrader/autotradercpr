@@ -66,30 +66,6 @@ public class RiskSettingsStore {
          *  cushion. Larger multipliers add breakout confirmation at the cost
          *  of a slightly worse entry price. */
         volatile double camarillaTriggerAtrMult = 0.25;
-        /** STRONG confirmation candle — close position within its own range.
-         *  Bullish: (close − low) / (high − low) ≥ threshold. Bearish:
-         *  (high − close) / (high − low) ≥ threshold. Default 0.75 (close in
-         *  top/bottom 25% of range). Setting to 0.5 or lower makes every
-         *  candle qualify on this gate. Setting to 1.0 requires a marubozu.
-         *  Feeds one of two gates that jointly decide STRONG vs WEAK. */
-        volatile double camarillaStrongCandleCloseThreshold = 0.75;
-        /** STRONG confirmation candle — body size vs 5-min ATR.
-         *  |close − open| ≥ ATR × mult. Default 0.6. Filters small doji-like
-         *  bars whose close-position happens to qualify but which carried no
-         *  real energy. Setting to 0 disables this gate (classification then
-         *  depends only on close position). */
-        volatile double camarillaStrongCandleBodyAtrMult = 0.6;
-        /** Body-past-level share applied to ALL four confirmation setups —
-         *  a candle whose body sits less than this share past its test level
-         *  is downgraded to WEAK regardless of the STRONG close-position and
-         *  body-ATR gates. Expressed as a percent (25 = 25%).
-         *  <ul>
-         *    <li>H4_BREAKOUT / L3_REVERSAL — portion of body above (H4 / L3).</li>
-         *    <li>L4_BREAKDOWN / H3_REVERSAL — portion of body below (L4 / H3).</li>
-         *  </ul>
-         *  Zero-body doji bars fail this check and are forced WEAK.
-         *  Default 25. Set to 0 to disable. */
-        volatile double camarillaBodyPastLevelPct = 25.0;
         /** ATR-scaled buffer pulled OFF the target level toward the entry.
          *  Applied at classifyAndSeed time to fresh.targetLevel:
          *    Bullish setups (H4_BREAKOUT, L3_REVERSAL): target −= ATR × mult.
@@ -460,9 +436,6 @@ public class RiskSettingsStore {
     public boolean isCamarillaMomentumCheckEnabled()    { return cfg().camarillaMomentumCheckEnabled; }
     public double  getCamarillaDirectionalSlBufferAtrMult() { return cfg().camarillaDirectionalSlBufferAtrMult; }
     public double  getCamarillaTriggerAtrMult()             { return cfg().camarillaTriggerAtrMult; }
-    public double  getCamarillaStrongCandleCloseThreshold() { return cfg().camarillaStrongCandleCloseThreshold; }
-    public double  getCamarillaStrongCandleBodyAtrMult()    { return cfg().camarillaStrongCandleBodyAtrMult; }
-    public double  getCamarillaBodyPastLevelPct()           { return cfg().camarillaBodyPastLevelPct; }
     public double  getCamarillaTargetBufferAtrMult()        { return cfg().camarillaTargetBufferAtrMult; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
@@ -662,15 +635,6 @@ public class RiskSettingsStore {
     public void setCamarillaTriggerAtrMult(double v) {
         cfg().camarillaTriggerAtrMult = Math.max(0, v);
     }
-    public void setCamarillaStrongCandleCloseThreshold(double v) {
-        cfg().camarillaStrongCandleCloseThreshold = Math.max(0, Math.min(1, v));
-    }
-    public void setCamarillaStrongCandleBodyAtrMult(double v) {
-        cfg().camarillaStrongCandleBodyAtrMult = Math.max(0, v);
-    }
-    public void setCamarillaBodyPastLevelPct(double v) {
-        cfg().camarillaBodyPastLevelPct = Math.max(0, Math.min(100, v));
-    }
     public void setCamarillaTargetBufferAtrMult(double v) {
         cfg().camarillaTargetBufferAtrMult = Math.max(0, v);
     }
@@ -782,9 +746,6 @@ public class RiskSettingsStore {
     public boolean isCamarillaMomentumCheckEnabled(String mode)    { return cfgFor(mode).camarillaMomentumCheckEnabled; }
     public double  getCamarillaDirectionalSlBufferAtrMult(String mode) { return cfgFor(mode).camarillaDirectionalSlBufferAtrMult; }
     public double  getCamarillaTriggerAtrMult(String mode)             { return cfgFor(mode).camarillaTriggerAtrMult; }
-    public double  getCamarillaStrongCandleCloseThreshold(String mode) { return cfgFor(mode).camarillaStrongCandleCloseThreshold; }
-    public double  getCamarillaStrongCandleBodyAtrMult(String mode)    { return cfgFor(mode).camarillaStrongCandleBodyAtrMult; }
-    public double  getCamarillaBodyPastLevelPct(String mode)           { return cfgFor(mode).camarillaBodyPastLevelPct; }
     public double  getCamarillaTargetBufferAtrMult(String mode)        { return cfgFor(mode).camarillaTargetBufferAtrMult; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
@@ -822,15 +783,6 @@ public class RiskSettingsStore {
     }
     public void setCamarillaTriggerAtrMult(String mode, double v) {
         cfgFor(mode).camarillaTriggerAtrMult = Math.max(0, v);
-    }
-    public void setCamarillaStrongCandleCloseThreshold(String mode, double v) {
-        cfgFor(mode).camarillaStrongCandleCloseThreshold = Math.max(0, Math.min(1, v));
-    }
-    public void setCamarillaStrongCandleBodyAtrMult(String mode, double v) {
-        cfgFor(mode).camarillaStrongCandleBodyAtrMult = Math.max(0, v);
-    }
-    public void setCamarillaBodyPastLevelPct(String mode, double v) {
-        cfgFor(mode).camarillaBodyPastLevelPct = Math.max(0, Math.min(100, v));
     }
     public void setCamarillaTargetBufferAtrMult(String mode, double v) {
         cfgFor(mode).camarillaTargetBufferAtrMult = Math.max(0, v);
@@ -878,9 +830,6 @@ public class RiskSettingsStore {
             upsert("camarillaMomentumCheckEnabled", String.valueOf(c.camarillaMomentumCheckEnabled));
             upsert("camarillaDirectionalSlBufferAtrMult", String.valueOf(c.camarillaDirectionalSlBufferAtrMult));
             upsert("camarillaTriggerAtrMult", String.valueOf(c.camarillaTriggerAtrMult));
-            upsert("camarillaStrongCandleCloseThreshold", String.valueOf(c.camarillaStrongCandleCloseThreshold));
-            upsert("camarillaStrongCandleBodyAtrMult",    String.valueOf(c.camarillaStrongCandleBodyAtrMult));
-            upsert("camarillaBodyPastLevelPct",           String.valueOf(c.camarillaBodyPastLevelPct));
             upsert("camarillaTargetBufferAtrMult",        String.valueOf(c.camarillaTargetBufferAtrMult));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
@@ -1058,9 +1007,9 @@ public class RiskSettingsStore {
                     case "camarillaDirectionalSlBufferPoints" -> { /* retired in favour of camarillaDirectionalSlBufferAtrMult; silently consumed */ }
                     case "camarillaDirectionalSlBufferAtrMult" -> c.camarillaDirectionalSlBufferAtrMult = Double.parseDouble(v);
                     case "camarillaTriggerAtrMult"             -> c.camarillaTriggerAtrMult = Double.parseDouble(v);
-                    case "camarillaStrongCandleCloseThreshold" -> c.camarillaStrongCandleCloseThreshold = Double.parseDouble(v);
-                    case "camarillaStrongCandleBodyAtrMult"    -> c.camarillaStrongCandleBodyAtrMult = Double.parseDouble(v);
-                    case "camarillaBodyPastLevelPct"           -> c.camarillaBodyPastLevelPct = Math.max(0, Math.min(100, Double.parseDouble(v)));
+                    case "camarillaStrongCandleCloseThreshold" -> { /* retired with STRONG/WEAK classification; silently consumed */ }
+                    case "camarillaStrongCandleBodyAtrMult"    -> { /* retired with STRONG/WEAK classification; silently consumed */ }
+                    case "camarillaBodyPastLevelPct"           -> { /* retired with STRONG/WEAK classification; silently consumed */ }
                     case "camarillaCprSizingEnabled"           -> { /* retired with the CPR sizing bias; silently consumed */ }
                     case "camarillaTargetBufferAtrMult"        -> c.camarillaTargetBufferAtrMult = Double.parseDouble(v);
                     // Retired keys silently consumed so legacy JSON files load without
