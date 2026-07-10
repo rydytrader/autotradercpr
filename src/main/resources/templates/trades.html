@@ -49,19 +49,19 @@
             letter-spacing:0.05em; text-decoration:none; transition: all 0.2s ease;
         }
         .refresh-btn:hover { background:rgba(99,179,237,0.15); border-color:rgba(99,179,237,0.45); transform:translateY(-1px); }
-        .range-pills { display:inline-flex; flex-wrap:wrap; gap:6px; align-items:center; }
-        .range-pill {
+        /* Filter pane pills — mirrors home analytics (see home.html: .pill-row + .scope-pill). */
+        .pill-row { display:flex; gap:8px; flex-wrap:wrap; }
+        .scope-pill {
+            display:inline-flex; align-items:center; padding:7px 14px; border-radius:999px;
             background:var(--bg-card); border:1px solid var(--border);
-            color:var(--text-secondary); padding:6px 12px; border-radius:999px;
-            font-family:var(--font-mono); font-size:0.68rem; font-weight:700;
+            color:var(--text-secondary);
+            font-family:var(--font-mono); font-size:0.72rem; font-weight:700;
             letter-spacing:0.06em; text-transform:uppercase; cursor:pointer;
-            transition: all 0.15s ease;
+            transition: all 0.15s ease; line-height:1;
         }
-        .range-pill:hover { color:var(--text-primary); border-color:rgba(125,211,252,0.35); }
-        .range-pill.active {
-            color:var(--accent-cyan); background:rgba(125,211,252,0.10);
-            border-color:rgba(125,211,252,0.55);
-        }
+        .scope-pill:hover { border-color:rgba(125,211,252,0.35); color:var(--text-primary); }
+        .scope-pill.active { background:rgba(125,211,252,0.12); border-color:var(--accent-cyan); color:var(--accent-cyan); }
+        .ah-stat-label { font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); letter-spacing:0.04em; }
     </style>
 </head>
 <body style="margin:0;display:flex;flex-direction:column;min-height:100vh;">
@@ -141,7 +141,7 @@
     <div class="page-header fade-in" style="margin-bottom:18px;">
         <div>
             <div class="page-title">Trades</div>
-            <div class="page-subtitle">Completed trades — filter by date range (Today, Yesterday, Last 7 Days, Last 30 Days, This Month, Last Month, All Time). Defaults to today.</div>
+            <div class="page-subtitle">Completed trades — filter by date range. Defaults to today.</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -151,16 +151,21 @@
         </div>
     </div>
 
-    <!-- Date range presets -->
-    <div class="fade-in" style="margin-bottom:16px;">
-        <div class="range-pills" id="rangePills">
-            <button class="range-pill active" data-range="today">Today</button>
-            <button class="range-pill" data-range="yesterday">Yesterday</button>
-            <button class="range-pill" data-range="last7">Last 7 Days</button>
-            <button class="range-pill" data-range="last30">Last 30 Days</button>
-            <button class="range-pill" data-range="thisMonth">This Month</button>
-            <button class="range-pill" data-range="lastMonth">Last Month</button>
-            <button class="range-pill" data-range="all">All Time</button>
+    <!-- Date range selector — same visual language as Home analytics -->
+    <div class="section-card fade-in" style="margin-bottom:16px;">
+        <div style="padding:14px 22px; display:flex; gap:24px; flex-wrap:wrap; align-items:center;">
+            <div style="display:flex; align-items:center; gap:12px;">
+                <span class="ah-stat-label" style="font-weight:700;">Period</span>
+                <div class="pill-row" id="rangePills">
+                    <button class="scope-pill active" data-range="today"     title="Just today's session.">Today</button>
+                    <button class="scope-pill"        data-range="yesterday" title="The prior IST calendar day.">Yesterday</button>
+                    <button class="scope-pill"        data-range="last7"     title="The last 7 days including today.">Last 7 Days</button>
+                    <button class="scope-pill"        data-range="last30"    title="The last 30 days including today.">Last 30 Days</button>
+                    <button class="scope-pill"        data-range="thisMonth" title="From the 1st of the current IST month through today.">This Month</button>
+                    <button class="scope-pill"        data-range="lastMonth" title="The full previous IST month.">Last Month</button>
+                    <button class="scope-pill"        data-range="all"       title="Every trade in the database.">All Time</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -464,7 +469,7 @@
 
     function selectRange(key) {
         currentRange = key;
-        var pills = document.querySelectorAll('#rangePills .range-pill');
+        var pills = document.querySelectorAll('#rangePills .scope-pill');
         pills.forEach(function(p) {
             p.classList.toggle('active', p.getAttribute('data-range') === key);
         });
@@ -526,7 +531,7 @@
         var pills = document.getElementById('rangePills');
         if (pills) {
             pills.addEventListener('click', function(e) {
-                var btn = e.target.closest('.range-pill');
+                var btn = e.target.closest('.scope-pill');
                 if (!btn) return;
                 var key = btn.getAttribute('data-range');
                 if (!key || key === currentRange) return;
