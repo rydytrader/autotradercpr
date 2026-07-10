@@ -158,6 +158,48 @@ public class StrategyHistoryController {
         return ResponseEntity.ok(out);
     }
 
+    /** Trade rows for a strategy across a date range — drives the Trade Log page's
+     *  historical presets (Yesterday / Last 7 Days / Last 30 Days / This Month /
+     *  Last Month / All Time). Both {@code from} and {@code to} are inclusive
+     *  ISO yyyy-MM-dd. Newest-first ordering matches the page's UI. Symbol / setup
+     *  backfill runs against today's in-memory ring only, so historical rows that
+     *  never had those columns filled surface as "—" (identical to the calendar
+     *  day-detail modal's behaviour for old rows). */
+    @GetMapping("/api/strategies/{id}/trades-range")
+    public ResponseEntity<Map<String, Object>> tradesForRange(@PathVariable String id,
+                                                              @RequestParam String from,
+                                                              @RequestParam String to) {
+        List<StrategyTradeEntity> rows =
+            tradeRepo.findByStrategyIdAndSessionDateBetweenOrderByClosedAtMillisDesc(id, from, to);
+        String today = LocalDate.now(IST).toString();
+        LiveBackfill backfill = liveBackfillForDate(id, today);
+        List<Map<String, Object>> trades = new ArrayList<>();
+        for (StrategyTradeEntity t : rows) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("id",             t.getId());
+            m.put("strategyId",     t.getStrategyId());
+            m.put("symbol",         backfill.lookup(backfill.symbols, t.getSymbol(), t.getClosedAtMillis()));
+            m.put("setup",          backfill.lookup(backfill.setups, t.getSetup(),  t.getClosedAtMillis()));
+            m.put("sessionDate",    t.getSessionDate());
+            m.put("closedAtMillis", t.getClosedAtMillis());
+            m.put("qty",            t.getQty());
+            m.put("entryPrice",     0.0);   // range endpoint doesn't reconstruct per-leg entry
+            m.put("exitPrice",      0.0);
+            m.put("grossPnl",       round(t.getGrossPnl()));
+            m.put("charges",        round(t.getCharges()));
+            m.put("netPnl",         round(t.getNetPnl()));
+            m.put("closeReason",    t.getCloseReason());
+            m.put("slHitCount",     t.getSlHitCount() == null ? 0 : t.getSlHitCount());
+            trades.add(m);
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("strategyId", id);
+        out.put("from",       from);
+        out.put("to",         to);
+        out.put("trades",     trades);
+        return ResponseEntity.ok(out);
+    }
+
     private static double round(double v) {
         return Math.round(v * 100.0) / 100.0;
     }

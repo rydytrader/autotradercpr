@@ -49,6 +49,19 @@
             letter-spacing:0.05em; text-decoration:none; transition: all 0.2s ease;
         }
         .refresh-btn:hover { background:rgba(99,179,237,0.15); border-color:rgba(99,179,237,0.45); transform:translateY(-1px); }
+        .range-pills { display:inline-flex; flex-wrap:wrap; gap:6px; align-items:center; }
+        .range-pill {
+            background:var(--bg-card); border:1px solid var(--border);
+            color:var(--text-secondary); padding:6px 12px; border-radius:999px;
+            font-family:var(--font-mono); font-size:0.68rem; font-weight:700;
+            letter-spacing:0.06em; text-transform:uppercase; cursor:pointer;
+            transition: all 0.15s ease;
+        }
+        .range-pill:hover { color:var(--text-primary); border-color:rgba(125,211,252,0.35); }
+        .range-pill.active {
+            color:var(--accent-cyan); background:rgba(125,211,252,0.10);
+            border-color:rgba(125,211,252,0.55);
+        }
     </style>
 </head>
 <body style="margin:0;display:flex;flex-direction:column;min-height:100vh;">
@@ -128,7 +141,7 @@
     <div class="page-header fade-in" style="margin-bottom:18px;">
         <div>
             <div class="page-title">Trades</div>
-            <div class="page-subtitle">Today's completed trades</div>
+            <div class="page-subtitle">Completed trades — filter by date range (Today, Yesterday, Last 7 Days, Last 30 Days, This Month, Last Month, All Time). Defaults to today.</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -138,11 +151,24 @@
         </div>
     </div>
 
+    <!-- Date range presets -->
+    <div class="fade-in" style="margin-bottom:16px;">
+        <div class="range-pills" id="rangePills">
+            <button class="range-pill active" data-range="today">Today</button>
+            <button class="range-pill" data-range="yesterday">Yesterday</button>
+            <button class="range-pill" data-range="last7">Last 7 Days</button>
+            <button class="range-pill" data-range="last30">Last 30 Days</button>
+            <button class="range-pill" data-range="thisMonth">This Month</button>
+            <button class="range-pill" data-range="lastMonth">Last Month</button>
+            <button class="range-pill" data-range="all">All Time</button>
+        </div>
+    </div>
+
     <!-- Hero stat row: count + win/loss + net P&L + charges -->
     <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:20px;" class="fade-in">
         <div class="section-card" style="margin-bottom:0;">
             <div style="padding:20px 22px; text-align:center;">
-                <div class="stat-label" style="margin-bottom:8px;">Trades Today</div>
+                <div class="stat-label" style="margin-bottom:8px;" id="statCountLabel">Trades Today</div>
                 <div class="stat-value" id="statCount" style="font-size:2rem; color:var(--accent-cyan);">0</div>
                 <div class="stat-sub" style="margin-top:8px;">
                     Wins <span id="statWins" style="color:var(--accent-green);">0</span>
@@ -260,12 +286,72 @@
         return '<span class="pill ' + cls + '">' + escapeHtml(r) + '</span>';
     }
 
-    var lastState = null;
-    function applyState(d) {
-        if (!d) return;
-        lastState = d;
-        var trades = (d.todayClosedTrades || []).slice();
-        // Render newest at the top
+    // ── Date range selection ────────────────────────────────────────────────
+    // "Today" streams via SSE and shows entryPrice / exitPrice (rich in-memory
+    // shape). Other presets hit the DB via /trades-range and lack per-leg
+    // entry/exit prices (0 shown as "—"). The camarilla state feed only
+    // carries today's trades, so we detach SSE when the user picks any
+    // non-today preset and re-attach when they come back to Today.
+    var currentRange = 'today';
+    var LABELS = {
+        today:      'Today',
+        yesterday:  'Yesterday',
+        last7:      'Last 7 Days',
+        last30:     'Last 30 Days',
+        thisMonth:  'This Month',
+        lastMonth:  'Last Month',
+        all:        'All Time'
+    };
+    // IST is fixed +5:30 (no DST). We compute the calendar date as it stands
+    // in Kolkata, so "Today" matches whatever the server persisted as
+    // sessionDate. Browser TZ is irrelevant.
+    function istDate(offsetDays) {
+        var now = new Date();
+        var utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+        var ist = new Date(utcMs + (5 * 60 + 30) * 60000);
+        if (offsetDays) ist.setDate(ist.getDate() + offsetDays);
+        var y = ist.getFullYear();
+        var m = String(ist.getMonth() + 1).padStart(2, '0');
+        var d = String(ist.getDate()).padStart(2, '0');
+        return y + '-' + m + '-' + d;
+    }
+    function firstOfIstMonth(monthsBack) {
+        var now = new Date();
+        var utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+        var ist = new Date(utcMs + (5 * 60 + 30) * 60000);
+        ist.setMonth(ist.getMonth() - (monthsBack || 0));
+        ist.setDate(1);
+        var y = ist.getFullYear();
+        var m = String(ist.getMonth() + 1).padStart(2, '0');
+        return y + '-' + m + '-01';
+    }
+    function lastOfIstMonth(monthsBack) {
+        var now = new Date();
+        var utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+        var ist = new Date(utcMs + (5 * 60 + 30) * 60000);
+        ist.setMonth(ist.getMonth() - (monthsBack || 0) + 1);
+        ist.setDate(0);
+        var y = ist.getFullYear();
+        var m = String(ist.getMonth() + 1).padStart(2, '0');
+        var d = String(ist.getDate()).padStart(2, '0');
+        return y + '-' + m + '-' + d;
+    }
+    function rangeBounds(key) {
+        var today = istDate(0);
+        switch (key) {
+            case 'today':      return { from: today,             to: today };
+            case 'yesterday':  return { from: istDate(-1),       to: istDate(-1) };
+            case 'last7':      return { from: istDate(-6),       to: today };
+            case 'last30':     return { from: istDate(-29),      to: today };
+            case 'thisMonth':  return { from: firstOfIstMonth(0), to: today };
+            case 'lastMonth':  return { from: firstOfIstMonth(1), to: lastOfIstMonth(1) };
+            case 'all':        return { from: '2000-01-01',      to: today };
+            default:           return { from: today,             to: today };
+        }
+    }
+
+    function renderTrades(trades) {
+        trades = (trades || []).slice();
         trades.sort(function(a, b) { return Number(b.closedAtMillis || 0) - Number(a.closedAtMillis || 0); });
 
         var wins = 0, losses = 0, gross = 0, charges = 0, net = 0;
@@ -278,6 +364,8 @@
             else if (n < 0) losses++;
         });
 
+        var label = LABELS[currentRange] || 'Today';
+        document.getElementById('statCountLabel').textContent = 'Trades · ' + label;
         document.getElementById('statCount').textContent  = trades.length;
         document.getElementById('statWins').textContent   = wins;
         document.getElementById('statLosses').textContent = losses;
@@ -292,18 +380,25 @@
 
         var tbody = document.getElementById('tradesTableBody');
         if (trades.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><div class="empty-icon">◎</div>No trades completed today</div></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><div class="empty-icon">◎</div>No trades in this range</div></td></tr>';
             return;
         }
+        var showDate = currentRange !== 'today';
         tbody.innerHTML = trades.map(function(t, i) {
+            var ts = t.closedAtMillis;
+            var timeCell = showDate && t.sessionDate
+                ? escapeHtml(t.sessionDate) + '<br><span style="color:var(--text-muted);font-size:0.72rem;">' + fmtTime(ts) + '</span>'
+                : fmtTime(ts);
+            var entryCell = Number(t.entryPrice || 0) > 0 ? fmtRs(t.entryPrice) : '—';
+            var exitCell  = Number(t.exitPrice  || 0) > 0 ? fmtRs(t.exitPrice)  : '—';
             return '<tr>'
                 + '<td>' + (i + 1) + '</td>'
-                + '<td>' + fmtTime(t.closedAtMillis) + '</td>'
-                + '<td>' + escapeHtml(t.symbol || '') + '</td>'
+                + '<td>' + timeCell + '</td>'
+                + '<td>' + escapeHtml(t.symbol || '—') + '</td>'
                 + '<td class="text-center">' + setupPill(t.setup) + '</td>'
                 + '<td class="text-right">' + escapeHtml(String(t.qty || 0)) + '</td>'
-                + '<td class="text-right">' + fmtRs(t.entryPrice) + '</td>'
-                + '<td class="text-right">' + fmtRs(t.exitPrice) + '</td>'
+                + '<td class="text-right">' + entryCell + '</td>'
+                + '<td class="text-right">' + exitCell + '</td>'
                 + '<td class="text-center">' + reasonPill(t.closeReason) + '</td>'
                 + '<td class="text-right ' + pnlClass(t.grossPnl) + '">' + fmtRs(t.grossPnl) + '</td>'
                 + '<td class="text-right" style="color:var(--accent-amber);">' + fmtRs(t.charges) + '</td>'
@@ -312,29 +407,80 @@
         }).join('');
     }
 
-    function loadState() {
+    function applyState(d) {
+        if (!d || currentRange !== 'today') return;
+        renderTrades(d.todayClosedTrades || []);
+    }
+
+    function loadTodayFromState() {
         fetch('/api/camarilla/state').then(function(r) { return r.json(); })
             .then(applyState).catch(function() {});
     }
 
+    function loadRange(key) {
+        var b = rangeBounds(key);
+        fetch('/api/strategies/camarilla/trades-range?from=' + encodeURIComponent(b.from) + '&to=' + encodeURIComponent(b.to))
+            .then(function(r) { return r.json(); })
+            .then(function(d) {
+                if (currentRange !== key) return; // user moved on
+                renderTrades((d && d.trades) || []);
+            })
+            .catch(function() {
+                renderTrades([]);
+            });
+    }
+
     var sseStream = null;
     var pollTimer = null;
-    function startStream() {
+    function attachTodayStream() {
+        if (sseStream) return;
         try {
             sseStream = new EventSource('/api/camarilla/stream');
             sseStream.addEventListener('state', function(ev) {
+                if (currentRange !== 'today') return;
                 if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
                 try { applyState(JSON.parse(ev.data)); } catch (e) {}
             });
             sseStream.onerror = function() {
                 if (pollTimer) return;
-                loadState();
-                pollTimer = setInterval(loadState, 5000);
+                loadTodayFromState();
+                pollTimer = setInterval(function() {
+                    if (currentRange === 'today') loadTodayFromState();
+                }, 5000);
             };
         } catch (e) {
-            if (!pollTimer) { loadState(); pollTimer = setInterval(loadState, 5000); }
+            if (!pollTimer) {
+                loadTodayFromState();
+                pollTimer = setInterval(function() {
+                    if (currentRange === 'today') loadTodayFromState();
+                }, 5000);
+            }
         }
     }
+    function detachTodayStream() {
+        if (sseStream) { try { sseStream.close(); } catch (e) {} sseStream = null; }
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+
+    function selectRange(key) {
+        currentRange = key;
+        var pills = document.querySelectorAll('#rangePills .range-pill');
+        pills.forEach(function(p) {
+            p.classList.toggle('active', p.getAttribute('data-range') === key);
+        });
+        if (key === 'today') {
+            attachTodayStream();
+            loadTodayFromState();
+        } else {
+            detachTodayStream();
+            loadRange(key);
+        }
+    }
+
+    function startStream() {
+        attachTodayStream();
+    }
+    function loadState() { loadTodayFromState(); }
 
     function checkConnection() {
         var ctrl = new AbortController();
@@ -377,6 +523,16 @@
     document.addEventListener('DOMContentLoaded', function() {
         var yr = document.getElementById('footerYear');
         if (yr) yr.textContent = new Date().getFullYear();
+        var pills = document.getElementById('rangePills');
+        if (pills) {
+            pills.addEventListener('click', function(e) {
+                var btn = e.target.closest('.range-pill');
+                if (!btn) return;
+                var key = btn.getAttribute('data-range');
+                if (!key || key === currentRange) return;
+                selectRange(key);
+            });
+        }
         loadState();
         startStream();
         checkConnection();

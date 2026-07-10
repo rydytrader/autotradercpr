@@ -14,6 +14,12 @@ public interface StrategyTradeRepository extends JpaRepository<StrategyTradeEnti
     /** All cycles for a strategy on one date, oldest first — drives the calendar day-detail modal. */
     List<StrategyTradeEntity> findByStrategyIdAndSessionDateOrderByClosedAtMillisAsc(String strategyId, String sessionDate);
 
+    /** All cycles for a strategy whose {@code sessionDate} sits within an inclusive
+     *  ISO-yyyy-MM-dd range, newest first. {@code sessionDate} is a String column
+     *  in ISO shape, so lexicographic BETWEEN gives the correct calendar range. */
+    List<StrategyTradeEntity> findByStrategyIdAndSessionDateBetweenOrderByClosedAtMillisDesc(
+        String strategyId, String from, String to);
+
     /** Delete every row whose {@code sessionDate} equals the given ISO date (yyyy-MM-dd).
      *  Used by the Maintenance "Clear today's records" action to wipe both ALGO and MANUAL
      *  rows in a single call. Spring Data derives the implementation from the method name;
