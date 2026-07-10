@@ -91,6 +91,17 @@ public class StrategyTradeEntity {
     @Column(name = "net_pnl")
     private double netPnl;
 
+    /** Per-leg average entry price (option premium the bot sold at, or bought at for a BUY).
+     *  Nullable so rows persisted before this column existed load without exploding the primitive
+     *  setter; readers render null / 0 as "—". */
+    @Column(name = "entry_price")
+    private Double entryPrice;
+
+    /** Per-leg exit price at the moment the cycle closed. Nullable for the same reason as
+     *  {@link #entryPrice}. */
+    @Column(name = "exit_price")
+    private Double exitPrice;
+
     /** Why the cycle ended: SL_HIT, TARGET_HIT, TIMED_SQUAREOFF, MAX_LOSS_HIT, MANUAL,
      *  STALE_DAY_RESET, CE_SL_HIT, PE_SL_HIT, etc. */
     @Column(name = "close_reason", length = 40)
@@ -135,6 +146,10 @@ public class StrategyTradeEntity {
     public void setCharges(double v) { this.charges = v; }
     public double getNetPnl() { return netPnl; }
     public void setNetPnl(double v) { this.netPnl = v; }
+    public Double getEntryPrice() { return entryPrice; }
+    public void   setEntryPrice(Double v) { this.entryPrice = v; }
+    public Double getExitPrice()  { return exitPrice; }
+    public void   setExitPrice(Double v) { this.exitPrice = v; }
     public String getCloseReason() { return closeReason; }
     public void setCloseReason(String v) { this.closeReason = v; }
     public Integer getSlHitCount() { return slHitCount; }

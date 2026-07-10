@@ -144,6 +144,8 @@ public class StrategyHistoryController {
             m.put("sessionDate",    t.getSessionDate());
             m.put("closedAtMillis", t.getClosedAtMillis());
             m.put("qty",            t.getQty());
+            m.put("entryPrice",     t.getEntryPrice() != null ? round(t.getEntryPrice()) : 0.0);
+            m.put("exitPrice",      t.getExitPrice()  != null ? round(t.getExitPrice())  : 0.0);
             m.put("grossPnl",       round(t.getGrossPnl()));
             m.put("charges",        round(t.getCharges()));
             m.put("netPnl",         round(t.getNetPnl()));
@@ -183,8 +185,8 @@ public class StrategyHistoryController {
             m.put("sessionDate",    t.getSessionDate());
             m.put("closedAtMillis", t.getClosedAtMillis());
             m.put("qty",            t.getQty());
-            m.put("entryPrice",     0.0);   // range endpoint doesn't reconstruct per-leg entry
-            m.put("exitPrice",      0.0);
+            m.put("entryPrice",     t.getEntryPrice() != null ? round(t.getEntryPrice()) : 0.0);
+            m.put("exitPrice",      t.getExitPrice()  != null ? round(t.getExitPrice())  : 0.0);
             m.put("grossPnl",       round(t.getGrossPnl()));
             m.put("charges",        round(t.getCharges()));
             m.put("netPnl",         round(t.getNetPnl()));

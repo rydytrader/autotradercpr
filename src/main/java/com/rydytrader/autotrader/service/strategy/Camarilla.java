@@ -1737,7 +1737,8 @@ public class Camarilla implements Strategy {
         // strategy-history endpoints surface them as a separate source from the algo.
         String dbStrategyId = (p.setup == ActiveSetup.MANUAL) ? MANUAL_STRATEGY_ID : STRATEGY_ID;
         persistTradeRow(dbStrategyId, p.symbol, p.setup.name(), reason, p.qty, gross, charges, net,
-            reason.equals("SL_HIT") ? 1 : 0, closedAtMillis, p.openMillis, p.entryOiBias);
+            reason.equals("SL_HIT") ? 1 : 0, closedAtMillis, p.openMillis, p.entryOiBias,
+            p.entryPrice, exitPrice);
 
         Map<String, Object> cycle = new LinkedHashMap<>();
         // strategyId persisted on the in-memory cycle so AnalyticsService.appendLiveTodayTrades
@@ -1806,7 +1807,8 @@ public class Camarilla implements Strategy {
 
     private void persistTradeRow(String strategyId, String symbol, String setup, String reason, int qty,
                                  double gross, double charges, double net, int slHits,
-                                 long closedAtMillis, long openedAtMillis, String entryOiBias) {
+                                 long closedAtMillis, long openedAtMillis, String entryOiBias,
+                                 double entryPrice, double exitPrice) {
         try {
             StrategyTradeRepository repo = tradeRepoProvider == null ? null : tradeRepoProvider.getIfAvailable();
             if (repo == null) return;
@@ -1826,6 +1828,8 @@ public class Camarilla implements Strategy {
             row.setNetPnl(round2(net));
             row.setCloseReason(reason);
             row.setSlHitCount(slHits);
+            row.setEntryPrice(entryPrice > 0 ? round2(entryPrice) : null);
+            row.setExitPrice(exitPrice   > 0 ? round2(exitPrice)  : null);
             repo.save(row);
         } catch (Exception e) {
             log.warn("[Camarilla] persist trade failed: {}", e.getMessage());
