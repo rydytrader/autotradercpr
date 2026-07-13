@@ -475,21 +475,23 @@
         <p class="doc-p">
             At trigger time, before the SELL order goes out, the bot checks <strong>NIFTY RSI(14)</strong>
             against a setup-specific band. The momentum check filters out late-entry breakouts at
-            exhaustion (RSI &gt; 80) and reversals against a strong trend (RSI &lt; 40 for bullish
-            reversals, &gt; 60 for bearish reversals).
+            exhaustion and reversals against a strong opposite trend (RSI ≤ 40 for bullish
+            reversals, ≥ 60 for bearish reversals).
         </p>
         <div class="band-grid" style="margin-top:14px;">
             <div class="band-row"><span class="left" style="color:var(--accent-green);">H4_BREAKOUT</span><span class="right">50 &lt; RSI &lt; 70</span></div>
             <div class="band-row"><span class="left" style="color:var(--accent-red, #f87171);">L4_BREAKDOWN</span><span class="right">30 &lt; RSI &lt; 50</span></div>
-            <div class="band-row"><span class="left" style="color:var(--accent-green);">L3_REVERSAL</span><span class="right">40 &lt; RSI &lt; 60</span></div>
-            <div class="band-row"><span class="left" style="color:var(--accent-red, #f87171);">H3_REVERSAL</span><span class="right">40 &lt; RSI &lt; 60</span></div>
+            <div class="band-row"><span class="left" style="color:var(--accent-green);">L3_REVERSAL</span><span class="right">RSI &gt; 40</span></div>
+            <div class="band-row"><span class="left" style="color:var(--accent-red, #f87171);">H3_REVERSAL</span><span class="right">RSI &lt; 60</span></div>
         </div>
         <p class="doc-p" style="margin-top:14px;">
             <strong>Breakouts</strong> require directional momentum WITH the trade (RSI in
             the 50-70 band for bullish H4 breakouts, 30-50 band for bearish L4 breakdowns —
-            trending but not exhausted). <strong>Reversals</strong>
-            require neutral momentum (RSI 40-60 — no strong trend in either direction, since
-            a rejection thesis can't hold against a runaway move). The check uses the
+            trending but not exhausted). <strong>Reversals</strong> only need the FAR side
+            of neutral cleared — L3 bullish reversals require RSI &gt; 40 (no bearish weakness
+            ruling out an upside bounce), H3 bearish reversals require RSI &lt; 60 (no bullish
+            strength ruling out a downside fade). The near side is fine because the thesis is
+            a mean-reversion move IN that direction. The check uses the
             <strong>live LTP-projected RSI</strong> at the instant of trigger; the chart
             visible on the Positions page streams that same value every second via SSE.
         </p>

@@ -1338,12 +1338,12 @@ public class Camarilla implements Strategy {
         // matches the setup's thesis:
         //   H4_BREAKOUT  (bullish)  → 50 < RSI < 70   trending up but not exhausted
         //   L4_BREAKDOWN (bearish)  → 30 < RSI < 50   trending down but not exhausted
-        //   L3_REVERSAL  (bullish)  → 40 < RSI < 60   neutral chop — reversal off L3
-        //   H3_REVERSAL  (bearish)  → 40 < RSI < 60   neutral chop — reversal off H3
+        //   L3_REVERSAL  (bullish)  → RSI > 40         no bearish weakness ruling out an upside bounce
+        //   H3_REVERSAL  (bearish)  → RSI < 60         no bullish strength ruling out a downside fade
         // Breakouts skip when RSI is overbought/oversold (≥ 80 / ≤ 20) since
-        // that's typically a late, exhaustion-prone entry. Reversals only fire
-        // when momentum is neutral — strong trend in either direction makes
-        // the rejection thesis less likely to hold.
+        // that's typically a late, exhaustion-prone entry. Reversals only need
+        // the FAR side of neutral cleared — the near side is fine because the
+        // thesis is a mean-reversion move IN that direction.
         // RSI unavailable (Wilder not seeded, NIFTY LTP missing) → pass through.
         // Toggle: camarillaMomentumCheckEnabled (Settings → Camarilla pane).
         if (riskSettings.isCamarillaMomentumCheckEnabled()) {
@@ -1356,8 +1356,8 @@ public class Camarilla implements Strategy {
                     boolean ok = switch (setup) {
                         case H4_BREAKOUT  -> r > 50 && r < 70;
                         case L4_BREAKDOWN -> r < 50 && r > 30;
-                        case L3_REVERSAL  -> r > 40 && r < 60;
-                        case H3_REVERSAL  -> r > 40 && r < 60;
+                        case L3_REVERSAL  -> r > 40;
+                        case H3_REVERSAL  -> r < 60;
                         default            -> true;
                     };
                     if (!ok) {
