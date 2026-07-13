@@ -456,7 +456,7 @@
             </div>
             <div class="phase-row">
                 <div class="phase-tag">Trigger</div>
-                <div class="phase-desc"><strong>Tick fire.</strong> Every confirmation arms the tick trigger — fires the moment spot touches <code>confirmHigh + (ATR × triggerMult)</code> (bullish) or <code>confirmLow − (ATR × triggerMult)</code> (bearish), checked every fast-tick (~1.5 s). Default trigger multiplier 0.25 (a quarter of one 5-min ATR). Set it to 0 to fire at the exact confirmation extreme with no cushion.</div>
+                <div class="phase-desc"><strong>Tick fire.</strong> Every confirmation arms the tick trigger — fires the moment spot touches <code>confirmHigh + (ATR × triggerMult)</code> (bullish) or <code>confirmLow − (ATR × triggerMult)</code> (bearish), checked every fast-tick (~1.5 s). Default trigger multiplier 0.25 (a quarter of one 5-min ATR). Set it to 0 to fire at the exact confirmation extreme with no cushion. <br><strong>Edge-triggered.</strong> The fire attempt happens on the rising edge — spot must CROSS from outside the zone to inside. If a fire attempt is rejected by the RSI momentum gate, the pending is kept alive and the retry waits for spot to exit the zone and re-cross (rather than spamming attempts every tick while spot stays past the trigger). Any other rejection (portfolio cap, R:R, day lockout, order rejection) hard-clears the pending — the event log tags those with <em>— pending nullified</em>.</div>
             </div>
             <div class="phase-row">
                 <div class="phase-tag">Invalidate</div>

@@ -737,10 +737,18 @@ public class Camarilla implements Strategy {
     }
 
     /** Shared trigger logic for one instrument. Every geometric confirmation
-     *  arms a tick trigger at {@code confirmExtreme ± ATR × triggerMult}; the
-     *  first spot tick to touch that buffered level fires the trade. Returns
-     *  true when a fire happened (either direction). The pending-setter
-     *  lambdas let the caller clear the correct instrument's state field. */
+     *  arms a tick trigger at {@code confirmExtreme ± ATR × triggerMult}. Fire
+     *  attempts are edge-triggered — spot must CROSS into the buffered zone
+     *  (transition outside→inside), so RSI-skipped pendings can retry when
+     *  spot exits and re-enters without spamming attempts every tick.
+     *  <ul>
+     *    <li>{@code PLACED} / {@code SKIP_HARD} → pending is cleared. Save
+     *        follows in the caller.</li>
+     *    <li>{@code SKIP_RSI} → pending kept; {@code inTriggerZone} is set so
+     *        the next attempt waits for spot to exit and re-cross the zone.</li>
+     *  </ul>
+     *  Returns true only on {@code PLACED} / {@code SKIP_HARD} so the caller's
+     *  {@code saveToDisk()} runs on state changes but not on transient tick edges. */
     private boolean tryFireOnePending(String triggerSym, double spot,
                                        double triggerDelta, double slBuf,
                                        PendingConfirmation pb, PendingConfirmation pr,
@@ -749,29 +757,41 @@ public class Camarilla implements Strategy {
                                        java.util.function.Consumer<PendingConfirmation> setBearish) {
         if (pb != null) {
             double triggerPrice = pb.confirmHigh + triggerDelta;
-            if (spot >= triggerPrice) {
+            boolean nowInZone = spot >= triggerPrice;
+            if (nowInZone && !pb.inTriggerZone) {
                 double slWithBuffer = pb.confirmLow - slBuf;
                 double rr = computeRR(spot, pb.targetLevel, slWithBuffer);
                 event("[INFO]", "Setup", "[" + ic.name() + "] " + pb.setup + " trigger @ " + round2(spot)
                     + " (SL " + round2(slWithBuffer) + ", TGT " + round2(pb.targetLevel)
                     + ", R:R " + (Double.isNaN(rr) ? "—" : round2(rr)) + ")");
-                fire(triggerSym, pb.setup, pb.targetLevel, slWithBuffer, null, pb.lockedAtm, ic);
+                FireResult r = fire(triggerSym, pb.setup, pb.targetLevel, slWithBuffer, null, pb.lockedAtm, ic);
+                if (r == FireResult.SKIP_RSI) {
+                    pb.inTriggerZone = true;   // wait for spot to exit + re-cross
+                    return false;
+                }
                 setBullish.accept(null);
                 return true;
             }
+            pb.inTriggerZone = nowInZone;
         }
         if (pr != null) {
             double triggerPrice = pr.confirmLow - triggerDelta;
-            if (spot <= triggerPrice) {
+            boolean nowInZone = spot <= triggerPrice;
+            if (nowInZone && !pr.inTriggerZone) {
                 double slWithBuffer = pr.confirmHigh + slBuf;
                 double rr = computeRR(spot, pr.targetLevel, slWithBuffer);
                 event("[INFO]", "Setup", "[" + ic.name() + "] " + pr.setup + " trigger @ " + round2(spot)
                     + " (SL " + round2(slWithBuffer) + ", TGT " + round2(pr.targetLevel)
                     + ", R:R " + (Double.isNaN(rr) ? "—" : round2(rr)) + ")");
-                fire(triggerSym, pr.setup, pr.targetLevel, slWithBuffer, null, pr.lockedAtm, ic);
+                FireResult r = fire(triggerSym, pr.setup, pr.targetLevel, slWithBuffer, null, pr.lockedAtm, ic);
+                if (r == FireResult.SKIP_RSI) {
+                    pr.inTriggerZone = true;
+                    return false;
+                }
                 setBearish.accept(null);
                 return true;
             }
+            pr.inTriggerZone = nowInZone;
         }
         return false;
     }
@@ -1303,19 +1323,35 @@ public class Camarilla implements Strategy {
      *  @param slFutures     futures price for the SL trigger
      *  @param entryCandle   the futures bar that fired the setup (used for entry futures price)
      */
-    private void fire(String triggerSymbol, ActiveSetup setup,
-                      double targetFutures, double slFutures, Candle entryCandle,
-                      long lockedAtm) {
+    /** Outcome of a {@link #fire} attempt — drives {@code tryFireOnePending}'s
+     *  decision to clear or keep the pending after the call.
+     *  <ul>
+     *    <li>{@code PLACED} — entry order accepted; pending is cleared as before.</li>
+     *    <li>{@code SKIP_RSI} — RSI gate rejected; pending is KEPT so the retry
+     *        happens on the next rising-edge crossing of the trigger price.
+     *        Transient market state, so the pending stays alive until Phase 3
+     *        invalidation or the 6-bar expiry.</li>
+     *    <li>{@code SKIP_HARD} — any other rejection (lockout, exposure cap,
+     *        R:R gate, session-leg unresolved, entry-order broker rejection).
+     *        Pending is CLEARED and the corresponding event log line is
+     *        annotated "— pending nullified".</li>
+     *  </ul>
+     */
+    enum FireResult { PLACED, SKIP_RSI, SKIP_HARD }
+
+    private FireResult fire(String triggerSymbol, ActiveSetup setup,
+                            double targetFutures, double slFutures, Candle entryCandle,
+                            long lockedAtm) {
         // Legacy default: assume NIFTY when no InstrumentConfig is provided.
-        fire(triggerSymbol, setup, targetFutures, slFutures, entryCandle, lockedAtm,
+        return fire(triggerSymbol, setup, targetFutures, slFutures, entryCandle, lockedAtm,
              InstrumentConfig.NIFTY);
     }
 
-    private void fire(String triggerSymbol, ActiveSetup setup,
-                      double targetFutures, double slFutures, Candle entryCandle,
-                      long lockedAtm, InstrumentConfig ic) {
+    private FireResult fire(String triggerSymbol, ActiveSetup setup,
+                            double targetFutures, double slFutures, Candle entryCandle,
+                            long lockedAtm, InstrumentConfig ic) {
         boolean shortSetup = isShortSetup(setup);
-        if (!shortSetup) return;   // v2 is sell-only by design
+        if (!shortSetup) return FireResult.SKIP_HARD;   // v2 is sell-only by design
         boolean bullishBet = isBullishBet(setup);
 
         // ── Pick the trade leg from the pre-resolved session map ──
@@ -1325,13 +1361,13 @@ public class Camarilla implements Strategy {
         String optionSym = legSymbolFor(setup, ic);
         long   strike    = strikeFor(setup, ic);
         if (optionSym == null || optionSym.isBlank()) {
-            event("[ERROR]", "AUTO ENTRY", setup + " — session leg not resolved yet, skipping");
-            return;
+            event("[ERROR]", "AUTO ENTRY", setup + " — session leg not resolved yet, skipping — pending nullified");
+            return FireResult.SKIP_HARD;
         }
         // Avoid double-entry of the SAME setup on the same option leg. A
         // MANUAL position on the same Fyers symbol coexists fine — they live
         // under distinct composite keys.
-        if (state.openPositions.containsKey(posKey(setup, optionSym))) return;
+        if (state.openPositions.containsKey(posKey(setup, optionSym))) return FireResult.SKIP_HARD;
 
         // ── Momentum (NIFTY RSI-14) gate ──
         // Each directional setup requires NIFTY RSI to sit inside a band that
@@ -1361,8 +1397,8 @@ public class Camarilla implements Strategy {
                         default            -> true;
                     };
                     if (!ok) {
-                        event("[WARNING]", "Momentum", "[" + ic.name() + "] " + setup + " skip — RSI " + round2(r));
-                        return;
+                        event("[WARNING]", "Momentum", "[" + ic.name() + "] " + setup + " skip — RSI " + round2(r) + " (pending retained)");
+                        return FireResult.SKIP_RSI;
                     }
                 }
             } catch (Exception ignored) {}
@@ -1372,10 +1408,10 @@ public class Camarilla implements Strategy {
         double maxRisk = riskSettings.getPortfolioMaxDailyLoss();
         if (maxRisk > 0 && consumedRiskNow() > maxRisk) {
             event("[ERROR]", "Risk", "lockout — consumed ₹"
-                + round2(consumedRiskNow()) + " > ₹" + round2(maxRisk));
+                + round2(consumedRiskNow()) + " > ₹" + round2(maxRisk) + " — pending nullified");
             state.dailyLossLockout = true;
             saveToDisk();
-            return;
+            return FireResult.SKIP_HARD;
         }
 
         // ── Futures-price-based R:R floor (toggle) ──
@@ -1395,8 +1431,8 @@ public class Camarilla implements Strategy {
             double risk   = Math.abs(slFutures - entryFutures);
             if (risk > 0 && reward < risk * minRatio) {
                 event("[WARNING]", "Sizing", setup + " skip — R:R "
-                    + round2(reward / risk) + " < " + round2(minRatio));
-                return;
+                    + round2(reward / risk) + " < " + round2(minRatio) + " — pending nullified");
+                return FireResult.SKIP_HARD;
             }
         }
 
@@ -1424,8 +1460,8 @@ public class Camarilla implements Strategy {
                 newExposureDelta = halfExposureDelta;
             } else {
                 event("[WARNING]", "Risk", "[" + ic.name() + "] " + setup + " skip — exposed ₹"
-                    + round2(exposedRiskNow() + newExposureDelta) + " > ₹" + round2(maxRisk));
-                return;
+                    + round2(exposedRiskNow() + newExposureDelta) + " > ₹" + round2(maxRisk) + " — pending nullified");
+                return FireResult.SKIP_HARD;
             }
         }
 
@@ -1446,8 +1482,8 @@ public class Camarilla implements Strategy {
         OrderDTO order = orderService.placeOrder(optionSym, qty, orderSide, 0, productType);
         if (order == null || order.getId() == null || order.getId().isEmpty()) {
             log.warn("[Camarilla v2] entry order rejected for {} — staying idle", optionSym);
-            event("[ERROR]", "AUTO ENTRY", "entry order rejected for " + optionSym);
-            return;
+            event("[ERROR]", "AUTO ENTRY", "entry order rejected for " + optionSym + " — pending nullified");
+            return FireResult.SKIP_HARD;
         }
         try { marketDataService.subscribeAdditional(Collections.singletonList(optionSym)); }
         catch (Exception ignored) {}
@@ -1484,6 +1520,7 @@ public class Camarilla implements Strategy {
         final String optSym = optionSym;
         candleAggregator.subscribe(optSym, c -> onCandleClose(optSym, c));
         saveToDisk();
+        return FireResult.PLACED;
     }
 
 
@@ -2068,6 +2105,13 @@ public class Camarilla implements Strategy {
          *  in the header chip and so invalidation/expiry knows what to unsubscribe. */
         public String ceSymbol;
         public String peSymbol;
+        /** Edge-detection flag — true when spot was inside the buffered tick-trigger
+         *  zone on the previous check. A fire attempt only happens on a rising edge
+         *  (transition outside→inside), so an RSI-skipped pending doesn't spam
+         *  re-attempts every tick while spot stays past the trigger. Not persisted
+         *  — reconstructed from the next tick when the app restarts mid-pending. */
+        @com.fasterxml.jackson.annotation.JsonIgnore
+        public boolean inTriggerZone;
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
