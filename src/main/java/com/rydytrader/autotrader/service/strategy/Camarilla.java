@@ -1202,37 +1202,6 @@ public class Camarilla implements Strategy {
                 + " (ATR×" + round2(tgtBufMult) + " = " + round2(tgtBuf) + ")");
         }
 
-        // Projected R:R gate at the OPTIMISTIC entry — the buffered tick-fire
-        // price (confirmHigh + ATR×triggerMult for bullish, confirmLow −
-        // ATR×triggerMult for bearish). Any actual fire lands at an
-        // equal-or-worse entry, so R:R at the projected entry is an upper
-        // bound on any real fire R:R.
-        double minRR = riskSettings.getCamarillaMinRRRatio();
-        if (minRR > 0 && atrVal > 0) {
-            double triggerBuf = atrVal * Math.max(0, riskSettings.getCamarillaTriggerAtrMult());
-            double slBuf      = atrVal * Math.max(0, riskSettings.getCamarillaDirectionalSlBufferAtrMult());
-            double optEntry   = bullish
-                ? fresh.confirmHigh + triggerBuf
-                : fresh.confirmLow  - triggerBuf;
-            double sl         = bullish
-                ? fresh.confirmLow  - slBuf
-                : fresh.confirmHigh + slBuf;
-            double reward = Math.abs(fresh.targetLevel - optEntry);
-            double risk   = Math.abs(optEntry - sl);
-            if (risk > 0) {
-                double rr = reward / risk;
-                if (rr < minRR) {
-                    event("[WARNING]", "Setup",
-                        "[" + ic.name() + "] " + fresh.setup + " rejected — projected R:R "
-                        + round2(rr) + " < floor " + round2(minRR)
-                        + " (optEntry " + round2(optEntry)
-                        + ", TGT " + round2(fresh.targetLevel)
-                        + ", SL " + round2(sl) + ")");
-                    return false;
-                }
-            }
-        }
-
         double triggerMult  = Math.max(0, riskSettings.getCamarillaTriggerAtrMult());
         double triggerDelta = atrVal * triggerMult;
         double triggerPrice = bullish
@@ -1414,27 +1383,15 @@ public class Camarilla implements Strategy {
             return FireResult.SKIP_HARD;
         }
 
-        // ── Futures-price-based R:R floor (toggle) ──
-        // For futures-driven entries the candle close approximates the entry futures price.
-        // reward = |entryFut − targetFut|, risk = |slFut − entryFut|.
+        // Entry futures price — candle close if available, else live LTP.
         // Tick-triggered fires (from tryFireTriggeredPending) pass null for
         // entryCandle — the live-LTP fallback below overwrites the 0 with
-        // the current spot, so no zero propagates into R:R or exposedRisk.
+        // the current spot, so no zero propagates into exposedRisk.
         double entryFutures = entryCandle != null ? entryCandle.close() : 0;
         try {
             double live = marketDataService.getLtp(triggerSymbol);
             if (live > 0) entryFutures = live;
         } catch (Exception ignored) {}
-        double minRatio = riskSettings.getCamarillaMinRRRatio();
-        if (minRatio > 0) {
-            double reward = Math.abs(entryFutures - targetFutures);
-            double risk   = Math.abs(slFutures - entryFutures);
-            if (risk > 0 && reward < risk * minRatio) {
-                event("[WARNING]", "Sizing", setup + " skip — R:R "
-                    + round2(reward / risk) + " < " + round2(minRatio) + " — pending nullified");
-                return FireResult.SKIP_HARD;
-            }
-        }
 
         // ── Project exposed-risk after this entry; block if it would exceed maxRisk ──
         // Per-position futures-equivalent risk = |entryFut − slFut| × qty.

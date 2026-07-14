@@ -39,7 +39,6 @@ public class SettingsController {
         result.put("camarillaTradingEndTime",     riskSettings.getCamarillaTradingEndTime(effectiveMode));
         result.put("camarillaSquareOffTime",      riskSettings.getCamarillaSquareOffTime(effectiveMode));
         result.put("camarillaMaxConcurrentPositions", riskSettings.getCamarillaMaxConcurrentPositions(effectiveMode));
-        result.put("camarillaMinRRRatio",          riskSettings.getCamarillaMinRRRatio(effectiveMode));
         result.put("camarillaMomentumCheckEnabled", riskSettings.isCamarillaMomentumCheckEnabled(effectiveMode));
         result.put("camarillaDirectionalSlBufferAtrMult", riskSettings.getCamarillaDirectionalSlBufferAtrMult(effectiveMode));
         result.put("camarillaTriggerAtrMult", riskSettings.getCamarillaTriggerAtrMult(effectiveMode));
@@ -87,7 +86,6 @@ public class SettingsController {
             if (body.containsKey("camarillaTradingEndTime"))    riskSettings.setCamarillaTradingEndTime(effectiveMode, body.get("camarillaTradingEndTime").toString());
             if (body.containsKey("camarillaSquareOffTime"))     riskSettings.setCamarillaSquareOffTime(effectiveMode, body.get("camarillaSquareOffTime").toString());
             if (body.containsKey("camarillaMaxConcurrentPositions")) riskSettings.setCamarillaMaxConcurrentPositions(effectiveMode, Integer.parseInt(body.get("camarillaMaxConcurrentPositions").toString()));
-            if (body.containsKey("camarillaMinRRRatio"))             riskSettings.setCamarillaMinRRRatio(effectiveMode, Double.parseDouble(body.get("camarillaMinRRRatio").toString()));
             if (body.containsKey("camarillaMomentumCheckEnabled"))   riskSettings.setCamarillaMomentumCheckEnabled(effectiveMode, Boolean.parseBoolean(body.get("camarillaMomentumCheckEnabled").toString()));
             if (body.containsKey("camarillaDirectionalSlBufferAtrMult")) riskSettings.setCamarillaDirectionalSlBufferAtrMult(effectiveMode, Double.parseDouble(body.get("camarillaDirectionalSlBufferAtrMult").toString()));
             if (body.containsKey("camarillaTriggerAtrMult"))            riskSettings.setCamarillaTriggerAtrMult(effectiveMode, Double.parseDouble(body.get("camarillaTriggerAtrMult").toString()));
