@@ -121,12 +121,12 @@ public class Camarilla implements Strategy {
     private static final long BAR_LENGTH_MS =
         com.rydytrader.autotrader.service.CandleAggregator.BUCKET_MINUTES * 60_000L;
     /** v2 two-candle entry — maximum bars a pending confirmation may sit in its
-     *  slot without a trigger or invalidation. Six bars × 5 min ≈ 30 min: by
+     *  slot without a trigger or invalidation. Three bars × 5 min = 15 min: by
      *  that point the confirmation candle's geometry no longer reflects current
      *  market structure, so the pending is nullified and we hunt for a fresh
      *  confirmation on subsequent bars. Tuneable via {@link #MAX_PENDING_BARS}
      *  if signal noise warrants a different window. */
-    private static final int MAX_PENDING_BARS = 6;
+    private static final int MAX_PENDING_BARS = 3;
 
     public enum ActiveSetup {
         // v2 setups — all triggered on the NIFTY near-month FUTURES 5-min bar close,
@@ -1299,7 +1299,7 @@ public class Camarilla implements Strategy {
      *    <li>{@code SKIP_RSI} — RSI gate rejected; pending is KEPT so the retry
      *        happens on the next rising-edge crossing of the trigger price.
      *        Transient market state, so the pending stays alive until Phase 3
-     *        invalidation or the 6-bar expiry.</li>
+     *        invalidation or the 3-bar expiry.</li>
      *    <li>{@code SKIP_HARD} — any other rejection (lockout, exposure cap,
      *        R:R gate, session-leg unresolved, entry-order broker rejection).
      *        Pending is CLEARED and the corresponding event log line is
