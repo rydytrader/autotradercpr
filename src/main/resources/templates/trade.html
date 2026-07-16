@@ -261,6 +261,7 @@
                     <span style="color:#fbbf24;">NIFTY <span id="hdrFut" style="color:var(--text-primary);font-weight:700;cursor:help;">—</span>
                         <span id="hdrFutChg" style="margin-left:4px;font-weight:600;"></span></span>
                     <span style="color:var(--text-muted);" title="NIFTY 14-period ATR on 5-min spot bars">ATR<sub style="font-size:0.62em;">5m</sub> <span id="hdrNiftyAtr5m" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                    <span style="color:var(--text-muted);" title="SuperTrend(10, 2) on 5-min NIFTY spot">ST<sub style="font-size:0.62em;">10,2</sub> <span id="hdrNiftySupertrend" style="color:var(--text-muted);font-weight:700;">—</span></span>
                     <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
                     <!-- VIX -->
                     <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
@@ -539,6 +540,21 @@
         var atrEl = document.getElementById('hdrNiftyAtr5m');
         if (atrEl) atrEl.textContent = (d.niftyAtr5m != null && isFinite(Number(d.niftyAtr5m)))
             ? Number(d.niftyAtr5m).toFixed(2) : '—';
+        var stEl = document.getElementById('hdrNiftySupertrend');
+        if (stEl) {
+            var st = d.niftySupertrend5m;
+            if (st && st.trend) {
+                var bullish = st.trend === 'BULLISH';
+                var arrow = bullish ? '▲' : '▼';
+                var lvl = (st.level != null && isFinite(Number(st.level)))
+                    ? ' ' + Number(st.level).toFixed(2) : '';
+                stEl.textContent = arrow + ' ' + st.trend + lvl;
+                stEl.style.color = bullish ? 'var(--accent-green,#34d399)' : 'var(--accent-red,#f87171)';
+            } else {
+                stEl.textContent = '—';
+                stEl.style.color = 'var(--text-muted)';
+            }
+        }
         captureLevelsState(d);
     }
 

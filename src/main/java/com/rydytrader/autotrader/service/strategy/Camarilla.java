@@ -189,6 +189,7 @@ public class Camarilla implements Strategy {
     private final ObjectProvider<CamarillaStreamBroker>   streamBrokerProvider;
     private final ObjectProvider<com.rydytrader.autotrader.service.NiftyRsiService> niftyRsiProvider;
     private final ObjectProvider<com.rydytrader.autotrader.service.NiftyAtrService> niftyAtrProvider;
+    private final ObjectProvider<com.rydytrader.autotrader.service.NiftySupertrendService> niftySupertrendProvider;
     // Tolerate unknown fields on read so a state file written by a different
     // branch (e.g. a future v3 or v1's older shape) doesn't wipe today's
     // in-memory ring on boot. Without this guard Jackson throws
@@ -216,7 +217,8 @@ public class Camarilla implements Strategy {
                      ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
                      ObjectProvider<CamarillaStreamBroker> streamBrokerProvider,
                      ObjectProvider<com.rydytrader.autotrader.service.NiftyRsiService> niftyRsiProvider,
-                     ObjectProvider<com.rydytrader.autotrader.service.NiftyAtrService> niftyAtrProvider) {
+                     ObjectProvider<com.rydytrader.autotrader.service.NiftyAtrService> niftyAtrProvider,
+                     ObjectProvider<com.rydytrader.autotrader.service.NiftySupertrendService> niftySupertrendProvider) {
         this.camarillaService     = camarillaService;
         this.candleAggregator     = candleAggregator;
         this.atmTracker           = atmTracker;
@@ -229,6 +231,7 @@ public class Camarilla implements Strategy {
         this.streamBrokerProvider = streamBrokerProvider;
         this.niftyRsiProvider     = niftyRsiProvider;
         this.niftyAtrProvider     = niftyAtrProvider;
+        this.niftySupertrendProvider = niftySupertrendProvider;
     }
 
     /** Push the latest dashboard state to every SSE-connected browser. No-op when no clients. */
@@ -1977,6 +1980,18 @@ public class Camarilla implements Strategy {
                 : niftyAtrProvider.getIfAvailable();
             Double atr = atrSvc == null ? null : atrSvc.currentAtr();
             if (atr != null) m.put("niftyAtr5m", atr);
+        } catch (Exception ignored) {}
+        try {
+            com.rydytrader.autotrader.service.NiftySupertrendService stSvc =
+                niftySupertrendProvider == null ? null : niftySupertrendProvider.getIfAvailable();
+            String stTrend = stSvc == null ? null : stSvc.currentTrend();
+            Double stLevel = stSvc == null ? null : stSvc.currentLevel();
+            if (stTrend != null) {
+                Map<String, Object> st = new LinkedHashMap<>();
+                st.put("trend", stTrend);
+                st.put("level", stLevel);
+                m.put("niftySupertrend5m", st);
+            }
         } catch (Exception ignored) {}
         return m;
     }
