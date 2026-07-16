@@ -294,8 +294,9 @@
                         Option premium (3-min bar) prints a red candle whose <strong>high &ge; L4</strong>
                         and whose close is <strong>&lt; L4</strong> of THIS option's own Camarilla.
                         Seed a pending. If the NEXT 3-min bar closes below the confirmation's low,
-                        <strong>sell the option</strong>. SL = option's own <strong>L3</strong>
-                        (broker order + 3-min close backup).
+                        <strong>sell the option</strong>. SL = option's own <strong>L3</strong>,
+                        target = option's own <strong>L5</strong> (both broker orders + 3-min
+                        close backup).
                     </div>
                 </div>
                 <div class="combo-row bear">
@@ -307,8 +308,9 @@
                         Option premium (3-min bar) prints a red candle whose <strong>high &ge; H3</strong>
                         and whose close is <strong>&lt; H3</strong> of THIS option's own Camarilla.
                         Seed a pending. If the NEXT 3-min bar closes below the confirmation's low,
-                        <strong>sell the option</strong>. SL = option's own <strong>H4</strong>
-                        (broker order + 3-min close backup).
+                        <strong>sell the option</strong>. SL = option's own <strong>H4</strong>,
+                        target = option's own <strong>L3</strong> (both broker orders + 3-min
+                        close backup).
                     </div>
                 </div>
             </div>
@@ -473,8 +475,12 @@
                 <div class="phase-desc"><strong>Bar-close SL check.</strong> If an open position exists on THIS option AND this 3-min bar's close &ge; the position's SL level, exit immediately at close (backup to the broker-side SL order). SL levels come from the option's own Camarilla: <code>L3</code> for L4_BREAKDOWN entries, <code>H4</code> for H3_REVERSAL entries.</div>
             </div>
             <div class="phase-row">
+                <div class="phase-tag">TGT check</div>
+                <div class="phase-desc"><strong>Bar-close target check.</strong> If an open position exists on THIS option AND this 3-min bar's close &le; the position's target level, exit immediately at close (backup to the broker-side target order). Target levels come from the option's own Camarilla: <code>L5</code> for L4_BREAKDOWN entries, <code>L3</code> for H3_REVERSAL entries.</div>
+            </div>
+            <div class="phase-row">
                 <div class="phase-tag">Fire</div>
-                <div class="phase-desc"><strong>Two-bar entry trigger.</strong> If a pending confirmation exists on this option AND this 3-min bar's close &lt; the confirmation's own low, <strong>sell the option at this close</strong>. Position size = <code>lotsPerLeg × 65</code>, possibly halved by the portfolio-risk retry. Broker SL order placed at the option's next structural level (L3 or H4).</div>
+                <div class="phase-desc"><strong>Two-bar entry trigger.</strong> If a pending confirmation exists on this option AND this 3-min bar's close &lt; the confirmation's own low, <strong>sell the option at this close</strong>. Position size = <code>lotsPerLeg × 65</code>, possibly halved by the portfolio-risk retry. Broker SL + target orders placed at the option's own Camarilla levels.</div>
             </div>
             <div class="phase-row">
                 <div class="phase-tag">Detect</div>
@@ -497,16 +503,16 @@
             When the trigger fires, the bot places a single SELL order on the option that
             was being monitored (H5 CE or L5 PE). Position size = <code>lotsPerLeg × 65</code>,
             possibly halved by the portfolio-risk retry when a full-size fire would breach
-            the daily loss cap. A broker <strong>SL order</strong> is placed at entry at the
-            option's own next structural level (L3 or H4). No target order — profit is
-            captured only by timed squareoff or by broker-side SL failing and the bar-close
-            backup exiting into a profitable close.
+            the daily loss cap. Both a broker <strong>SL order</strong> and a broker
+            <strong>target order</strong> are placed at entry, at levels drawn from the
+            option's own Camarilla.
         </p>
         <ul class="doc-list">
             <li><strong>Stop loss (primary)</strong> — broker-side SL order at option's own <code>L3</code> (for L4_BREAKDOWN) or <code>H4</code> (for H3_REVERSAL). Fires on any tick that reaches the level.</li>
             <li><strong>Stop loss (backup)</strong> — 3-min bar-close check inside the strategy. If a bar closes at or above the SL level and the broker order for some reason didn't fill, the strategy force-closes at the close price.</li>
-            <li><strong>No target order</strong> — the strategy holds until timed squareoff or SL. Premium decay is the profit source.</li>
-            <li><strong>Timed squareoff</strong> — at the configured squareoff time (default 15:15 IST), all open positions are flattened regardless of SL state.</li>
+            <li><strong>Target (primary)</strong> — broker-side BUY LIMIT at option's own <code>L5</code> (for L4_BREAKDOWN) or <code>L3</code> (for H3_REVERSAL). Fires on any tick that reaches the level.</li>
+            <li><strong>Target (backup)</strong> — 3-min bar-close check inside the strategy. If a bar closes at or below the target level and the broker order didn't fill, the strategy force-closes at the close price.</li>
+            <li><strong>Timed squareoff</strong> — at the configured squareoff time (default 15:15 IST), all open positions are flattened regardless of SL/target state.</li>
         </ul>
     </div>
 

@@ -555,8 +555,8 @@ public class Camarilla implements Strategy {
         }
     }
 
-    /** Per-option 3-min bar walk. Order matters: SL check → entry trigger → new
-     *  confirmation → age-out. */
+    /** Per-option 3-min bar walk. Order matters: SL check → target check → entry
+     *  trigger → new confirmation → age-out. */
     private void processOptionBarPhases(String symbol, Candle c, CamarillaLevels lv) {
         // (a) SL check first — 3-min close at or above the position's slLevel exits
         //     regardless of any pending state on this symbol.
@@ -572,6 +572,18 @@ public class Camarilla implements Strategy {
                 shortSym(symbol) + " SL_HIT on 3-min close @ " + round2(c.close())
                 + " (sl=" + round2(open.slLevel) + ")");
             closePosition(open, "SL_HIT");
+            return;
+        }
+        // (a2) Target backup — 3-min close at or below the position's targetLevel
+        //      also exits (the broker-side target order should catch this first
+        //      on any tick, but this covers the case where the target order
+        //      didn't fill).
+        if (open != null && open.targetLevel > 0
+            && c.close() <= open.targetLevel) {
+            event("[SUCCESS]", "Exit",
+                shortSym(symbol) + " TARGET_HIT on 3-min close @ " + round2(c.close())
+                + " (tgt=" + round2(open.targetLevel) + ")");
+            closePosition(open, "TARGET_HIT");
             return;
         }
 
@@ -677,9 +689,14 @@ public class Camarilla implements Strategy {
             if (p != null && symbol.equals(p.symbol)) return;
         }
         double slLevel;
-        if (pending.setup == ActiveSetup.L4_BREAKDOWN)      slLevel = lv.l3();
-        else if (pending.setup == ActiveSetup.H3_REVERSAL)  slLevel = lv.h4();
-        else {
+        double targetLevel;
+        if (pending.setup == ActiveSetup.L4_BREAKDOWN) {
+            slLevel     = lv.l3();       // next structural level above L4
+            targetLevel = lv.l5();       // extreme downside — premium exhaustion
+        } else if (pending.setup == ActiveSetup.H3_REVERSAL) {
+            slLevel     = lv.h4();       // next structural level above H3
+            targetLevel = lv.l3();       // rejection carries the premium back through L3
+        } else {
             event("[ERROR]", "AUTO ENTRY", shortSym(symbol) + " — unknown setup " + pending.setup);
             return;
         }
@@ -687,6 +704,11 @@ public class Camarilla implements Strategy {
             event("[ERROR]", "AUTO ENTRY",
                 shortSym(symbol) + " — SL level unavailable for " + pending.setup);
             return;
+        }
+        // Target may legitimately be <= 0 (L5 can print negative for very-cheap options);
+        // clamp to the option tick size so the display + order placement stay sane.
+        if (Double.isNaN(targetLevel) || targetLevel < OPTION_TICK_SIZE) {
+            targetLevel = OPTION_TICK_SIZE;
         }
 
         int qty = riskSettings.getCamarillaLotsPerLeg() * LOT_SIZE;
@@ -724,6 +746,14 @@ public class Camarilla implements Strategy {
                 symbol, slLevel);
         }
 
+        // Broker-side TARGET — BUY LIMIT at the target level to close the short at
+        // profit. Failure is non-fatal (the 3-min close backup covers it).
+        OrderDTO tgtOrder = orderService.placeTarget(symbol, qty, +1, targetLevel);
+        if (tgtOrder == null || tgtOrder.getId() == null || tgtOrder.getId().isEmpty()) {
+            log.warn("[Camarilla] broker target placement failed for {} @ {} — falling back to bar-close backup",
+                symbol, targetLevel);
+        }
+
         Position p = new Position();
         p.symbol          = symbol;
         p.setup           = pending.setup;
@@ -733,7 +763,7 @@ public class Camarilla implements Strategy {
         p.openMillis      = System.currentTimeMillis();
         p.slLevel         = slLevel;
         p.originalSlLevel = slLevel;
-        p.targetLevel     = 0;             // no target order — timed squareoff / SL only
+        p.targetLevel     = targetLevel;
         p.isShort         = true;
         p.fillResolved    = false;
         p.productType     = productType;
@@ -744,7 +774,8 @@ public class Camarilla implements Strategy {
         state.tradesToday++;
         event("[SUCCESS]", "AUTO ENTRY",
             "sell " + shortSym(symbol) + " ×" + (qty / LOT_SIZE) + "L "
-            + pending.setup + " @ " + round2(entryLtp) + " (SL " + round2(slLevel) + ")");
+            + pending.setup + " @ " + round2(entryLtp)
+            + " (SL " + round2(slLevel) + ", TGT " + round2(targetLevel) + ")");
         saveToDisk();
     }
 
