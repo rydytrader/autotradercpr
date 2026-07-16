@@ -190,6 +190,7 @@ public class Camarilla implements Strategy {
     private final ObjectProvider<com.rydytrader.autotrader.service.NiftyRsiService> niftyRsiProvider;
     private final ObjectProvider<com.rydytrader.autotrader.service.NiftyAtrService> niftyAtrProvider;
     private final ObjectProvider<com.rydytrader.autotrader.service.NiftySupertrendService> niftySupertrendProvider;
+    private final ObjectProvider<com.rydytrader.autotrader.service.NiftyEmaService> niftyEmaProvider;
     // Tolerate unknown fields on read so a state file written by a different
     // branch (e.g. a future v3 or v1's older shape) doesn't wipe today's
     // in-memory ring on boot. Without this guard Jackson throws
@@ -218,7 +219,8 @@ public class Camarilla implements Strategy {
                      ObjectProvider<CamarillaStreamBroker> streamBrokerProvider,
                      ObjectProvider<com.rydytrader.autotrader.service.NiftyRsiService> niftyRsiProvider,
                      ObjectProvider<com.rydytrader.autotrader.service.NiftyAtrService> niftyAtrProvider,
-                     ObjectProvider<com.rydytrader.autotrader.service.NiftySupertrendService> niftySupertrendProvider) {
+                     ObjectProvider<com.rydytrader.autotrader.service.NiftySupertrendService> niftySupertrendProvider,
+                     ObjectProvider<com.rydytrader.autotrader.service.NiftyEmaService> niftyEmaProvider) {
         this.camarillaService     = camarillaService;
         this.candleAggregator     = candleAggregator;
         this.atmTracker           = atmTracker;
@@ -232,6 +234,7 @@ public class Camarilla implements Strategy {
         this.niftyRsiProvider     = niftyRsiProvider;
         this.niftyAtrProvider     = niftyAtrProvider;
         this.niftySupertrendProvider = niftySupertrendProvider;
+        this.niftyEmaProvider     = niftyEmaProvider;
     }
 
     /** Push the latest dashboard state to every SSE-connected browser. No-op when no clients. */
@@ -1992,6 +1995,12 @@ public class Camarilla implements Strategy {
                 st.put("level", stLevel);
                 m.put("niftySupertrend5m", st);
             }
+        } catch (Exception ignored) {}
+        try {
+            com.rydytrader.autotrader.service.NiftyEmaService emaSvc =
+                niftyEmaProvider == null ? null : niftyEmaProvider.getIfAvailable();
+            Double ema = emaSvc == null ? null : emaSvc.currentEma();
+            if (ema != null) m.put("niftyEma20_5m", ema);
         } catch (Exception ignored) {}
         return m;
     }
