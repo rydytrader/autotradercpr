@@ -3,6 +3,7 @@ package com.rydytrader.autotrader.controller;
 import com.rydytrader.autotrader.dto.CamarillaLevels;
 import com.rydytrader.autotrader.service.CamarillaService;
 import com.rydytrader.autotrader.service.CamarillaStreamBroker;
+import com.rydytrader.autotrader.service.EventService;
 import com.rydytrader.autotrader.service.strategy.Camarilla;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.http.MediaType;
@@ -33,15 +34,18 @@ public class CamarillaController {
     private final Camarilla            strategy;
     private final RiskSettingsStore    riskSettings;
     private final CamarillaStreamBroker streamBroker;
+    private final EventService         eventService;
 
     public CamarillaController(CamarillaService levels,
                                Camarilla strategy,
                                RiskSettingsStore riskSettings,
-                               CamarillaStreamBroker streamBroker) {
+                               CamarillaStreamBroker streamBroker,
+                               EventService eventService) {
         this.levels       = levels;
         this.strategy     = strategy;
         this.riskSettings = riskSettings;
         this.streamBroker = streamBroker;
+        this.eventService = eventService;
     }
 
     @GetMapping(value = "/api/camarilla/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -88,8 +92,16 @@ public class CamarillaController {
         Object v = body == null ? null : body.get("enabled");
         boolean enabled = (v instanceof Boolean) ? (Boolean) v
             : v != null && Boolean.parseBoolean(v.toString());
+        boolean previous = riskSettings.isCamarillaEnabled();
         riskSettings.setCamarillaEnabled(enabled);
         riskSettings.save();
+        // Only log on an actual state transition — a redundant toggle
+        // (checkbox re-clicked without a change) shouldn't clutter the log.
+        if (enabled != previous && eventService != null) {
+            eventService.log(enabled
+                ? "[SUCCESS] Trading resumed — new entries enabled"
+                : "[WARNING] Trading stopped — no new entries will fire (existing positions still managed)");
+        }
         return Map.of("ok", true, "enabled", enabled);
     }
 }
