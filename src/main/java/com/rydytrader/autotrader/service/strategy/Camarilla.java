@@ -885,26 +885,28 @@ public class Camarilla implements Strategy {
     private PendingConfirmation detectConfirmation(Candle c, CamarillaLevels lv) {
         if (lv == null) return null;
 
-        // Geometry-only confirmation. The bar must wick beyond the level AND
-        // close back across it — that's the level-test-and-recover pattern.
-        // Bar COLOR is intentionally NOT a filter here: the trigger candle
-        // (Phase 1) requires a same-direction bar that closes through the
-        // confirmation's far extreme, which already enforces a strong
-        // second-bar conviction. Requiring a coloured confirmation on top
-        // dropped ~25-35% of valid level rejections without measurable edge.
-        //
+        // Geometry + color confirmation. The bar must wick beyond the level AND
+        // close back across it (level-test-and-recover), AND the candle color
+        // must match the setup direction:
+        //   Bullish setups (L3_REVERSAL, H4_BREAKOUT) require close > open (green).
+        //   Bearish setups (H3_REVERSAL, L4_BREAKDOWN) require close < open (red).
+        // A doji (close == open) is neither, so it's rejected — no directional
+        // conviction to seed a pending on.
+        boolean green = c.close() > c.open();
+        boolean red   = c.close() < c.open();
+
         // Bullish — reversal off L3 or breakout above H4.
-        if (c.low() <= lv.l3() && c.close() > lv.l3()) {
+        if (green && c.low() <= lv.l3() && c.close() > lv.l3()) {
             return mkConfirmation(ActiveSetup.L3_REVERSAL, c, lv.h3());
         }
-        if (c.low() <= lv.h4() && c.close() > lv.h4()) {
+        if (green && c.low() <= lv.h4() && c.close() > lv.h4()) {
             return mkConfirmation(ActiveSetup.H4_BREAKOUT, c, lv.h5());
         }
         // Bearish — reversal off H3 or breakdown below L4.
-        if (c.high() >= lv.h3() && c.close() < lv.h3()) {
+        if (red && c.high() >= lv.h3() && c.close() < lv.h3()) {
             return mkConfirmation(ActiveSetup.H3_REVERSAL, c, lv.l3());
         }
-        if (c.high() >= lv.l4() && c.close() < lv.l4()) {
+        if (red && c.high() >= lv.l4() && c.close() < lv.l4()) {
             return mkConfirmation(ActiveSetup.L4_BREAKDOWN, c, lv.l5());
         }
         return null;
