@@ -384,9 +384,27 @@ public class Camarilla implements Strategy {
 
     @Override
     public void fastSlCheck() {
-        // No-op. Entry and SL both fire on 3-min option bar closes now (broker-side SL is
-        // placed on entry; the bar-close backup in processOptionBarPhases handles the case
-        // where the broker order is rejected/mis-priced). No tick-level watcher.
+        // Tick-based TARGET watcher. SL is handled broker-side (order placed at entry).
+        // For each open auto position, read the option's live LTP; if it's at or below
+        // targetLevel, close at market with reason TARGET_HIT. This runs at the fast
+        // scheduler cadence (~500 ms), so exits fire the moment the level is touched
+        // even on a gap or thin book — no bar-close wait, no LIMIT-order fill risk.
+        if (state.openPositions.isEmpty()) return;
+        for (Position p : new java.util.ArrayList<>(state.openPositions.values())) {
+            if (p == null) continue;
+            if (p.setup == ActiveSetup.MANUAL) continue;
+            if (p.targetLevel <= 0) continue;
+            if (p.symbol == null || p.symbol.isBlank()) continue;
+            double ltp = 0;
+            try { ltp = marketDataService.getLtp(p.symbol); } catch (Exception ignored) {}
+            if (ltp <= 0) continue;
+            if (ltp <= p.targetLevel) {
+                event("[SUCCESS]", "Exit",
+                    shortSym(p.symbol) + " TARGET_HIT @ " + round2(ltp)
+                    + " (tgt=" + round2(p.targetLevel) + ")");
+                closePosition(p, "TARGET_HIT");
+            }
+        }
     }
 
     /** Best-effort re-resolve trigger for the two session legs. Runs every 30 s until the
@@ -555,37 +573,10 @@ public class Camarilla implements Strategy {
         }
     }
 
-    /** Per-option 3-min bar walk. Order matters: SL check → target check → entry
-     *  trigger → new confirmation → age-out. */
+    /** Per-option 3-min bar walk. Order matters: entry trigger → new confirmation
+     *  → age-out. SL is broker-side (placed at entry), and target is checked on
+     *  every tick via {@link #fastSlCheck()} — neither exit runs on bar close. */
     private void processOptionBarPhases(String symbol, Candle c, CamarillaLevels lv) {
-        // (a) SL check first — 3-min close at or above the position's slLevel exits
-        //     regardless of any pending state on this symbol.
-        Position open = null;
-        for (Position p : state.openPositions.values()) {
-            if (p == null) continue;
-            if (p.setup == ActiveSetup.MANUAL) continue;   // manual positions are excluded
-            if (symbol.equals(p.symbol)) { open = p; break; }
-        }
-        if (open != null && !Double.isNaN(open.slLevel) && open.slLevel > 0
-            && c.close() >= open.slLevel) {
-            event("[WARNING]", "Exit",
-                shortSym(symbol) + " SL_HIT on 3-min close @ " + round2(c.close())
-                + " (sl=" + round2(open.slLevel) + ")");
-            closePosition(open, "SL_HIT");
-            return;
-        }
-        // (a2) Target backup — 3-min close at or below the position's targetLevel
-        //      also exits (the broker-side target order should catch this first
-        //      on any tick, but this covers the case where the target order
-        //      didn't fill).
-        if (open != null && open.targetLevel > 0
-            && c.close() <= open.targetLevel) {
-            event("[SUCCESS]", "Exit",
-                shortSym(symbol) + " TARGET_HIT on 3-min close @ " + round2(c.close())
-                + " (tgt=" + round2(open.targetLevel) + ")");
-            closePosition(open, "TARGET_HIT");
-            return;
-        }
 
         // (b) Entry trigger — pending exists AND next bar closes below the confirmation low.
         PendingConfirmation pending = state.pendingByOption.get(symbol);
@@ -738,21 +729,21 @@ public class Camarilla implements Strategy {
         try { marketDataService.subscribeAdditional(java.util.Collections.singletonList(symbol)); }
         catch (Exception ignored) {}
 
-        // Broker-side SL — BUY to close the short. Failure is non-fatal (the 3-min close
-        // backup in processOptionBarPhases still exits on breach), just logged.
+        // Broker-side SL — BUY to close the short at market when the level is touched.
+        // This is the SOLE stop-loss mechanism; the strategy no longer runs a bar-close
+        // SL backup. Broker rejection here is logged loudly — the position is otherwise
+        // unprotected on the downside until timed squareoff.
         OrderDTO slOrder = orderService.placeStopLoss(symbol, qty, +1, slLevel);
         if (slOrder == null || slOrder.getId() == null || slOrder.getId().isEmpty()) {
-            log.warn("[Camarilla] broker SL placement failed for {} @ {} — falling back to bar-close backup",
+            log.warn("[Camarilla] broker SL placement FAILED for {} @ {} — position has no SL!",
                 symbol, slLevel);
+            event("[ERROR]", "AUTO ENTRY",
+                shortSym(symbol) + " SL order rejected — position UNPROTECTED @ SL " + round2(slLevel));
         }
-
-        // Broker-side TARGET — BUY LIMIT at the target level to close the short at
-        // profit. Failure is non-fatal (the 3-min close backup covers it).
-        OrderDTO tgtOrder = orderService.placeTarget(symbol, qty, +1, targetLevel);
-        if (tgtOrder == null || tgtOrder.getId() == null || tgtOrder.getId().isEmpty()) {
-            log.warn("[Camarilla] broker target placement failed for {} @ {} — falling back to bar-close backup",
-                symbol, targetLevel);
-        }
+        // Target is NOT placed as a broker order. It runs tick-by-tick inside
+        // fastSlCheck (see below) — on any LTP tick reaching targetLevel we
+        // fire a market BUY to close the short, so we always get filled at
+        // target even on a gap or thin book. See Position.targetLevel below.
 
         Position p = new Position();
         p.symbol          = symbol;

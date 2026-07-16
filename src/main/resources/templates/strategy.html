@@ -471,16 +471,8 @@
         </p>
         <div style="margin-top:8px;">
             <div class="phase-row">
-                <div class="phase-tag">SL first</div>
-                <div class="phase-desc"><strong>Bar-close SL check.</strong> If an open position exists on THIS option AND this 3-min bar's close &ge; the position's SL level, exit immediately at close (backup to the broker-side SL order). SL levels come from the option's own Camarilla: <code>L3</code> for L4_BREAKDOWN entries, <code>H4</code> for H3_REVERSAL entries.</div>
-            </div>
-            <div class="phase-row">
-                <div class="phase-tag">TGT check</div>
-                <div class="phase-desc"><strong>Bar-close target check.</strong> If an open position exists on THIS option AND this 3-min bar's close &le; the position's target level, exit immediately at close (backup to the broker-side target order). Target levels come from the option's own Camarilla: <code>L5</code> for L4_BREAKDOWN entries, <code>L3</code> for H3_REVERSAL entries.</div>
-            </div>
-            <div class="phase-row">
                 <div class="phase-tag">Fire</div>
-                <div class="phase-desc"><strong>Two-bar entry trigger.</strong> If a pending confirmation exists on this option AND this 3-min bar's close &lt; the confirmation's own low, <strong>sell the option at this close</strong>. Position size = <code>lotsPerLeg × 65</code>, possibly halved by the portfolio-risk retry. Broker SL + target orders placed at the option's own Camarilla levels.</div>
+                <div class="phase-desc"><strong>Two-bar entry trigger.</strong> If a pending confirmation exists on this option AND this 3-min bar's close &lt; the confirmation's own low, <strong>sell the option at this close</strong>. Position size = <code>lotsPerLeg × 65</code>, possibly halved by the portfolio-risk retry. Broker SL order placed immediately at the option's own next structural level (L3 or H4). Target is monitored tick-by-tick — see Order Flow.</div>
             </div>
             <div class="phase-row">
                 <div class="phase-tag">Detect</div>
@@ -508,10 +500,8 @@
             option's own Camarilla.
         </p>
         <ul class="doc-list">
-            <li><strong>Stop loss (primary)</strong> — broker-side SL order at option's own <code>L3</code> (for L4_BREAKDOWN) or <code>H4</code> (for H3_REVERSAL). Fires on any tick that reaches the level.</li>
-            <li><strong>Stop loss (backup)</strong> — 3-min bar-close check inside the strategy. If a bar closes at or above the SL level and the broker order for some reason didn't fill, the strategy force-closes at the close price.</li>
-            <li><strong>Target (primary)</strong> — broker-side BUY LIMIT at option's own <code>L5</code> (for L4_BREAKDOWN) or <code>L3</code> (for H3_REVERSAL). Fires on any tick that reaches the level.</li>
-            <li><strong>Target (backup)</strong> — 3-min bar-close check inside the strategy. If a bar closes at or below the target level and the broker order didn't fill, the strategy force-closes at the close price.</li>
+            <li><strong>Stop loss</strong> — broker-side SL order at option's own <code>L3</code> (for L4_BREAKDOWN) or <code>H4</code> (for H3_REVERSAL). Placed at entry, held on the exchange. Fires on any tick that reaches the level. Sole SL mechanism — no in-strategy backup; a broker rejection is logged and leaves the position unprotected until timed squareoff.</li>
+            <li><strong>Target</strong> — tick-based, monitored inside the strategy at the fast scheduler cadence (~500 ms). On any LTP tick where the option's live price is at or below the target level (<code>L5</code> for L4_BREAKDOWN, <code>L3</code> for H3_REVERSAL), the strategy fires a market BUY to close the short. No broker LIMIT order — guarantees a fill even on a gap or thin book.</li>
             <li><strong>Timed squareoff</strong> — at the configured squareoff time (default 15:15 IST), all open positions are flattened regardless of SL/target state.</li>
         </ul>
     </div>
