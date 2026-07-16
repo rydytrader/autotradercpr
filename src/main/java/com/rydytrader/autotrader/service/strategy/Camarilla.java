@@ -188,7 +188,6 @@ public class Camarilla implements Strategy {
     private final ObjectProvider<StrategyTradeRepository> tradeRepoProvider;
     private final ObjectProvider<CamarillaStreamBroker>   streamBrokerProvider;
     private final ObjectProvider<com.rydytrader.autotrader.service.NiftyAtrService> niftyAtrProvider;
-    private final ObjectProvider<com.rydytrader.autotrader.service.NiftyEmaService> niftyEmaProvider;
     // Tolerate unknown fields on read so a state file written by a different
     // branch (e.g. a future v3 or v1's older shape) doesn't wipe today's
     // in-memory ring on boot. Without this guard Jackson throws
@@ -215,8 +214,7 @@ public class Camarilla implements Strategy {
                      RiskSettingsStore riskSettings,
                      ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
                      ObjectProvider<CamarillaStreamBroker> streamBrokerProvider,
-                     ObjectProvider<com.rydytrader.autotrader.service.NiftyAtrService> niftyAtrProvider,
-                     ObjectProvider<com.rydytrader.autotrader.service.NiftyEmaService> niftyEmaProvider) {
+                     ObjectProvider<com.rydytrader.autotrader.service.NiftyAtrService> niftyAtrProvider) {
         this.camarillaService     = camarillaService;
         this.candleAggregator     = candleAggregator;
         this.atmTracker           = atmTracker;
@@ -228,7 +226,6 @@ public class Camarilla implements Strategy {
         this.tradeRepoProvider    = tradeRepoProvider;
         this.streamBrokerProvider = streamBrokerProvider;
         this.niftyAtrProvider     = niftyAtrProvider;
-        this.niftyEmaProvider     = niftyEmaProvider;
     }
 
     /** Push the latest dashboard state to every SSE-connected browser. No-op when no clients. */
@@ -737,18 +734,10 @@ public class Camarilla implements Strategy {
     }
 
     /** Shared trigger logic for one instrument. Every geometric confirmation
-     *  arms a tick trigger at {@code confirmExtreme ± ATR × triggerMult}. Fire
-     *  attempts are edge-triggered — spot must CROSS into the buffered zone
-     *  (transition outside→inside), so RSI-skipped pendings can retry when
-     *  spot exits and re-enters without spamming attempts every tick.
-     *  <ul>
-     *    <li>{@code PLACED} / {@code SKIP_HARD} → pending is cleared. Save
-     *        follows in the caller.</li>
-     *    <li>{@code SKIP_RETRY} → pending kept; {@code inTriggerZone} is set so
-     *        the next attempt waits for spot to exit and re-cross the zone.</li>
-     *  </ul>
-     *  Returns true only on {@code PLACED} / {@code SKIP_HARD} so the caller's
-     *  {@code saveToDisk()} runs on state changes but not on transient tick edges. */
+     *  arms a tick trigger at {@code confirmExtreme ± ATR × triggerMult}; the
+     *  first spot tick to touch the buffered level fires the trade and clears
+     *  the pending (whether the fire placed the order or was hard-rejected
+     *  by a downstream gate). Returns true when a fire attempt happened. */
     private boolean tryFireOnePending(String triggerSym, double spot,
                                        double triggerDelta, double slBuf,
                                        PendingConfirmation pb, PendingConfirmation pr,
@@ -757,41 +746,29 @@ public class Camarilla implements Strategy {
                                        java.util.function.Consumer<PendingConfirmation> setBearish) {
         if (pb != null) {
             double triggerPrice = pb.confirmHigh + triggerDelta;
-            boolean nowInZone = spot >= triggerPrice;
-            if (nowInZone && !pb.inTriggerZone) {
+            if (spot >= triggerPrice) {
                 double slWithBuffer = pb.confirmLow - slBuf;
                 double rr = computeRR(spot, pb.targetLevel, slWithBuffer);
                 event("[INFO]", "Setup", "[" + ic.name() + "] " + pb.setup + " trigger @ " + round2(spot)
                     + " (SL " + round2(slWithBuffer) + ", TGT " + round2(pb.targetLevel)
                     + ", R:R " + (Double.isNaN(rr) ? "—" : round2(rr)) + ")");
-                FireResult r = fire(triggerSym, pb.setup, pb.targetLevel, slWithBuffer, null, pb.lockedAtm, ic);
-                if (r == FireResult.SKIP_RETRY) {
-                    pb.inTriggerZone = true;   // wait for spot to exit + re-cross
-                    return false;
-                }
+                fire(triggerSym, pb.setup, pb.targetLevel, slWithBuffer, null, pb.lockedAtm, ic);
                 setBullish.accept(null);
                 return true;
             }
-            pb.inTriggerZone = nowInZone;
         }
         if (pr != null) {
             double triggerPrice = pr.confirmLow - triggerDelta;
-            boolean nowInZone = spot <= triggerPrice;
-            if (nowInZone && !pr.inTriggerZone) {
+            if (spot <= triggerPrice) {
                 double slWithBuffer = pr.confirmHigh + slBuf;
                 double rr = computeRR(spot, pr.targetLevel, slWithBuffer);
                 event("[INFO]", "Setup", "[" + ic.name() + "] " + pr.setup + " trigger @ " + round2(spot)
                     + " (SL " + round2(slWithBuffer) + ", TGT " + round2(pr.targetLevel)
                     + ", R:R " + (Double.isNaN(rr) ? "—" : round2(rr)) + ")");
-                FireResult r = fire(triggerSym, pr.setup, pr.targetLevel, slWithBuffer, null, pr.lockedAtm, ic);
-                if (r == FireResult.SKIP_RETRY) {
-                    pr.inTriggerZone = true;
-                    return false;
-                }
+                fire(triggerSym, pr.setup, pr.targetLevel, slWithBuffer, null, pr.lockedAtm, ic);
                 setBearish.accept(null);
                 return true;
             }
-            pr.inTriggerZone = nowInZone;
         }
         return false;
     }
@@ -1292,22 +1269,12 @@ public class Camarilla implements Strategy {
      *  @param slFutures     futures price for the SL trigger
      *  @param entryCandle   the futures bar that fired the setup (used for entry futures price)
      */
-    /** Outcome of a {@link #fire} attempt — drives {@code tryFireOnePending}'s
-     *  decision to clear or keep the pending after the call.
-     *  <ul>
-     *    <li>{@code PLACED} — entry order accepted; pending is cleared as before.</li>
-     *    <li>{@code SKIP_RETRY} — transient market-state gate rejected the
-     *        trade (RSI band, EMA-alignment). Pending is KEPT so the retry
-     *        happens on the next rising-edge crossing of the trigger price.
-     *        The pending stays alive until Phase 3 invalidation or the 3-bar
-     *        expiry.</li>
-     *    <li>{@code SKIP_HARD} — any other rejection (lockout, exposure cap,
-     *        R:R gate, session-leg unresolved, entry-order broker rejection).
-     *        Pending is CLEARED and the corresponding event log line is
-     *        annotated "— pending nullified".</li>
-     *  </ul>
-     */
-    enum FireResult { PLACED, SKIP_RETRY, SKIP_HARD }
+    /** Outcome of a {@link #fire} attempt. Pending is cleared on either
+     *  branch — {@code PLACED} means the entry order was accepted;
+     *  {@code SKIP_HARD} means a downstream gate (lockout, exposure cap,
+     *  session-leg unresolved, entry-order broker rejection) rejected the
+     *  trade. Hard rejections log a line ending "— pending nullified". */
+    enum FireResult { PLACED, SKIP_HARD }
 
     private FireResult fire(String triggerSymbol, ActiveSetup setup,
                             double targetFutures, double slFutures, Candle entryCandle,
@@ -1338,34 +1305,6 @@ public class Camarilla implements Strategy {
         // MANUAL position on the same Fyers symbol coexists fine — they live
         // under distinct composite keys.
         if (state.openPositions.containsKey(posKey(setup, optionSym))) return FireResult.SKIP_HARD;
-
-        // ── EMA-alignment gate ──
-        // Bullish setups (L3_REVERSAL, H4_BREAKOUT) require the trigger price
-        // (entry futures) to sit ABOVE the 20 EMA on 5-min NIFTY spot.
-        // Bearish setups (H3_REVERSAL, L4_BREAKDOWN) require the trigger price
-        // to sit BELOW the 20 EMA. Filters counter-trend entries where the
-        // dominant 5-min moving-average trend is against the setup.
-        // EMA unavailable (not seeded, service missing) → pass through.
-        try {
-            var emaSvc = niftyEmaProvider == null ? null : niftyEmaProvider.getIfAvailable();
-            Double ema = emaSvc == null ? null : emaSvc.currentEma();
-            if (ema != null) {
-                double liveTrig = 0;
-                try { liveTrig = marketDataService.getLtp(triggerSymbol); }
-                catch (Exception ignored) {}
-                if (liveTrig > 0) {
-                    boolean ok = bullishBet ? liveTrig > ema : liveTrig < ema;
-                    if (!ok) {
-                        event("[WARNING]", "Momentum",
-                            "[" + ic.name() + "] " + setup
-                            + " skip — spot " + round2(liveTrig)
-                            + (bullishBet ? " below EMA20 " : " above EMA20 ") + round2(ema)
-                            + " (pending retained)");
-                        return FireResult.SKIP_RETRY;
-                    }
-                }
-            }
-        } catch (Exception ignored) {}
 
         // ── Risk gates: consumed > maxRisk locks out the day ──
         double maxRisk = riskSettings.getPortfolioMaxDailyLoss();
@@ -1972,12 +1911,6 @@ public class Camarilla implements Strategy {
             Double atr = atrSvc == null ? null : atrSvc.currentAtr();
             if (atr != null) m.put("niftyAtr5m", atr);
         } catch (Exception ignored) {}
-        try {
-            com.rydytrader.autotrader.service.NiftyEmaService emaSvc =
-                niftyEmaProvider == null ? null : niftyEmaProvider.getIfAvailable();
-            Double ema = emaSvc == null ? null : emaSvc.currentEma();
-            if (ema != null) m.put("niftyEma20_5m", ema);
-        } catch (Exception ignored) {}
         return m;
     }
 
@@ -2062,13 +1995,6 @@ public class Camarilla implements Strategy {
          *  in the header chip and so invalidation/expiry knows what to unsubscribe. */
         public String ceSymbol;
         public String peSymbol;
-        /** Edge-detection flag — true when spot was inside the buffered tick-trigger
-         *  zone on the previous check. A fire attempt only happens on a rising edge
-         *  (transition outside→inside), so an RSI-skipped pending doesn't spam
-         *  re-attempts every tick while spot stays past the trigger. Not persisted
-         *  — reconstructed from the next tick when the app restarts mid-pending. */
-        @com.fasterxml.jackson.annotation.JsonIgnore
-        public boolean inTriggerZone;
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

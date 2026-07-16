@@ -261,7 +261,6 @@
                     <span style="color:#fbbf24;">NIFTY <span id="hdrFut" style="color:var(--text-primary);font-weight:700;cursor:help;">—</span>
                         <span id="hdrFutChg" style="margin-left:4px;font-weight:600;"></span></span>
                     <span style="color:var(--text-muted);" title="NIFTY 14-period ATR on 5-min spot bars">ATR<sub style="font-size:0.62em;">5m</sub> <span id="hdrNiftyAtr5m" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                    <span style="color:var(--text-muted);" title="20-period EMA on 5-min NIFTY spot (live-projected against tick LTP)">EMA<sub style="font-size:0.62em;">20</sub> <span id="hdrNiftyEma20" style="color:var(--text-primary);font-weight:700;">—</span></span>
                     <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
                     <!-- VIX -->
                     <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
@@ -515,14 +514,6 @@
         var atrEl = document.getElementById('hdrNiftyAtr5m');
         if (atrEl) atrEl.textContent = (d.niftyAtr5m != null && isFinite(Number(d.niftyAtr5m)))
             ? Number(d.niftyAtr5m).toFixed(2) : '—';
-        // EMA20 — cache the last-closed-bar EMA and project against live LTP
-        // for tick-cadence updates. See renderLiveEma20() / the NIFTY branch
-        // in attachTickerHeaderUpdates() for the per-tick recompute.
-        if (d.niftyEma20_5m != null && isFinite(Number(d.niftyEma20_5m))) {
-            _closedEma20 = Number(d.niftyEma20_5m);
-        }
-        var seedLtp = (d.atmVwap && Number(d.atmVwap.futLtp) > 0) ? Number(d.atmVwap.futLtp) : null;
-        renderLiveEma20(seedLtp);
         captureLevelsState(d);
     }
 
@@ -743,24 +734,6 @@
         chgEl.textContent = txt || '';
         chgEl.style.color = chgColor(c);
     }
-    // ── Live EMA20 projection ──────────────────────────────────────────────
-    // Backend ships the last-closed-bar EMA20 on the state stream every 5 min.
-    // For the header chip to update at tick cadence, project against the live
-    // NIFTY LTP: liveEma = ltp × k + closedEma × (1 − k), where k = 2/21.
-    // Matches how standard EMA charting tools render the in-progress bar.
-    var _closedEma20 = null;
-    var _lastNiftyLtp = null;
-    var EMA20_K = 2.0 / (20 + 1);
-    function renderLiveEma20(ltp) {
-        var emaEl = document.getElementById('hdrNiftyEma20');
-        if (!emaEl) return;
-        if (_closedEma20 == null) { emaEl.textContent = '—'; return; }
-        var useLtp = (ltp != null && isFinite(ltp) && ltp > 0) ? ltp : _lastNiftyLtp;
-        if (useLtp == null) { emaEl.textContent = _closedEma20.toFixed(2); return; }
-        var live = useLtp * EMA20_K + _closedEma20 * (1 - EMA20_K);
-        emaEl.textContent = live.toFixed(2);
-    }
-
     function attachTickerHeaderUpdates() {
         var src = window.__tickerSSE;
         if (!src) { setTimeout(attachTickerHeaderUpdates, 500); return; }
@@ -774,12 +747,6 @@
                     var shrt = t.symbol || '';
                     if (full === 'NSE:INDIAVIX-INDEX' || shrt === 'India VIX' || shrt === 'INDIA VIX') {
                         setVixHeader(t.lp, t.ch, t.chp);
-                    } else if (full === 'NSE:NIFTY50-INDEX' || shrt === 'NIFTY 50' || shrt === 'NIFTY50') {
-                        var lp = Number(t.lp || 0);
-                        if (lp > 0) {
-                            _lastNiftyLtp = lp;
-                            renderLiveEma20(lp);
-                        }
                     }
                 }
             } catch (e) {}

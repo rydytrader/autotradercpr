@@ -185,7 +185,7 @@
     <div class="page-header fade-in" style="margin-bottom:18px;">
         <div>
             <div class="page-title">Strategy</div>
-            <div class="page-subtitle">Camarilla pivots · two-candle confirmation · EMA-alignment gate</div>
+            <div class="page-subtitle">Camarilla pivots · two-candle confirmation · tick-triggered entries</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -211,8 +211,7 @@
         </p>
         <p class="doc-p">
             Risk management is layered: per-day loss cap with a 50 %-qty retry when a full-size
-            fire would breach the cap, portfolio exposure projection, EMA-alignment gate, and a
-            daily squareoff time.
+            fire would breach the cap, portfolio exposure projection, and a daily squareoff time.
         </p>
     </div>
 
@@ -449,7 +448,7 @@
             </div>
             <div class="phase-row">
                 <div class="phase-tag">Trigger</div>
-                <div class="phase-desc"><strong>Tick fire.</strong> Every confirmation arms the tick trigger — fires the moment spot touches <code>confirmHigh + (ATR × triggerMult)</code> (bullish) or <code>confirmLow − (ATR × triggerMult)</code> (bearish), checked every fast-tick (~1.5 s). Default trigger multiplier 0.25 (a quarter of one 5-min ATR). Set it to 0 to fire at the exact confirmation extreme with no cushion. <br><strong>Edge-triggered.</strong> The fire attempt happens on the rising edge — spot must CROSS from outside the zone to inside. If a fire attempt is rejected by the EMA-alignment gate, the pending is kept alive and the retry waits for spot to exit the zone and re-cross (rather than spamming attempts every tick while spot stays past the trigger). Any other rejection (portfolio cap, day lockout, order rejection) hard-clears the pending — the event log tags those with <em>— pending nullified</em>.</div>
+                <div class="phase-desc"><strong>Tick fire.</strong> Every confirmation arms the tick trigger — fires the moment spot touches <code>confirmHigh + (ATR × triggerMult)</code> (bullish) or <code>confirmLow − (ATR × triggerMult)</code> (bearish), checked every fast-tick (~1.5 s). Default trigger multiplier 0.25 (a quarter of one 5-min ATR). Set it to 0 to fire at the exact confirmation extreme with no cushion. Any rejection at fire time (portfolio cap, day lockout, order rejection) hard-clears the pending — the event log tags those with <em>— pending nullified</em>.</div>
             </div>
             <div class="phase-row">
                 <div class="phase-tag">Invalidate</div>
@@ -460,21 +459,6 @@
                 <div class="phase-desc"><strong>Age-out</strong> — a pending older than <code>MAX_PENDING_BARS</code> (3 bars ≈ 15 min) is dropped without trading. The confirmation went stale; the move it predicted didn't materialize in time.</div>
             </div>
         </div>
-    </div>
-
-    <!-- ── EMA-Alignment Gate ── -->
-    <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:rgb(125,211,252);"></span> EMA-Alignment Gate</h2>
-        <p class="doc-p">
-            At trigger time, before the SELL order goes out, the bot checks the live spot LTP against
-            the 20-period EMA on 5-min NIFTY. Bullish setups (L3_REVERSAL, H4_BREAKOUT) require
-            <strong>spot &gt; EMA20</strong>; bearish setups (H3_REVERSAL, L4_BREAKDOWN) require
-            <strong>spot &lt; EMA20</strong>. Filters counter-trend entries where the dominant
-            5-min moving-average trend is against the setup's thesis. EMA unavailable (not seeded)
-            passes through. Skips are transient — the pending stays alive and retries on the next
-            rising-edge crossing of the trigger price, so a wick to the right side of EMA still
-            catches the fire.
-        </p>
     </div>
 
     <!-- ── Order Flow ── -->
@@ -504,7 +488,6 @@
             <li><strong>Portfolio exposure cap</strong> — before every fire, the strategy projects the combined exposed risk (existing open positions + this new fire's <em>|entryFut − slFut| × ATM_DELTA × qty</em>) and rejects if it would breach <code>portfolioMaxDailyLoss</code>.</li>
             <li><strong>50 % qty retry</strong> — when the full-lot fire would breach the portfolio cap, the bot retries once at half lots (rounded to whole lots, min 1). If the halved size still doesn't fit, the trade is skipped. No third try — position size never fragments below half.</li>
             <li><strong>Realized-loss lockout</strong> — if today's <em>closed</em> losses exceed <code>portfolioMaxDailyLoss</code>, the strategy locks out for the rest of the session — no new fires on either instrument.</li>
-            <li><strong>EMA-alignment gate</strong> — see the EMA-Alignment Gate section above. Bullish setups require spot above the 20 EMA on 5-min NIFTY; bearish setups require spot below.</li>
             <li><strong>Trading window</strong> — new entries only fire between configured Trading Start (09:30 IST default) and Trading End (13:30 IST default). Existing positions continue to be managed until squareoff.</li>
         </ul>
     </div>
@@ -521,8 +504,8 @@
         </p>
         <p class="doc-p">
             Two browser-side surfaces stream live state via Server-Sent Events: the navbar
-            ticker (NIFTY LTP + ΔPct) and the Positions page (per-position LTP + MTM + live-projected
-            EMA20). All persistent state survives mid-day restarts and weekend gaps via JSON
+            ticker (NIFTY LTP + ΔPct) and the Positions page (per-position LTP + MTM).
+            All persistent state survives mid-day restarts and weekend gaps via JSON
             disk snapshots.
         </p>
     </div>
