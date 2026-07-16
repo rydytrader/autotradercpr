@@ -3,7 +3,6 @@ package com.rydytrader.autotrader.controller;
 import com.rydytrader.autotrader.dto.CamarillaLevels;
 import com.rydytrader.autotrader.service.CamarillaService;
 import com.rydytrader.autotrader.service.CamarillaStreamBroker;
-import com.rydytrader.autotrader.service.EventService;
 import com.rydytrader.autotrader.service.strategy.Camarilla;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.http.MediaType;
@@ -34,18 +33,15 @@ public class CamarillaController {
     private final Camarilla            strategy;
     private final RiskSettingsStore    riskSettings;
     private final CamarillaStreamBroker streamBroker;
-    private final EventService         eventService;
 
     public CamarillaController(CamarillaService levels,
                                Camarilla strategy,
                                RiskSettingsStore riskSettings,
-                               CamarillaStreamBroker streamBroker,
-                               EventService eventService) {
+                               CamarillaStreamBroker streamBroker) {
         this.levels       = levels;
         this.strategy     = strategy;
         this.riskSettings = riskSettings;
         this.streamBroker = streamBroker;
-        this.eventService = eventService;
     }
 
     @GetMapping(value = "/api/camarilla/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -97,10 +93,16 @@ public class CamarillaController {
         riskSettings.save();
         // Only log on an actual state transition — a redundant toggle
         // (checkbox re-clicked without a change) shouldn't clutter the log.
-        if (enabled != previous && eventService != null) {
-            eventService.log(enabled
-                ? "[SUCCESS] Trading resumed — new entries enabled"
-                : "[WARNING] Trading stopped — no new entries will fire (existing positions still managed)");
+        if (enabled != previous) {
+            // Route through Camarilla.postEvent so the entry lands in
+            // state.recentEvents (visible in the Trade page event-log
+            // widget) AND mirrors to EventService.tradeLogs.
+            strategy.postEvent(
+                enabled ? "[SUCCESS]" : "[WARNING]",
+                "System",
+                enabled
+                    ? "Trading resumed — new entries enabled"
+                    : "Trading stopped — no new entries will fire (existing positions still managed)");
         }
         return Map.of("ok", true, "enabled", enabled);
     }

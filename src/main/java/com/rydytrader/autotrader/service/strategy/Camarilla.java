@@ -2156,6 +2156,15 @@ public class Camarilla implements Strategy {
         event(severity, "Strategy", message);
     }
 
+    /** Public event-log wrapper for external callers (e.g. the kill-switch
+     *  toggle in CamarillaController). Pushes into {@code state.recentEvents}
+     *  so the Trade page's event-log widget picks it up, and mirrors the line
+     *  to {@link com.rydytrader.autotrader.service.EventService} via the
+     *  existing {@link #event(String, String, String)} path. */
+    public void postEvent(String severity, String source, String message) {
+        event(severity, source, message);
+    }
+
     /** Record an event with severity + source-component tag + message. The source label is
      *  surfaced in the Trade page event log so the operator can see which subsystem produced
      *  each line (ATM / Entry / Exit / Fill / System / Strategy). */
