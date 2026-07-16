@@ -16,11 +16,6 @@ import java.time.LocalDate;
  *   L1..L4 mirror H1..H4 with subtraction
  *   L5 = priorClose − (H5 − priorClose)
  *   L6 = priorClose − (H5 − priorClose) × 1.168
- *   PP = (priorHigh + priorLow + priorClose) / 3
- *   BC = (priorHigh + priorLow) / 2                (bottom central)
- *   TC = 2 × PP − BC                                (top central)
- *   cprWidth    = |TC − BC|
- *   cprWidthPct = cprWidth / PP × 100
  * </pre>
  */
 public record CamarillaLevels(
@@ -29,14 +24,8 @@ public record CamarillaLevels(
     double    priorHigh,
     double    priorLow,
     double    priorClose,
-    double    pp,
     double    h1, double h2, double h3, double h4, double h5, double h6,
-    double    l1, double l2, double l3, double l4, double l5, double l6,
-    // Central Pivot Range boundaries
-    double    bc,
-    double    tc,
-    double    cprWidth,
-    double    cprWidthPct
+    double    l1, double l2, double l3, double l4, double l5, double l6
 ) {
 
     /** Compute from prior-day OHLC. */
@@ -56,15 +45,9 @@ public record CamarillaLevels(
         double l4 = close - k / 2.0;
         double l5 = close - (h5 - close);
         double l6 = close - (h5 - close) * 1.168;
-        double pp = (high + low + close) / 3.0;
-        double bc = (high + low) / 2.0;
-        double tc = 2.0 * pp - bc;
-        double cprWidth = Math.abs(tc - bc);
-        double cprWidthPct = pp != 0 ? (cprWidth / pp) * 100.0 : 0.0;
-        return new CamarillaLevels(sessionDate, priorDate, high, low, close, pp,
+        return new CamarillaLevels(sessionDate, priorDate, high, low, close,
             round(h1), round(h2), round(h3), round(h4), round(h5), round(h6),
-            round(l1), round(l2), round(l3), round(l4), round(l5), round(l6),
-            round(bc), round(tc), cprWidth, cprWidthPct);
+            round(l1), round(l2), round(l3), round(l4), round(l5), round(l6));
     }
 
     /** NIFTY tick size is ₹0.05 — round each computed pivot to the nearest tick so the
