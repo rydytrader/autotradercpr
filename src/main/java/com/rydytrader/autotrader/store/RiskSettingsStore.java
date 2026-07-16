@@ -36,10 +36,15 @@ public class RiskSettingsStore {
         volatile String  camarillaTradingEndTime   = "13:30"; // no new signals after this time (IST); exits keep running
         volatile String  camarillaSquareOffTime   = "15:15";
         volatile int     camarillaMaxConcurrentPositions = 4; // hard cap on simultaneously-open positions
-        // No buffer settings on the new option-premium pipeline — entry and
-        // SL are both driven by 3-min candle closes at exact levels:
-        //   Entry: NEXT 3-min close past the confirmation candle's confirmLow.
-        //   SL:    3-min close above L3 (L4_BREAKDOWN) or above H4 (H3_REVERSAL).
+        /** Points cushion added to the option's own SL level when placing the
+         *  broker SL order at entry. The option is SHORT, so SL sits ABOVE
+         *  entry — buffer widens it further up:
+         *    L4_BREAKDOWN → SL = L3 + optionSlBufferPoints
+         *    H3_REVERSAL  → SL = H4 + optionSlBufferPoints
+         *  Expressed in option-premium points (rupees). Default 2.0 — one
+         *  strike-step of headroom for a NIFTY 50-point strike. Set to 0
+         *  for SL at the exact structural level. */
+        volatile double optionSlBufferPoints = 2.0;
         // The retired ATR-mult settings (camarillaTriggerAtrMult,
         // camarillaDirectionalSlBufferAtrMult, camarillaTargetBufferAtrMult)
         // are silently consumed on legacy JSON load — see the load-case switch.
@@ -399,6 +404,7 @@ public class RiskSettingsStore {
     public String  getCamarillaTradingEndTime()   { return cfg().camarillaTradingEndTime; }
     public String  getCamarillaSquareOffTime()    { return cfg().camarillaSquareOffTime; }
     public int     getCamarillaMaxConcurrentPositions() { return cfg().camarillaMaxConcurrentPositions; }
+    public double  getOptionSlBufferPoints() { return cfg().optionSlBufferPoints; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getStartingCapital()      { return cfg().startingCapital; }
@@ -589,6 +595,7 @@ public class RiskSettingsStore {
     public void setCamarillaTradingEndTime(String v)      { cfg().camarillaTradingEndTime = (v == null || v.isBlank()) ? "13:30" : v.trim(); }
     public void setCamarillaSquareOffTime(String v)       { cfg().camarillaSquareOffTime = v == null ? "" : v.trim(); }
     public void setCamarillaMaxConcurrentPositions(int v) { cfg().camarillaMaxConcurrentPositions = Math.max(1, v); }
+    public void setOptionSlBufferPoints(double v) { cfg().optionSlBufferPoints = Math.max(0, v); }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setStartingCapital(double v)      { cfg().startingCapital = Math.max(0, v); }
@@ -693,6 +700,7 @@ public class RiskSettingsStore {
     public String  getCamarillaTradingEndTime(String mode)    { return cfgFor(mode).camarillaTradingEndTime; }
     public String  getCamarillaSquareOffTime(String mode)     { return cfgFor(mode).camarillaSquareOffTime; }
     public int     getCamarillaMaxConcurrentPositions(String mode) { return cfgFor(mode).camarillaMaxConcurrentPositions; }
+    public double  getOptionSlBufferPoints(String mode) { return cfgFor(mode).optionSlBufferPoints; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
     public double getStartingCapital(String mode)      { return cfgFor(mode).startingCapital; }
@@ -722,6 +730,7 @@ public class RiskSettingsStore {
     public void setCamarillaTradingEndTime(String mode, String v)      { cfgFor(mode).camarillaTradingEndTime = (v == null || v.isBlank()) ? "13:30" : v.trim(); }
     public void setCamarillaSquareOffTime(String mode, String v)       { cfgFor(mode).camarillaSquareOffTime = v == null ? "" : v.trim(); }
     public void setCamarillaMaxConcurrentPositions(String mode, int v) { cfgFor(mode).camarillaMaxConcurrentPositions = Math.max(1, v); }
+    public void setOptionSlBufferPoints(String mode, double v) { cfgFor(mode).optionSlBufferPoints = Math.max(0, v); }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
     public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
     public void setStartingCapital(String mode, double v)      { cfgFor(mode).startingCapital = Math.max(0, v); }
@@ -761,6 +770,7 @@ public class RiskSettingsStore {
             upsert("camarillaTradingEndTime",    c.camarillaTradingEndTime);
             upsert("camarillaSquareOffTime",     c.camarillaSquareOffTime);
             upsert("camarillaMaxConcurrentPositions", String.valueOf(c.camarillaMaxConcurrentPositions));
+            upsert("optionSlBufferPoints", String.valueOf(c.optionSlBufferPoints));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("startingCapital",      String.valueOf(c.startingCapital));
@@ -957,6 +967,7 @@ public class RiskSettingsStore {
                     case "camarillaDailyRiskBudget"        -> { /* retired — now uses portfolio max daily loss */ }
                     case "camarillaL3RevEnabled"      -> { /* retired — old key silently ignored */ }
                     case "camarillaH4BoEnabled"       -> { /* retired — old key silently ignored */ }
+                    case "optionSlBufferPoints" -> c.optionSlBufferPoints = Math.max(0, Double.parseDouble(v));
                     case "atrMultiplier"     -> c.atrMultiplier = Double.parseDouble(v);
                     // enableSessionMoveLimit / sessionMoveLimit removed — feature deleted.
                     case "enableSessionMoveLimit", "sessionMoveLimit" -> { /* legacy, ignored */ }

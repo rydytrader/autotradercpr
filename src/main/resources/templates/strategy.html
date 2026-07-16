@@ -495,13 +495,12 @@
             When the trigger fires, the bot places a single SELL order on the option that
             was being monitored (H5 CE or L5 PE). Position size = <code>lotsPerLeg × 65</code>,
             possibly halved by the portfolio-risk retry when a full-size fire would breach
-            the daily loss cap. Both a broker <strong>SL order</strong> and a broker
-            <strong>target order</strong> are placed at entry, at levels drawn from the
-            option's own Camarilla.
+            the daily loss cap. Both exit mechanisms — SL and target — run tick-by-tick
+            inside the strategy; neither is placed as a broker order.
         </p>
         <ul class="doc-list">
-            <li><strong>Stop loss</strong> — broker-side SL order at option's own <code>L3</code> (for L4_BREAKDOWN) or <code>H4</code> (for H3_REVERSAL). Placed at entry, held on the exchange. Fires on any tick that reaches the level. Sole SL mechanism — no in-strategy backup; a broker rejection is logged and leaves the position unprotected until timed squareoff.</li>
-            <li><strong>Target</strong> — tick-based, monitored inside the strategy at the fast scheduler cadence (~500 ms). On any LTP tick where the option's live price is at or below the target level (<code>L5</code> for L4_BREAKDOWN, <code>L3</code> for H3_REVERSAL), the strategy fires a market BUY to close the short. No broker LIMIT order — guarantees a fill even on a gap or thin book.</li>
+            <li><strong>Stop loss</strong> — tick-based, monitored inside the strategy at the fast scheduler cadence (~500 ms). On any LTP tick where the option's live price is at or above the SL level, the strategy fires a market BUY to close the short. SL level = option's own <code>L3</code> (for L4_BREAKDOWN) or <code>H4</code> (for H3_REVERSAL), plus the <em>SL Buffer</em> setting (points, default 2.0) — the cushion prevents wick-driven exits at the exact structural level. No broker stop order — dodges broker-side rejection risk and guarantees a market fill.</li>
+            <li><strong>Target</strong> — tick-based, same fast-scheduler cadence. On any LTP tick where the option's live price is at or below the target level (<code>L5</code> for L4_BREAKDOWN, <code>L3</code> for H3_REVERSAL), the strategy fires a market BUY to close the short. No broker LIMIT order — guarantees a fill even on a gap or thin book.</li>
             <li><strong>Timed squareoff</strong> — at the configured squareoff time (default 15:15 IST), all open positions are flattened regardless of SL/target state.</li>
         </ul>
     </div>

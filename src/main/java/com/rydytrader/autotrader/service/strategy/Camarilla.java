@@ -384,21 +384,30 @@ public class Camarilla implements Strategy {
 
     @Override
     public void fastSlCheck() {
-        // Tick-based TARGET watcher. SL is handled broker-side (order placed at entry).
-        // For each open auto position, read the option's live LTP; if it's at or below
-        // targetLevel, close at market with reason TARGET_HIT. This runs at the fast
-        // scheduler cadence (~500 ms), so exits fire the moment the level is touched
-        // even on a gap or thin book — no bar-close wait, no LIMIT-order fill risk.
+        // Tick-based SL + TARGET watcher. For each open auto position, read the
+        // option's live LTP:
+        //   ltp >= slLevel     → SL_HIT     (buy-back at market)
+        //   ltp <= targetLevel → TARGET_HIT (buy-back at market)
+        // Runs at the fast scheduler cadence (~500 ms) so exits fire the moment
+        // the level is touched — no bar-close wait, no broker-order rejection
+        // risk, no LIMIT-order fill risk on a gap or thin book. SL check runs
+        // first so a bar that ticks through both levels honours the SL side.
         if (state.openPositions.isEmpty()) return;
         for (Position p : new java.util.ArrayList<>(state.openPositions.values())) {
             if (p == null) continue;
             if (p.setup == ActiveSetup.MANUAL) continue;
-            if (p.targetLevel <= 0) continue;
             if (p.symbol == null || p.symbol.isBlank()) continue;
             double ltp = 0;
             try { ltp = marketDataService.getLtp(p.symbol); } catch (Exception ignored) {}
             if (ltp <= 0) continue;
-            if (ltp <= p.targetLevel) {
+            if (p.slLevel > 0 && ltp >= p.slLevel) {
+                event("[WARNING]", "Exit",
+                    shortSym(p.symbol) + " SL_HIT @ " + round2(ltp)
+                    + " (sl=" + round2(p.slLevel) + ")");
+                closePosition(p, "SL_HIT");
+                continue;
+            }
+            if (p.targetLevel > 0 && ltp <= p.targetLevel) {
                 event("[SUCCESS]", "Exit",
                     shortSym(p.symbol) + " TARGET_HIT @ " + round2(ltp)
                     + " (tgt=" + round2(p.targetLevel) + ")");
@@ -696,6 +705,10 @@ public class Camarilla implements Strategy {
                 shortSym(symbol) + " — SL level unavailable for " + pending.setup);
             return;
         }
+        // Widen SL by the configured points cushion so wick spikes don't stop us
+        // out at the exact structural level. Default 2 points; 0 disables.
+        double slBuffer = Math.max(0, riskSettings.getOptionSlBufferPoints());
+        slLevel += slBuffer;
         // Target may legitimately be <= 0 (L5 can print negative for very-cheap options);
         // clamp to the option tick size so the display + order placement stay sane.
         if (Double.isNaN(targetLevel) || targetLevel < OPTION_TICK_SIZE) {
@@ -729,21 +742,12 @@ public class Camarilla implements Strategy {
         try { marketDataService.subscribeAdditional(java.util.Collections.singletonList(symbol)); }
         catch (Exception ignored) {}
 
-        // Broker-side SL — BUY to close the short at market when the level is touched.
-        // This is the SOLE stop-loss mechanism; the strategy no longer runs a bar-close
-        // SL backup. Broker rejection here is logged loudly — the position is otherwise
-        // unprotected on the downside until timed squareoff.
-        OrderDTO slOrder = orderService.placeStopLoss(symbol, qty, +1, slLevel);
-        if (slOrder == null || slOrder.getId() == null || slOrder.getId().isEmpty()) {
-            log.warn("[Camarilla] broker SL placement FAILED for {} @ {} — position has no SL!",
-                symbol, slLevel);
-            event("[ERROR]", "AUTO ENTRY",
-                shortSym(symbol) + " SL order rejected — position UNPROTECTED @ SL " + round2(slLevel));
-        }
-        // Target is NOT placed as a broker order. It runs tick-by-tick inside
-        // fastSlCheck (see below) — on any LTP tick reaching targetLevel we
-        // fire a market BUY to close the short, so we always get filled at
-        // target even on a gap or thin book. See Position.targetLevel below.
+        // Neither SL nor Target is placed as a broker order. Both run
+        // tick-by-tick inside fastSlCheck — on any LTP tick where the option's
+        // LTP reaches slLevel (up-cross) or targetLevel (down-cross), we fire
+        // a market BUY to close the short. Guarantees a fill even on a gap or
+        // thin book, and dodges broker-side stop-order rejection risk. See
+        // Position.slLevel / Position.targetLevel below.
 
         Position p = new Position();
         p.symbol          = symbol;
