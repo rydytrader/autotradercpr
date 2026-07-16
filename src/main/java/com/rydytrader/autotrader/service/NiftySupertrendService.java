@@ -29,7 +29,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * NIFTY SuperTrend(10, 3) on 5-minute spot bars.
+ * NIFTY SuperTrend(10, 2) on 5-minute spot bars.
  *
  * <p>Standard SuperTrend formulation:
  * <ul>
@@ -53,7 +53,7 @@ public class NiftySupertrendService {
     private static final String STATE_FILE = "../store/cache/nifty-supertrend-state.json";
     private static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
     private static final int    PERIOD     = 10;
-    private static final double MULTIPLIER = 3.0;
+    private static final double MULTIPLIER = 2.0;
     /** Bars of 5-min history for the cold-boot seed. 500+ bars ≈ 10 trading days
      *  — well above the ~30-bar Wilder convergence horizon for a period of 10. */
     private static final int    SEED_DAYS  = 10;
