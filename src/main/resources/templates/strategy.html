@@ -492,6 +492,16 @@
             The momentum gate can be toggled OFF in Settings → Camarilla pane. When disabled,
             all setups fire on geometry + trigger alone, regardless of RSI.
         </p>
+        <h3 class="doc-h3" style="margin-top:22px;">EMA-alignment gate</h3>
+        <p class="doc-p">
+            Layered on top of RSI: at trigger time the bot also checks the live spot LTP against
+            the 20-period EMA on 5-min NIFTY. Bullish setups (L3_REVERSAL, H4_BREAKOUT) require
+            <strong>spot &gt; EMA20</strong>; bearish setups (H3_REVERSAL, L4_BREAKDOWN) require
+            <strong>spot &lt; EMA20</strong>. Filters counter-trend entries where the dominant
+            5-min moving-average trend is against the setup's thesis. EMA unavailable (not seeded)
+            passes through. Skips are transient — the pending stays alive and retries on the next
+            rising-edge crossing of the trigger price, so a wick above EMA can still catch the fire.
+        </p>
     </div>
 
     <!-- ── Order Flow ── -->

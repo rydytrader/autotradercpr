@@ -750,7 +750,7 @@ public class Camarilla implements Strategy {
      *  <ul>
      *    <li>{@code PLACED} / {@code SKIP_HARD} → pending is cleared. Save
      *        follows in the caller.</li>
-     *    <li>{@code SKIP_RSI} → pending kept; {@code inTriggerZone} is set so
+     *    <li>{@code SKIP_RETRY} → pending kept; {@code inTriggerZone} is set so
      *        the next attempt waits for spot to exit and re-cross the zone.</li>
      *  </ul>
      *  Returns true only on {@code PLACED} / {@code SKIP_HARD} so the caller's
@@ -771,7 +771,7 @@ public class Camarilla implements Strategy {
                     + " (SL " + round2(slWithBuffer) + ", TGT " + round2(pb.targetLevel)
                     + ", R:R " + (Double.isNaN(rr) ? "—" : round2(rr)) + ")");
                 FireResult r = fire(triggerSym, pb.setup, pb.targetLevel, slWithBuffer, null, pb.lockedAtm, ic);
-                if (r == FireResult.SKIP_RSI) {
+                if (r == FireResult.SKIP_RETRY) {
                     pb.inTriggerZone = true;   // wait for spot to exit + re-cross
                     return false;
                 }
@@ -790,7 +790,7 @@ public class Camarilla implements Strategy {
                     + " (SL " + round2(slWithBuffer) + ", TGT " + round2(pr.targetLevel)
                     + ", R:R " + (Double.isNaN(rr) ? "—" : round2(rr)) + ")");
                 FireResult r = fire(triggerSym, pr.setup, pr.targetLevel, slWithBuffer, null, pr.lockedAtm, ic);
-                if (r == FireResult.SKIP_RSI) {
+                if (r == FireResult.SKIP_RETRY) {
                     pr.inTriggerZone = true;
                     return false;
                 }
@@ -1302,17 +1302,18 @@ public class Camarilla implements Strategy {
      *  decision to clear or keep the pending after the call.
      *  <ul>
      *    <li>{@code PLACED} — entry order accepted; pending is cleared as before.</li>
-     *    <li>{@code SKIP_RSI} — RSI gate rejected; pending is KEPT so the retry
+     *    <li>{@code SKIP_RETRY} — transient market-state gate rejected the
+     *        trade (RSI band, EMA-alignment). Pending is KEPT so the retry
      *        happens on the next rising-edge crossing of the trigger price.
-     *        Transient market state, so the pending stays alive until Phase 3
-     *        invalidation or the 3-bar expiry.</li>
+     *        The pending stays alive until Phase 3 invalidation or the 3-bar
+     *        expiry.</li>
      *    <li>{@code SKIP_HARD} — any other rejection (lockout, exposure cap,
      *        R:R gate, session-leg unresolved, entry-order broker rejection).
      *        Pending is CLEARED and the corresponding event log line is
      *        annotated "— pending nullified".</li>
      *  </ul>
      */
-    enum FireResult { PLACED, SKIP_RSI, SKIP_HARD }
+    enum FireResult { PLACED, SKIP_RETRY, SKIP_HARD }
 
     private FireResult fire(String triggerSymbol, ActiveSetup setup,
                             double targetFutures, double slFutures, Candle entryCandle,
@@ -1373,11 +1374,39 @@ public class Camarilla implements Strategy {
                     };
                     if (!ok) {
                         event("[WARNING]", "Momentum", "[" + ic.name() + "] " + setup + " skip — RSI " + round2(r) + " (pending retained)");
-                        return FireResult.SKIP_RSI;
+                        return FireResult.SKIP_RETRY;
                     }
                 }
             } catch (Exception ignored) {}
         }
+
+        // ── EMA-alignment gate ──
+        // Bullish setups (L3_REVERSAL, H4_BREAKOUT) require the trigger price
+        // (entry futures) to sit ABOVE the 20 EMA on 5-min NIFTY spot.
+        // Bearish setups (H3_REVERSAL, L4_BREAKDOWN) require the trigger price
+        // to sit BELOW the 20 EMA. Filters counter-trend entries where the
+        // dominant 5-min moving-average trend is against the setup.
+        // EMA unavailable (not seeded, service missing) → pass through.
+        try {
+            var emaSvc = niftyEmaProvider == null ? null : niftyEmaProvider.getIfAvailable();
+            Double ema = emaSvc == null ? null : emaSvc.currentEma();
+            if (ema != null) {
+                double liveTrig = 0;
+                try { liveTrig = marketDataService.getLtp(triggerSymbol); }
+                catch (Exception ignored) {}
+                if (liveTrig > 0) {
+                    boolean ok = bullishBet ? liveTrig > ema : liveTrig < ema;
+                    if (!ok) {
+                        event("[WARNING]", "Momentum",
+                            "[" + ic.name() + "] " + setup
+                            + " skip — spot " + round2(liveTrig)
+                            + (bullishBet ? " below EMA20 " : " above EMA20 ") + round2(ema)
+                            + " (pending retained)");
+                        return FireResult.SKIP_RETRY;
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
 
         // ── Risk gates: consumed > maxRisk locks out the day ──
         double maxRisk = riskSettings.getPortfolioMaxDailyLoss();
