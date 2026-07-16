@@ -185,7 +185,7 @@
     <div class="page-header fade-in" style="margin-bottom:18px;">
         <div>
             <div class="page-title">Strategy</div>
-            <div class="page-subtitle">Option-premium Camarilla · 3-min two-bar entry · bar-close SL</div>
+            <div class="page-subtitle">Option-premium Camarilla · 3-min confirmation + tick-triggered entry</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -214,9 +214,12 @@
             own Camarilla), never on bullish setups.
         </p>
         <p class="doc-p">
-            Entries use a <strong>3-min two-bar</strong> model: a confirmation bar prints
-            (red bar wicked through the level and closed back below) and seeds a pending;
-            the NEXT 3-min bar must close BELOW the confirmation's low to fire the sell.
+            Entries use a <strong>3-min confirmation + tick trigger</strong> model: a
+            confirmation bar prints (red bar wicked through the level and closed back
+            below) and seeds a pending. From that moment on, the option's LTP is
+            checked tick-by-tick — the sell fires the instant LTP touches (or drops
+            below) the confirmation candle's own low, no need to wait for the next
+            bar to close.
             Stop loss is placed at the option's own next structural level (L3 for L4
             breakdown, H4 for H3 reversal) as a broker order — additionally, if a 3-min
             bar closes at or above that SL level, the bar-close backup exits the trade.
@@ -293,8 +296,8 @@
                     <div class="combo-body">
                         Option premium (3-min bar) prints a red candle whose <strong>high &ge; L4</strong>
                         and whose close is <strong>&lt; L4</strong> of THIS option's own Camarilla.
-                        Seed a pending. If the NEXT 3-min bar closes below the confirmation's low,
-                        <strong>sell the option</strong>. SL = option's own <strong>L3</strong>,
+                        Seed a pending. As soon as the option's LTP ticks at or below the
+                        confirmation candle's own low, <strong>sell the option</strong>. SL = option's own <strong>L3</strong>,
                         target = option's own <strong>L5</strong> (both broker orders + 3-min
                         close backup).
                     </div>
@@ -307,8 +310,8 @@
                     <div class="combo-body">
                         Option premium (3-min bar) prints a red candle whose <strong>high &ge; H3</strong>
                         and whose close is <strong>&lt; H3</strong> of THIS option's own Camarilla.
-                        Seed a pending. If the NEXT 3-min bar closes below the confirmation's low,
-                        <strong>sell the option</strong>. SL = option's own <strong>H4</strong>,
+                        Seed a pending. As soon as the option's LTP ticks at or below the
+                        confirmation candle's own low, <strong>sell the option</strong>. SL = option's own <strong>H4</strong>,
                         target = option's own <strong>L3</strong> (both broker orders + 3-min
                         close backup).
                     </div>
@@ -461,18 +464,19 @@
         </div>
     </div>
 
-    <!-- ── 3-Min Two-Bar Entry Model ── -->
+    <!-- ── 3-Min Confirmation + Tick Entry Model ── -->
     <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-green);"></span> 3-Min Two-Bar Entry Model</h2>
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-green);"></span> Confirmation + Tick Entry Model</h2>
         <p class="doc-p">
-            Every 3-min bar close on EACH monitored option premium runs the walk below.
-            Two bars are required to enter — the confirmation bar prints the setup
-            geometry, the trigger bar closes past that confirmation's low.
+            Every 3-min bar close on EACH monitored option premium runs the confirmation
+            detection. Entry is <strong>tick-triggered</strong> — once a confirmation is
+            seeded, the sell fires the instant option LTP touches the confirmation's low
+            (checked ~500 ms cadence via the same fast watcher that handles SL and target).
         </p>
         <div style="margin-top:8px;">
             <div class="phase-row">
                 <div class="phase-tag">Fire</div>
-                <div class="phase-desc"><strong>Two-bar entry trigger.</strong> If a pending confirmation exists on this option AND this 3-min bar's close &lt; the confirmation's own low, <strong>sell the option at this close</strong>. Position size = <code>lotsPerLeg × 65</code>, possibly halved by the portfolio-risk retry. Broker SL order placed immediately at the option's own next structural level (L3 or H4). Target is monitored tick-by-tick — see Order Flow.</div>
+                <div class="phase-desc"><strong>Tick entry trigger.</strong> Once a pending confirmation exists on this option, the fast watcher (~500 ms) checks the option's LTP every tick. The moment LTP is at or below the confirmation candle's own low, <strong>sell the option at market</strong>. Position size = <code>lotsPerLeg × 65</code>, possibly halved by the portfolio-risk retry.</div>
             </div>
             <div class="phase-row">
                 <div class="phase-tag">Detect</div>

@@ -384,14 +384,43 @@ public class Camarilla implements Strategy {
 
     @Override
     public void fastSlCheck() {
-        // Tick-based SL + TARGET watcher. For each open auto position, read the
-        // option's live LTP:
-        //   ltp >= slLevel     → SL_HIT     (buy-back at market)
-        //   ltp <= targetLevel → TARGET_HIT (buy-back at market)
-        // Runs at the fast scheduler cadence (~500 ms) so exits fire the moment
-        // the level is touched — no bar-close wait, no broker-order rejection
-        // risk, no LIMIT-order fill risk on a gap or thin book. SL check runs
-        // first so a bar that ticks through both levels honours the SL side.
+        // Tick-based watcher, runs at the fast scheduler cadence (~500 ms).
+        // Three responsibilities per invocation:
+        //   1. ENTRY  — for each pending confirmation, fire when the option's
+        //               LTP touches (or drops below) the confirmation's low.
+        //   2. SL     — for each open position, exit when LTP >= slLevel.
+        //   3. TARGET — for each open position, exit when LTP <= targetLevel.
+        // Order matters: entries run first so a bar that ticks through both
+        // the entry trigger AND an SL level doesn't skip the entry. Within
+        // exits, SL is checked before target so a bar ticking through both
+        // honours the SL side.
+
+        // (1) Tick-based entry trigger.
+        if (!state.pendingByOption.isEmpty() && canFireNewEntry() && !state.dailyLossLockout) {
+            for (Map.Entry<String, PendingConfirmation> e :
+                 new java.util.ArrayList<>(state.pendingByOption.entrySet())) {
+                String sym = e.getKey();
+                PendingConfirmation pending = e.getValue();
+                if (sym == null || sym.isBlank() || pending == null) continue;
+                // Skip if a position is already open on this option.
+                boolean already = false;
+                for (Position p : state.openPositions.values()) {
+                    if (p != null && sym.equals(p.symbol)) { already = true; break; }
+                }
+                if (already) continue;
+                double ltp = 0;
+                try { ltp = marketDataService.getLtp(sym); } catch (Exception ignored) {}
+                if (ltp <= 0) continue;
+                if (ltp <= pending.confirmLow) {
+                    CamarillaLevels lv = camarillaService.getLevels(sym);
+                    if (lv == null) continue;   // levels not seeded yet — wait
+                    fire(sym, pending, null, lv);
+                    state.pendingByOption.remove(sym);
+                }
+            }
+        }
+
+        // (2) + (3) Tick-based SL + TARGET watcher.
         if (state.openPositions.isEmpty()) return;
         for (Position p : new java.util.ArrayList<>(state.openPositions.values())) {
             if (p == null) continue;
@@ -582,18 +611,12 @@ public class Camarilla implements Strategy {
         }
     }
 
-    /** Per-option 3-min bar walk. Order matters: entry trigger → new confirmation
-     *  → age-out. SL is broker-side (placed at entry), and target is checked on
-     *  every tick via {@link #fastSlCheck()} — neither exit runs on bar close. */
+    /** Per-option 3-min bar walk. Order matters: new confirmation → age-out.
+     *  Entry trigger is TICK-BASED — see {@link #fastSlCheck()} which fires
+     *  the moment the option's LTP touches the confirmation candle's low.
+     *  SL and target are also tick-checked in fastSlCheck. */
     private void processOptionBarPhases(String symbol, Candle c, CamarillaLevels lv) {
-
-        // (b) Entry trigger — pending exists AND next bar closes below the confirmation low.
         PendingConfirmation pending = state.pendingByOption.get(symbol);
-        if (pending != null && c.close() < pending.confirmLow) {
-            fire(symbol, pending, c, lv);
-            state.pendingByOption.remove(symbol);
-            return;
-        }
 
         // (c) Fresh confirmation detection — bearish only. Skip when a
         // position is already open on this option (avoid stacking) or when
