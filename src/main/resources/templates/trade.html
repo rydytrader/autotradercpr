@@ -264,6 +264,10 @@
                     <!-- VIX -->
                     <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
                         <span id="hdrVixChg" style="margin-left:4px;font-weight:600;"></span></span>
+                    <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
+                    <!-- Session-monitored option strikes (picked from NIFTY H5 / L5) -->
+                    <span style="color:var(--text-muted);" title="Nearest strike to NIFTY H5 — the CALL leg the strategy monitors">H5 CE <span id="hdrH5Ce" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                    <span style="color:var(--text-muted);" title="Nearest strike to NIFTY L5 — the PUT leg the strategy monitors">L5 PE <span id="hdrL5Pe" style="color:var(--text-primary);font-weight:700;">—</span></span>
                 </div>
             </div>
             <div style="display:flex; gap:10px; align-items:center;">
@@ -466,9 +470,24 @@
 
     function renderHeader(d) {
         // Initial / fallback render from the camarilla state stream (2 s heartbeat).
-        // VIX still rides the per-tick ticker SSE. NIFTY ATR comes off dashboardState.
+        // VIX still rides the per-tick ticker SSE.
         var vxEl  = document.getElementById('hdrVix');
         if (vxEl)  vxEl.textContent  = d.indiaVix  != null ? Number(d.indiaVix).toFixed(2)  : '—';
+        // Session-monitored option strikes — the two legs the strategy currently
+        // watches (H5 CE + L5 PE). setupLegs already carries the resolved strikes.
+        var h5El = document.getElementById('hdrH5Ce');
+        var l5El = document.getElementById('hdrL5Pe');
+        var h5Strike = '—', l5Strike = '—';
+        if (Array.isArray(d.setupLegs)) {
+            for (var i = 0; i < d.setupLegs.length; i++) {
+                var L = d.setupLegs[i];
+                if (!L) continue;
+                if (L.side === 'CE' && L.strike) h5Strike = String(L.strike);
+                if (L.side === 'PE' && L.strike) l5Strike = String(L.strike);
+            }
+        }
+        if (h5El) h5El.textContent = h5Strike;
+        if (l5El) l5El.textContent = l5Strike;
     }
 
 
