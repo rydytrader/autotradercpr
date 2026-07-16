@@ -36,11 +36,6 @@ public class RiskSettingsStore {
         volatile String  camarillaTradingEndTime   = "13:30"; // no new signals after this time (IST); exits keep running
         volatile String  camarillaSquareOffTime   = "15:15";
         volatile int     camarillaMaxConcurrentPositions = 4; // hard cap on simultaneously-open positions
-        /** When true, Camarilla.fire() requires NIFTY RSI(14) to sit inside the
-         *  setup-specific band (breakouts 60-80 / 20-40, reversals 40-60).
-         *  Otherwise the momentum gate is bypassed entirely and the trade
-         *  fires regardless of RSI. Default ON. */
-        volatile boolean camarillaMomentumCheckEnabled = true;
         /** Multiplier of NIFTY 5-min ATR applied to the directional setups'
          *  stop-loss beyond the confirmation candle's far extreme. Buffer in
          *  spot points = NiftyAtrService.currentAtr() × this multiplier.
@@ -425,7 +420,6 @@ public class RiskSettingsStore {
     public String  getCamarillaTradingEndTime()   { return cfg().camarillaTradingEndTime; }
     public String  getCamarillaSquareOffTime()    { return cfg().camarillaSquareOffTime; }
     public int     getCamarillaMaxConcurrentPositions() { return cfg().camarillaMaxConcurrentPositions; }
-    public boolean isCamarillaMomentumCheckEnabled()    { return cfg().camarillaMomentumCheckEnabled; }
     public double  getCamarillaDirectionalSlBufferAtrMult() { return cfg().camarillaDirectionalSlBufferAtrMult; }
     public double  getCamarillaTriggerAtrMult()             { return cfg().camarillaTriggerAtrMult; }
     public double  getCamarillaTargetBufferAtrMult()        { return cfg().camarillaTargetBufferAtrMult; }
@@ -619,7 +613,6 @@ public class RiskSettingsStore {
     public void setCamarillaTradingEndTime(String v)      { cfg().camarillaTradingEndTime = (v == null || v.isBlank()) ? "13:30" : v.trim(); }
     public void setCamarillaSquareOffTime(String v)       { cfg().camarillaSquareOffTime = v == null ? "" : v.trim(); }
     public void setCamarillaMaxConcurrentPositions(int v) { cfg().camarillaMaxConcurrentPositions = Math.max(1, v); }
-    public void setCamarillaMomentumCheckEnabled(boolean v) { cfg().camarillaMomentumCheckEnabled = v; }
     public void setCamarillaDirectionalSlBufferAtrMult(double v) {
         cfg().camarillaDirectionalSlBufferAtrMult = Math.max(0, v);
     }
@@ -733,7 +726,6 @@ public class RiskSettingsStore {
     public String  getCamarillaTradingEndTime(String mode)    { return cfgFor(mode).camarillaTradingEndTime; }
     public String  getCamarillaSquareOffTime(String mode)     { return cfgFor(mode).camarillaSquareOffTime; }
     public int     getCamarillaMaxConcurrentPositions(String mode) { return cfgFor(mode).camarillaMaxConcurrentPositions; }
-    public boolean isCamarillaMomentumCheckEnabled(String mode)    { return cfgFor(mode).camarillaMomentumCheckEnabled; }
     public double  getCamarillaDirectionalSlBufferAtrMult(String mode) { return cfgFor(mode).camarillaDirectionalSlBufferAtrMult; }
     public double  getCamarillaTriggerAtrMult(String mode)             { return cfgFor(mode).camarillaTriggerAtrMult; }
     public double  getCamarillaTargetBufferAtrMult(String mode)        { return cfgFor(mode).camarillaTargetBufferAtrMult; }
@@ -766,7 +758,6 @@ public class RiskSettingsStore {
     public void setCamarillaTradingEndTime(String mode, String v)      { cfgFor(mode).camarillaTradingEndTime = (v == null || v.isBlank()) ? "13:30" : v.trim(); }
     public void setCamarillaSquareOffTime(String mode, String v)       { cfgFor(mode).camarillaSquareOffTime = v == null ? "" : v.trim(); }
     public void setCamarillaMaxConcurrentPositions(String mode, int v) { cfgFor(mode).camarillaMaxConcurrentPositions = Math.max(1, v); }
-    public void setCamarillaMomentumCheckEnabled(String mode, boolean v) { cfgFor(mode).camarillaMomentumCheckEnabled = v; }
     public void setCamarillaDirectionalSlBufferAtrMult(String mode, double v) {
         cfgFor(mode).camarillaDirectionalSlBufferAtrMult = Math.max(0, v);
     }
@@ -815,7 +806,6 @@ public class RiskSettingsStore {
             upsert("camarillaTradingEndTime",    c.camarillaTradingEndTime);
             upsert("camarillaSquareOffTime",     c.camarillaSquareOffTime);
             upsert("camarillaMaxConcurrentPositions", String.valueOf(c.camarillaMaxConcurrentPositions));
-            upsert("camarillaMomentumCheckEnabled", String.valueOf(c.camarillaMomentumCheckEnabled));
             upsert("camarillaDirectionalSlBufferAtrMult", String.valueOf(c.camarillaDirectionalSlBufferAtrMult));
             upsert("camarillaTriggerAtrMult", String.valueOf(c.camarillaTriggerAtrMult));
             upsert("camarillaTargetBufferAtrMult",        String.valueOf(c.camarillaTargetBufferAtrMult));
@@ -990,7 +980,7 @@ public class RiskSettingsStore {
                     case "camarillaOiBiasFilterEnabled" -> { /* retired with the OI subsystem — silently consumed */ }
                     case "camarillaMinRRCheckEnabled"   -> { /* retired with camarillaMinRRRatio — silently consumed */ }
                     case "camarillaMinRRRatio"          -> { /* retired R:R floor gate — silently consumed */ }
-                    case "camarillaMomentumCheckEnabled" -> c.camarillaMomentumCheckEnabled = Boolean.parseBoolean(v);
+                    case "camarillaMomentumCheckEnabled" -> { /* retired with the RSI gate — silently consumed */ }
                     case "camarillaStrangleAtrProximity" -> { /* retired with the iron-wall strangle; silently consumed */ }
                     case "camarillaDirectionalSlBufferPoints" -> { /* retired in favour of camarillaDirectionalSlBufferAtrMult; silently consumed */ }
                     case "camarillaDirectionalSlBufferAtrMult" -> c.camarillaDirectionalSlBufferAtrMult = Double.parseDouble(v);

@@ -187,9 +187,7 @@ public class Camarilla implements Strategy {
     private final RiskSettingsStore     riskSettings;
     private final ObjectProvider<StrategyTradeRepository> tradeRepoProvider;
     private final ObjectProvider<CamarillaStreamBroker>   streamBrokerProvider;
-    private final ObjectProvider<com.rydytrader.autotrader.service.NiftyRsiService> niftyRsiProvider;
     private final ObjectProvider<com.rydytrader.autotrader.service.NiftyAtrService> niftyAtrProvider;
-    private final ObjectProvider<com.rydytrader.autotrader.service.NiftySupertrendService> niftySupertrendProvider;
     private final ObjectProvider<com.rydytrader.autotrader.service.NiftyEmaService> niftyEmaProvider;
     // Tolerate unknown fields on read so a state file written by a different
     // branch (e.g. a future v3 or v1's older shape) doesn't wipe today's
@@ -217,9 +215,7 @@ public class Camarilla implements Strategy {
                      RiskSettingsStore riskSettings,
                      ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
                      ObjectProvider<CamarillaStreamBroker> streamBrokerProvider,
-                     ObjectProvider<com.rydytrader.autotrader.service.NiftyRsiService> niftyRsiProvider,
                      ObjectProvider<com.rydytrader.autotrader.service.NiftyAtrService> niftyAtrProvider,
-                     ObjectProvider<com.rydytrader.autotrader.service.NiftySupertrendService> niftySupertrendProvider,
                      ObjectProvider<com.rydytrader.autotrader.service.NiftyEmaService> niftyEmaProvider) {
         this.camarillaService     = camarillaService;
         this.candleAggregator     = candleAggregator;
@@ -231,9 +227,7 @@ public class Camarilla implements Strategy {
         this.riskSettings         = riskSettings;
         this.tradeRepoProvider    = tradeRepoProvider;
         this.streamBrokerProvider = streamBrokerProvider;
-        this.niftyRsiProvider     = niftyRsiProvider;
         this.niftyAtrProvider     = niftyAtrProvider;
-        this.niftySupertrendProvider = niftySupertrendProvider;
         this.niftyEmaProvider     = niftyEmaProvider;
     }
 
@@ -1345,41 +1339,6 @@ public class Camarilla implements Strategy {
         // under distinct composite keys.
         if (state.openPositions.containsKey(posKey(setup, optionSym))) return FireResult.SKIP_HARD;
 
-        // ── Momentum (NIFTY RSI-14) gate ──
-        // Each directional setup requires NIFTY RSI to sit inside a band that
-        // matches the setup's thesis:
-        //   H4_BREAKOUT  (bullish)  → 50 < RSI < 70   trending up but not exhausted
-        //   L4_BREAKDOWN (bearish)  → 30 < RSI < 50   trending down but not exhausted
-        //   L3_REVERSAL  (bullish)  → RSI > 40         no bearish weakness ruling out an upside bounce
-        //   H3_REVERSAL  (bearish)  → RSI < 60         no bullish strength ruling out a downside fade
-        // Breakouts skip when RSI is overbought/oversold (≥ 80 / ≤ 20) since
-        // that's typically a late, exhaustion-prone entry. Reversals only need
-        // the FAR side of neutral cleared — the near side is fine because the
-        // thesis is a mean-reversion move IN that direction.
-        // RSI unavailable (Wilder not seeded, NIFTY LTP missing) → pass through.
-        // Toggle: camarillaMomentumCheckEnabled (Settings → Camarilla pane).
-        if (riskSettings.isCamarillaMomentumCheckEnabled()) {
-            try {
-                Double v = null;
-                var rsi = niftyRsiProvider == null ? null : niftyRsiProvider.getIfAvailable();
-                if (rsi != null) v = rsi.currentRsi();
-                if (v != null) {
-                    double r = v;
-                    boolean ok = switch (setup) {
-                        case H4_BREAKOUT  -> r > 50 && r < 70;
-                        case L4_BREAKDOWN -> r < 50 && r > 30;
-                        case L3_REVERSAL  -> r > 40;
-                        case H3_REVERSAL  -> r < 60;
-                        default            -> true;
-                    };
-                    if (!ok) {
-                        event("[WARNING]", "Momentum", "[" + ic.name() + "] " + setup + " skip — RSI " + round2(r) + " (pending retained)");
-                        return FireResult.SKIP_RETRY;
-                    }
-                }
-            } catch (Exception ignored) {}
-        }
-
         // ── EMA-alignment gate ──
         // Bullish setups (L3_REVERSAL, H4_BREAKOUT) require the trigger price
         // (entry futures) to sit ABOVE the 20 EMA on 5-min NIFTY spot.
@@ -2012,18 +1971,6 @@ public class Camarilla implements Strategy {
                 : niftyAtrProvider.getIfAvailable();
             Double atr = atrSvc == null ? null : atrSvc.currentAtr();
             if (atr != null) m.put("niftyAtr5m", atr);
-        } catch (Exception ignored) {}
-        try {
-            com.rydytrader.autotrader.service.NiftySupertrendService stSvc =
-                niftySupertrendProvider == null ? null : niftySupertrendProvider.getIfAvailable();
-            String stTrend = stSvc == null ? null : stSvc.currentTrend();
-            Double stLevel = stSvc == null ? null : stSvc.currentLevel();
-            if (stTrend != null) {
-                Map<String, Object> st = new LinkedHashMap<>();
-                st.put("trend", stTrend);
-                st.put("level", stLevel);
-                m.put("niftySupertrend5m", st);
-            }
         } catch (Exception ignored) {}
         try {
             com.rydytrader.autotrader.service.NiftyEmaService emaSvc =

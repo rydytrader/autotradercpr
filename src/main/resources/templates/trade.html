@@ -261,7 +261,6 @@
                     <span style="color:#fbbf24;">NIFTY <span id="hdrFut" style="color:var(--text-primary);font-weight:700;cursor:help;">—</span>
                         <span id="hdrFutChg" style="margin-left:4px;font-weight:600;"></span></span>
                     <span style="color:var(--text-muted);" title="NIFTY 14-period ATR on 5-min spot bars">ATR<sub style="font-size:0.62em;">5m</sub> <span id="hdrNiftyAtr5m" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                    <span style="color:var(--text-muted);" title="SuperTrend(10, 2) on 5-min NIFTY spot">ST<sub style="font-size:0.62em;">10,2</sub> <span id="hdrNiftySupertrend" style="color:var(--text-muted);font-weight:700;">—</span></span>
                     <span style="color:var(--text-muted);" title="20-period EMA on 5-min NIFTY spot (live-projected against tick LTP)">EMA<sub style="font-size:0.62em;">20</sub> <span id="hdrNiftyEma20" style="color:var(--text-primary);font-weight:700;">—</span></span>
                     <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
                     <!-- VIX -->
@@ -316,33 +315,8 @@
         </div>
     </div>
 
-    <!-- ── NIFTY Momentum + Event Log — side by side ────────────────────── -->
-    <div id="chartRow" style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px;">
-        <div id="momentumCard" class="section-card fixed-card-log fade-in" style="margin:0;">
-            <div class="section-header">
-                <div class="section-title">
-                    <div class="section-title-dot" style="background: var(--accent-cyan)"></div>
-                    NIFTY Momentum
-                </div>
-                <div style="display:flex;align-items:center;gap:14px;margin-left:auto;font-family:var(--font-mono);font-size:0.72rem;">
-                    <span style="color:var(--text-muted);">RSI <span id="hdrNiftyRsi"
-                          style="color:var(--text-primary);font-weight:700;">—</span></span>
-                    <span id="hdrNiftyRsiMomentum"
-                          style="padding:2px 10px;border-radius:999px;font-weight:700;font-size:0.62rem;letter-spacing:0.05em;
-                                 background:rgba(148,163,184,0.10);color:var(--text-secondary);border:1px solid rgba(148,163,184,0.30);">—</span>
-                    <button onclick="NiftyRsiChart.refresh()" title="Refresh"
-                            style="background:rgba(99,179,237,0.10);border:1px solid rgba(99,179,237,0.30);color:var(--accent-blue);
-                                   padding:4px 10px;border-radius:6px;font-family:var(--font-mono);font-size:0.66rem;font-weight:700;
-                                   letter-spacing:0.05em;cursor:pointer;">⟳</button>
-                </div>
-            </div>
-            <div style="padding:14px 18px;height:100%;display:flex;flex-direction:column;">
-                <div style="position:relative;flex:1;width:100%;min-height:260px;">
-                    <canvas id="niftyRsiChart"></canvas>
-                </div>
-            </div>
-        </div>
-
+    <!-- ── Event Log ────────────────────────────────────────────────────── -->
+    <div id="chartRow" style="margin-top:18px;">
         <div class="section-card fixed-card-log fade-in" style="margin:0;">
             <div class="section-header">
                 <div class="section-title">
@@ -549,24 +523,6 @@
         }
         var seedLtp = (d.atmVwap && Number(d.atmVwap.futLtp) > 0) ? Number(d.atmVwap.futLtp) : null;
         renderLiveEma20(seedLtp);
-        var stEl = document.getElementById('hdrNiftySupertrend');
-        if (stEl) {
-            var st = d.niftySupertrend5m;
-            if (st && st.trend) {
-                var bullish = st.trend === 'BULLISH';
-                var arrow = bullish ? '▲' : '▼';
-                var color = bullish ? 'var(--accent-green,#34d399)' : 'var(--accent-red,#f87171)';
-                var lvl = (st.level != null && isFinite(Number(st.level)))
-                    ? Number(st.level).toFixed(2) : '—';
-                // Value first (prominent), then coloured direction badge.
-                stEl.innerHTML = lvl + ' <span style="color:' + color + ';font-weight:700;">'
-                    + arrow + ' ' + st.trend + '</span>';
-                stEl.style.color = 'var(--text-primary)';
-            } else {
-                stEl.textContent = '—';
-                stEl.style.color = 'var(--text-muted)';
-            }
-        }
         captureLevelsState(d);
     }
 
@@ -1261,216 +1217,10 @@
         attachLevelsModalLtpUpdates();
         checkConnection();
         setInterval(checkConnection, 5000);
-        NiftyRsiChart.init();
         loadWelcome();
     });
 </script>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script>
-(function() {
-    const $ = id => document.getElementById(id);
-
-    // ── NIFTY RSI(14) chart ─────────────────────────────────────────────
-    // Display-only indicator: 5-min closes of NSE:NIFTY50-INDEX, Wilder smoothing.
-    // Three dotted horizontal reference lines drawn as flat-value datasets — no
-    // dependency on the Chart.js annotation plugin so this works with the base
-    // Chart.js CDN bundle loaded above.
-    //
-    // Momentum classifier (trend-following interpretation):
-    //   RSI > 60  → BULLISH (green)  — sustained buying pressure
-    //   RSI < 40  → BEARISH (red)    — sustained selling pressure
-    //   40 ≤ x ≤ 60 → NEUTRAL (grey)  — chop / no directional edge
-    function rsiMomentum(v) {
-        if (!isFinite(v))   return { label:'—',        bg:'rgba(148,163,184,0.10)', fg:'var(--text-secondary)', bd:'rgba(148,163,184,0.30)', valueColor:'var(--text-primary)' };
-        if (v > 60)         return { label:'BULLISH',  bg:'rgba(52,211,153,0.10)',  fg:'#34d399', bd:'rgba(52,211,153,0.35)',  valueColor:'#34d399' };
-        if (v < 40)         return { label:'BEARISH',  bg:'rgba(248,113,113,0.10)', fg:'#f87171', bd:'rgba(248,113,113,0.35)', valueColor:'#f87171' };
-        return                { label:'NEUTRAL',  bg:'rgba(148,163,184,0.10)', fg:'var(--text-secondary)', bd:'rgba(148,163,184,0.30)', valueColor:'var(--text-primary)' };
-    }
-    let rsiChart = null;
-    window.NiftyRsiChart = {
-        init() {
-            // One initial /history fetch — populates the chart with all
-            // closed samples + reference lines + the tradingDay flag.
-            this.refresh();
-            // Then connect SSE for live tip updates (~1 Hz push from
-            // NiftyRsiStreamBroker). Each push carries the in-progress
-            // bucket's projected RSI AND the last-closed canonical RSI,
-            // so the bar boundary handover is drift-free.
-            if (window.EventSource) {
-                try {
-                    var self = this;
-                    var es = new EventSource('/api/nifty-rsi/stream');
-                    es.addEventListener('tip', function(evt) {
-                        try { self._applyTip(JSON.parse(evt.data)); }
-                        catch (e) {}
-                    });
-                    // Browser auto-reconnects on transient errors; only
-                    // log here for visibility, no explicit reconnect.
-                    es.onerror = function() {};
-                } catch (e) {
-                    setInterval(() => this.refresh(), 5000);
-                }
-            } else {
-                setInterval(() => this.refresh(), 5000);
-            }
-        },
-
-        /** Apply a single streaming tip update. Overwrites the live-tip
-         *  bucket AND (if present) the last-closed bucket so the canonical
-         *  close value replaces the slightly-stale live-tip projection
-         *  that was sitting in that cell. */
-        _applyTip(d) {
-            if (!rsiChart || !d) return;
-            var labels = this._buildSessionGrid();
-            var dataArr = rsiChart.data.datasets[0].data;
-            var mutated = false;
-            // Live in-progress bucket (null on non-trading days / Wilder unseeded).
-            if (d.tip && d.tip.t && d.tip.rsi != null) {
-                var tipIdx = labels.indexOf(d.tip.t);
-                if (tipIdx >= 0) {
-                    dataArr[tipIdx] = Number(d.tip.rsi);
-                    mutated = true;
-                }
-            }
-            // Most-recent closed bucket (drift-free freeze).
-            if (d.lastClosed && d.lastClosed.t && d.lastClosed.rsi != null) {
-                var lcIdx = labels.indexOf(d.lastClosed.t);
-                if (lcIdx >= 0) {
-                    dataArr[lcIdx] = Number(d.lastClosed.rsi);
-                    mutated = true;
-                }
-            }
-            if (mutated) rsiChart.update('none');
-            // Header chip + pill — value source is tip if present, else
-            // last-closed canonical, else leave as-is.
-            var hdr = (d.tip && d.tip.rsi != null) ? d.tip.rsi
-                    : (d.lastClosed && d.lastClosed.rsi != null) ? d.lastClosed.rsi
-                    : null;
-            if (hdr != null) {
-                var lr = Number(hdr);
-                var m  = rsiMomentum(lr);
-                var chip = $('hdrNiftyRsi'); var pill = $('hdrNiftyRsiMomentum');
-                if (chip) {
-                    chip.textContent = lr.toFixed(2);
-                    chip.style.color = m.valueColor;
-                }
-                if (pill) {
-                    pill.textContent       = m.label;
-                    pill.style.background  = m.bg;
-                    pill.style.color       = m.fg;
-                    pill.style.borderColor = m.bd;
-                }
-            }
-        },
-        // Pre-computed 75-bucket session grid: 09:15, 09:20, …, 15:25.
-        // Used as the chart's x-axis so the 60/50/40 reference lines always
-        // span the full trading day regardless of how many RSI samples have
-        // arrived (the bug we fixed: with only 1 sample, single-point ref
-        // datasets don't render).
-        _buildSessionGrid() {
-            if (this._grid) return this._grid;
-            var grid = [];
-            // 09:15 → 15:25 inclusive, step 5 minutes = 75 buckets.
-            for (var mins = 9*60+15; mins <= 15*60+25; mins += 5) {
-                var h = Math.floor(mins/60), m = mins - h*60;
-                grid.push((h<10?'0':'')+h + ':' + (m<10?'0':'')+m);
-            }
-            this._grid = grid;
-            return grid;
-        },
-        refresh() {
-            fetch('/api/nifty-rsi/history').then(r => r.ok ? r.json() : null).then(d => {
-                if (!d) return;
-                // Momentum card stays visible on non-trading days (weekends /
-                // NSE holidays) — the chart simply renders no new RSI samples
-                // since the server skips the live-tip projection when
-                // !tradingDay. Reference lines + last closed-session samples
-                // (if any) still show.
-                var samples = d.samples || [];
-                var labels  = this._buildSessionGrid();
-                var n = labels.length;
-                // Place each RSI sample at its matching bucket position; all
-                // other positions stay null so Chart.js renders gaps.
-                var bucketIdx = {};
-                for (var i = 0; i < n; i++) bucketIdx[labels[i]] = i;
-                var rsiData = new Array(n).fill(null);
-                for (var j = 0; j < samples.length; j++) {
-                    var idx = bucketIdx[samples[j].t];
-                    if (idx != null) rsiData[idx] = samples[j].rsi;
-                }
-                // Reference-line datasets span the full grid so the boundaries
-                // are visible from the empty pre-market state through every
-                // bar of the live session.
-                var line60 = new Array(n).fill(60);
-                var line50 = new Array(n).fill(50);
-                var line40 = new Array(n).fill(40);
-                // Header — RSI value (band-coloured) + momentum pill.
-                var chip = $('hdrNiftyRsi');
-                var pill = $('hdrNiftyRsiMomentum');
-                var lr = (d.lastRsi != null && isFinite(d.lastRsi)) ? Number(d.lastRsi) : NaN;
-                var m  = rsiMomentum(lr);
-                if (chip) {
-                    chip.textContent = isFinite(lr) ? lr.toFixed(2) : '—';
-                    chip.style.color = m.valueColor;
-                }
-                if (pill) {
-                    pill.textContent       = m.label;
-                    pill.style.background  = m.bg;
-                    pill.style.color       = m.fg;
-                    pill.style.borderColor = m.bd;
-                }
-                // Build chart on first refresh, mutate-in-place thereafter.
-                // The labels grid and reference lines are constant; only the
-                // RSI(14) dataset's data array changes between refreshes.
-                if (!rsiChart) {
-                    var ctx = $('niftyRsiChart').getContext('2d');
-                    rsiChart = new Chart(ctx, {
-                        type: 'line',
-                        data: {
-                            labels: labels,
-                            datasets: [
-                                { label: 'RSI(14)', data: rsiData, borderColor: 'rgb(125,211,252)', backgroundColor: 'rgba(125,211,252,0.10)', tension: 0.25, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2 },
-                                { label: '60',      data: line60,  borderColor: '#34d399', borderDash: [4,4], borderWidth: 1, pointRadius: 0, pointHoverRadius: 0, fill: false, tension: 0 },
-                                { label: '50',      data: line50,  borderColor: '#9ca3af', borderDash: [4,4], borderWidth: 1, pointRadius: 0, pointHoverRadius: 0, fill: false, tension: 0 },
-                                { label: '40',      data: line40,  borderColor: '#f87171', borderDash: [4,4], borderWidth: 1, pointRadius: 0, pointHoverRadius: 0, fill: false, tension: 0 }
-                            ]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            animation: false,
-                            animations: { colors: false, x: false, y: false },
-                            transitions: { active: { animation: { duration: 0 } } },
-                            interaction: { mode: 'index', intersect: false },
-                            plugins: {
-                                legend: { labels: {
-                                    color: '#9ca3af', font: { family: 'monospace', size: 11 },
-                                    // Filter the three reference-line series out of the legend —
-                                    // they're visual guides, not data the operator toggles on/off.
-                                    filter: it => it.text === 'RSI(14)'
-                                } },
-                                tooltip: {
-                                    filter: c => c.dataset.label === 'RSI(14)',
-                                    callbacks: { label: c => 'RSI: ' + Number(c.parsed.y).toFixed(2) }
-                                }
-                            },
-                            scales: {
-                                x: { ticks: { color: '#6b7280', maxRotation: 0, autoSkipPadding: 12 }, grid: { color: 'rgba(128,128,128,0.08)' } },
-                                y: { min: 20, max: 80, ticks: { color: '#6b7280', stepSize: 10 }, grid: { color: 'rgba(128,128,128,0.08)' } }
-                            }
-                        }
-                    });
-                } else {
-                    rsiChart.data.datasets[0].data = rsiData;
-                    rsiChart.update('none');
-                }
-            }).catch(() => {});
-        }
-    };
-
-})();
-</script>
 
 <script src="/js/common.js?v=41"></script>
 <script src="/js/ticker.js?v=36"></script>

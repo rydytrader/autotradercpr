@@ -31,8 +31,8 @@ import java.util.List;
 /**
  * NIFTY 14-period Average True Range (ATR) on 5-minute spot bars.
  *
- * <p>Mirrors the seed-from-history pattern used by {@link NiftyRsiService} so the bot
- * has a converged Wilder ATR available before the first live trigger of the day. Used
+ * <p>Seeds from Fyers 5-min history at boot so the bot has a converged Wilder ATR
+ * available before the first live trigger of the day. Used
  * by the Camarilla strategy to size the directional SL buffer
  * ({@code SL = confirmExtreme ± atr × multiplier}) and surfaced on the trade page
  * header next to India VIX.
@@ -116,8 +116,8 @@ public class NiftyAtrService {
     }
 
     /** Force re-seed on next opportunity. Called by rolloverIfNewDay so each
-     *  trading day pulls a fresh history pass — mirrors NiftyRsiService's
-     *  weekend-poisoning fix (Commit PP). */
+     *  trading day pulls a fresh history pass — defends against weekend-poisoning
+     *  and app-restart bar-buffer poisoning. */
     private synchronized void rolloverIfNewDay() {
         String today = LocalDate.now(IST).toString();
         if (today.equals(state.dayKey)) return;
@@ -279,7 +279,7 @@ public class NiftyAtrService {
         /** True once {@link #seedFromHistory} has produced the converged
          *  Wilder value. Cleared on each day rollover so the new session
          *  pulls a fresh history pass — defends against weekend / restart
-         *  bar buffer poisoning (same fix as NiftyRsiService Commit PP). */
+         *  bar buffer poisoning. */
         public boolean wilderSeeded = false;
     }
 }

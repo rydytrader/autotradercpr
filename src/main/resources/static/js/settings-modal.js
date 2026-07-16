@@ -26,7 +26,6 @@
                       '<div class="sm-field"><label>Trading Start (HH:mm IST)</label><input type="time" id="sm-camarillaTradingStartTime" step="60"><div class="sm-hint">Entries fire only after this time. Default 09:30.</div></div>' +
                       '<div class="sm-field"><label>Trading End (HH:mm IST)</label><input type="time" id="sm-camarillaTradingEndTime" step="60"><div class="sm-hint">No new entries after this time. Default 13:30.</div></div>' +
                       '<div class="sm-field sm-full"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-camarillaSquareOffTime" step="60"><div class="sm-hint">Hard exit if target/SL didn\'t trigger.</div></div>' +
-                      '<div class="sm-field sm-full"><label><input type="checkbox" id="sm-camarillaMomentumCheckEnabled"> &nbsp;Momentum (RSI) Check</label><div class="sm-hint">Requires RSI(14) inside a setup-specific band: H4 breakout 50-70, L4 breakdown 30-50, H3/L3 reversals 40-60. Default ON.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
@@ -189,7 +188,6 @@
             if (g('sm-camarillaTradingStartTime'))  g('sm-camarillaTradingStartTime').value = d.camarillaTradingStartTime || '09:30';
             if (g('sm-camarillaTradingEndTime'))    g('sm-camarillaTradingEndTime').value = d.camarillaTradingEndTime || '13:30';
             if (g('sm-camarillaSquareOffTime'))     g('sm-camarillaSquareOffTime').value = d.camarillaSquareOffTime || '15:15';
-            if (g('sm-camarillaMomentumCheckEnabled')) g('sm-camarillaMomentumCheckEnabled').checked = d.camarillaMomentumCheckEnabled !== false;
         }).catch(function() {});
     }
 
@@ -200,8 +198,7 @@
             camarillaOrderType:          g('sm-camarillaOrderType').value,
             camarillaTradingStartTime:   (g('sm-camarillaTradingStartTime').value || '').trim(),
             camarillaTradingEndTime:     (g('sm-camarillaTradingEndTime').value || '').trim(),
-            camarillaSquareOffTime:      (g('sm-camarillaSquareOffTime').value || '').trim(),
-            camarillaMomentumCheckEnabled: !!g('sm-camarillaMomentumCheckEnabled').checked
+            camarillaSquareOffTime:      (g('sm-camarillaSquareOffTime').value || '').trim()
         };
         postSettings('/api/settings/risk', body);
     }

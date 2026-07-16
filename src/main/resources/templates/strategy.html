@@ -185,7 +185,7 @@
     <div class="page-header fade-in" style="margin-bottom:18px;">
         <div>
             <div class="page-title">Strategy</div>
-            <div class="page-subtitle">Camarilla pivots · two-candle confirmation · RSI momentum gate</div>
+            <div class="page-subtitle">Camarilla pivots · two-candle confirmation · EMA-alignment gate</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -211,7 +211,7 @@
         </p>
         <p class="doc-p">
             Risk management is layered: per-day loss cap with a 50 %-qty retry when a full-size
-            fire would breach the cap, portfolio exposure projection, RSI momentum band, and a
+            fire would breach the cap, portfolio exposure projection, EMA-alignment gate, and a
             daily squareoff time.
         </p>
     </div>
@@ -449,7 +449,7 @@
             </div>
             <div class="phase-row">
                 <div class="phase-tag">Trigger</div>
-                <div class="phase-desc"><strong>Tick fire.</strong> Every confirmation arms the tick trigger — fires the moment spot touches <code>confirmHigh + (ATR × triggerMult)</code> (bullish) or <code>confirmLow − (ATR × triggerMult)</code> (bearish), checked every fast-tick (~1.5 s). Default trigger multiplier 0.25 (a quarter of one 5-min ATR). Set it to 0 to fire at the exact confirmation extreme with no cushion. <br><strong>Edge-triggered.</strong> The fire attempt happens on the rising edge — spot must CROSS from outside the zone to inside. If a fire attempt is rejected by the RSI momentum gate, the pending is kept alive and the retry waits for spot to exit the zone and re-cross (rather than spamming attempts every tick while spot stays past the trigger). Any other rejection (portfolio cap, day lockout, order rejection) hard-clears the pending — the event log tags those with <em>— pending nullified</em>.</div>
+                <div class="phase-desc"><strong>Tick fire.</strong> Every confirmation arms the tick trigger — fires the moment spot touches <code>confirmHigh + (ATR × triggerMult)</code> (bullish) or <code>confirmLow − (ATR × triggerMult)</code> (bearish), checked every fast-tick (~1.5 s). Default trigger multiplier 0.25 (a quarter of one 5-min ATR). Set it to 0 to fire at the exact confirmation extreme with no cushion. <br><strong>Edge-triggered.</strong> The fire attempt happens on the rising edge — spot must CROSS from outside the zone to inside. If a fire attempt is rejected by the EMA-alignment gate, the pending is kept alive and the retry waits for spot to exit the zone and re-cross (rather than spamming attempts every tick while spot stays past the trigger). Any other rejection (portfolio cap, day lockout, order rejection) hard-clears the pending — the event log tags those with <em>— pending nullified</em>.</div>
             </div>
             <div class="phase-row">
                 <div class="phase-tag">Invalidate</div>
@@ -462,45 +462,18 @@
         </div>
     </div>
 
-    <!-- ── RSI Momentum Gate ── -->
+    <!-- ── EMA-Alignment Gate ── -->
     <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:rgb(125,211,252);"></span> RSI Momentum Gate</h2>
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:rgb(125,211,252);"></span> EMA-Alignment Gate</h2>
         <p class="doc-p">
-            At trigger time, before the SELL order goes out, the bot checks <strong>NIFTY RSI(14)</strong>
-            against a setup-specific band. The momentum check filters out late-entry breakouts at
-            exhaustion and reversals against a strong opposite trend (RSI ≤ 40 for bullish
-            reversals, ≥ 60 for bearish reversals).
-        </p>
-        <div class="band-grid" style="margin-top:14px;">
-            <div class="band-row"><span class="left" style="color:var(--accent-green);">H4_BREAKOUT</span><span class="right">50 &lt; RSI &lt; 70</span></div>
-            <div class="band-row"><span class="left" style="color:var(--accent-red, #f87171);">L4_BREAKDOWN</span><span class="right">30 &lt; RSI &lt; 50</span></div>
-            <div class="band-row"><span class="left" style="color:var(--accent-green);">L3_REVERSAL</span><span class="right">RSI &gt; 40</span></div>
-            <div class="band-row"><span class="left" style="color:var(--accent-red, #f87171);">H3_REVERSAL</span><span class="right">RSI &lt; 60</span></div>
-        </div>
-        <p class="doc-p" style="margin-top:14px;">
-            <strong>Breakouts</strong> require directional momentum WITH the trade (RSI in
-            the 50-70 band for bullish H4 breakouts, 30-50 band for bearish L4 breakdowns —
-            trending but not exhausted). <strong>Reversals</strong> only need the FAR side
-            of neutral cleared — L3 bullish reversals require RSI &gt; 40 (no bearish weakness
-            ruling out an upside bounce), H3 bearish reversals require RSI &lt; 60 (no bullish
-            strength ruling out a downside fade). The near side is fine because the thesis is
-            a mean-reversion move IN that direction. The check uses the
-            <strong>live LTP-projected RSI</strong> at the instant of trigger; the chart
-            visible on the Positions page streams that same value every second via SSE.
-        </p>
-        <p class="doc-p">
-            The momentum gate can be toggled OFF in Settings → Camarilla pane. When disabled,
-            all setups fire on geometry + trigger alone, regardless of RSI.
-        </p>
-        <h3 class="doc-h3" style="margin-top:22px;">EMA-alignment gate</h3>
-        <p class="doc-p">
-            Layered on top of RSI: at trigger time the bot also checks the live spot LTP against
+            At trigger time, before the SELL order goes out, the bot checks the live spot LTP against
             the 20-period EMA on 5-min NIFTY. Bullish setups (L3_REVERSAL, H4_BREAKOUT) require
             <strong>spot &gt; EMA20</strong>; bearish setups (H3_REVERSAL, L4_BREAKDOWN) require
             <strong>spot &lt; EMA20</strong>. Filters counter-trend entries where the dominant
             5-min moving-average trend is against the setup's thesis. EMA unavailable (not seeded)
             passes through. Skips are transient — the pending stays alive and retries on the next
-            rising-edge crossing of the trigger price, so a wick above EMA can still catch the fire.
+            rising-edge crossing of the trigger price, so a wick to the right side of EMA still
+            catches the fire.
         </p>
     </div>
 
@@ -531,7 +504,7 @@
             <li><strong>Portfolio exposure cap</strong> — before every fire, the strategy projects the combined exposed risk (existing open positions + this new fire's <em>|entryFut − slFut| × ATM_DELTA × qty</em>) and rejects if it would breach <code>portfolioMaxDailyLoss</code>.</li>
             <li><strong>50 % qty retry</strong> — when the full-lot fire would breach the portfolio cap, the bot retries once at half lots (rounded to whole lots, min 1). If the halved size still doesn't fit, the trade is skipped. No third try — position size never fragments below half.</li>
             <li><strong>Realized-loss lockout</strong> — if today's <em>closed</em> losses exceed <code>portfolioMaxDailyLoss</code>, the strategy locks out for the rest of the session — no new fires on either instrument.</li>
-            <li><strong>RSI momentum gate</strong> — see the RSI Momentum Gate section above. Setup-specific bands rule out late-entry breakouts at exhaustion and reversals against strong trends.</li>
+            <li><strong>EMA-alignment gate</strong> — see the EMA-Alignment Gate section above. Bullish setups require spot above the 20 EMA on 5-min NIFTY; bearish setups require spot below.</li>
             <li><strong>Trading window</strong> — new entries only fire between configured Trading Start (09:30 IST default) and Trading End (13:30 IST default). Existing positions continue to be managed until squareoff.</li>
         </ul>
     </div>
@@ -547,10 +520,9 @@
             order going out.
         </p>
         <p class="doc-p">
-            Three browser-side surfaces stream live state via Server-Sent Events: the navbar
-            ticker (NIFTY LTP + ΔPct), the Positions page (per-position LTP + MTM), and the
-            Momentum (RSI) chart (live LTP-projected RSI + last-closed canonical RSI, refreshed
-            ~1 Hz). All persistent state survives mid-day restarts and weekend gaps via JSON
+            Two browser-side surfaces stream live state via Server-Sent Events: the navbar
+            ticker (NIFTY LTP + ΔPct) and the Positions page (per-position LTP + MTM + live-projected
+            EMA20). All persistent state survives mid-day restarts and weekend gaps via JSON
             disk snapshots.
         </p>
     </div>
