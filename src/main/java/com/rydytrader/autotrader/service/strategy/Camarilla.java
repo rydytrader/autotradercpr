@@ -267,7 +267,7 @@ public class Camarilla implements Strategy {
         // but keeping the registration is harmless and lets any future
         // AtmChange consumer hook in cleanly.
         atmTracker.setListener(this::onAtmChange);
-        // Best-effort attempt to resolve today's session-static OTM legs.
+        // Best-effort attempt to resolve today's session-static legs.
         // Fails silently when Camarilla levels or the option chain aren't
         // warmed yet; the scheduled retry catches up.
         try { resolveSessionLegs(); }
@@ -919,35 +919,35 @@ public class Camarilla implements Strategy {
      *  chip alongside ATM. Both symbols are stored on the pending so
      *  releaseOptionLegs() can unsubscribe them when the confirmation invalidates
      *  or expires. */
-    /** Resolve the four session-static OTM trade legs from today's Camarilla
+    /** Resolve the four session-static trade legs from today's Camarilla
      *  levels and subscribe them in one shot. Idempotent — bails immediately
      *  once today's legs are already on file. Returns {@code true} if all four
      *  legs are successfully resolved (either freshly, or already resolved).
      *
-     *  <p>Setup → leg mapping:
+     *  <p>Setup → leg mapping — each setup uses the strike NEAREST to its
+     *  own trigger level:
      *  <pre>
-     *    H4_BREAKOUT  (bullish) → sell PE at strike nearest to H3
-     *    L3_REVERSAL  (bullish) → sell PE at strike nearest to L4
-     *    H3_REVERSAL  (bearish) → sell CE at strike nearest to H4
-     *    L4_BREAKDOWN (bearish) → sell CE at strike nearest to L3
+     *    H4_BREAKOUT  (bullish) → sell PE at strike nearest to H4
+     *    L3_REVERSAL  (bullish) → sell PE at strike nearest to L3
+     *    H3_REVERSAL  (bearish) → sell CE at strike nearest to H3
+     *    L4_BREAKDOWN (bearish) → sell CE at strike nearest to L4
      *  </pre>
-     *  Each trade leg is one Camarilla level "further" than the
-     *  breakout/reversal level, giving the bet OTM cushion in the expected
-     *  direction. */
+     *  The leg sits AT the level itself — near-ATM when spot reaches the
+     *  trigger, converting the setup into a straightforward directional
+     *  premium sell. */
     private synchronized boolean resolveSessionLegs() {
         String today = LocalDate.now(IST).toString();
         // Fetch levels first so the short-circuit can validate the persisted
-        // strikes against the current OTM-aware rule (floor for PE-sellers,
-        // ceil for CE-sellers). If any strike doesn't match, the persisted
-        // state was written with the old round-to-nearest logic and must be
-        // re-resolved — skip the short-circuit.
+        // strikes against the current nearest-strike rule. If any strike
+        // doesn't match, the persisted state was written with an older
+        // mapping and must be re-resolved — skip the short-circuit.
         CamarillaLevels lv = camarillaService.getLevels(NIFTY_SYMBOL);
-        boolean persistedStrikesAreOtmAware = lv != null && strikesMatchOtmRule(lv);
+        boolean persistedStrikesMatch = lv != null && strikesMatchNearestRule(lv);
         if (today.equals(state.sessionLegsDayKey)
             && !state.h4bSymbol.isBlank() && !state.l3rSymbol.isBlank()
             && !state.h3rSymbol.isBlank() && !state.l4bSymbol.isBlank()
-            && persistedStrikesAreOtmAware) {
-            // Already resolved earlier today with the current OTM logic.
+            && persistedStrikesMatch) {
+            // Already resolved earlier today with the current logic.
             // Re-subscribe defensively — on a mid-day JVM restart the
             // symbols persist on State (via disk cache) but the Fyers WS
             // subscription set is empty until we call subscribeAdditional
@@ -957,16 +957,16 @@ public class Camarilla implements Strategy {
             return true;
         }
         if (lv == null) return false;
-        // OTM-aware, per-setup strike resolution. Each setup's strike is one
-        // Camarilla level FURTHER OTM than its own trigger level:
-        //   H4_BREAKOUT  (bullish, PE)  → floor(H3)  — deep OTM PE below the breakout
-        //   L3_REVERSAL  (bullish, PE)  → floor(L4)  — deep OTM PE below the reversal
-        //   H3_REVERSAL  (bearish, CE)  → ceil (H4)  — deep OTM CE above the reversal
-        //   L4_BREAKDOWN (bearish, CE)  → ceil (L3)  — deep OTM CE above the breakdown
-        var h4bRow = atmSelector.resolveOtmStrikeAtLevel(lv.h3(), "PE");
-        var l3rRow = atmSelector.resolveOtmStrikeAtLevel(lv.l4(), "PE");
-        var h3rRow = atmSelector.resolveOtmStrikeAtLevel(lv.h4(), "CE");
-        var l4bRow = atmSelector.resolveOtmStrikeAtLevel(lv.l3(), "CE");
+        // Per-setup strike resolution — nearest strike to the setup's own
+        // trigger level:
+        //   H4_BREAKOUT  (bullish, PE)  → round(H4)  — PE near H4
+        //   L3_REVERSAL  (bullish, PE)  → round(L3)  — PE near L3
+        //   H3_REVERSAL  (bearish, CE)  → round(H3)  — CE near H3
+        //   L4_BREAKDOWN (bearish, CE)  → round(L4)  — CE near L4
+        var h4bRow = atmSelector.resolveStrikeAtLevel(lv.h4());
+        var l3rRow = atmSelector.resolveStrikeAtLevel(lv.l3());
+        var h3rRow = atmSelector.resolveStrikeAtLevel(lv.h3());
+        var l4bRow = atmSelector.resolveStrikeAtLevel(lv.l4());
         if (h4bRow == null || l3rRow == null || h3rRow == null || l4bRow == null) {
             log.debug("[Camarilla] session legs deferred — one or more chain rows null "
                 + "(H4B={}, L3R={}, H3R={}, L4B={})",
@@ -1000,23 +1000,24 @@ public class Camarilla implements Strategy {
     }
 
 
-    /** Verify each persisted session-leg strike matches the current OTM-aware
-     *  rule (floor for PE-sellers, ceil for CE-sellers). Used by
-     *  {@link #resolveSessionLegs()} to detect state files persisted with the
-     *  older round-to-nearest logic and force a re-resolve — otherwise the
-     *  short-circuit fires on today's date + all six symbols present and the
-     *  stale strikes stay in state forever. Returns false when the levels
-     *  cache isn't loaded (defensive — caller will fall through and re-resolve). */
-    private boolean strikesMatchOtmRule(CamarillaLevels lv) {
+    /** Verify each persisted session-leg strike matches the current
+     *  nearest-strike rule (round to the closest STRIKE_STEP). Used by
+     *  {@link #resolveSessionLegs()} to detect state files persisted under
+     *  the older OTM-aware mapping (floor/ceil away from the level) and
+     *  force a re-resolve — otherwise the short-circuit fires on today's
+     *  date + all six symbols present and the stale strikes stay in state
+     *  forever. Returns false when the levels cache isn't loaded
+     *  (defensive — caller will fall through and re-resolve). */
+    private boolean strikesMatchNearestRule(CamarillaLevels lv) {
         if (lv == null) return false;
-        // Each setup's strike is one Camarilla level FURTHER OTM than its own
-        // trigger level (H4B→H3, L3R→L4, H3R→H4, L4B→L3). Keep in sync with
-        // resolveSessionLegs() — this validator forces a re-resolve when a
-        // persisted state file was written under an older mapping.
-        long expH4B = (long) Math.floor(lv.h3() / STRIKE_STEP) * STRIKE_STEP;
-        long expL3R = (long) Math.floor(lv.l4() / STRIKE_STEP) * STRIKE_STEP;
-        long expH3R = (long) Math.ceil (lv.h4() / STRIKE_STEP) * STRIKE_STEP;
-        long expL4B = (long) Math.ceil (lv.l3() / STRIKE_STEP) * STRIKE_STEP;
+        // Each setup's strike is the closest STRIKE_STEP to its own
+        // trigger level (H4B→H4, L3R→L3, H3R→H3, L4B→L4). Keep in sync
+        // with resolveSessionLegs() — this validator forces a re-resolve
+        // when a persisted state file was written under an older mapping.
+        long expH4B = Math.round(lv.h4() / (double) STRIKE_STEP) * STRIKE_STEP;
+        long expL3R = Math.round(lv.l3() / (double) STRIKE_STEP) * STRIKE_STEP;
+        long expH3R = Math.round(lv.h3() / (double) STRIKE_STEP) * STRIKE_STEP;
+        long expL4B = Math.round(lv.l4() / (double) STRIKE_STEP) * STRIKE_STEP;
         return state.h4bStrike == expH4B
             && state.l3rStrike == expL3R
             && state.h3rStrike == expH3R
@@ -1294,7 +1295,7 @@ public class Camarilla implements Strategy {
         boolean bullishBet = isBullishBet(setup);
 
         // ── Pick the trade leg from the pre-resolved session map ──
-        // Each setup has a session-static OTM leg resolved at boot from today's
+        // Each setup has a session-static leg resolved at boot from today's
         // Camarilla levels. No per-trade strike math, no on-demand subscribe —
         // the leg has been live on the WebSocket since boot.
         String optionSym = legSymbolFor(setup, ic);
@@ -1679,7 +1680,7 @@ public class Camarilla implements Strategy {
         // v2 two-candle entry — drop any pending confirmations on day rollover / reset.
         state.pendingBullish = null;
         state.pendingBearish = null;
-        // Release yesterday's session-static OTM legs so the resolver picks up
+        // Release yesterday's session-static legs so the resolver picks up
         // today's fresh Camarilla levels (and any fresh weekly-expiry chain
         // symbols that rolled overnight) on its next tick.
         releaseSessionLegs();
@@ -1776,7 +1777,7 @@ public class Camarilla implements Strategy {
             double spotLtp = marketDataService.getLtp(NIFTY_SYMBOL);
             if (spotLtp > 0) liveAtm = Math.round(spotLtp / (double) STRIKE_STEP) * STRIKE_STEP;
         } catch (Exception ignored) {}
-        // v2 session-static OTM legs — one row per setup, all four resolved at
+        // v2 session-static legs — one row per setup, all four resolved at
         // boot and subscribed all session. Trade page renders this as a
         // 4-row block (replaces the legacy dynamic ATM chip and the per-pending
         // LOCK chip). Emitted as an empty array until the four legs resolve.
@@ -1951,7 +1952,7 @@ public class Camarilla implements Strategy {
         /** Current monitored 6-contract matrix (ATM, ±1 strike, CE+PE) → role mapping. */
         public Map<String, WatchRole> symbolRole = new ConcurrentHashMap<>();
 
-        // ── V2 session-static OTM legs (one per setup) ───────────────────────
+        // ── V2 session-static legs (one per setup) ───────────────────────
         // Resolved at boot from today's Camarilla levels and subscribed for the
         // full session — no per-confirmation churn. fire() looks up the right
         // leg by setup type. Empty until the first successful resolveSessionLegs().
@@ -2221,7 +2222,7 @@ public class Camarilla implements Strategy {
     }
 
     /** Append one row to the {@code setupLegs} dashboard array — used for the
-     *  four session-static OTM legs. Live LTP comes from the WS tick cache;
+     *  four session-static legs. Live LTP comes from the WS tick cache;
      *  when that's 0 (holiday, pre-market, fresh boot before first tick), we
      *  fall back to {@code refLtp} — the chain-quoted price captured at
      *  resolve time, which on a non-trading day reflects yesterday's last
