@@ -595,8 +595,16 @@ public class Camarilla implements Strategy {
             return;
         }
 
-        // (c) Fresh confirmation detection — bearish only.
-        if (open == null && pending == null) {
+        // (c) Fresh confirmation detection — bearish only. Skip when a
+        // position is already open on this option (avoid stacking) or when
+        // a pending is already seeded (age-out branch handles that).
+        boolean hasOpenOnSymbol = false;
+        for (Position p : state.openPositions.values()) {
+            if (p == null) continue;
+            if (p.setup == ActiveSetup.MANUAL) continue;
+            if (symbol.equals(p.symbol)) { hasOpenOnSymbol = true; break; }
+        }
+        if (!hasOpenOnSymbol && pending == null) {
             boolean red = c.close() < c.open();
             if (red) {
                 PendingConfirmation fresh = null;
