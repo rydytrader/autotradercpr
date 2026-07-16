@@ -26,7 +26,6 @@
                       '<div class="sm-field"><label>Trading Start (HH:mm IST)</label><input type="time" id="sm-camarillaTradingStartTime" step="60"><div class="sm-hint">Entries fire only after this time. Default 09:30.</div></div>' +
                       '<div class="sm-field"><label>Trading End (HH:mm IST)</label><input type="time" id="sm-camarillaTradingEndTime" step="60"><div class="sm-hint">No new entries after this time. Default 13:30.</div></div>' +
                       '<div class="sm-field sm-full"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-camarillaSquareOffTime" step="60"><div class="sm-hint">Hard exit if target/SL didn\'t trigger.</div></div>' +
-                      '<div class="sm-field sm-full"><label>SL Buffer (option points)</label><input type="number" id="sm-optionSlBufferPoints" step="0.05" min="0"><div class="sm-hint">Points cushion above the option\'s L3/H4 SL level (₹). Default 2.0. Set 0 for SL exactly at the structural level.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
@@ -34,6 +33,7 @@
                       '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline for Home analytics. Default ₹10L.</div></div>' +
                       '<div class="sm-field"><label>Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Kill switch when net day P&L drops below this % of capital. 0 = off.</div></div>' +
                       '<div class="sm-field"><label>Max Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto from Capital × Risk %.</div></div>' +
+                      '<div class="sm-field"><label>SL Buffer (option points)</label><input type="number" id="sm-optionSlBufferPoints" step="0.05" min="0"><div class="sm-hint">Points cushion above the option\'s L3/H4 SL level (₹). Default 2.0. Set 0 for SL exactly at the structural level.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
@@ -186,7 +186,6 @@
             if (g('sm-camarillaTradingStartTime'))  g('sm-camarillaTradingStartTime').value = d.camarillaTradingStartTime || '09:30';
             if (g('sm-camarillaTradingEndTime'))    g('sm-camarillaTradingEndTime').value = d.camarillaTradingEndTime || '13:30';
             if (g('sm-camarillaSquareOffTime'))     g('sm-camarillaSquareOffTime').value = d.camarillaSquareOffTime || '15:15';
-            if (g('sm-optionSlBufferPoints'))       g('sm-optionSlBufferPoints').value = d.optionSlBufferPoints != null ? d.optionSlBufferPoints : 2.0;
         }).catch(function() {});
     }
 
@@ -197,8 +196,7 @@
             camarillaOrderType:          g('sm-camarillaOrderType').value,
             camarillaTradingStartTime:   (g('sm-camarillaTradingStartTime').value || '').trim(),
             camarillaTradingEndTime:     (g('sm-camarillaTradingEndTime').value || '').trim(),
-            camarillaSquareOffTime:      (g('sm-camarillaSquareOffTime').value || '').trim(),
-            optionSlBufferPoints:        Math.max(0, parseFloat(g('sm-optionSlBufferPoints').value) || 0)
+            camarillaSquareOffTime:      (g('sm-camarillaSquareOffTime').value || '').trim()
         };
         postSettings('/api/settings/risk', body);
     }
@@ -206,7 +204,8 @@
     function savePortfolioRiskTab() {
         var body = {
             startingCapital:          parseFloat(document.getElementById('sm-startingCapital').value) || 0,
-            portfolioMaxRiskPct:      parseFloat(document.getElementById('sm-portfolioMaxRiskPct').value) || 0
+            portfolioMaxRiskPct:      parseFloat(document.getElementById('sm-portfolioMaxRiskPct').value) || 0,
+            optionSlBufferPoints:     Math.max(0, parseFloat(document.getElementById('sm-optionSlBufferPoints').value) || 0)
         };
         postSettings('/api/settings/risk', body);
     }
@@ -259,8 +258,10 @@
             if (!d) return;
             var capInput = document.getElementById('sm-startingCapital');
             var pctInput = document.getElementById('sm-portfolioMaxRiskPct');
+            var slBufInput = document.getElementById('sm-optionSlBufferPoints');
             if (capInput) capInput.value = d.startingCapital != null ? d.startingCapital : 1000000;
             if (pctInput) pctInput.value = d.portfolioMaxRiskPct != null ? d.portfolioMaxRiskPct : 0;
+            if (slBufInput) slBufInput.value = d.optionSlBufferPoints != null ? d.optionSlBufferPoints : 2.0;
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {
                 updatePortfolioRiskHint(parseFloat(capInput.value) || 0, parseFloat(pctInput && pctInput.value) || 0);

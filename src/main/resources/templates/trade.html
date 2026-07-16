@@ -267,10 +267,6 @@
                 </div>
             </div>
             <div style="display:flex; gap:10px; align-items:center;">
-                <button type="button" id="levelsBtn" onclick="openLevelsModal()" title="Camarilla levels + session legs"
-                        style="background:rgba(125,211,252,0.10);border:1px solid rgba(125,211,252,0.30);color:var(--accent-cyan);
-                               padding:5px 10px;border-radius:6px;font-family:var(--font-mono);font-size:0.95rem;font-weight:700;
-                               letter-spacing:0;cursor:pointer;line-height:1;">☰</button>
                 <div class="kill-switch-wrap" id="killSwitchWrap">
                     <span class="kill-switch-label" id="killSwitchLabel">Trading ON</span>
                     <label class="kill-switch">
@@ -348,43 +344,6 @@
             <span class="footer-tag">rydytrader</span></div>
     </footer>
 </div>
-</div>
-
-<!-- ── Levels modal (Camarilla pivots + session legs) ─────────────────────── -->
-<div id="levelsModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:1000;align-items:center;justify-content:center;" onclick="if(event.target===this)closeLevelsModal()">
-    <div class="section-card" style="margin:0;min-width:480px;max-width:1120px;width:90vw;max-height:88vh;overflow:auto;box-shadow:0 12px 40px rgba(0,0,0,0.4);">
-        <div class="section-header">
-            <div class="section-title">
-                <div class="section-title-dot" style="background: var(--accent-cyan)"></div>
-                Camarilla Levels &amp; Session Legs
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;">
-                <button type="button" onclick="refreshLevelsModal()" title="Refresh"
-                        style="background:rgba(99,179,237,0.10);border:1px solid rgba(99,179,237,0.30);color:var(--accent-blue);
-                               padding:4px 10px;border-radius:6px;font-family:var(--font-mono);font-size:0.7rem;font-weight:700;
-                               cursor:pointer;line-height:1;">⟳</button>
-                <button type="button" onclick="closeLevelsModal()" title="Close"
-                        style="background:transparent;border:none;color:var(--text-muted);font-size:1.2rem;cursor:pointer;line-height:1;">×</button>
-            </div>
-        </div>
-        <div style="padding:18px 22px;">
-            <div style="display:grid;grid-template-columns:minmax(360px, 1fr) minmax(420px, 1.4fr);gap:24px;align-items:start;">
-                <div>
-                    <div style="font-family:var(--font-mono);font-size:0.66rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;">Camarilla pivots</div>
-                    <div id="levelsModalPivots" style="display:flex;flex-direction:column;gap:6px;font-family:var(--font-mono);font-size:0.76rem;">
-                        <div style="color:var(--text-muted);">resolving…</div>
-                    </div>
-                </div>
-
-                <div>
-                    <div style="font-family:var(--font-mono);font-size:0.66rem;color:#fbbf24;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px;">NIFTY directional legs</div>
-                    <div id="levelsModalLegsDir">
-                        <div style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.72rem;">resolving…</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 </div>
 
 <script>
@@ -510,218 +469,8 @@
         // VIX still rides the per-tick ticker SSE. NIFTY ATR comes off dashboardState.
         var vxEl  = document.getElementById('hdrVix');
         if (vxEl)  vxEl.textContent  = d.indiaVix  != null ? Number(d.indiaVix).toFixed(2)  : '—';
-        captureLevelsState(d);
     }
 
-    // ── Levels modal — Camarilla pivots + session-static OTM trade legs.
-    //    Opens via the "◎ Levels" button next to the kill switch. Both the
-    //    pivots block and the legs block are refreshed whenever a fresh state
-    //    payload lands AND the modal is currently visible. ────────────────────
-    var _latestSetupLegs = [];
-    var _latestPivots    = null;
-    var _latestPerSymbolLevels = null;
-    function captureLevelsState(d) {
-        _latestSetupLegs = d.setupLegs || [];
-        _latestPerSymbolLevels = d.perSymbolLevels || null;
-        if (d.atmVwap && d.perSymbolLevels) {
-            _latestPivots = d.perSymbolLevels[d.atmVwap.futSymbol] || null;
-        }
-        // If the modal is open, refresh its body immediately so the operator
-        // sees live LTP/VWAP movement without closing + reopening.
-        var modal = document.getElementById('levelsModal');
-        if (modal && modal.style.display === 'flex') renderLevelsModal();
-    }
-    function openLevelsModal() {
-        var modal = document.getElementById('levelsModal');
-        if (!modal) return;
-        renderLevelsModal();
-        modal.style.display = 'flex';
-    }
-    function closeLevelsModal() {
-        var modal = document.getElementById('levelsModal');
-        if (modal) modal.style.display = 'none';
-    }
-    function refreshLevelsModal() {
-        // Force-fetch the latest state so the modal reflects current LTP/VWAP
-        // without waiting on the next SSE tick. captureLevelsState() will
-        // re-invoke renderLevelsModal() once the payload arrives.
-        fetch('/api/camarilla/state').then(function(r){ return r.ok ? r.json() : null; })
-            .then(function(d){ if (d) captureLevelsState(d); })
-            .catch(function(){});
-    }
-    // Hook the shared ticker SSE so the modal's per-leg LTPs update sub-second.
-    // VWAP keeps refreshing from the camarilla state SSE (every ~2 s, plenty
-    // for a running-average metric). Pure patch — no re-fetch, just mutates
-    // the cached _latestSetupLegs entries in place and re-renders if visible.
-    function attachLevelsModalLtpUpdates() {
-        var src = window.__tickerSSE;
-        if (!src) { setTimeout(attachLevelsModalLtpUpdates, 500); return; }
-        src.addEventListener('ticker', function(ev) {
-            if (!_latestSetupLegs || !_latestSetupLegs.length) return;
-            try {
-                var arr = JSON.parse(ev.data);
-                if (!arr || !arr.length) return;
-                var bySymbol = {};
-                for (var i = 0; i < arr.length; i++) {
-                    var t = arr[i];
-                    if (t && t.fyers && typeof t.lp === 'number') bySymbol[t.fyers] = t.lp;
-                }
-                var changed = false;
-                for (var j = 0; j < _latestSetupLegs.length; j++) {
-                    var L = _latestSetupLegs[j];
-                    var lp = bySymbol[L.symbol];
-                    if (lp != null && lp !== L.ltp) {
-                        L.ltp = lp;
-                        changed = true;
-                    }
-                }
-                if (changed) {
-                    var modal = document.getElementById('levelsModal');
-                    if (modal && modal.style.display === 'flex') renderLevelsModal();
-                }
-            } catch (e) {}
-        });
-    }
-    // Render the NIFTY pivot table.
-    function renderPivotBlock(wrapEl, niftyPivots) {
-        if (!wrapEl) return;
-        if (!niftyPivots) {
-            wrapEl.innerHTML = '<div style="color:var(--text-muted);">resolving…</div>';
-            return;
-        }
-        function val(lv, key) { return lv ? Number(lv[key]) : NaN; }
-        function fmtNum(n) { return (isFinite(n) && n > 0)
-            ? n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-            : '—'; }
-        var rows = [
-            ['H5', 'h5', '#a78bfa', 'outer target'],
-            ['H4', 'h4', '#34d399', 'bullish trigger'],
-            ['H3', 'h3', '#f87171', 'bearish trigger'],
-            ['L3', 'l3', '#34d399', 'bullish trigger'],
-            ['L4', 'l4', '#f87171', 'bearish trigger'],
-            ['L5', 'l5', '#a78bfa', 'outer target']
-        ];
-        wrapEl.style.display       = 'flex';
-        wrapEl.style.flexDirection = 'column';
-        wrapEl.style.gap           = '6px';
-        var headerHtml = '<div style="display:flex;align-items:center;gap:14px;padding:4px 14px 6px 14px;">'
-            + '<span style="min-width:28px;"></span>'
-            + '<span style="flex:1;"></span>'
-            + '<span style="font-family:var(--font-mono);font-size:0.6rem;color:#fbbf24;letter-spacing:0.08em;text-transform:uppercase;font-weight:700;min-width:88px;text-align:right;">NIFTY</span>'
-            + '</div>';
-        var rowsHtml = rows.map(function(r) {
-            var label = r[0], key = r[1], col = r[2], meaning = r[3];
-            var vN = val(niftyPivots, key);
-            return '<div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:rgba(255,255,255,0.015);border-left:3px solid ' + col + ';border-radius:4px;">'
-                 + '<span style="font-family:var(--font-mono);font-size:0.78rem;font-weight:700;color:' + col + ';min-width:28px;">' + label + '</span>'
-                 + '<span style="flex:1;font-family:var(--font-mono);font-size:0.62rem;color:var(--text-muted);letter-spacing:0.04em;text-transform:uppercase;">' + meaning + '</span>'
-                 + '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:#fbbf24;min-width:88px;text-align:right;">' + fmtNum(vN) + '</span>'
-                 + '</div>';
-        }).join('');
-        wrapEl.innerHTML = headerHtml + rowsHtml;
-    }
-
-    function renderLevelsModal() {
-        // Stacked pivot tables — NIFTY spot on top, then each option leg
-        // (H5 CE, L5 PE) with its own Camarilla pivots underneath. Options
-        // are what the strategy actually monitors for setup detection;
-        // NIFTY spot is retained for context.
-        var host = document.getElementById('levelsModalPivots');
-        if (host) {
-            host.innerHTML = '';
-            // NIFTY spot block
-            if (_latestPivots) {
-                var niftyHeader = document.createElement('div');
-                niftyHeader.style.cssText = 'font-family:var(--font-mono);font-size:0.68rem;color:#fbbf24;letter-spacing:0.08em;text-transform:uppercase;font-weight:700;margin-bottom:4px;';
-                niftyHeader.textContent = 'NIFTY spot';
-                host.appendChild(niftyHeader);
-                var niftyBlock = document.createElement('div');
-                niftyBlock.style.cssText = 'display:flex;flex-direction:column;gap:6px;font-family:var(--font-mono);font-size:0.76rem;margin-bottom:14px;';
-                host.appendChild(niftyBlock);
-                renderPivotBlock(niftyBlock, _latestPivots);
-            }
-            // Option-leg blocks — walk perSymbolLevels, skip the NIFTY spot
-            // entry (already rendered above). H5 CE / L5 PE will show here.
-            if (_latestPerSymbolLevels) {
-                Object.keys(_latestPerSymbolLevels).forEach(function(sym) {
-                    if (sym === 'NSE:NIFTY50-INDEX') return;
-                    var lv = _latestPerSymbolLevels[sym];
-                    if (!lv) return;
-                    var hdr = document.createElement('div');
-                    hdr.style.cssText = 'font-family:var(--font-mono);font-size:0.68rem;color:#7dd3fc;letter-spacing:0.08em;text-transform:uppercase;font-weight:700;margin-bottom:4px;';
-                    hdr.textContent = sym.replace(/^NSE:/, '') + ' — option pivots';
-                    host.appendChild(hdr);
-                    var block = document.createElement('div');
-                    block.style.cssText = 'display:flex;flex-direction:column;gap:6px;font-family:var(--font-mono);font-size:0.76rem;margin-bottom:14px;';
-                    host.appendChild(block);
-                    renderPivotBlock(block, lv);
-                });
-            }
-            if (!host.children.length) {
-                host.innerHTML = '<div style="color:var(--text-muted);">resolving…</div>';
-            }
-        }
-
-        var lgWrapDir = document.getElementById('levelsModalLegsDir');
-        if (lgWrapDir) {
-            var legs = _latestSetupLegs;
-            var loadingHtml = '<div style="color:var(--text-muted);font-family:var(--font-mono);font-size:0.72rem;">resolving…</div>';
-            if (!legs || !legs.length) {
-                lgWrapDir.innerHTML = loadingHtml;
-                return;
-            }
-            var fmtNum2 = function(v) {
-                var n = Number(v);
-                if (!isFinite(n) || n <= 0) return '—';
-                return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-            };
-            function pillColors(dir) {
-                if (dir === 'BULLISH') return { fg: '#34d399', bg: 'rgba(52,211,153,0.12)', bd: 'rgba(52,211,153,0.40)' };
-                if (dir === 'BEARISH') return { fg: '#f87171', bg: 'rgba(248,113,113,0.12)', bd: 'rgba(248,113,113,0.40)' };
-                return { fg: 'var(--text-secondary)', bg: 'rgba(148,163,184,0.12)', bd: 'rgba(148,163,184,0.30)' };
-            }
-            function renderLegRow(L) {
-                var col = pillColors(L.dir);
-                // Setup label = full enum name with underscores → spaces.
-                //   H4_BREAKOUT  → "H4 BREAKOUT"
-                //   L3_REVERSAL  → "L3 REVERSAL"
-                // Styled to match the Camarilla pivot row labels (H3/H4 etc):
-                // plain monospace text in the direction's accent color, no pill
-                // background — the left-border stripe already conveys direction.
-                var setupLabel = (L.setup || '').replace(/_/g, ' ');
-                return '<div style="display:flex;align-items:center;gap:14px;padding:10px 14px;background:rgba(255,255,255,0.015);border-left:3px solid ' + col.fg + ';border-radius:4px;">' +
-                    // Setup label — matches pivot row label CSS (font-mono, 0.78rem, weight 700)
-                    '<span style="font-family:var(--font-mono);font-size:0.78rem;font-weight:700;letter-spacing:0.04em;color:' + col.fg + ';min-width:120px;">' + setupLabel + '</span>' +
-                    // Trade descriptor: "Sell PE 24550"
-                    '<span style="font-family:var(--font-mono);font-size:0.74rem;color:var(--text-secondary);">' +
-                        'Sell <span style="color:var(--text-primary);font-weight:700;">' + (L.side || '') + ' ' + (L.strike || '—') + '</span>' +
-                    '</span>' +
-                    // Level reference: "near H3"
-                    '<span style="flex:1;font-family:var(--font-mono);font-size:0.62rem;color:var(--text-muted);letter-spacing:0.04em;text-transform:uppercase;">near ' + (L.levelRef || '—') + '</span>' +
-                    // LTP — prominent, right-aligned. On holidays the value
-                    // is the prior session's close (refLtp); the operator
-                    // knows we're in a non-trading session via the market
-                    // clock card already on the page.
-                    '<span style="font-family:var(--font-mono);font-size:0.96rem;font-weight:700;color:var(--text-primary);min-width:78px;text-align:right;">' + fmtNum2(L.ltp) + '</span>' +
-                '</div>';
-            }
-            // Header row labelling the LTP column so the operator knows what
-            // the number is. Padding/min-widths match renderLegRow so columns align.
-            function legsHeaderHtml() {
-                return '<div style="display:flex;align-items:center;gap:14px;padding:4px 14px 6px 14px;">'
-                    + '<span style="min-width:120px;"></span>'                           // setup-label spacer (matches renderLegRow)
-                    + '<span style="min-width:120px;"></span>'                           // "Sell PE 24550" spacer
-                    + '<span style="flex:1;"></span>'                                    // levelRef spacer
-                    + '<span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-muted);letter-spacing:0.08em;text-transform:uppercase;font-weight:700;min-width:78px;text-align:right;">LTP</span>'
-                    + '</div>';
-            }
-            var niftyLegs = legs.filter(function(L){ return (L.instrument || 'NIFTY') === 'NIFTY'; });
-            lgWrapDir.style.display       = 'flex';
-            lgWrapDir.style.flexDirection = 'column';
-            lgWrapDir.style.gap           = '6px';
-            lgWrapDir.innerHTML = niftyLegs.length ? (legsHeaderHtml() + niftyLegs.map(renderLegRow).join('')) : loadingHtml;
-        }
-    }
 
     // ── Tick-level NIFTY / VIX / ATM updates via the shared ticker SSE ─────
     function fmtChg(ch, chp) {
@@ -1202,7 +951,6 @@
         setInterval(updateMarketClock, 1000);
         attachTickerHeaderUpdates();
         attachTickerPositionUpdates();
-        attachLevelsModalLtpUpdates();
         checkConnection();
         setInterval(checkConnection, 5000);
         loadWelcome();

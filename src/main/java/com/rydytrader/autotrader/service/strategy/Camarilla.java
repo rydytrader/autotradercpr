@@ -1229,9 +1229,10 @@ public class Camarilla implements Strategy {
 
         // Risk block
         Map<String, Object> risk = new LinkedHashMap<>();
-        risk.put("exposedRisk",     round2(exposedRiskNow()));
-        risk.put("consumedRisk",    round2(consumedRiskNow()));
-        risk.put("dailyRiskBudget", round2(riskSettings.getPortfolioMaxDailyLoss()));
+        risk.put("exposedRisk",         round2(exposedRiskNow()));
+        risk.put("consumedRisk",        round2(consumedRiskNow()));
+        risk.put("dailyRiskBudget",     round2(riskSettings.getPortfolioMaxDailyLoss()));
+        risk.put("optionSlBufferPoints", round2(riskSettings.getOptionSlBufferPoints()));
         m.put("risk", risk);
 
         m.put("todayClosedTrades", new ArrayList<>(state.todayClosedTrades));
