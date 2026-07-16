@@ -33,9 +33,6 @@
                       '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline for Home analytics. Default ₹10L.</div></div>' +
                       '<div class="sm-field"><label>Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Kill switch when net day P&L drops below this % of capital. 0 = off.</div></div>' +
                       '<div class="sm-field"><label>Max Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto from Capital × Risk %.</div></div>' +
-                      '<div class="sm-field"><label>Directional SL Buffer (× 5m ATR)</label><input type="number" id="sm-camarillaDirectionalSlBufferAtrMult" step="0.1" min="0" max="10"><div class="sm-hint">Widens SL beyond confirm extreme by ATR × this. Default 0.5.</div></div>' +
-                      '<div class="sm-field"><label>Trigger Cushion (× 5m ATR)</label><input type="number" id="sm-camarillaTriggerAtrMult" step="0.05" min="0" max="5"><div class="sm-hint">Cushion added to confirm extreme for tick trigger. Default 0.25.</div></div>' +
-                      '<div class="sm-field"><label>Target Buffer (× 5m ATR)</label><input type="number" id="sm-camarillaTargetBufferAtrMult" step="0.05" min="0" max="2"><div class="sm-hint">Pulls target IN toward entry by ATR × this. Bullish tgt − buffer; bearish tgt + buffer. Default 0.2. 0 = target at exact Camarilla level.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
@@ -206,10 +203,7 @@
     function savePortfolioRiskTab() {
         var body = {
             startingCapital:          parseFloat(document.getElementById('sm-startingCapital').value) || 0,
-            portfolioMaxRiskPct:      parseFloat(document.getElementById('sm-portfolioMaxRiskPct').value) || 0,
-            camarillaDirectionalSlBufferAtrMult: Math.max(0, parseFloat(document.getElementById('sm-camarillaDirectionalSlBufferAtrMult').value) || 0),
-            camarillaTriggerAtrMult:    Math.max(0, parseFloat(document.getElementById('sm-camarillaTriggerAtrMult').value) || 0),
-            camarillaTargetBufferAtrMult:        Math.max(0, parseFloat(document.getElementById('sm-camarillaTargetBufferAtrMult').value) || 0)
+            portfolioMaxRiskPct:      parseFloat(document.getElementById('sm-portfolioMaxRiskPct').value) || 0
         };
         postSettings('/api/settings/risk', body);
     }
@@ -264,12 +258,6 @@
             var pctInput = document.getElementById('sm-portfolioMaxRiskPct');
             if (capInput) capInput.value = d.startingCapital != null ? d.startingCapital : 1000000;
             if (pctInput) pctInput.value = d.portfolioMaxRiskPct != null ? d.portfolioMaxRiskPct : 0;
-            var slBuf = document.getElementById('sm-camarillaDirectionalSlBufferAtrMult');
-            if (slBuf) slBuf.value = d.camarillaDirectionalSlBufferAtrMult != null ? d.camarillaDirectionalSlBufferAtrMult : 1.0;
-            var trigMult = document.getElementById('sm-camarillaTriggerAtrMult');
-            if (trigMult) trigMult.value = d.camarillaTriggerAtrMult != null ? d.camarillaTriggerAtrMult : 0.25;
-            var tgtBuf = document.getElementById('sm-camarillaTargetBufferAtrMult');
-            if (tgtBuf) tgtBuf.value = d.camarillaTargetBufferAtrMult != null ? d.camarillaTargetBufferAtrMult : 0.2;
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {
                 updatePortfolioRiskHint(parseFloat(capInput.value) || 0, parseFloat(pctInput && pctInput.value) || 0);

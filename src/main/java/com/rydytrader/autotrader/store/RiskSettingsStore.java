@@ -36,34 +36,13 @@ public class RiskSettingsStore {
         volatile String  camarillaTradingEndTime   = "13:30"; // no new signals after this time (IST); exits keep running
         volatile String  camarillaSquareOffTime   = "15:15";
         volatile int     camarillaMaxConcurrentPositions = 4; // hard cap on simultaneously-open positions
-        /** Multiplier of NIFTY 5-min ATR applied to the directional setups'
-         *  stop-loss beyond the confirmation candle's far extreme. Buffer in
-         *  spot points = NiftyAtrService.currentAtr() × this multiplier.
-         *  Bullish bets: SL = confirmLow − buffer. Bearish: SL = confirmHigh
-         *  + buffer. Default 0.5 — half a 5-min ATR of headroom keeps the
-         *  SL outside normal noise without bloating risk. Set to 0 for SL
-         *  exactly at the candle extreme. ATR unavailable (Wilder not seeded
-         *  yet) falls back to 0 buffer with a warning. */
-        volatile double camarillaDirectionalSlBufferAtrMult = 0.5;
-        /** ATR-scaled trigger-price cushion added to the confirmation
-         *  candle's extreme when tick-checking the Phase 1 trigger. Bullish
-         *  setups trigger when spot ≥ confirmHigh + (ATR × mult); bearish
-         *  trigger when spot ≤ confirmLow − (ATR × mult). Uses the same
-         *  NiftyAtrService as the SL buffer. Default 0.25 (a quarter of one
-         *  ATR). Set to 0 to fire at the exact confirmation extreme with no
-         *  cushion. Larger multipliers add breakout confirmation at the cost
-         *  of a slightly worse entry price. */
-        volatile double camarillaTriggerAtrMult = 0.25;
-        /** ATR-scaled buffer pulled OFF the target level toward the entry.
-         *  Applied at classifyAndSeed time to fresh.targetLevel:
-         *    Bullish setups (H4_BREAKOUT, L3_REVERSAL): target −= ATR × mult.
-         *    Bearish setups (H3_REVERSAL, L4_BREAKDOWN): target += ATR × mult.
-         *  Rationale: the exact Camarilla level often acts as a magnet and
-         *  price frequently reverses just before touching it. Pulling the
-         *  target IN slightly raises hit rate at a small cost to reward.
-         *  Default 0.2 (a fifth of one 5-min ATR). Set to 0 to disable —
-         *  target sits at the exact Camarilla level as before. */
-        volatile double camarillaTargetBufferAtrMult = 0.2;
+        // No buffer settings on the new option-premium pipeline — entry and
+        // SL are both driven by 3-min candle closes at exact levels:
+        //   Entry: NEXT 3-min close past the confirmation candle's confirmLow.
+        //   SL:    3-min close above L3 (L4_BREAKDOWN) or above H4 (H3_REVERSAL).
+        // The retired ATR-mult settings (camarillaTriggerAtrMult,
+        // camarillaDirectionalSlBufferAtrMult, camarillaTargetBufferAtrMult)
+        // are silently consumed on legacy JSON load — see the load-case switch.
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
         /** Initial capital used as the baseline for the Analytics Home page (capital growth %,
@@ -420,9 +399,6 @@ public class RiskSettingsStore {
     public String  getCamarillaTradingEndTime()   { return cfg().camarillaTradingEndTime; }
     public String  getCamarillaSquareOffTime()    { return cfg().camarillaSquareOffTime; }
     public int     getCamarillaMaxConcurrentPositions() { return cfg().camarillaMaxConcurrentPositions; }
-    public double  getCamarillaDirectionalSlBufferAtrMult() { return cfg().camarillaDirectionalSlBufferAtrMult; }
-    public double  getCamarillaTriggerAtrMult()             { return cfg().camarillaTriggerAtrMult; }
-    public double  getCamarillaTargetBufferAtrMult()        { return cfg().camarillaTargetBufferAtrMult; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getStartingCapital()      { return cfg().startingCapital; }
@@ -613,15 +589,6 @@ public class RiskSettingsStore {
     public void setCamarillaTradingEndTime(String v)      { cfg().camarillaTradingEndTime = (v == null || v.isBlank()) ? "13:30" : v.trim(); }
     public void setCamarillaSquareOffTime(String v)       { cfg().camarillaSquareOffTime = v == null ? "" : v.trim(); }
     public void setCamarillaMaxConcurrentPositions(int v) { cfg().camarillaMaxConcurrentPositions = Math.max(1, v); }
-    public void setCamarillaDirectionalSlBufferAtrMult(double v) {
-        cfg().camarillaDirectionalSlBufferAtrMult = Math.max(0, v);
-    }
-    public void setCamarillaTriggerAtrMult(double v) {
-        cfg().camarillaTriggerAtrMult = Math.max(0, v);
-    }
-    public void setCamarillaTargetBufferAtrMult(double v) {
-        cfg().camarillaTargetBufferAtrMult = Math.max(0, v);
-    }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setStartingCapital(double v)      { cfg().startingCapital = Math.max(0, v); }
@@ -726,9 +693,6 @@ public class RiskSettingsStore {
     public String  getCamarillaTradingEndTime(String mode)    { return cfgFor(mode).camarillaTradingEndTime; }
     public String  getCamarillaSquareOffTime(String mode)     { return cfgFor(mode).camarillaSquareOffTime; }
     public int     getCamarillaMaxConcurrentPositions(String mode) { return cfgFor(mode).camarillaMaxConcurrentPositions; }
-    public double  getCamarillaDirectionalSlBufferAtrMult(String mode) { return cfgFor(mode).camarillaDirectionalSlBufferAtrMult; }
-    public double  getCamarillaTriggerAtrMult(String mode)             { return cfgFor(mode).camarillaTriggerAtrMult; }
-    public double  getCamarillaTargetBufferAtrMult(String mode)        { return cfgFor(mode).camarillaTargetBufferAtrMult; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
     public double getStartingCapital(String mode)      { return cfgFor(mode).startingCapital; }
@@ -758,15 +722,6 @@ public class RiskSettingsStore {
     public void setCamarillaTradingEndTime(String mode, String v)      { cfgFor(mode).camarillaTradingEndTime = (v == null || v.isBlank()) ? "13:30" : v.trim(); }
     public void setCamarillaSquareOffTime(String mode, String v)       { cfgFor(mode).camarillaSquareOffTime = v == null ? "" : v.trim(); }
     public void setCamarillaMaxConcurrentPositions(String mode, int v) { cfgFor(mode).camarillaMaxConcurrentPositions = Math.max(1, v); }
-    public void setCamarillaDirectionalSlBufferAtrMult(String mode, double v) {
-        cfgFor(mode).camarillaDirectionalSlBufferAtrMult = Math.max(0, v);
-    }
-    public void setCamarillaTriggerAtrMult(String mode, double v) {
-        cfgFor(mode).camarillaTriggerAtrMult = Math.max(0, v);
-    }
-    public void setCamarillaTargetBufferAtrMult(String mode, double v) {
-        cfgFor(mode).camarillaTargetBufferAtrMult = Math.max(0, v);
-    }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
     public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
     public void setStartingCapital(String mode, double v)      { cfgFor(mode).startingCapital = Math.max(0, v); }
@@ -806,9 +761,6 @@ public class RiskSettingsStore {
             upsert("camarillaTradingEndTime",    c.camarillaTradingEndTime);
             upsert("camarillaSquareOffTime",     c.camarillaSquareOffTime);
             upsert("camarillaMaxConcurrentPositions", String.valueOf(c.camarillaMaxConcurrentPositions));
-            upsert("camarillaDirectionalSlBufferAtrMult", String.valueOf(c.camarillaDirectionalSlBufferAtrMult));
-            upsert("camarillaTriggerAtrMult", String.valueOf(c.camarillaTriggerAtrMult));
-            upsert("camarillaTargetBufferAtrMult",        String.valueOf(c.camarillaTargetBufferAtrMult));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("startingCapital",      String.valueOf(c.startingCapital));
@@ -982,14 +934,14 @@ public class RiskSettingsStore {
                     case "camarillaMinRRRatio"          -> { /* retired R:R floor gate — silently consumed */ }
                     case "camarillaMomentumCheckEnabled" -> { /* retired with the RSI gate — silently consumed */ }
                     case "camarillaStrangleAtrProximity" -> { /* retired with the iron-wall strangle; silently consumed */ }
-                    case "camarillaDirectionalSlBufferPoints" -> { /* retired in favour of camarillaDirectionalSlBufferAtrMult; silently consumed */ }
-                    case "camarillaDirectionalSlBufferAtrMult" -> c.camarillaDirectionalSlBufferAtrMult = Double.parseDouble(v);
-                    case "camarillaTriggerAtrMult"             -> c.camarillaTriggerAtrMult = Double.parseDouble(v);
+                    case "camarillaDirectionalSlBufferPoints",
+                         "camarillaDirectionalSlBufferAtrMult",
+                         "camarillaTriggerAtrMult",
+                         "camarillaTargetBufferAtrMult"        -> { /* retired with the ATR-driven fire path; silently consumed */ }
                     case "camarillaStrongCandleCloseThreshold" -> { /* retired with STRONG/WEAK classification; silently consumed */ }
                     case "camarillaStrongCandleBodyAtrMult"    -> { /* retired with STRONG/WEAK classification; silently consumed */ }
                     case "camarillaBodyPastLevelPct"           -> { /* retired with STRONG/WEAK classification; silently consumed */ }
                     case "camarillaCprSizingEnabled"           -> { /* retired with the CPR sizing bias; silently consumed */ }
-                    case "camarillaTargetBufferAtrMult"        -> c.camarillaTargetBufferAtrMult = Double.parseDouble(v);
                     // Retired keys silently consumed so legacy JSON files load without
                     // FAIL_ON_UNKNOWN_PROPERTIES errors. portfolioMaxDailyLoss is the
                     // canonical max-risk knob now (derived ₹ from startingCapital ×

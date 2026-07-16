@@ -88,12 +88,15 @@ public class CamarillaService {
             if (e.getValue() != null && e.getValue().sessionDate().equals(todayIst())) kept++;
         }
         log.info("[CamarillaService] booted — {} cached level entries valid for today", kept);
-        // v2 cleanup — drop any entries that aren't the NIFTY spot symbol.
-        // Legacy option-strike entries (from v1's warmUpAroundAtm) and any
-        // retired BankNifty index entry both get purged here.
+        // v3 cleanup — the new option-premium strategy needs its two option
+        // legs (H5-strike CE + L5-strike PE) to survive across boots. Keep
+        // the NIFTY spot symbol AND any NIFTY option Fyers symbols; drop
+        // anything else (retired BankNifty entries, stale v1 warm-up strikes
+        // for strikes no longer traded).
         int dropped = 0;
         for (String sym : new java.util.ArrayList<>(bySymbol.keySet())) {
-            if (!NIFTY_SPOT_SYMBOL.equals(sym)) {
+            boolean keep = NIFTY_SPOT_SYMBOL.equals(sym) || isNiftyOptionSymbol(sym);
+            if (!keep) {
                 bySymbol.remove(sym);
                 dropped++;
             }
@@ -348,6 +351,15 @@ public class CamarillaService {
             symbol, priorDate, priorOhlc[0], priorOhlc[1], priorOhlc[2], fresh.h3(), fresh.l3());
         bySymbol.put(symbol, fresh);
         return true;
+    }
+
+    /** True for a Fyers NIFTY option symbol (e.g. {@code NSE:NIFTY2571725000CE}
+     *  or {@code NSE:NIFTY25JAN25000PE}). Used by {@code init()} to preserve
+     *  cached Camarilla levels for option legs across app restarts. */
+    private static boolean isNiftyOptionSymbol(String sym) {
+        if (sym == null) return false;
+        if (!sym.startsWith("NSE:NIFTY")) return false;
+        return sym.endsWith("CE") || sym.endsWith("PE");
     }
 
     private static LocalDate todayIst() {

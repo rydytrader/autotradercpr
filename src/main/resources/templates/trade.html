@@ -260,7 +260,6 @@
                          Legacy 'Fut' IDs retained for back-compat with the JS. -->
                     <span style="color:#fbbf24;">NIFTY <span id="hdrFut" style="color:var(--text-primary);font-weight:700;cursor:help;">—</span>
                         <span id="hdrFutChg" style="margin-left:4px;font-weight:600;"></span></span>
-                    <span style="color:var(--text-muted);" title="NIFTY 14-period ATR on 5-min spot bars">ATR<sub style="font-size:0.62em;">5m</sub> <span id="hdrNiftyAtr5m" style="color:var(--text-primary);font-weight:700;">—</span></span>
                     <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
                     <!-- VIX -->
                     <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
@@ -511,9 +510,6 @@
         // VIX still rides the per-tick ticker SSE. NIFTY ATR comes off dashboardState.
         var vxEl  = document.getElementById('hdrVix');
         if (vxEl)  vxEl.textContent  = d.indiaVix  != null ? Number(d.indiaVix).toFixed(2)  : '—';
-        var atrEl = document.getElementById('hdrNiftyAtr5m');
-        if (atrEl) atrEl.textContent = (d.niftyAtr5m != null && isFinite(Number(d.niftyAtr5m)))
-            ? Number(d.niftyAtr5m).toFixed(2) : '—';
         captureLevelsState(d);
     }
 
@@ -523,8 +519,10 @@
     //    payload lands AND the modal is currently visible. ────────────────────
     var _latestSetupLegs = [];
     var _latestPivots    = null;
+    var _latestPerSymbolLevels = null;
     function captureLevelsState(d) {
         _latestSetupLegs = d.setupLegs || [];
+        _latestPerSymbolLevels = d.perSymbolLevels || null;
         if (d.atmVwap && d.perSymbolLevels) {
             _latestPivots = d.perSymbolLevels[d.atmVwap.futSymbol] || null;
         }
@@ -624,8 +622,45 @@
     }
 
     function renderLevelsModal() {
-        // Single pivot table with NIFTY value column per row.
-        renderPivotBlock(document.getElementById('levelsModalPivots'), _latestPivots);
+        // Stacked pivot tables — NIFTY spot on top, then each option leg
+        // (H5 CE, L5 PE) with its own Camarilla pivots underneath. Options
+        // are what the strategy actually monitors for setup detection;
+        // NIFTY spot is retained for context.
+        var host = document.getElementById('levelsModalPivots');
+        if (host) {
+            host.innerHTML = '';
+            // NIFTY spot block
+            if (_latestPivots) {
+                var niftyHeader = document.createElement('div');
+                niftyHeader.style.cssText = 'font-family:var(--font-mono);font-size:0.68rem;color:#fbbf24;letter-spacing:0.08em;text-transform:uppercase;font-weight:700;margin-bottom:4px;';
+                niftyHeader.textContent = 'NIFTY spot';
+                host.appendChild(niftyHeader);
+                var niftyBlock = document.createElement('div');
+                niftyBlock.style.cssText = 'display:flex;flex-direction:column;gap:6px;font-family:var(--font-mono);font-size:0.76rem;margin-bottom:14px;';
+                host.appendChild(niftyBlock);
+                renderPivotBlock(niftyBlock, _latestPivots);
+            }
+            // Option-leg blocks — walk perSymbolLevels, skip the NIFTY spot
+            // entry (already rendered above). H5 CE / L5 PE will show here.
+            if (_latestPerSymbolLevels) {
+                Object.keys(_latestPerSymbolLevels).forEach(function(sym) {
+                    if (sym === 'NSE:NIFTY50-INDEX') return;
+                    var lv = _latestPerSymbolLevels[sym];
+                    if (!lv) return;
+                    var hdr = document.createElement('div');
+                    hdr.style.cssText = 'font-family:var(--font-mono);font-size:0.68rem;color:#7dd3fc;letter-spacing:0.08em;text-transform:uppercase;font-weight:700;margin-bottom:4px;';
+                    hdr.textContent = sym.replace(/^NSE:/, '') + ' — option pivots';
+                    host.appendChild(hdr);
+                    var block = document.createElement('div');
+                    block.style.cssText = 'display:flex;flex-direction:column;gap:6px;font-family:var(--font-mono);font-size:0.76rem;margin-bottom:14px;';
+                    host.appendChild(block);
+                    renderPivotBlock(block, lv);
+                });
+            }
+            if (!host.children.length) {
+                host.innerHTML = '<div style="color:var(--text-muted);">resolving…</div>';
+            }
+        }
 
         var lgWrapDir = document.getElementById('levelsModalLegsDir');
         if (lgWrapDir) {
