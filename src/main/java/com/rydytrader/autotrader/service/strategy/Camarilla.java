@@ -1481,8 +1481,10 @@ public class Camarilla implements Strategy {
             if (parent != null && !parent.exists()) parent.mkdirs();
             Path tmp = Path.of(STATE_FILE + ".tmp");
             Files.writeString(tmp, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(state));
-            Files.move(tmp, dst, java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-                java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            // Windows AV / Explorer preview can briefly hold the target file, causing
+            // ATOMIC_MOVE + REPLACE_EXISTING to throw AccessDeniedException. Retry
+            // with backoff and fall back to non-atomic replace on repeated failure.
+            com.rydytrader.autotrader.util.FileIoUtils.atomicMoveWithRetry(tmp, dst);
         } catch (IOException e) {
             log.warn("[Camarilla] failed to save state: {}", e.getMessage());
         }
