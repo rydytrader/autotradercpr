@@ -69,4 +69,9 @@ public interface Strategy {
      *  as "one win/loss per session" set this true. Default false — analytics
      *  counts one trade per persisted `strategy_trades` row. */
     default boolean aggregatesToDay() { return false; }
+
+    /** Per-strategy capital pool, in ₹. Consumed by `AnalyticsService` for
+     *  equity-curve baseline and return %. Default 0 — strategies that do
+     *  not track their own capital fall back to no baseline. */
+    default double initialCapital() { return 0; }
 }

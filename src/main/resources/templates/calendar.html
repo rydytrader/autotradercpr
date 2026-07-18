@@ -356,7 +356,7 @@
         ]).then(([holidays]) => {
             (holidays || []).forEach(h => NSE_HOLIDAYS[h.date] = h.name || 'Holiday');
             // Strangle branch — singleton strategy. No /api/strategies, no manual terminal.
-            const list = [{ id: 'strangle' }];
+            const list = [{ id: 'strangle-adjust' }];
             const histPromises = list.map(s =>
                 fetch('/api/strategies/' + encodeURIComponent(s.id) + '/history')
                     .then(r => r.json()).catch(() => ({ sessions: [] }))
@@ -862,7 +862,7 @@
                         document.getElementById(containerId),
                         rows, 'Symbol', sectionLabel);
                 });
-        loadSection('strangle', 'calDayAlgo',    'Algo Trades');
+        loadSection('strangle-adjust', 'calDayAlgo',    'Algo Trades');
         loadSection('manual',    'calDayManual',  'Manual Trades');
     };
 

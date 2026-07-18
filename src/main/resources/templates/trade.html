@@ -404,7 +404,7 @@
         var enabled = !!t.checked;
         label.textContent = enabled ? 'Trading ON' : 'Trading OFF';
         wrap.classList.toggle('disabled', !enabled);
-        fetch('/api/strangle/enable', {
+        fetch('/api/strangle-adjust/enable', {
             method: 'POST',
             headers: csrfHeaders(),
             body: JSON.stringify({ enabled: enabled })
@@ -420,7 +420,7 @@
             danger:       true
         }).then(function(ok) {
             if (!ok) return;
-            fetch('/api/strangle/squareoff', {
+            fetch('/api/strangle-adjust/squareoff', {
                 method: 'POST',
                 headers: csrfHeaders(),
                 body: '{}'
@@ -436,7 +436,7 @@
             danger:       true
         }).then(function(ok) {
             if (!ok) return;
-            fetch('/api/strangle/squareoff', {
+            fetch('/api/strangle-adjust/squareoff', {
                 method: 'POST',
                 headers: csrfHeaders(),
                 body: JSON.stringify({ symbol: symbol })
@@ -534,7 +534,7 @@
     }
 
     function loadState() {
-        fetch('/api/strangle/state').then(function(r) { return r.json(); })
+        fetch('/api/strangle-adjust/state').then(function(r) { return r.json(); })
             .then(applyState).catch(function() {});
     }
 
@@ -550,7 +550,7 @@
     }
     function startStream() {
         try {
-            sseStream = new EventSource('/api/strangle/stream');
+            sseStream = new EventSource('/api/strangle-adjust/stream');
             sseStream.addEventListener('state', function(ev) {
                 stopPollFallback();
                 try { applyState(JSON.parse(ev.data)); } catch (e) {}

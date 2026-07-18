@@ -8,13 +8,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Drives the Strangle singleton's tick + fast-SL loops.
- *
- * <p>Two loops:
- * <ul>
- *   <li>{@code tick} — slow loop (~5 s). Day rollover, entry gate, timed squareoff,
- *       portfolio risk gate.</li>
- *   <li>{@code fastSlCheck} — fast loop (~500 ms). Tick-based SL watcher on open shorts.</li>
- * </ul>
+ * Mirror of StrangleAdjustScheduler but bound to the simple Strangle bean.
  */
 @Component
 public class StrangleScheduler {

@@ -185,7 +185,7 @@
     <div class="page-header fade-in" style="margin-bottom:18px;">
         <div>
             <div class="page-title">Strategy</div>
-            <div class="page-subtitle">NIFTY / SENSEX intraday strangle · 100 % SL recovery adjustment</div>
+            <div class="page-subtitle">Two intraday options-selling strategies — Strangle (SENSEX iron condor) and Strangle + Adjustments (NIFTY/SENSEX with recovery)</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -195,9 +195,35 @@
         </div>
     </div>
 
+    <!-- ══════════════════════════ STRANGLE (simple) ══════════════════════════ -->
+    <div class="doc-section fade-in" style="border-left:3px solid var(--accent-cyan);">
+        <h2 class="doc-h2"><span class="doc-h2-dot"></span> Strategy 1 — Strangle (SENSEX iron condor)</h2>
+        <p class="doc-p">
+            SENSEX-only defined-risk strangle. Every trading day at 09:20:
+        </p>
+        <ul class="doc-list">
+            <li><strong>SELL SENSEX CE + PE</strong> at strikes whose LTP is closest to the short
+                target premium (default ₹50 each).</li>
+            <li><strong>BUY hedge CE + hedge PE</strong> at strikes whose LTP is closest to the
+                hedge target premium (default ₹5 each) — deep-OTM protection that caps loss
+                and unlocks broker margin (defined-risk iron condor).</li>
+            <li>SL per short = <code>entryPremium × slMultiplier</code> (default 2.0 = 100 %
+                of received premium).</li>
+            <li><strong>On SL hit → close that leg only. No adjustments.</strong> Remaining
+                legs (other short + hedges) ride to timed squareoff at 15:15.</li>
+            <li>Analytics rolls all 4-legs into <strong>one trade per session day</strong> —
+                a day with 2 shorts + 2 hedges and net-positive P&amp;L counts as 1 win.</li>
+        </ul>
+        <p class="doc-p">
+            Configurable per-strategy in Settings → STRANGLE tab (short premium, hedge premium,
+            SL multiplier, entry/squareoff time, lots per leg, Initial Capital).
+        </p>
+    </div>
+
+    <!-- ══════════════════════════ STRANGLE + ADJUSTMENTS ══════════════════════ -->
     <!-- ── Overview ── -->
     <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot"></span> Overview</h2>
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-purple, #a78bfa);"></span> Strategy 2 — Strangle + Adjustments · Overview</h2>
         <p class="doc-p">
             An intraday <strong>weekly options-selling strangle</strong> that rotates between
             NIFTY and SENSEX by weekday. Every session sells one CE + one PE strike whose

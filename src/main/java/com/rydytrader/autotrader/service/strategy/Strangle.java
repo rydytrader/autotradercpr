@@ -21,7 +21,6 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
@@ -33,66 +32,36 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * NIFTY / SENSEX intraday neutral-to-directional strangle recovery.
+ * SENSEX intraday defined-risk strangle. Every trading day at 09:20:
+ * <ul>
+ *   <li>SELL CE at target premium (₹50 default) and PE at target premium (₹50).</li>
+ *   <li>BUY CE hedge at hedge premium (₹5 default) and PE hedge at hedge premium (₹5).</li>
+ *   <li>Per-leg SL = entryPremium × slMultiplier (default 2.0 = 100 % of received premium).</li>
+ * </ul>
+ * When either short's SL hits, close that leg — <b>no adjustments</b>. Remaining legs
+ * ride to 15:15 timed squareoff.
  *
- * <p><b>Entry (default 09:20 IST)</b> — resolve today's instrument via the weekday
- * routing setting (Mon/Tue = NIFTY, Wed/Thu = SENSEX, Fri = DISABLED by default),
- * then SELL the CE and PE strikes whose current LTP is closest to the instrument's
- * target premium (₹50 for NIFTY, ₹120 for SENSEX by default). Each leg's SL price is
- * {@code entryPremium × slMultiplier} (default 2.0 = 100 % of received premium).
- *
- * <p><b>Adjustment (on either leg's SL hit)</b> — close the SL-hit leg, then on the
- * OPPOSITE side (a) BUY a deep-OTM hedge (default 10 strike-steps OTM, 2× base qty)
- * and (b) SELL a new leg at ~target premium. The hedge + new sell together form a
- * defined-risk vertical spread on that side. One-shot: if the adjustment leg's own
- * SL fires, close it without another cycle.
- *
- * <p><b>Squareoff (default 15:15 IST)</b> — flatten every open position (shorts and
- * hedges) at market.
- *
- * <p><b>Analytics</b> — reports one trade per session day, not per leg — see
- * {@link #aggregatesToDay()}.
+ * <p>Analytics treats each session day as one trade
+ * ({@link #aggregatesToDay()} = true).
  */
 @Service
 public class Strangle implements Strategy {
 
     private static final Logger log = LoggerFactory.getLogger(Strangle.class);
     private static final String STRATEGY_ID = "strangle";
-    /** Strategy ID written to DB rows for MANUAL-tagged trades. */
     public  static final String MANUAL_STRATEGY_ID = "manual";
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final String STATE_FILE = "../store/cache/strangle-state.json";
-    private static final double OPTION_TICK_SIZE = 0.05;
     private static final int    RECENT_EVENTS_LIMIT = 60;
 
-    /** Per-instrument contract specs. Change rarely at the exchange level — hardcoded. */
-    public enum InstrumentSpec {
-        NIFTY ("NSE:NIFTY50-INDEX", 65L,  50L),
-        SENSEX("BSE:SENSEX-INDEX",  20L, 100L);
-
-        public final String spotSymbol;
-        public final long   lotSize;
-        public final long   strikeStep;
-
-        InstrumentSpec(String spotSymbol, long lotSize, long strikeStep) {
-            this.spotSymbol = spotSymbol;
-            this.lotSize    = lotSize;
-            this.strikeStep = strikeStep;
-        }
-    }
-
-    /** Single setup name for the whole strategy. All legs (CE/PE entry, adjustment,
-     *  hedge) share this. Analytics aggregates to day-level so per-leg categorization
-     *  has no downstream consumer. */
-    public enum ActiveSetup {
-        STRANGLE,
-        MANUAL
-    }
+    /** Single setup value — every leg (short + hedge) shares this tag. */
+    public enum ActiveSetup { STRANGLE, MANUAL }
 
     private static String posKey(Position p) {
         if (p == null) return "";
         String setup = p.setup == null ? "MANUAL" : p.setup.name();
-        return setup + "|" + (p.symbol == null ? "" : p.symbol);
+        return setup + "|" + (p.symbol == null ? "" : p.symbol) + "|"
+             + (p.role == null ? "" : p.role);
     }
 
     private final BalancedAtmSelector   atmSelector;
@@ -133,23 +102,18 @@ public class Strangle implements Strategy {
         } catch (Exception ignored) {}
     }
 
-    // ── Boot / lifecycle ────────────────────────────────────────────────────
-
     @PostConstruct
     public void boot() {
         loadFromDisk();
-        backfillLegacyDbRowsFromState();
         rolloverIfNewDay();
         pruneStaleEventsBeforeToday();
-
-        // Re-subscribe any restored open positions so the SL watcher has live LTP.
+        // Re-subscribe restored open positions so the SL watcher has live LTP.
         for (Position p : state.openPositions.values()) {
             if (p != null && p.symbol != null && !p.symbol.isBlank()) {
                 try { marketDataService.subscribeAdditional(java.util.Collections.singletonList(p.symbol)); }
                 catch (Exception ignored) {}
             }
         }
-
         log.info("[Strangle] booted — enabled={}, entryTime={}, sqoff={}, restoredPositions={}",
             riskSettings.isStrangleEnabled(), riskSettings.getStrangleEntryTime(),
             riskSettings.getStrangleSquareOffTime(), state.openPositions.size());
@@ -157,97 +121,50 @@ public class Strangle implements Strategy {
 
     private void pruneStaleEventsBeforeToday() {
         if (state.recentEvents == null || state.recentEvents.isEmpty()) return;
-        long startOfTodayMillis = LocalDate.now(IST).atStartOfDay(IST).toInstant().toEpochMilli();
+        long startOfToday = LocalDate.now(IST).atStartOfDay(IST).toInstant().toEpochMilli();
         int before = state.recentEvents.size();
         state.recentEvents.removeIf(e -> {
             Object ts = e.get("ts");
-            return !(ts instanceof Number) || ((Number) ts).longValue() < startOfTodayMillis;
+            return !(ts instanceof Number) || ((Number) ts).longValue() < startOfToday;
         });
         int removed = before - state.recentEvents.size();
-        if (removed > 0) {
-            log.info("[Strangle] pruned {} stale event(s) before today's 00:00 IST", removed);
-            saveToDisk();
-            publishStream();
-        }
-    }
-
-    private void backfillLegacyDbRowsFromState() {
-        if (state.todayClosedTrades == null || state.todayClosedTrades.isEmpty()) return;
-        StrategyTradeRepository repo = tradeRepoProvider == null ? null : tradeRepoProvider.getIfAvailable();
-        if (repo == null) return;
-        try {
-            List<StrategyTradeEntity> rows = repo.findByStrategyIdAndSessionDateOrderByClosedAtMillisAsc(
-                STRATEGY_ID, state.dayKey);
-            int patched = 0;
-            for (StrategyTradeEntity row : rows) {
-                boolean needSymbol = row.getSymbol() == null || row.getSymbol().isBlank();
-                boolean needSetup  = row.getSetup()  == null || row.getSetup().isBlank();
-                if (!needSymbol && !needSetup) continue;
-                for (Map<String, Object> m : state.todayClosedTrades) {
-                    Object ts = m.get("closedAtMillis");
-                    if (!(ts instanceof Number)) continue;
-                    long ms = ((Number) ts).longValue();
-                    if (Math.abs(ms - row.getClosedAtMillis()) > 5_000L) continue;
-                    if (needSymbol) {
-                        Object sym = m.get("symbol");
-                        if (sym != null) row.setSymbol(String.valueOf(sym));
-                    }
-                    if (needSetup) {
-                        Object setup = m.get("setup");
-                        if (setup != null) row.setSetup(String.valueOf(setup));
-                    }
-                    patched++;
-                    break;
-                }
-            }
-            if (patched > 0) {
-                repo.saveAll(rows);
-                log.info("[Strangle] backfilled symbol/setup on {} legacy DB row(s) for {}",
-                    patched, state.dayKey);
-            }
-        } catch (Exception e) {
-            log.warn("[Strangle] backfill failed: {}", e.getMessage());
-        }
+        if (removed > 0) { saveToDisk(); publishStream(); }
     }
 
     // ── Strategy interface ──────────────────────────────────────────────────
 
     @Override public String id() { return STRATEGY_ID; }
-    @Override public String displayName() { return "Strangle Recovery"; }
-    @Override public String description() {
-        return "NIFTY / SENSEX intraday ATM strangle with 100 %-SL recovery adjustment";
-    }
+    @Override public String displayName() { return "Strangle"; }
+    @Override public String description() { return "SENSEX intraday defined-risk strangle (no adjustments)"; }
     @Override public String currentState() {
-        if (state.dailyLossLockout) return "LOCKOUT";
         if (state.openPositions.isEmpty()) return state.entered ? "DONE_FOR_DAY" : "IDLE";
         return "OPEN(" + state.openPositions.size() + ")";
     }
     @Override public boolean isEnabled() { return riskSettings.isStrangleEnabled(); }
-    /** One session day = one trade for analytics purposes (see AnalyticsService rollup). */
     @Override public boolean aggregatesToDay() { return true; }
+    @Override public double initialCapital() { return riskSettings.getStrangleInitialCapital(); }
 
     @Override
     public boolean forceClose(String reason) {
-        boolean anyClosed = false;
+        boolean any = false;
         synchronized (this) {
-            if (state.openPositions.isEmpty()) return false;
             for (Position p : new ArrayList<>(state.openPositions.values())) {
-                if (closePosition(p, reason == null ? "MANUAL" : reason)) anyClosed = true;
+                if (closePosition(p, reason == null ? "MANUAL" : reason)) any = true;
             }
         }
-        return anyClosed;
+        return any;
     }
 
     public boolean forceCloseSymbol(String symbol, String reason) {
         if (symbol == null || symbol.isBlank()) return false;
         synchronized (this) {
-            boolean anyClosed = false;
+            boolean any = false;
             for (Position p : new ArrayList<>(state.openPositions.values())) {
                 if (p != null && symbol.equals(p.symbol)) {
-                    if (closePosition(p, reason == null ? "MANUAL" : reason)) anyClosed = true;
+                    if (closePosition(p, reason == null ? "MANUAL" : reason)) any = true;
                 }
             }
-            return anyClosed;
+            return any;
         }
     }
 
@@ -256,11 +173,6 @@ public class Strangle implements Strategy {
         synchronized (this) {
             state.openPositions.clear();
             state.entered = false;
-            state.ceAdjusted = false;
-            state.peAdjusted = false;
-            state.originalCeStrike = 0;
-            state.originalPeStrike = 0;
-            state.todaysInstrument = "";
             saveToDisk();
             event("[INFO]", "System", "reset — " + (reason == null ? "" : reason));
         }
@@ -278,9 +190,7 @@ public class Strangle implements Strategy {
         synchronized (this) {
             double net = 0;
             for (Map<String, Object> m : state.todayClosedTrades) net += asDouble(m.get("netPnl"));
-            for (Position p : state.openPositions.values()) {
-                net += openPositionMtm(p) - cycleChargesFor(p);
-            }
+            for (Position p : state.openPositions.values()) net += openPositionMtm(p) - cycleChargesFor(p);
             return round2(net);
         }
     }
@@ -310,19 +220,6 @@ public class Strangle implements Strategy {
         entryIfDue();
         watchSquareoff();
         refreshUnresolvedFills();
-        double maxRisk = riskSettings.getPortfolioMaxDailyLoss();
-        if (maxRisk > 0 && !state.dailyLossLockout) {
-            double consumed = consumedRiskNow();
-            if (consumed > maxRisk) {
-                event("[ERROR]", "Risk", "consumed ₹" + round2(consumed)
-                    + " > maxRisk ₹" + round2(maxRisk) + " — force-closing and locking session");
-                state.dailyLossLockout = true;
-                for (Position p : new ArrayList<>(state.openPositions.values())) {
-                    closePosition(p, "RISK_BREACH");
-                }
-                saveToDisk();
-            }
-        }
     }
 
     @Override
@@ -330,7 +227,7 @@ public class Strangle implements Strategy {
         if (state.openPositions.isEmpty()) return;
         for (Position p : new java.util.ArrayList<>(state.openPositions.values())) {
             if (p == null) continue;
-            if (!p.isShort) continue;                       // hedges (BUY) don't SL
+            if (!p.isShort) continue;                       // hedges don't SL
             if (p.setup == ActiveSetup.MANUAL) continue;
             if (p.symbol == null || p.symbol.isBlank()) continue;
             if (p.slLevel <= 0) continue;
@@ -341,34 +238,10 @@ public class Strangle implements Strategy {
                 event("[WARNING]", "Exit",
                     shortSym(p.symbol) + " SL_HIT @ " + round2(ltp)
                     + " (sl=" + round2(p.slLevel) + ", role=" + p.role + ")");
-                handleSlHit(p);
+                closePosition(p, "SL_HIT");
+                // No adjustment — this is the whole point of this strategy vs StrangleAdjust.
             }
         }
-    }
-
-    // ── Weekday routing ─────────────────────────────────────────────────────
-
-    /** Resolve today's instrument from the weekday routing settings. Returns null if
-     *  today is DISABLED or the value is unknown. */
-    private InstrumentSpec todaysInstrument() {
-        DayOfWeek dow = ZonedDateTime.now(IST).getDayOfWeek();
-        String setting = switch (dow) {
-            case MONDAY    -> riskSettings.getStrangleMondayInstrument();
-            case TUESDAY   -> riskSettings.getStrangleTuesdayInstrument();
-            case WEDNESDAY -> riskSettings.getStrangleWednesdayInstrument();
-            case THURSDAY  -> riskSettings.getStrangleThursdayInstrument();
-            case FRIDAY    -> riskSettings.getStrangleFridayInstrument();
-            default        -> "DISABLED";   // Sat / Sun — no trading anyway
-        };
-        if (setting == null || setting.isBlank() || "DISABLED".equalsIgnoreCase(setting)) return null;
-        try { return InstrumentSpec.valueOf(setting.trim().toUpperCase()); }
-        catch (Exception e) { return null; }
-    }
-
-    private double targetPremiumFor(InstrumentSpec spec) {
-        return spec == InstrumentSpec.NIFTY
-            ? riskSettings.getStrangleNiftyTargetPremium()
-            : riskSettings.getStrangleSensexTargetPremium();
     }
 
     // ── Entry ───────────────────────────────────────────────────────────────
@@ -376,37 +249,47 @@ public class Strangle implements Strategy {
     private synchronized void entryIfDue() {
         if (state.entered) return;
         if (!isEnabled()) return;
-        if (state.dailyLossLockout) return;
         if (!state.openPositions.isEmpty()) {
-            state.entered = true;    // defensive — restored positions imply entered already
+            state.entered = true;   // defensive
             return;
         }
-
         LocalTime now = ZonedDateTime.now(IST).toLocalTime();
         LocalTime entryAt;
         try { entryAt = LocalTime.parse(riskSettings.getStrangleEntryTime()); }
         catch (Exception e) { entryAt = LocalTime.of(9, 20); }
         if (now.isBefore(entryAt)) return;
 
-        InstrumentSpec spec = todaysInstrument();
-        if (spec == null) {
-            event("[INFO]", "Strangle",
-                "today (" + ZonedDateTime.now(IST).getDayOfWeek() + ") is DISABLED, no entry");
-            state.entered = true;    // idempotent — don't retry all day
-            saveToDisk();
+        // Skip weekends (SENSEX doesn't trade Sat/Sun).
+        java.time.DayOfWeek dow = ZonedDateTime.now(IST).getDayOfWeek();
+        if (dow == java.time.DayOfWeek.SATURDAY || dow == java.time.DayOfWeek.SUNDAY) {
+            state.entered = true;
             return;
         }
 
-        double targetPremium = targetPremiumFor(spec);
-        BalancedAtmSelector.StrikeAtLevel ceRow =
-            atmSelector.resolveStrikeByTargetPremium(spec.spotSymbol, "CE", targetPremium);
-        BalancedAtmSelector.StrikeAtLevel peRow =
-            atmSelector.resolveStrikeByTargetPremium(spec.spotSymbol, "PE", targetPremium);
-        if (ceRow == null || peRow == null
-            || ceRow.ceSymbol() == null || ceRow.ceSymbol().isBlank()
-            || peRow.peSymbol() == null || peRow.peSymbol().isBlank()) {
-            log.warn("[Strangle] entry deferred — chain rows unavailable ({} target={})",
-                spec, targetPremium);
+        StrangleAdjust.InstrumentSpec spec = StrangleAdjust.InstrumentSpec.SENSEX;
+        double shortPrem = riskSettings.getStrangleShortPremium();
+        double hedgePrem = riskSettings.getStrangleHedgePremium();
+
+        BalancedAtmSelector.StrikeAtLevel ceShortRow =
+            atmSelector.resolveStrikeByTargetPremium(spec.spotSymbol, "CE", shortPrem);
+        BalancedAtmSelector.StrikeAtLevel peShortRow =
+            atmSelector.resolveStrikeByTargetPremium(spec.spotSymbol, "PE", shortPrem);
+        BalancedAtmSelector.StrikeAtLevel ceHedgeRow =
+            atmSelector.resolveStrikeByTargetPremium(spec.spotSymbol, "CE", hedgePrem);
+        BalancedAtmSelector.StrikeAtLevel peHedgeRow =
+            atmSelector.resolveStrikeByTargetPremium(spec.spotSymbol, "PE", hedgePrem);
+
+        if (ceShortRow == null || peShortRow == null) {
+            log.warn("[Strangle] entry deferred — short strike lookup returned null (short={})", shortPrem);
+            return;
+        }
+        // Hedges are best-effort but strongly recommended for margin relief.
+        String ceShortSym = ceShortRow.ceSymbol();
+        String peShortSym = peShortRow.peSymbol();
+        String ceHedgeSym = ceHedgeRow == null ? null : ceHedgeRow.ceSymbol();
+        String peHedgeSym = peHedgeRow == null ? null : peHedgeRow.peSymbol();
+        if (ceShortSym == null || ceShortSym.isBlank() || peShortSym == null || peShortSym.isBlank()) {
+            log.warn("[Strangle] entry deferred — short symbols blank");
             return;
         }
 
@@ -414,199 +297,116 @@ public class Strangle implements Strategy {
         String productType = riskSettings.getStrangleOrderType();
         double slMult = Math.max(1.0, riskSettings.getStrangleSlMultiplier());
 
-        String ceSym = ceRow.ceSymbol();
-        String peSym = peRow.peSymbol();
+        List<String> subs = new ArrayList<>();
+        subs.add(ceShortSym); subs.add(peShortSym);
+        if (ceHedgeSym != null && !ceHedgeSym.isBlank()) subs.add(ceHedgeSym);
+        if (peHedgeSym != null && !peHedgeSym.isBlank()) subs.add(peHedgeSym);
+        try { marketDataService.subscribeAdditional(subs); } catch (Exception ignored) {}
 
-        // Subscribe to tick feed before placing orders so fill-price + SL watcher have data.
-        try { marketDataService.subscribeAdditional(java.util.List.of(ceSym, peSym)); }
-        catch (Exception ignored) {}
+        // Place hedges first (buy) → free margin for the subsequent sells.
+        Position ceHedgePos = null;
+        if (ceHedgeSym != null && !ceHedgeSym.isBlank()) {
+            ceHedgePos = fireBuyHedge(spec, "CE", ceHedgeRow.resolvedStrike(), ceHedgeSym, qty,
+                productType, ceHedgeRow.ceLtp());
+        }
+        Position peHedgePos = null;
+        if (peHedgeSym != null && !peHedgeSym.isBlank()) {
+            peHedgePos = fireBuyHedge(spec, "PE", peHedgeRow.resolvedStrike(), peHedgeSym, qty,
+                productType, peHedgeRow.peLtp());
+        }
+        Position ceShortPos = fireShort(spec, "CE", ceShortRow.resolvedStrike(), ceShortSym, qty,
+            productType, slMult, ceShortRow.ceLtp());
+        Position peShortPos = fireShort(spec, "PE", peShortRow.resolvedStrike(), peShortSym, qty,
+            productType, slMult, peShortRow.peLtp());
 
-        Position cePos = firePosition(spec, "CE", ceRow.resolvedStrike(), ceSym, qty,
-            ActiveSetup.STRANGLE, "ENTRY_CE", productType, slMult, ceRow.ceLtp());
-        Position pePos = firePosition(spec, "PE", peRow.resolvedStrike(), peSym, qty,
-            ActiveSetup.STRANGLE, "ENTRY_PE", productType, slMult, peRow.peLtp());
-
-        if (cePos == null && pePos == null) {
-            event("[ERROR]", "STRANGLE ENTRY", "both legs rejected — no positions opened");
+        if (ceShortPos == null && peShortPos == null) {
+            event("[ERROR]", "STRANGLE ENTRY", "both shorts rejected — hedges remain open");
+            state.entered = true;   // don't retry today
             return;
         }
 
-        state.entered          = true;
-        state.todaysInstrument = spec.name();
-        state.originalCeStrike = ceRow.resolvedStrike();
-        state.originalPeStrike = peRow.resolvedStrike();
-        state.tradesToday      = (cePos != null ? 1 : 0) + (pePos != null ? 1 : 0);
+        state.entered = true;
+        state.originalCeStrike = ceShortRow.resolvedStrike();
+        state.originalPeStrike = peShortRow.resolvedStrike();
+        state.tradesToday = (ceShortPos != null ? 1 : 0) + (peShortPos != null ? 1 : 0);
         saveToDisk();
 
         event("[SUCCESS]", "STRANGLE ENTRY",
-            spec + " — sold " + ceRow.resolvedStrike() + " CE @ "
-            + (cePos != null ? round2(cePos.entryPrice) : "REJECTED")
-            + ", " + peRow.resolvedStrike() + " PE @ "
-            + (pePos != null ? round2(pePos.entryPrice) : "REJECTED"));
+            "SENSEX — sold " + ceShortRow.resolvedStrike() + " CE @ "
+            + (ceShortPos != null ? round2(ceShortPos.entryPrice) : "REJ")
+            + ", " + peShortRow.resolvedStrike() + " PE @ "
+            + (peShortPos != null ? round2(peShortPos.entryPrice) : "REJ")
+            + (ceHedgePos != null ? ", hedge " + ceHedgeRow.resolvedStrike() + " CE @ " + round2(ceHedgePos.entryPrice) : "")
+            + (peHedgePos != null ? ", hedge " + peHedgeRow.resolvedStrike() + " PE @ " + round2(peHedgePos.entryPrice) : ""));
     }
 
-    /** Common leg-placement helper. Places a SELL, records the Position, returns null
-     *  on rejection. */
-    private Position firePosition(InstrumentSpec spec, String side, long strike, String symbol,
-                                  int qty, ActiveSetup setup, String role,
-                                  String productType, double slMult, double refLtp) {
+    private Position fireShort(StrangleAdjust.InstrumentSpec spec, String side, long strike,
+                                String symbol, int qty, String productType, double slMult, double refLtp) {
         OrderDTO order = orderService.placeOrder(symbol, qty, -1, 0, productType);
         if (order == null || order.getId() == null || order.getId().isEmpty()) {
-            event("[ERROR]", "AUTO ENTRY", "SELL rejected for " + shortSym(symbol) + " (" + role + ")");
+            event("[ERROR]", "AUTO ENTRY", "SELL rejected for " + shortSym(symbol));
             return null;
         }
         double entryLtp = 0;
         try { entryLtp = marketDataService.getLtp(symbol); } catch (Exception ignored) {}
         if (entryLtp <= 0) entryLtp = refLtp;
         if (entryLtp <= 0) {
-            event("[ERROR]", "AUTO ENTRY", shortSym(symbol) + " (" + role + ") — no entry price");
+            event("[ERROR]", "AUTO ENTRY", shortSym(symbol) + " — no entry price");
             return null;
         }
         Position p = new Position();
-        p.symbol          = symbol;
-        p.setup           = setup;
-        p.role            = role;
-        p.instrument      = spec.name();
-        p.side            = side;
-        p.strike          = strike;
-        p.qty             = qty;
-        p.entryPrice      = entryLtp;
-        p.entryOrderId    = order.getId();
-        p.openMillis      = System.currentTimeMillis();
-        p.slLevel         = entryLtp * slMult;
+        p.symbol        = symbol;
+        p.setup         = ActiveSetup.STRANGLE;
+        p.role          = "ENTRY_" + side;
+        p.instrument    = spec.name();
+        p.side          = side;
+        p.strike        = strike;
+        p.qty           = qty;
+        p.entryPrice    = entryLtp;
+        p.entryOrderId  = order.getId();
+        p.openMillis    = System.currentTimeMillis();
+        p.slLevel       = entryLtp * slMult;
         p.originalSlLevel = p.slLevel;
-        p.targetLevel     = 0;
-        p.isShort         = true;
-        p.fillResolved    = false;
-        p.productType     = productType;
-        state.openPositions.put(posKey(p) + "|" + role, p);
+        p.isShort       = true;
+        p.fillResolved  = false;
+        p.productType   = productType;
+        state.openPositions.put(posKey(p), p);
         return p;
     }
 
-    // ── SL handling + adjustment ────────────────────────────────────────────
-
-    private synchronized void handleSlHit(Position pos) {
-        String role = pos.role == null ? "" : pos.role;
-        closePosition(pos, "SL_HIT");
-
-        // Adjustment fires only on the two initial legs, once per side.
-        boolean isEntry = "ENTRY_CE".equals(role) || "ENTRY_PE".equals(role);
-        if (!isEntry) return;
-
-        String slHitSide = "ENTRY_CE".equals(role) ? "CE" : "PE";
-        String adjustSide = "CE".equals(slHitSide) ? "PE" : "CE";
-        if ("CE".equals(adjustSide) && state.ceAdjusted) return;
-        if ("PE".equals(adjustSide) && state.peAdjusted) return;
-
-        InstrumentSpec spec;
-        try { spec = InstrumentSpec.valueOf(state.todaysInstrument); }
-        catch (Exception e) {
-            event("[ERROR]", "STRANGLE ADJUST", "no instrument recorded for adjustment");
-            return;
+    private Position fireBuyHedge(StrangleAdjust.InstrumentSpec spec, String side, long strike,
+                                   String symbol, int qty, String productType, double refLtp) {
+        OrderDTO order = orderService.placeOrder(symbol, qty, +1, 0, productType);
+        if (order == null || order.getId() == null || order.getId().isEmpty()) {
+            event("[WARNING]", "AUTO ENTRY", "hedge BUY rejected for " + shortSym(symbol));
+            return null;
         }
-        double targetPremium = targetPremiumFor(spec);
-
-        BalancedAtmSelector.StrikeAtLevel sellRow =
-            atmSelector.resolveStrikeByTargetPremium(spec.spotSymbol, adjustSide, targetPremium);
-        if (sellRow == null) {
-            event("[WARNING]", "STRANGLE ADJUST",
-                "no strike near ₹" + targetPremium + " on " + adjustSide + " side — adjust skipped");
-            return;
-        }
-        long sellStrike = sellRow.resolvedStrike();
-        String sellSym  = "CE".equals(adjustSide) ? sellRow.ceSymbol() : sellRow.peSymbol();
-        double sellRef  = "CE".equals(adjustSide) ? sellRow.ceLtp()    : sellRow.peLtp();
-        if (sellSym == null || sellSym.isBlank()) {
-            event("[WARNING]", "STRANGLE ADJUST",
-                "no " + adjustSide + " symbol at strike " + sellStrike + " — adjust skipped");
-            return;
-        }
-
-        // Hedge — same side as the new sell, N strikes further OTM.
-        int hedgeStrikesAway = riskSettings.getStrangleHedgeStrikesAway();
-        String direction = "CE".equals(adjustSide) ? "UP" : "DOWN";
-        BalancedAtmSelector.StrikeAtLevel hedgeRow = atmSelector.resolveStrikeNAway(
-            spec.spotSymbol, spec.strikeStep, sellStrike, hedgeStrikesAway, direction);
-
-        int baseQty = riskSettings.getStrangleLotsPerLeg() * (int) spec.lotSize;
-        int hedgeQty = (int) Math.round(baseQty * riskSettings.getStrangleHedgeQtyMultiplier());
-        // Round hedgeQty to whole lots (min 1 lot).
-        long lot = spec.lotSize;
-        hedgeQty = (int) Math.max(lot, ((long) hedgeQty / lot) * lot);
-        String productType = riskSettings.getStrangleOrderType();
-
-        // Subscribe both symbols before order placement.
-        List<String> subs = new ArrayList<>();
-        subs.add(sellSym);
-        String hedgeSym = null;
-        if (hedgeRow != null) {
-            hedgeSym = "CE".equals(adjustSide) ? hedgeRow.ceSymbol() : hedgeRow.peSymbol();
-            if (hedgeSym != null && !hedgeSym.isBlank()) subs.add(hedgeSym);
-        }
-        try { marketDataService.subscribeAdditional(subs); } catch (Exception ignored) {}
-
-        // Place hedge FIRST (buy) so margin freed before the new sell lands.
-        Position hedgePos = null;
-        if (hedgeSym != null && !hedgeSym.isBlank()) {
-            OrderDTO hOrder = orderService.placeOrder(hedgeSym, hedgeQty, +1, 0, productType);
-            if (hOrder != null && hOrder.getId() != null && !hOrder.getId().isEmpty()) {
-                double hLtp = 0;
-                try { hLtp = marketDataService.getLtp(hedgeSym); } catch (Exception ignored) {}
-                if (hLtp <= 0) hLtp = "CE".equals(adjustSide) ? hedgeRow.ceLtp() : hedgeRow.peLtp();
-                hedgePos = new Position();
-                hedgePos.symbol          = hedgeSym;
-                hedgePos.setup           = ActiveSetup.STRANGLE;
-                hedgePos.role            = "HEDGE_" + adjustSide;
-                hedgePos.instrument      = spec.name();
-                hedgePos.side            = adjustSide;
-                hedgePos.strike          = hedgeRow.resolvedStrike();
-                hedgePos.qty             = hedgeQty;
-                hedgePos.entryPrice      = hLtp > 0 ? hLtp : OPTION_TICK_SIZE;
-                hedgePos.entryOrderId    = hOrder.getId();
-                hedgePos.openMillis      = System.currentTimeMillis();
-                hedgePos.slLevel         = 0;     // hedges have no SL
-                hedgePos.targetLevel     = 0;
-                hedgePos.isShort         = false;
-                hedgePos.fillResolved    = false;
-                hedgePos.productType     = productType;
-                state.openPositions.put(posKey(hedgePos) + "|" + hedgePos.role, hedgePos);
-            } else {
-                event("[WARNING]", "STRANGLE ADJUST",
-                    "hedge BUY rejected for " + shortSym(hedgeSym) + " — proceeding with naked adjustment sell");
-            }
-        }
-
-        // New opposite-side sell.
-        double slMult = Math.max(1.0, riskSettings.getStrangleSlMultiplier());
-        Position sellPos = firePosition(spec, adjustSide, sellStrike, sellSym, baseQty,
-            ActiveSetup.STRANGLE, "ADJUST_" + adjustSide, productType, slMult, sellRef);
-
-        if (sellPos == null) {
-            event("[ERROR]", "STRANGLE ADJUST", "adjustment SELL failed — hedge remains open");
-            return;
-        }
-
-        if ("CE".equals(adjustSide)) state.ceAdjusted = true;
-        else state.peAdjusted = true;
-
-        state.tradesToday++;
-        saveToDisk();
-
-        event("[SUCCESS]", "STRANGLE ADJUST",
-            spec + " — sold " + sellStrike + " " + adjustSide + " @ " + round2(sellPos.entryPrice)
-            + (hedgePos != null
-                ? ", hedge " + hedgePos.strike + " " + adjustSide + " ×" + hedgeQty
-                  + " @ " + round2(hedgePos.entryPrice)
-                : " (no hedge)"));
+        double entryLtp = 0;
+        try { entryLtp = marketDataService.getLtp(symbol); } catch (Exception ignored) {}
+        if (entryLtp <= 0) entryLtp = refLtp;
+        Position p = new Position();
+        p.symbol        = symbol;
+        p.setup         = ActiveSetup.STRANGLE;
+        p.role          = "HEDGE_" + side;
+        p.instrument    = spec.name();
+        p.side          = side;
+        p.strike        = strike;
+        p.qty           = qty;
+        p.entryPrice    = entryLtp > 0 ? entryLtp : 0.05;
+        p.entryOrderId  = order.getId();
+        p.openMillis    = System.currentTimeMillis();
+        p.slLevel       = 0;         // hedges have no SL
+        p.isShort       = false;
+        p.fillResolved  = false;
+        p.productType   = productType;
+        state.openPositions.put(posKey(p), p);
+        return p;
     }
-
-    // ── Fill resolver ──────────────────────────────────────────────────────
 
     private void refreshUnresolvedFills() {
         if (state.openPositions.isEmpty()) return;
         for (Position p : state.openPositions.values()) {
-            if (p == null) continue;
-            if (p.fillResolved) continue;
+            if (p == null || p.fillResolved) continue;
             if (p.entryOrderId == null || p.entryOrderId.isBlank()) continue;
             try {
                 double fillPrice = orderService.getFilledPriceByOrderId(p.entryOrderId);
@@ -614,22 +414,19 @@ public class Strangle implements Strategy {
                 double oldEntry = p.entryPrice;
                 p.entryPrice = round2(fillPrice);
                 if (p.isShort && p.slLevel > 0 && p.originalSlLevel > 0) {
-                    // Rescale SL to the actual fill price, preserving the SL multiplier.
                     double mult = Math.max(1.0, riskSettings.getStrangleSlMultiplier());
                     p.slLevel = p.entryPrice * mult;
                     p.originalSlLevel = p.slLevel;
                 }
                 p.fillResolved = true;
-                event("[INFO]", "Fill", shortSym(p.symbol) + " (" + p.role + ") fill resolved — entry "
-                    + round2(oldEntry) + " → " + round2(p.entryPrice) + " (SL now " + round2(p.slLevel) + ")");
+                event("[INFO]", "Fill", shortSym(p.symbol) + " (" + p.role + ") entry "
+                    + round2(oldEntry) + " → " + round2(p.entryPrice) + " (SL " + round2(p.slLevel) + ")");
                 saveToDisk();
             } catch (Exception e) {
                 log.warn("[Strangle] fill lookup failed for {}: {}", p.entryOrderId, e.getMessage());
             }
         }
     }
-
-    // ── Time-based squareoff ───────────────────────────────────────────────
 
     public synchronized void watchSquareoff() {
         if (state.openPositions.isEmpty()) return;
@@ -647,8 +444,6 @@ public class Strangle implements Strategy {
         }
     }
 
-    // ── Position close + persistence ────────────────────────────────────────
-
     private boolean closePosition(Position p, String reason) {
         if (p == null) return false;
         String symbol = p.symbol;
@@ -658,10 +453,7 @@ public class Strangle implements Strategy {
         int closeSide = p.isShort ? +1 : -1;
         OrderDTO close = orderService.placeExitOrder(symbol, p.qty, closeSide, productType);
         double exitPrice = 0;
-        if (close != null) {
-            try { exitPrice = marketDataService.getLtp(symbol); }
-            catch (Exception ignored) {}
-        }
+        if (close != null) { try { exitPrice = marketDataService.getLtp(symbol); } catch (Exception ignored) {} }
         double sellTurnover = (p.isShort ? p.entryPrice : exitPrice) * p.qty;
         double buyTurnover  = (p.isShort ? exitPrice    : p.entryPrice) * p.qty;
         double gross   = p.isShort
@@ -670,21 +462,20 @@ public class Strangle implements Strategy {
         double charges = perCycleCharges(sellTurnover, buyTurnover);
         double net     = gross - charges;
 
-        long closedAtMillis = System.currentTimeMillis();
+        long closedAt = System.currentTimeMillis();
+        String setupName = p.setup == null ? "MANUAL" : p.setup.name();
         String dbStrategyId = (p.setup == ActiveSetup.MANUAL) ? MANUAL_STRATEGY_ID : STRATEGY_ID;
-        String setupName    = p.setup == null ? "MANUAL" : p.setup.name();
-        persistTradeRow(dbStrategyId, p.symbol, setupName, reason, p.qty,
-            gross, charges, net,
-            "SL_HIT".equals(reason) ? 1 : 0,
-            closedAtMillis, p.openMillis, p.entryPrice, exitPrice, p.instrument);
+        persistTradeRow(dbStrategyId, symbol, setupName, reason, p.qty,
+            gross, charges, net, "SL_HIT".equals(reason) ? 1 : 0,
+            closedAt, p.openMillis, p.entryPrice, exitPrice, p.instrument);
 
         Map<String, Object> cycle = new LinkedHashMap<>();
         cycle.put("strategyId",     dbStrategyId);
         cycle.put("setup",          setupName);
-        cycle.put("role",           p.role == null ? "" : p.role);
-        cycle.put("instrument",     p.instrument == null ? "" : p.instrument);
+        cycle.put("role",           p.role);
+        cycle.put("instrument",     p.instrument);
         cycle.put("side",           p.isShort ? "SELL" : "BUY");
-        cycle.put("legSide",        p.side == null ? "" : p.side);
+        cycle.put("legSide",        p.side);
         cycle.put("strike",         p.strike);
         cycle.put("symbol",         p.symbol);
         cycle.put("qty",            p.qty);
@@ -694,41 +485,35 @@ public class Strangle implements Strategy {
         cycle.put("charges",        round2(charges));
         cycle.put("netPnl",         round2(net));
         cycle.put("closeReason",    reason);
-        cycle.put("closedAtMillis", closedAtMillis);
+        cycle.put("closedAtMillis", closedAt);
         cycle.put("openedAtMillis", p.openMillis);
         state.todayClosedTrades.add(cycle);
         while (state.todayClosedTrades.size() > 200) state.todayClosedTrades.remove(0);
 
         if (net < 0) state.consecutiveLosses++; else state.consecutiveLosses = 0;
         event(net >= 0 ? "[SUCCESS]" : "[WARNING]", "Exit",
-            shortSym(symbol) + " (" + p.role + ") closed (" + reason + ") net=" + round2(net)
-            + " gross=" + round2(gross));
-
-        // Remove from openPositions using the composite key we assigned at fire time.
-        String key = posKey(p) + "|" + (p.role == null ? "" : p.role);
-        state.openPositions.remove(key);
-
+            shortSym(symbol) + " (" + p.role + ") closed (" + reason + ") net="
+            + round2(net) + " gross=" + round2(gross));
+        state.openPositions.remove(posKey(p));
         saveToDisk();
         return true;
     }
 
     private void persistTradeRow(String strategyId, String symbol, String setup, String reason,
                                  int qty, double gross, double charges, double net, int slHits,
-                                 long closedAtMillis, long openedAtMillis,
-                                 double entryPrice, double exitPrice, String instrument) {
+                                 long closedAt, long openedAt, double entryPrice, double exitPrice,
+                                 String instrument) {
         try {
             StrategyTradeRepository repo = tradeRepoProvider == null ? null : tradeRepoProvider.getIfAvailable();
             if (repo == null) return;
-            LocalDate sessionDate = LocalDate.now(IST);
             StrategyTradeEntity row = new StrategyTradeEntity();
             row.setStrategyId(strategyId == null ? STRATEGY_ID : strategyId);
             row.setSymbol(symbol);
             row.setSetup(setup);
-            row.setSessionDate(sessionDate.toString());
-            row.setClosedAtMillis(closedAtMillis);
-            row.setOpenedAtMillis(openedAtMillis);
-            row.setInstrument(instrument != null && !instrument.isBlank() ? instrument
-                : instrumentFromSymbol(symbol));
+            row.setSessionDate(LocalDate.now(IST).toString());
+            row.setClosedAtMillis(closedAt);
+            row.setOpenedAtMillis(openedAt);
+            row.setInstrument(instrument);
             row.setQty(qty);
             row.setGrossPnl(round2(gross));
             row.setCharges(round2(charges));
@@ -743,81 +528,51 @@ public class Strangle implements Strategy {
         }
     }
 
-    private static String instrumentFromSymbol(String symbol) {
-        if (symbol == null) return null;
-        String s = symbol.toUpperCase();
-        if (s.contains("SENSEX")) return "SENSEX";
-        if (s.contains("BANKNIFTY") || s.contains("NIFTYBANK")) return "BANKNIFTY";
-        if (s.contains("NIFTY")) return "NIFTY";
-        return null;
-    }
-
-    // ── Maintenance actions ─────────────────────────────────────────────────
+    // ── Maintenance ─────────────────────────────────────────────────────────
 
     public synchronized Map<String, Object> clearAllRecords() {
-        int cyclesCleared = state.todayClosedTrades.size();
+        int cyc = state.todayClosedTrades.size();
         state.todayClosedTrades.clear();
         state.tradesToday = 0;
         state.consecutiveLosses = 0;
-        int eventsCleared = state.recentEvents.size();
+        int ev = state.recentEvents.size();
         state.recentEvents.clear();
         saveToDisk();
-
         long dbCleared = 0;
         try {
             StrategyTradeRepository repo = tradeRepoProvider == null ? null : tradeRepoProvider.getIfAvailable();
-            if (repo != null) {
-                dbCleared = repo.deleteAllRows();
-                log.warn("[Strangle] clearAllRecords — DB deleteAllRows wiped {} rows", dbCleared);
-            }
-        } catch (Exception e) {
-            log.warn("[Strangle] clearAllRecords DB wipe failed: {}", e.getMessage());
-        }
-
+            if (repo != null) dbCleared = repo.deleteAllRows();
+        } catch (Exception e) { log.warn("[Strangle] clearAllRecords DB wipe failed: {}", e.getMessage()); }
         event("[WARNING]", "Maintenance",
-            "Cleared ALL records — cycles=" + cyclesCleared + " events=" + eventsCleared
-            + " dbRows=" + dbCleared + " (open positions preserved)");
+            "Cleared ALL records — cycles=" + cyc + " events=" + ev + " dbRows=" + dbCleared);
         publishStream();
-
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("cyclesCleared", cyclesCleared);
-        out.put("eventsCleared", eventsCleared);
-        out.put("dbCleared",     dbCleared);
+        out.put("cyclesCleared", cyc); out.put("eventsCleared", ev); out.put("dbCleared", dbCleared);
         return out;
     }
 
     public synchronized Map<String, Object> clearTodayRecords() {
-        int cyclesCleared = state.todayClosedTrades.size();
+        int cyc = state.todayClosedTrades.size();
         state.todayClosedTrades.clear();
         state.tradesToday = 0;
-        state.consecutiveLosses = 0;
-
-        long startOfTodayMillis = LocalDate.now(IST).atStartOfDay(IST).toInstant().toEpochMilli();
-        int eventsBefore = state.recentEvents.size();
+        long startOfToday = LocalDate.now(IST).atStartOfDay(IST).toInstant().toEpochMilli();
+        int evBefore = state.recentEvents.size();
         state.recentEvents.removeIf(e -> {
             Object ts = e.get("ts");
-            return ts instanceof Number && ((Number) ts).longValue() >= startOfTodayMillis;
+            return ts instanceof Number && ((Number) ts).longValue() >= startOfToday;
         });
-        int eventsCleared = eventsBefore - state.recentEvents.size();
+        int ev = evBefore - state.recentEvents.size();
         saveToDisk();
-
         long dbCleared = 0;
         try {
             StrategyTradeRepository repo = tradeRepoProvider == null ? null : tradeRepoProvider.getIfAvailable();
             if (repo != null) dbCleared = repo.deleteBySessionDate(LocalDate.now(IST).toString());
-        } catch (Exception e) {
-            log.warn("[Strangle] clearTodayRecords DB wipe failed: {}", e.getMessage());
-        }
-
+        } catch (Exception e) { log.warn("[Strangle] clearTodayRecords DB wipe failed: {}", e.getMessage()); }
         event("[WARNING]", "Maintenance",
-            "Cleared today's records — cycles=" + cyclesCleared + " events=" + eventsCleared
-            + " dbRows=" + dbCleared);
+            "Cleared today — cycles=" + cyc + " events=" + ev + " dbRows=" + dbCleared);
         publishStream();
-
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("cyclesCleared", cyclesCleared);
-        out.put("eventsCleared", eventsCleared);
-        out.put("dbCleared",     dbCleared);
+        out.put("cyclesCleared", cyc); out.put("eventsCleared", ev); out.put("dbCleared", dbCleared);
         return out;
     }
 
@@ -826,7 +581,7 @@ public class Strangle implements Strategy {
     @Scheduled(cron = "0 0 6 * * *", zone = "Asia/Kolkata")
     public synchronized void scheduledDailyReset() {
         String today = LocalDate.now(IST).toString();
-        log.info("[Strangle] 06:00 IST daily reset (was dayKey={})", today, state.dayKey);
+        log.info("[Strangle] 06:00 IST daily reset (was dayKey={})", state.dayKey);
         performDailyReset(today);
     }
 
@@ -843,25 +598,18 @@ public class Strangle implements Strategy {
         state.dayKey            = today;
         state.tradesToday       = 0;
         state.consecutiveLosses = 0;
-        state.dailyLossLockout  = false;
         state.todayClosedTrades.clear();
         if (state.recentEvents != null) state.recentEvents.clear();
-        // Session-scoped flags always reset — even if a position was carried across midnight
-        // (unusual), the strategy should re-evaluate today's instrument fresh.
-        state.entered          = false;
-        state.ceAdjusted       = false;
-        state.peAdjusted       = false;
-        state.originalCeStrike = 0;
-        state.originalPeStrike = 0;
-        state.todaysInstrument = "";
-        // Any lingering openPositions from yesterday get force-closed here so they don't leak.
+        state.entered           = false;
+        state.originalCeStrike  = 0;
+        state.originalPeStrike  = 0;
         for (Position p : new ArrayList<>(state.openPositions.values())) {
             if (p != null) closePosition(p, "DAY_ROLLOVER");
         }
         saveToDisk();
     }
 
-    // ── Charges ──────────────────────────────────────────────────────────────
+    // ── Charges + MTM helpers ──────────────────────────────────────────────
 
     private double perCycleCharges(double sellTurnover, double buyTurnover) {
         double broker = riskSettings.getBrokeragePerOrder() * 2;
@@ -890,22 +638,9 @@ public class Strangle implements Strategy {
             return p.isShort
                 ? (p.entryPrice - ltp) * p.qty
                 : (ltp - p.entryPrice) * p.qty;
-        } catch (Exception e) {
-            return 0;
-        }
+        } catch (Exception e) { return 0; }
     }
 
-    /** Sum of realized losses (absolute value) across today's closed-trade ring. */
-    private double consumedRiskNow() {
-        double total = 0;
-        for (Map<String, Object> trade : state.todayClosedTrades) {
-            double net = asDouble(trade.get("netPnl"));
-            if (net < 0) total += Math.abs(net);
-        }
-        return total;
-    }
-
-    /** Sum of remaining ₹ at risk across open SHORT positions (hedges = 0). */
     private double exposedRiskNow() {
         double total = 0;
         for (Position p : state.openPositions.values()) {
@@ -915,7 +650,7 @@ public class Strangle implements Strategy {
         return total;
     }
 
-    // ── Dashboard payload (consumed by StrangleController + Trade page) ─────
+    // ── Dashboard state ────────────────────────────────────────────────────
 
     public synchronized Map<String, Object> dashboardState() {
         rolloverIfNewDay();
@@ -927,112 +662,78 @@ public class Strangle implements Strategy {
         m.put("dayKey",            state.dayKey);
         m.put("tradesToday",       state.tradesToday);
         m.put("consecutiveLosses", state.consecutiveLosses);
-        m.put("dailyLossLockout",  state.dailyLossLockout);
         m.put("entered",           state.entered);
-        m.put("todaysInstrument",  state.todaysInstrument);
 
-        // Strangle-specific block: today's original strikes + adjustment flags.
         Map<String, Object> str = new LinkedHashMap<>();
         str.put("originalCeStrike", state.originalCeStrike);
         str.put("originalPeStrike", state.originalPeStrike);
-        str.put("ceAdjusted",       state.ceAdjusted);
-        str.put("peAdjusted",       state.peAdjusted);
-        str.put("weekdayInstrument", weekdayInstrumentPreview());
         m.put("strangle", str);
 
-        // Open positions
         List<Map<String, Object>> rows = new ArrayList<>();
         for (Position p : state.openPositions.values()) {
             if (p == null) continue;
             Map<String, Object> row = new LinkedHashMap<>();
             double ltp = safeLtp(p.symbol);
             double mtm = openPositionMtm(p);
-            row.put("symbol",       p.symbol);
-            row.put("role",         p.role);
-            row.put("instrument",   p.instrument);
-            row.put("side",         p.side);
-            row.put("strike",       p.strike);
-            row.put("qty",          p.qty);
-            row.put("entryPrice",   round2(p.entryPrice));
-            row.put("ltp",          round2(ltp));
-            row.put("mtm",          round2(mtm));
-            row.put("slLevel",      round2(p.slLevel));
-            row.put("isShort",      p.isShort);
-            row.put("openMillis",   p.openMillis);
+            row.put("symbol",     p.symbol);
+            row.put("role",       p.role);
+            row.put("instrument", p.instrument);
+            row.put("side",       p.side);
+            row.put("strike",     p.strike);
+            row.put("qty",        p.qty);
+            row.put("entryPrice", round2(p.entryPrice));
+            row.put("ltp",        round2(ltp));
+            row.put("mtm",        round2(mtm));
+            row.put("slLevel",    round2(p.slLevel));
+            row.put("isShort",    p.isShort);
+            row.put("openMillis", p.openMillis);
             rows.add(row);
         }
         m.put("openPositions", rows);
 
         Map<String, Object> risk = new LinkedHashMap<>();
-        risk.put("exposedRisk",        round2(exposedRiskNow()));
-        risk.put("consumedRisk",       round2(consumedRiskNow()));
-        risk.put("dailyRiskBudget",    round2(riskSettings.getPortfolioMaxDailyLoss()));
+        risk.put("exposedRisk",     round2(exposedRiskNow()));
+        risk.put("initialCapital",  round2(initialCapital()));
         m.put("risk", risk);
 
         m.put("todayClosedTrades", new ArrayList<>(state.todayClosedTrades));
         m.put("recentEvents",      new ArrayList<>(state.recentEvents));
 
-        // Reference LTPs for header display: whichever instrument runs today.
-        String todayInst = state.todaysInstrument;
-        if (todayInst != null && !todayInst.isBlank()) {
-            try {
-                InstrumentSpec sp = InstrumentSpec.valueOf(todayInst);
-                m.put("spotLtp",  round2(safeLtp(sp.spotSymbol)));
-                m.put("spotSymbol", sp.spotSymbol);
-            } catch (Exception ignored) {}
-        }
+        try {
+            double spot = marketDataService.getLtp("BSE:SENSEX-INDEX");
+            m.put("spotLtp",    round2(spot));
+            m.put("spotSymbol", "BSE:SENSEX-INDEX");
+        } catch (Exception ignored) {}
         return m;
     }
 
-    private Map<String, String> weekdayInstrumentPreview() {
-        Map<String, String> pv = new LinkedHashMap<>();
-        pv.put("MONDAY",    riskSettings.getStrangleMondayInstrument());
-        pv.put("TUESDAY",   riskSettings.getStrangleTuesdayInstrument());
-        pv.put("WEDNESDAY", riskSettings.getStrangleWednesdayInstrument());
-        pv.put("THURSDAY",  riskSettings.getStrangleThursdayInstrument());
-        pv.put("FRIDAY",    riskSettings.getStrangleFridayInstrument());
-        return pv;
-    }
-
-    // ── State + persistence ────────────────────────────────────────────────
+    // ── State ───────────────────────────────────────────────────────────────
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class State {
         public String dayKey = "";
         public int    tradesToday;
         public int    consecutiveLosses;
-        public boolean dailyLossLockout;
-        public Map<String, Position> openPositions   = new ConcurrentHashMap<>();
+        public Map<String, Position> openPositions = new ConcurrentHashMap<>();
         public List<Map<String, Object>> todayClosedTrades = new ArrayList<>();
         public List<Map<String, Object>> recentEvents      = new ArrayList<>();
-
-        /** Set at 09:20 entry (or the DISABLED short-circuit). Idempotent guard. */
         public boolean entered;
-        /** One-shot adjustment flag per side. */
-        public boolean ceAdjusted;
-        public boolean peAdjusted;
         public long   originalCeStrike;
         public long   originalPeStrike;
-        /** Today's active instrument ("NIFTY" / "SENSEX" / ""). Set at entry. */
-        public String todaysInstrument = "";
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class Position {
         public String     symbol = "";
         public ActiveSetup setup;
-        /** Semantic tag: ENTRY_CE / ENTRY_PE / ADJUST_CE / ADJUST_PE / HEDGE_CE / HEDGE_PE. */
         public String     role = "";
-        /** "NIFTY" / "SENSEX". */
         public String     instrument = "";
-        /** "CE" / "PE". */
         public String     side = "";
         public long       strike;
         public int        qty;
         public double     entryPrice;
         public String     entryOrderId = "";
         public long       openMillis;
-        public double     targetLevel;
         public double     slLevel;
         public double     originalSlLevel;
         public boolean    fillResolved;
@@ -1040,11 +741,9 @@ public class Strangle implements Strategy {
         public String     productType = "";
     }
 
-    // ── Event log ────────────────────────────────────────────────────────────
+    // ── Event log + persistence + utility ──────────────────────────────────
 
-    public void postEvent(String severity, String source, String message) {
-        event(severity, source, message);
-    }
+    public void postEvent(String severity, String source, String message) { event(severity, source, message); }
 
     private void event(String severity, String source, String message) {
         Map<String, Object> e = new LinkedHashMap<>();
@@ -1057,8 +756,6 @@ public class Strangle implements Strategy {
         if (eventService != null) eventService.log(severity + " [strangle:" + source + "] " + message);
         publishStream();
     }
-
-    // ── Persistence ─────────────────────────────────────────────────────────
 
     private synchronized void loadFromDisk() {
         try {
@@ -1089,22 +786,17 @@ public class Strangle implements Strategy {
         }
     }
 
-    // ── Utility ─────────────────────────────────────────────────────────────
-
     private static double round2(double v) { return Math.round(v * 100.0) / 100.0; }
 
     private double safeLtp(String sym) {
         if (sym == null || sym.isBlank()) return 0;
-        try { return round2(marketDataService.getLtp(sym)); }
-        catch (Exception e) { return 0; }
+        try { return round2(marketDataService.getLtp(sym)); } catch (Exception e) { return 0; }
     }
 
     private static String shortSym(String s) {
         if (s == null || s.isBlank()) return "";
         if (s.endsWith("CE") || s.endsWith("PE")) {
-            int len = s.length();
-            int strikeEnd = len - 2;
-            int strikeStart = strikeEnd;
+            int len = s.length(); int strikeEnd = len - 2; int strikeStart = strikeEnd;
             while (strikeStart > 0 && Character.isDigit(s.charAt(strikeStart - 1))) strikeStart--;
             if (strikeEnd - strikeStart >= 4) return s.substring(strikeStart);
         }

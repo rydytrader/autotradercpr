@@ -49,19 +49,37 @@ public class AnalyticsService {
 
     private final StrategyTradeRepository tradeRepo;
     private final RiskSettingsStore riskSettings;
-    private final org.springframework.beans.factory.ObjectProvider<Strategy> strategyProvider;
+    private final List<Strategy> strategies;
 
     public AnalyticsService(StrategyTradeRepository tradeRepo,
                             RiskSettingsStore riskSettings,
-                            org.springframework.beans.factory.ObjectProvider<Strategy> strategyProvider) {
+                            List<Strategy> strategies) {
         this.tradeRepo = tradeRepo;
         this.riskSettings = riskSettings;
-        this.strategyProvider = strategyProvider;
+        this.strategies = strategies == null ? java.util.Collections.emptyList() : strategies;
     }
 
-    /** Returns the single Strategy bean if one is registered, else null. */
-    private Strategy strategy() {
-        return strategyProvider == null ? null : strategyProvider.getIfAvailable();
+    /** Resolves a strategy by its id. Returns null when unknown / "all". */
+    private Strategy findStrategy(String strategyId) {
+        if (strategyId == null || strategyId.isBlank() || "all".equalsIgnoreCase(strategyId)) return null;
+        for (Strategy s : strategies) {
+            if (s != null && strategyId.equals(s.id())) return s;
+        }
+        return null;
+    }
+
+    /** True when EVERY registered strategy aggregates to day. Guards the "all" analytics view. */
+    private boolean allStrategiesAggregateToDay() {
+        if (strategies.isEmpty()) return false;
+        for (Strategy s : strategies) if (s == null || !s.aggregatesToDay()) return false;
+        return true;
+    }
+
+    /** Sum of initialCapital across every registered strategy. Used for "All" analytics. */
+    private double totalInitialCapital() {
+        double sum = 0;
+        for (Strategy s : strategies) if (s != null) sum += s.initialCapital();
+        return sum;
     }
 
     /** Composite payload — one round-trip serves all four hero tiles, the four detail cards,
@@ -78,15 +96,17 @@ public class AnalyticsService {
         List<Trade> trades = loadTrades(period, strategyId, from, to);
         List<Trade> closed = new ArrayList<>();
         for (Trade t : trades) if (isClosedStraddle(t)) closed.add(t);
-        // Day-aggregate rollup for strategies that treat each session as one trade
-        // (Strangle sets aggregatesToDay() = true). All hero metrics, breakdowns, and
-        // equity curve then see one row per day instead of one row per leg.
-        Strategy activeStrategy = strategy();
-        if (activeStrategy != null && activeStrategy.aggregatesToDay()) {
+        // Day-aggregate rollup for strategies that treat each session as one trade.
+        // "All" mode aggregates only if every registered strategy opts in.
+        Strategy activeStrategy = findStrategy(strategyId);
+        boolean doAggregate = (activeStrategy != null && activeStrategy.aggregatesToDay())
+                           || (activeStrategy == null && allStrategiesAggregateToDay());
+        if (doAggregate) {
             closed = aggregateTradesByDay(closed);
             trades = aggregateTradesByDay(trades);
         }
-        double startingCapital = riskSettings.getStartingCapital();
+        // Per-strategy capital pool. "All" mode sums across strategies.
+        double startingCapital = activeStrategy != null ? activeStrategy.initialCapital() : totalInitialCapital();
 
         // Current Capital is the REAL account balance — starting + every trade ever
         // closed, across all modes. The period pill and the mode pill should NOT shrink
@@ -306,18 +326,21 @@ public class AnalyticsService {
      *  live MTM was then lost). The skip is gone: every strategy is processed and the
      *  OPEN_POSITION_MTM remainder is attributed regardless of persisted history. */
     private void appendLiveTodayTrades(List<Trade> out, String strategyId, LocalDate today) {
-        Strategy strat = strategy();
-        // Kill switch state is irrelevant here — the strategy holds today's
-        // closed-cycle ring and the live MTM of any still-open position
-        // regardless of whether new fires are allowed. Skipping when disabled
-        // hid the day's accrued P&L from Home / Calendar immediately on
-        // toggle. Only skip when the strategy bean isn't present.
-        if (strat == null) return;
+        if (strategies.isEmpty()) return;
         boolean allStrategies = strategyId == null || strategyId.isBlank() || "all".equalsIgnoreCase(strategyId);
-        // NOTE: do NOT bail when strat.id() != strategyId. The strategy's cycle ring also
-        // holds MANUAL cycles (strategyId="manual") and those need to flow through the Manual
-        // filter even though the registered strategy is Strangle. Per-cycle filtering below.
+        for (Strategy strat : strategies) {
+            if (strat == null) continue;
+            // When a specific strategy is requested, skip other strategy beans up front.
+            // (We still walk the ring for the matching bean because it may hold MANUAL
+            // cycles that flow through the Manual filter downstream.)
+            if (!allStrategies && !strategyId.equals(strat.id())
+                && !"manual".equalsIgnoreCase(strategyId)) continue;
+            appendOneStrategyLiveToday(out, strat, strategyId, allStrategies, today);
+        }
+    }
 
+    private void appendOneStrategyLiveToday(List<Trade> out, Strategy strat, String strategyId,
+                                             boolean allStrategies, LocalDate today) {
         String iso = today.toString();
         // Pre-compute today's persisted net + charges so OPEN_POSITION_MTM only carries the
         // leftover, never double-counts what's already in strategy_trades. Also collect the

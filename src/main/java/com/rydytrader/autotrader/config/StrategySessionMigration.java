@@ -67,6 +67,29 @@ public class StrategySessionMigration {
     @EventListener(ContextRefreshedEvent.class) @Transactional
     public void txPurgeLegacyInstancesAndSettings() { purgeLegacyInstancesAndSettings(); }
 
+    @EventListener(ContextRefreshedEvent.class) @Transactional
+    public void txRenameStrangleToStrangleAdjust() { renameStrangleToStrangleAdjust(); }
+
+    /** One-time rename of {@code strategy_trades.strategy_id} rows from {@code "strangle"} to
+     *  {@code "strangle-adjust"} so that historic Strangle trades (before this split) stay
+     *  associated with the renamed strategy. Gated by a SETTINGS flag. Also renames the
+     *  on-disk state file {@code strangle-state.json} → {@code strangle-adjust-state.json}
+     *  when the target doesn't exist (handled at load time in StrangleAdjust itself; this
+     *  method just handles the DB side). */
+    private void renameStrangleToStrangleAdjust() {
+        String flagKey = "strangle.rename.done";
+        try {
+            if (settingRepo.findBySettingKey(flagKey).isPresent()) return;
+            int updated = safeUpdate(
+                "UPDATE strategy_trades SET strategy_id = 'strangle-adjust' WHERE strategy_id = 'strangle'");
+            settingRepo.save(new SettingEntity(flagKey, String.valueOf(System.currentTimeMillis())));
+            log.warn("[StrategyMigration] renamed {} strategy_trades rows from strangle -> strangle-adjust",
+                updated);
+        } catch (Exception e) {
+            log.warn("[StrategyMigration] strangle rename migration skipped: {}", e.getMessage());
+        }
+    }
+
     /** One-shot purge of every {@code strategy_instances} row + its per-instance settings
      *  rows. Runs once on first boot after the strategy cutover (gated by the
      *  {@code strategy.cutover.done} flag). The branch deletes Straddle + Strangle code; this

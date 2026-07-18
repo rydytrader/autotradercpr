@@ -418,13 +418,13 @@
     }
 
     function loadTodayFromState() {
-        fetch('/api/strangle/state').then(function(r) { return r.json(); })
+        fetch('/api/strangle-adjust/state').then(function(r) { return r.json(); })
             .then(applyState).catch(function() {});
     }
 
     function loadRange(key) {
         var b = rangeBounds(key);
-        fetch('/api/strategies/strangle/trades-range?from=' + encodeURIComponent(b.from) + '&to=' + encodeURIComponent(b.to))
+        fetch('/api/strategies/strangle-adjust/trades-range?from=' + encodeURIComponent(b.from) + '&to=' + encodeURIComponent(b.to))
             .then(function(r) { return r.json(); })
             .then(function(d) {
                 if (currentRange !== key) return; // user moved on
@@ -440,7 +440,7 @@
     function attachTodayStream() {
         if (sseStream) return;
         try {
-            sseStream = new EventSource('/api/strangle/stream');
+            sseStream = new EventSource('/api/strangle-adjust/stream');
             sseStream.addEventListener('state', function(ev) {
                 if (currentRange !== 'today') return;
                 if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }

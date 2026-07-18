@@ -18,36 +18,52 @@
                 '</div>' +
                 '<div id="sm-tabstrip" style="display:flex;border-bottom:1px solid var(--border);padding:0 24px;overflow-x:auto;"></div>' +
                 '<div class="sm-body" id="sm-body" style="flex:1;overflow-y:auto;padding:20px 24px;">' +
+                  '<div class="sm-pane" data-pane="strangle-adjust" style="display:none;">' +
+                    '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:10px;">Sizing &amp; timing</div>' +
+                    '<div class="sm-grid-2col">' +
+                      '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-strangleAdjustLotsPerLeg" step="1" min="1"><div class="sm-hint">Multiplied by instrument lot size (NIFTY 65, SENSEX 20).</div></div>' +
+                      '<div class="sm-field"><label>Order Type</label><select id="sm-strangleAdjustOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select></div>' +
+                      '<div class="sm-field"><label>Entry Time (HH:mm IST)</label><input type="time" id="sm-strangleAdjustEntryTime" step="60"><div class="sm-hint">Strangle fires once at/after this time. Default 09:20.</div></div>' +
+                      '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-strangleAdjustSquareOffTime" step="60"><div class="sm-hint">Flatten all legs at market. Default 15:15.</div></div>' +
+                    '</div>' +
+                    '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin:18px 0 10px;">Strategy params</div>' +
+                    '<div class="sm-grid-2col">' +
+                      '<div class="sm-field"><label>NIFTY Target Premium (₹)</label><input type="number" id="sm-strangleAdjustNiftyTargetPremium" step="1" min="0"><div class="sm-hint">Pick CE + PE strikes near this premium. Default 50.</div></div>' +
+                      '<div class="sm-field"><label>SENSEX Target Premium (₹)</label><input type="number" id="sm-strangleAdjustSensexTargetPremium" step="5" min="0"><div class="sm-hint">Default 120 (SENSEX premiums scale with its higher spot).</div></div>' +
+                      '<div class="sm-field"><label>SL Multiplier</label><input type="number" id="sm-strangleAdjustSlMultiplier" step="0.1" min="1"><div class="sm-hint">SL price = entryPremium × this. Default 2.0 (= 100 % of received premium).</div></div>' +
+                      '<div class="sm-field"><label>Hedge Strikes Away</label><input type="number" id="sm-strangleAdjustHedgeStrikesAway" step="1" min="1"><div class="sm-hint">Deep-OTM hedge distance in strike-steps. Default 10.</div></div>' +
+                      '<div class="sm-field sm-full"><label>Hedge Qty Multiplier</label><input type="number" id="sm-strangleAdjustHedgeQtyMultiplier" step="0.5" min="0"><div class="sm-hint">Hedge qty = base qty × this. Default 2.0.</div></div>' +
+                    '</div>' +
+                    '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin:18px 0 10px;">Weekday routing</div>' +
+                    '<div class="sm-grid-2col">' +
+                      '<div class="sm-field"><label>Monday</label><select id="sm-strangleAdjustMondayInstrument"><option value="NIFTY">NIFTY</option><option value="SENSEX">SENSEX</option><option value="DISABLED">DISABLED</option></select></div>' +
+                      '<div class="sm-field"><label>Tuesday</label><select id="sm-strangleAdjustTuesdayInstrument"><option value="NIFTY">NIFTY</option><option value="SENSEX">SENSEX</option><option value="DISABLED">DISABLED</option></select></div>' +
+                      '<div class="sm-field"><label>Wednesday</label><select id="sm-strangleAdjustWednesdayInstrument"><option value="NIFTY">NIFTY</option><option value="SENSEX">SENSEX</option><option value="DISABLED">DISABLED</option></select></div>' +
+                      '<div class="sm-field"><label>Thursday</label><select id="sm-strangleAdjustThursdayInstrument"><option value="NIFTY">NIFTY</option><option value="SENSEX">SENSEX</option><option value="DISABLED">DISABLED</option></select></div>' +
+                      '<div class="sm-field sm-full"><label>Friday</label><select id="sm-strangleAdjustFridayInstrument"><option value="NIFTY">NIFTY</option><option value="SENSEX">SENSEX</option><option value="DISABLED">DISABLED</option></select></div>' +
+                    '</div>' +
+                    '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin:18px 0 10px;">Capital</div>' +
+                    '<div class="sm-grid-2col">' +
+                      '<div class="sm-field sm-full"><label>Initial Capital (₹)</label><input type="number" id="sm-strangleAdjustInitialCapital" step="1000" min="0"><div class="sm-hint">Per-strategy capital baseline for equity curve and return %. Default ₹10L.</div></div>' +
+                    '</div>' +
+                  '</div>' +
                   '<div class="sm-pane" data-pane="strangle" style="display:none;">' +
                     '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:10px;">Sizing &amp; timing</div>' +
                     '<div class="sm-grid-2col">' +
-                      '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-strangleLotsPerLeg" step="1" min="1"><div class="sm-hint">Multiplied by instrument lot size (NIFTY 65, SENSEX 20).</div></div>' +
+                      '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-strangleLotsPerLeg" step="1" min="1"><div class="sm-hint">Multiplied by SENSEX lot size (20).</div></div>' +
                       '<div class="sm-field"><label>Order Type</label><select id="sm-strangleOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select></div>' +
-                      '<div class="sm-field"><label>Entry Time (HH:mm IST)</label><input type="time" id="sm-strangleEntryTime" step="60"><div class="sm-hint">Strangle fires once at/after this time. Default 09:20.</div></div>' +
+                      '<div class="sm-field"><label>Entry Time (HH:mm IST)</label><input type="time" id="sm-strangleEntryTime" step="60"><div class="sm-hint">Fires once at/after this time. Default 09:20.</div></div>' +
                       '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-strangleSquareOffTime" step="60"><div class="sm-hint">Flatten all legs at market. Default 15:15.</div></div>' +
                     '</div>' +
                     '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin:18px 0 10px;">Strategy params</div>' +
                     '<div class="sm-grid-2col">' +
-                      '<div class="sm-field"><label>NIFTY Target Premium (₹)</label><input type="number" id="sm-strangleNiftyTargetPremium" step="1" min="0"><div class="sm-hint">Pick CE + PE strikes near this premium. Default 50.</div></div>' +
-                      '<div class="sm-field"><label>SENSEX Target Premium (₹)</label><input type="number" id="sm-strangleSensexTargetPremium" step="5" min="0"><div class="sm-hint">Default 120 (SENSEX premiums scale with its higher spot).</div></div>' +
-                      '<div class="sm-field"><label>SL Multiplier</label><input type="number" id="sm-strangleSlMultiplier" step="0.1" min="1"><div class="sm-hint">SL price = entryPremium × this. Default 2.0 (= 100 % of received premium).</div></div>' +
-                      '<div class="sm-field"><label>Hedge Strikes Away</label><input type="number" id="sm-strangleHedgeStrikesAway" step="1" min="1"><div class="sm-hint">Deep-OTM hedge distance in strike-steps. Default 10.</div></div>' +
-                      '<div class="sm-field sm-full"><label>Hedge Qty Multiplier</label><input type="number" id="sm-strangleHedgeQtyMultiplier" step="0.5" min="0"><div class="sm-hint">Hedge qty = base qty × this. Default 2.0.</div></div>' +
+                      '<div class="sm-field"><label>Short Premium (₹)</label><input type="number" id="sm-strangleShortPremium" step="1" min="0"><div class="sm-hint">Pick SENSEX CE + PE strikes near this premium. Default 50.</div></div>' +
+                      '<div class="sm-field"><label>Hedge Premium (₹)</label><input type="number" id="sm-strangleHedgePremium" step="0.5" min="0"><div class="sm-hint">Deep-OTM hedge target premium (BUY). Default 5.</div></div>' +
+                      '<div class="sm-field sm-full"><label>SL Multiplier</label><input type="number" id="sm-strangleSlMultiplier" step="0.1" min="1"><div class="sm-hint">SL price = entryPremium × this. Default 2.0 (= 100 % of received premium). No adjustment on SL hit.</div></div>' +
                     '</div>' +
-                    '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin:18px 0 10px;">Weekday routing</div>' +
+                    '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin:18px 0 10px;">Capital</div>' +
                     '<div class="sm-grid-2col">' +
-                      '<div class="sm-field"><label>Monday</label><select id="sm-strangleMondayInstrument"><option value="NIFTY">NIFTY</option><option value="SENSEX">SENSEX</option><option value="DISABLED">DISABLED</option></select></div>' +
-                      '<div class="sm-field"><label>Tuesday</label><select id="sm-strangleTuesdayInstrument"><option value="NIFTY">NIFTY</option><option value="SENSEX">SENSEX</option><option value="DISABLED">DISABLED</option></select></div>' +
-                      '<div class="sm-field"><label>Wednesday</label><select id="sm-strangleWednesdayInstrument"><option value="NIFTY">NIFTY</option><option value="SENSEX">SENSEX</option><option value="DISABLED">DISABLED</option></select></div>' +
-                      '<div class="sm-field"><label>Thursday</label><select id="sm-strangleThursdayInstrument"><option value="NIFTY">NIFTY</option><option value="SENSEX">SENSEX</option><option value="DISABLED">DISABLED</option></select></div>' +
-                      '<div class="sm-field sm-full"><label>Friday</label><select id="sm-strangleFridayInstrument"><option value="NIFTY">NIFTY</option><option value="SENSEX">SENSEX</option><option value="DISABLED">DISABLED</option></select></div>' +
-                    '</div>' +
-                  '</div>' +
-                  '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
-                    '<div class="sm-grid-2col">' +
-                      '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline for Home analytics. Default ₹10L.</div></div>' +
-                      '<div class="sm-field"><label>Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Kill switch when net day P&L drops below this % of capital. 0 = off.</div></div>' +
-                      '<div class="sm-field"><label>Max Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto from Capital × Risk %.</div></div>' +
+                      '<div class="sm-field sm-full"><label>Initial Capital (₹)</label><input type="number" id="sm-strangleInitialCapital" step="1000" min="0"><div class="sm-hint">Per-strategy capital baseline for equity curve and return %. Default ₹10L.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
@@ -150,7 +166,7 @@
         if (!strip) return;
         var html = '';
         html += '<button class="sm-tab" data-tab="strangle">STRANGLE</button>';
-        html += '<button class="sm-tab" data-tab="portfolio-risk">RISK</button>';
+        html += '<button class="sm-tab" data-tab="strangle-adjust">STRANGLE + ADJ</button>';
         html += '<button class="sm-tab" data-tab="charges">CHARGES</button>';
         html += '<button class="sm-tab" data-tab="users">USERS</button>';
         html += '<button class="sm-tab" data-tab="maintenance">MAINTENANCE</button>';
@@ -167,12 +183,12 @@
             b.classList.toggle('active', b.getAttribute('data-tab') === tab);
         });
         modalEl.querySelectorAll('.sm-pane').forEach(function(p) { p.style.display = 'none'; });
-        if (tab === 'strangle') {
-            var cp = modalEl.querySelector('[data-pane="strangle"]'); if (cp) cp.style.display = '';
+        if (tab === 'strangle-adjust') {
+            var cp = modalEl.querySelector('[data-pane="strangle-adjust"]'); if (cp) cp.style.display = '';
+            loadStrangleAdjustValues();
+        } else if (tab === 'strangle') {
+            var sp = modalEl.querySelector('[data-pane="strangle"]'); if (sp) sp.style.display = '';
             loadStrangleValues();
-        } else if (tab === 'portfolio-risk') {
-            var pp = modalEl.querySelector('[data-pane="portfolio-risk"]'); if (pp) pp.style.display = '';
-            loadPortfolioRiskValues();
         } else if (tab === 'charges') {
             var pane = modalEl.querySelector('[data-pane="charges"]'); if (pane) pane.style.display = '';
         } else if (tab === 'users') {
@@ -184,59 +200,83 @@
     }
 
     function saveSettings() {
-        if (activeTab === 'strangle')       return saveStrangleTab();
-        if (activeTab === 'portfolio-risk') return savePortfolioRiskTab();
-        if (activeTab === 'charges')        return saveChargesTab();
-        if (activeTab === 'users')          { showBanner('Use the row buttons to manage users.', 'info'); return; }
+        if (activeTab === 'strangle-adjust') return saveStrangleAdjustTab();
+        if (activeTab === 'strangle')        return saveStrangleTab();
+        if (activeTab === 'charges')         return saveChargesTab();
+        if (activeTab === 'users')           { showBanner('Use the row buttons to manage users.', 'info'); return; }
         showBanner('No save action for this tab.', 'info');
+    }
+
+    function loadStrangleAdjustValues() {
+        fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
+            if (!d) return;
+            var g = id => document.getElementById(id);
+            if (g('sm-strangleAdjustLotsPerLeg'))          g('sm-strangleAdjustLotsPerLeg').value = d.strangleAdjustLotsPerLeg != null ? d.strangleAdjustLotsPerLeg : 1;
+            if (g('sm-strangleAdjustOrderType'))           g('sm-strangleAdjustOrderType').value = d.strangleAdjustOrderType || 'INTRADAY';
+            if (g('sm-strangleAdjustEntryTime'))           g('sm-strangleAdjustEntryTime').value = d.strangleAdjustEntryTime || '09:20';
+            if (g('sm-strangleAdjustSquareOffTime'))       g('sm-strangleAdjustSquareOffTime').value = d.strangleAdjustSquareOffTime || '15:15';
+            if (g('sm-strangleAdjustNiftyTargetPremium'))  g('sm-strangleAdjustNiftyTargetPremium').value = d.strangleAdjustNiftyTargetPremium != null ? d.strangleAdjustNiftyTargetPremium : 50;
+            if (g('sm-strangleAdjustSensexTargetPremium')) g('sm-strangleAdjustSensexTargetPremium').value = d.strangleAdjustSensexTargetPremium != null ? d.strangleAdjustSensexTargetPremium : 120;
+            if (g('sm-strangleAdjustSlMultiplier'))        g('sm-strangleAdjustSlMultiplier').value = d.strangleAdjustSlMultiplier != null ? d.strangleAdjustSlMultiplier : 2.0;
+            if (g('sm-strangleAdjustHedgeStrikesAway'))    g('sm-strangleAdjustHedgeStrikesAway').value = d.strangleAdjustHedgeStrikesAway != null ? d.strangleAdjustHedgeStrikesAway : 10;
+            if (g('sm-strangleAdjustHedgeQtyMultiplier'))  g('sm-strangleAdjustHedgeQtyMultiplier').value = d.strangleAdjustHedgeQtyMultiplier != null ? d.strangleAdjustHedgeQtyMultiplier : 2.0;
+            if (g('sm-strangleAdjustMondayInstrument'))    g('sm-strangleAdjustMondayInstrument').value = d.strangleAdjustMondayInstrument || 'NIFTY';
+            if (g('sm-strangleAdjustTuesdayInstrument'))   g('sm-strangleAdjustTuesdayInstrument').value = d.strangleAdjustTuesdayInstrument || 'NIFTY';
+            if (g('sm-strangleAdjustWednesdayInstrument')) g('sm-strangleAdjustWednesdayInstrument').value = d.strangleAdjustWednesdayInstrument || 'SENSEX';
+            if (g('sm-strangleAdjustThursdayInstrument'))  g('sm-strangleAdjustThursdayInstrument').value = d.strangleAdjustThursdayInstrument || 'SENSEX';
+            if (g('sm-strangleAdjustFridayInstrument'))    g('sm-strangleAdjustFridayInstrument').value = d.strangleAdjustFridayInstrument || 'DISABLED';
+            if (g('sm-strangleAdjustInitialCapital'))      g('sm-strangleAdjustInitialCapital').value = d.strangleAdjustInitialCapital != null ? d.strangleAdjustInitialCapital : 1000000;
+        }).catch(function() {});
+    }
+
+    function saveStrangleAdjustTab() {
+        var g = id => document.getElementById(id);
+        var body = {
+            strangleAdjustLotsPerLeg:           parseInt(g('sm-strangleAdjustLotsPerLeg').value, 10) || 1,
+            strangleAdjustOrderType:            g('sm-strangleAdjustOrderType').value,
+            strangleAdjustEntryTime:            (g('sm-strangleAdjustEntryTime').value || '').trim(),
+            strangleAdjustSquareOffTime:        (g('sm-strangleAdjustSquareOffTime').value || '').trim(),
+            strangleAdjustNiftyTargetPremium:   parseFloat(g('sm-strangleAdjustNiftyTargetPremium').value) || 0,
+            strangleAdjustSensexTargetPremium:  parseFloat(g('sm-strangleAdjustSensexTargetPremium').value) || 0,
+            strangleAdjustSlMultiplier:         parseFloat(g('sm-strangleAdjustSlMultiplier').value) || 2.0,
+            strangleAdjustHedgeStrikesAway:     parseInt(g('sm-strangleAdjustHedgeStrikesAway').value, 10) || 10,
+            strangleAdjustHedgeQtyMultiplier:   parseFloat(g('sm-strangleAdjustHedgeQtyMultiplier').value) || 0,
+            strangleAdjustMondayInstrument:     g('sm-strangleAdjustMondayInstrument').value,
+            strangleAdjustTuesdayInstrument:    g('sm-strangleAdjustTuesdayInstrument').value,
+            strangleAdjustWednesdayInstrument:  g('sm-strangleAdjustWednesdayInstrument').value,
+            strangleAdjustThursdayInstrument:   g('sm-strangleAdjustThursdayInstrument').value,
+            strangleAdjustFridayInstrument:     g('sm-strangleAdjustFridayInstrument').value,
+            strangleAdjustInitialCapital:       parseFloat(g('sm-strangleAdjustInitialCapital').value) || 0
+        };
+        postSettings('/api/settings/risk', body);
     }
 
     function loadStrangleValues() {
         fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
             var g = id => document.getElementById(id);
-            if (g('sm-strangleLotsPerLeg'))          g('sm-strangleLotsPerLeg').value = d.strangleLotsPerLeg != null ? d.strangleLotsPerLeg : 1;
-            if (g('sm-strangleOrderType'))           g('sm-strangleOrderType').value = d.strangleOrderType || 'INTRADAY';
-            if (g('sm-strangleEntryTime'))           g('sm-strangleEntryTime').value = d.strangleEntryTime || '09:20';
-            if (g('sm-strangleSquareOffTime'))       g('sm-strangleSquareOffTime').value = d.strangleSquareOffTime || '15:15';
-            if (g('sm-strangleNiftyTargetPremium'))  g('sm-strangleNiftyTargetPremium').value = d.strangleNiftyTargetPremium != null ? d.strangleNiftyTargetPremium : 50;
-            if (g('sm-strangleSensexTargetPremium')) g('sm-strangleSensexTargetPremium').value = d.strangleSensexTargetPremium != null ? d.strangleSensexTargetPremium : 120;
-            if (g('sm-strangleSlMultiplier'))        g('sm-strangleSlMultiplier').value = d.strangleSlMultiplier != null ? d.strangleSlMultiplier : 2.0;
-            if (g('sm-strangleHedgeStrikesAway'))    g('sm-strangleHedgeStrikesAway').value = d.strangleHedgeStrikesAway != null ? d.strangleHedgeStrikesAway : 10;
-            if (g('sm-strangleHedgeQtyMultiplier'))  g('sm-strangleHedgeQtyMultiplier').value = d.strangleHedgeQtyMultiplier != null ? d.strangleHedgeQtyMultiplier : 2.0;
-            if (g('sm-strangleMondayInstrument'))    g('sm-strangleMondayInstrument').value = d.strangleMondayInstrument || 'NIFTY';
-            if (g('sm-strangleTuesdayInstrument'))   g('sm-strangleTuesdayInstrument').value = d.strangleTuesdayInstrument || 'NIFTY';
-            if (g('sm-strangleWednesdayInstrument')) g('sm-strangleWednesdayInstrument').value = d.strangleWednesdayInstrument || 'SENSEX';
-            if (g('sm-strangleThursdayInstrument'))  g('sm-strangleThursdayInstrument').value = d.strangleThursdayInstrument || 'SENSEX';
-            if (g('sm-strangleFridayInstrument'))    g('sm-strangleFridayInstrument').value = d.strangleFridayInstrument || 'DISABLED';
+            if (g('sm-strangleLotsPerLeg'))     g('sm-strangleLotsPerLeg').value = d.strangleLotsPerLeg != null ? d.strangleLotsPerLeg : 1;
+            if (g('sm-strangleOrderType'))      g('sm-strangleOrderType').value = d.strangleOrderType || 'INTRADAY';
+            if (g('sm-strangleEntryTime'))      g('sm-strangleEntryTime').value = d.strangleEntryTime || '09:20';
+            if (g('sm-strangleSquareOffTime'))  g('sm-strangleSquareOffTime').value = d.strangleSquareOffTime || '15:15';
+            if (g('sm-strangleShortPremium'))   g('sm-strangleShortPremium').value = d.strangleShortPremium != null ? d.strangleShortPremium : 50;
+            if (g('sm-strangleHedgePremium'))   g('sm-strangleHedgePremium').value = d.strangleHedgePremium != null ? d.strangleHedgePremium : 5;
+            if (g('sm-strangleSlMultiplier'))   g('sm-strangleSlMultiplier').value = d.strangleSlMultiplier != null ? d.strangleSlMultiplier : 2.0;
+            if (g('sm-strangleInitialCapital')) g('sm-strangleInitialCapital').value = d.strangleInitialCapital != null ? d.strangleInitialCapital : 1000000;
         }).catch(function() {});
     }
 
     function saveStrangleTab() {
         var g = id => document.getElementById(id);
         var body = {
-            strangleLotsPerLeg:           parseInt(g('sm-strangleLotsPerLeg').value, 10) || 1,
-            strangleOrderType:            g('sm-strangleOrderType').value,
-            strangleEntryTime:            (g('sm-strangleEntryTime').value || '').trim(),
-            strangleSquareOffTime:        (g('sm-strangleSquareOffTime').value || '').trim(),
-            strangleNiftyTargetPremium:   parseFloat(g('sm-strangleNiftyTargetPremium').value) || 0,
-            strangleSensexTargetPremium:  parseFloat(g('sm-strangleSensexTargetPremium').value) || 0,
-            strangleSlMultiplier:         parseFloat(g('sm-strangleSlMultiplier').value) || 2.0,
-            strangleHedgeStrikesAway:     parseInt(g('sm-strangleHedgeStrikesAway').value, 10) || 10,
-            strangleHedgeQtyMultiplier:   parseFloat(g('sm-strangleHedgeQtyMultiplier').value) || 0,
-            strangleMondayInstrument:     g('sm-strangleMondayInstrument').value,
-            strangleTuesdayInstrument:    g('sm-strangleTuesdayInstrument').value,
-            strangleWednesdayInstrument:  g('sm-strangleWednesdayInstrument').value,
-            strangleThursdayInstrument:   g('sm-strangleThursdayInstrument').value,
-            strangleFridayInstrument:     g('sm-strangleFridayInstrument').value
-        };
-        postSettings('/api/settings/risk', body);
-    }
-
-    function savePortfolioRiskTab() {
-        var body = {
-            startingCapital:          parseFloat(document.getElementById('sm-startingCapital').value) || 0,
-            portfolioMaxRiskPct:      parseFloat(document.getElementById('sm-portfolioMaxRiskPct').value) || 0
+            strangleLotsPerLeg:     parseInt(g('sm-strangleLotsPerLeg').value, 10) || 1,
+            strangleOrderType:      g('sm-strangleOrderType').value,
+            strangleEntryTime:      (g('sm-strangleEntryTime').value || '').trim(),
+            strangleSquareOffTime:  (g('sm-strangleSquareOffTime').value || '').trim(),
+            strangleShortPremium:   parseFloat(g('sm-strangleShortPremium').value) || 0,
+            strangleHedgePremium:   parseFloat(g('sm-strangleHedgePremium').value) || 0,
+            strangleSlMultiplier:   parseFloat(g('sm-strangleSlMultiplier').value) || 2.0,
+            strangleInitialCapital: parseFloat(g('sm-strangleInitialCapital').value) || 0
         };
         postSettings('/api/settings/risk', body);
     }
@@ -284,36 +324,6 @@
         if (el) el.textContent = '';
     }
 
-    function loadPortfolioRiskValues() {
-        fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
-            if (!d) return;
-            var capInput = document.getElementById('sm-startingCapital');
-            var pctInput = document.getElementById('sm-portfolioMaxRiskPct');
-            if (capInput) capInput.value = d.startingCapital != null ? d.startingCapital : 1000000;
-            if (pctInput) pctInput.value = d.portfolioMaxRiskPct != null ? d.portfolioMaxRiskPct : 0;
-            updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
-            if (capInput) capInput.oninput = function() {
-                updatePortfolioRiskHint(parseFloat(capInput.value) || 0, parseFloat(pctInput && pctInput.value) || 0);
-            };
-            if (pctInput) pctInput.oninput = function() {
-                updatePortfolioRiskHint(parseFloat(capInput && capInput.value) || 0, parseFloat(pctInput.value) || 0);
-            };
-        }).catch(function() {});
-    }
-
-    function updatePortfolioRiskHint(capital, pct) {
-        var display = document.getElementById('sm-portfolioMaxRiskRupees');
-        if (!display) return;
-        if (pct <= 0 || capital <= 0) {
-            display.textContent = '— (disabled)';
-            display.style.color = 'var(--text-muted)';
-            return;
-        }
-        var rs = capital * pct / 100;
-        display.textContent = '₹' + Math.round(rs).toLocaleString('en-IN');
-        display.style.color = 'var(--accent-cyan)';
-    }
-
     function loadChargesValues() {
         fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
@@ -333,12 +343,12 @@
             buildTabs();
             loadChargesValues();
             modalEl.dataset.tabsBuilt = '1';
-            switchTab('strangle');
+            switchTab('strangle-adjust');
         } else {
-            if (activeTab === 'strangle')            loadStrangleValues();
-            else if (activeTab === 'portfolio-risk') loadPortfolioRiskValues();
+            if (activeTab === 'strangle-adjust')     loadStrangleAdjustValues();
+            else if (activeTab === 'strangle')       loadStrangleValues();
             else if (activeTab === 'charges')        loadChargesValues();
-            else                                     switchTab('strangle');
+            else                                     switchTab('strangle-adjust');
         }
     }
 

@@ -2,7 +2,7 @@ package com.rydytrader.autotrader.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.rydytrader.autotrader.service.strategy.Strangle;
+import com.rydytrader.autotrader.service.strategy.StrangleAdjust;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -16,22 +16,23 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Pushes Strangle (simple) strategy state to every connected browser via SSE.
- * Publish on strategy state change + 2s heartbeat for live LTP/MTM.
+ * Pushes StrangleAdjust strategy state to every connected browser via Server-Sent Events.
+ * State-change {@link #publish()} calls from the strategy + a 2-second heartbeat that
+ * keeps LTP / MTM refreshing on open positions.
  */
 @Service
-public class StrangleStreamBroker {
+public class StrangleAdjustStreamBroker {
 
-    private static final Logger log = LoggerFactory.getLogger(StrangleStreamBroker.class);
+    private static final Logger log = LoggerFactory.getLogger(StrangleAdjustStreamBroker.class);
 
-    private final ObjectProvider<Strangle> strangleProvider;
+    private final ObjectProvider<StrangleAdjust> strangleAdjustProvider;
     private final ObjectMapper mapper = new ObjectMapper()
         .registerModule(new JavaTimeModule())
         .findAndRegisterModules();
     private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
 
-    public StrangleStreamBroker(ObjectProvider<Strangle> strangleProvider) {
-        this.strangleProvider = strangleProvider;
+    public StrangleAdjustStreamBroker(ObjectProvider<StrangleAdjust> strangleAdjustProvider) {
+        this.strangleAdjustProvider = strangleAdjustProvider;
     }
 
     public void addEmitter(SseEmitter e) {
@@ -60,7 +61,7 @@ public class StrangleStreamBroker {
             String json = mapper.writeValueAsString(payload);
             e.send(SseEmitter.event().name("state").data(json));
         } catch (Exception ex) {
-            log.warn("[StrangleStream] initial snapshot send failed: {}", ex.getMessage());
+            log.warn("[StrangleAdjustStream] initial snapshot send failed: {}", ex.getMessage());
             emitters.remove(e);
         }
     }
@@ -71,7 +72,7 @@ public class StrangleStreamBroker {
         String json;
         try { json = mapper.writeValueAsString(payload); }
         catch (Exception e) {
-            log.warn("[StrangleStream] serialize failed: {}", e.getMessage());
+            log.warn("[StrangleAdjustStream] serialize failed (heartbeat will skip): {}", e.getMessage());
             return;
         }
         for (SseEmitter e : emitters) {
@@ -80,16 +81,16 @@ public class StrangleStreamBroker {
                 emitters.remove(e);
                 try { e.complete(); } catch (Exception ignored) {}
             } catch (Exception ex) {
-                log.debug("[StrangleStream] emitter send failed (removing): {}", ex.getMessage());
+                log.debug("[StrangleAdjustStream] emitter send failed (removing): {}", ex.getMessage());
                 emitters.remove(e);
             }
         }
     }
 
     private Map<String, Object> currentState() {
-        Strangle s = strangleProvider.getIfAvailable();
+        StrangleAdjust s = strangleAdjustProvider.getIfAvailable();
         if (s == null) return null;
         try { return s.dashboardState(); }
-        catch (Exception e) { log.warn("[StrangleStream] dashboardState threw: {}", e.getMessage()); return null; }
+        catch (Exception e) { log.warn("[StrangleAdjustStream] dashboardState threw: {}", e.getMessage()); return null; }
     }
 }

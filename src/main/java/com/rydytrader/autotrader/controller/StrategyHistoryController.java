@@ -5,7 +5,6 @@ import com.rydytrader.autotrader.entity.StrategyTradeEntity;
 import com.rydytrader.autotrader.repository.StrategySessionRepository;
 import com.rydytrader.autotrader.repository.StrategyTradeRepository;
 import com.rydytrader.autotrader.service.strategy.Strategy;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -32,14 +31,20 @@ public class StrategyHistoryController {
 
     private final StrategySessionRepository repo;
     private final StrategyTradeRepository tradeRepo;
-    private final ObjectProvider<Strategy> strategyProvider;
+    private final List<Strategy> strategies;
 
     public StrategyHistoryController(StrategySessionRepository repo,
                                      StrategyTradeRepository tradeRepo,
-                                     ObjectProvider<Strategy> strategyProvider) {
+                                     List<Strategy> strategies) {
         this.repo = repo;
         this.tradeRepo = tradeRepo;
-        this.strategyProvider = strategyProvider;
+        this.strategies = strategies == null ? java.util.Collections.emptyList() : strategies;
+    }
+
+    private Strategy findStrategy(String strategyId) {
+        if (strategyId == null || strategyId.isBlank()) return null;
+        for (Strategy s : strategies) if (s != null && strategyId.equals(s.id())) return s;
+        return null;
     }
 
     @GetMapping("/api/strategies/{id}/history")
@@ -212,8 +217,8 @@ public class StrategyHistoryController {
     private LiveBackfill liveBackfillForDate(String strategyId, String date) {
         LiveBackfill out = new LiveBackfill();
         if (date == null || !date.equals(LocalDate.now(IST).toString())) return out;
-        Strategy strat = strategyProvider.getIfAvailable();
-        if (strat == null || !strategyId.equals(strat.id())) return out;
+        Strategy strat = findStrategy(strategyId);
+        if (strat == null) return out;
         for (Map<String, Object> m : strat.todayClosedTrades()) {
             Object ts = m.get("closedAtMillis");
             if (!(ts instanceof Number)) continue;
