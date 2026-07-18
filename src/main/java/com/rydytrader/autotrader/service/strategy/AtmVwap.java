@@ -795,20 +795,30 @@ public class AtmVwap implements Strategy {
         return total;
     }
 
-    /** Fire a SHORT on the option leg. SL = max(trigger.high, atmVwapMinSlPoints). No target
-     *  order — position exits on tick-based SL hit or timed squareoff. */
+    /** Fire a SHORT on the option leg. SL price is clamped to [entry+minSl, entry+maxSl].
+     *  Per-leg CE / PE trade counters cap fires per day. No target order — position exits
+     *  on tick-based SL hit or timed squareoff. */
     private void fire(String symbol, Candle entryCandle, TriggerCandle trigger) {
         if (!canFireNewEntry()) return;
         if (state.dailyLossLockout) return;
         for (Position p : state.openPositions.values()) {
             if (p != null && symbol.equals(p.symbol)) return;
         }
-        double minSl = Math.max(0, riskSettings.getAtmVwapMinSlPoints());
-        double slLevel = Math.max(trigger.high, minSl);
-        if (slLevel <= 0) {
-            event("[ERROR]", "AUTO ENTRY",
-                shortSym(symbol) + " — invalid SL level (trigger.high=" + trigger.high
-                + ", minSl=" + minSl + ")");
+
+        // Per-leg fire count gate — hard cap on CE / PE fires per day.
+        boolean isCeLeg = symbol.equals(state.ceSymbol);
+        int maxCe = riskSettings.getAtmVwapMaxCeTradesPerDay();
+        int maxPe = riskSettings.getAtmVwapMaxPeTradesPerDay();
+        if (isCeLeg && maxCe > 0 && state.ceTradesToday >= maxCe) {
+            event("[WARNING]", "Risk",
+                shortSym(symbol) + " — CE fire cap reached (" + state.ceTradesToday
+                + "/" + maxCe + "), skipping");
+            return;
+        }
+        if (!isCeLeg && maxPe > 0 && state.peTradesToday >= maxPe) {
+            event("[WARNING]", "Risk",
+                shortSym(symbol) + " — PE fire cap reached (" + state.peTradesToday
+                + "/" + maxPe + "), skipping");
             return;
         }
 
@@ -827,6 +837,21 @@ public class AtmVwap implements Strategy {
         if (entryLtp <= 0 && entryCandle != null) entryLtp = entryCandle.close();
         if (entryLtp <= 0) {
             event("[ERROR]", "AUTO ENTRY", shortSym(symbol) + " — no entry price available");
+            return;
+        }
+
+        // SL clamped to [entry + minSl, entry + maxSl]. If trigger.high sits below entry +
+        // minSl the floor kicks in; if it sits above entry + maxSl the ceiling caps it.
+        double minSl = Math.max(0, riskSettings.getAtmVwapMinSlPoints());
+        double maxSl = Math.max(minSl, riskSettings.getAtmVwapMaxSlPoints());
+        double slFloor = entryLtp + minSl;
+        double slCeil  = entryLtp + maxSl;
+        double slLevel = Math.max(trigger.high, slFloor);
+        if (slLevel > slCeil) slLevel = slCeil;
+        if (slLevel <= 0) {
+            event("[ERROR]", "AUTO ENTRY",
+                shortSym(symbol) + " — invalid SL level (trigger.high=" + trigger.high
+                + ", entry=" + entryLtp + ", minSl=" + minSl + ", maxSl=" + maxSl + ")");
             return;
         }
 
@@ -864,7 +889,6 @@ public class AtmVwap implements Strategy {
 
         // SL is tick-based inside fastSlCheck — no broker SL order is placed.
         // Tag the setup by which leg fired so analytics can split CE vs PE performance.
-        boolean isCeLeg = symbol.equals(state.ceSymbol);
         Position p = new Position();
         p.symbol          = symbol;
         p.setup           = isCeLeg ? ActiveSetup.CE_SELL : ActiveSetup.PE_SELL;
@@ -883,9 +907,12 @@ public class AtmVwap implements Strategy {
 
         state.openPositions.put(posKey(p), p);
         state.tradesToday++;
+        if (isCeLeg) state.ceTradesToday++; else state.peTradesToday++;
         event("[SUCCESS]", "AUTO ENTRY",
             "sell " + shortSym(symbol) + " ×" + (qty / LOT_SIZE) + "L "
-            + "@ " + round2(entryLtp) + " (SL " + round2(slLevel) + ")");
+            + "@ " + round2(entryLtp) + " (SL " + round2(slLevel)
+            + ", " + (isCeLeg ? "CE " + state.ceTradesToday + "/" + maxCe
+                              : "PE " + state.peTradesToday + "/" + maxPe) + ")");
         saveToDisk();
     }
 
@@ -1051,6 +1078,8 @@ public class AtmVwap implements Strategy {
         int prevTradesToday      = state.tradesToday;
         int prevConsecutiveLoss  = state.consecutiveLosses;
         state.tradesToday        = 0;
+        state.ceTradesToday      = 0;
+        state.peTradesToday      = 0;
         state.consecutiveLosses  = 0;
 
         int eventsCleared = state.recentEvents.size();
@@ -1093,6 +1122,8 @@ public class AtmVwap implements Strategy {
         int prevTradesToday      = state.tradesToday;
         int prevConsecutiveLoss  = state.consecutiveLosses;
         state.tradesToday        = 0;
+        state.ceTradesToday      = 0;
+        state.peTradesToday      = 0;
         state.consecutiveLosses  = 0;
 
         long startOfTodayMillis = LocalDate.now(IST).atStartOfDay(IST).toInstant().toEpochMilli();
@@ -1139,6 +1170,8 @@ public class AtmVwap implements Strategy {
         log.info("[AtmVwap] 06:00 IST daily reset — clearing events + today's trades (was dayKey={})", state.dayKey);
         state.dayKey = today;
         state.tradesToday = 0;
+        state.ceTradesToday = 0;
+        state.peTradesToday = 0;
         state.consecutiveLosses = 0;
         state.doneForDay = false;
         state.dailyLossLockout = false;
@@ -1347,6 +1380,9 @@ public class AtmVwap implements Strategy {
     public static class State {
         public String dayKey = "";
         public int    tradesToday;
+        /** Per-leg fire counters for the per-day CE / PE trade caps. Reset on day rollover. */
+        public int    ceTradesToday;
+        public int    peTradesToday;
         public int    consecutiveLosses;
         public boolean doneForDay;
         public Map<String, Position> openPositions = new ConcurrentHashMap<>();

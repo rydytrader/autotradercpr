@@ -40,6 +40,9 @@ public class SettingsController {
         result.put("atmVwapSquareOffTime",      riskSettings.getAtmVwapSquareOffTime(effectiveMode));
         result.put("atmVwapMaxConcurrentPositions", riskSettings.getAtmVwapMaxConcurrentPositions(effectiveMode));
         result.put("atmVwapMinSlPoints",        riskSettings.getAtmVwapMinSlPoints(effectiveMode));
+        result.put("atmVwapMaxSlPoints",        riskSettings.getAtmVwapMaxSlPoints(effectiveMode));
+        result.put("atmVwapMaxCeTradesPerDay",  riskSettings.getAtmVwapMaxCeTradesPerDay(effectiveMode));
+        result.put("atmVwapMaxPeTradesPerDay",  riskSettings.getAtmVwapMaxPeTradesPerDay(effectiveMode));
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
         result.put("maxRiskPerDayPct",    riskSettings.getMaxRiskPerDayPct(effectiveMode));
@@ -84,6 +87,9 @@ public class SettingsController {
             if (body.containsKey("atmVwapSquareOffTime"))     riskSettings.setAtmVwapSquareOffTime(effectiveMode, body.get("atmVwapSquareOffTime").toString());
             if (body.containsKey("atmVwapMaxConcurrentPositions")) riskSettings.setAtmVwapMaxConcurrentPositions(effectiveMode, Integer.parseInt(body.get("atmVwapMaxConcurrentPositions").toString()));
             if (body.containsKey("atmVwapMinSlPoints"))            riskSettings.setAtmVwapMinSlPoints(effectiveMode, Double.parseDouble(body.get("atmVwapMinSlPoints").toString()));
+            if (body.containsKey("atmVwapMaxSlPoints"))            riskSettings.setAtmVwapMaxSlPoints(effectiveMode, Double.parseDouble(body.get("atmVwapMaxSlPoints").toString()));
+            if (body.containsKey("atmVwapMaxCeTradesPerDay"))      riskSettings.setAtmVwapMaxCeTradesPerDay(effectiveMode, Integer.parseInt(body.get("atmVwapMaxCeTradesPerDay").toString()));
+            if (body.containsKey("atmVwapMaxPeTradesPerDay"))      riskSettings.setAtmVwapMaxPeTradesPerDay(effectiveMode, Integer.parseInt(body.get("atmVwapMaxPeTradesPerDay").toString()));
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
             if (body.containsKey("maxRiskPerDayPct"))  riskSettings.setMaxRiskPerDayPct(effectiveMode, Double.parseDouble(body.get("maxRiskPerDayPct").toString()));

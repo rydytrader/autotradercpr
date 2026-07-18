@@ -24,7 +24,9 @@
                       '<div class="sm-field"><label>Order Type</label><select id="sm-atmVwapOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select></div>' +
                       '<div class="sm-field"><label>Trading Start (HH:mm IST)</label><input type="time" id="sm-atmVwapTradingStartTime" step="60"><div class="sm-hint">Entries fire only after this time. Default 09:17 — first fire opportunity at 09:21.</div></div>' +
                       '<div class="sm-field"><label>Trading End (HH:mm IST)</label><input type="time" id="sm-atmVwapTradingEndTime" step="60"><div class="sm-hint">No new entries after this time. Default 14:30.</div></div>' +
-                      '<div class="sm-field sm-full"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-atmVwapSquareOffTime" step="60"><div class="sm-hint">Hard exit if SL didn\'t trigger. Default 15:25.</div></div>' +
+                      '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-atmVwapSquareOffTime" step="60"><div class="sm-hint">Hard exit if SL didn\'t trigger. Default 15:25.</div></div>' +
+                      '<div class="sm-field"><label>Max CE trades/day</label><input type="number" id="sm-atmVwapMaxCeTradesPerDay" step="1" min="0"><div class="sm-hint">Hard cap on CE-side fires. Default 3.</div></div>' +
+                      '<div class="sm-field"><label>Max PE trades/day</label><input type="number" id="sm-atmVwapMaxPeTradesPerDay" step="1" min="0"><div class="sm-hint">Hard cap on PE-side fires. Default 3.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
@@ -32,7 +34,8 @@
                       '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline for Home analytics. Default ₹10L.</div></div>' +
                       '<div class="sm-field"><label>Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Kill switch when net day P&L drops below this % of capital. 0 = off.</div></div>' +
                       '<div class="sm-field"><label>Max Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto from Capital × Risk %.</div></div>' +
-                      '<div class="sm-field"><label>Min SL floor (option points)</label><input type="number" id="sm-atmVwapMinSlPoints" step="1" min="0"><div class="sm-hint">SL price is clamped up to this floor when the trigger candle\'s high is smaller. Default 10.</div></div>' +
+                      '<div class="sm-field"><label>Min SL (points above entry)</label><input type="number" id="sm-atmVwapMinSlPoints" step="1" min="0"><div class="sm-hint">SL is at least this many points above entry. Default 10.</div></div>' +
+                      '<div class="sm-field"><label>Max SL (points above entry)</label><input type="number" id="sm-atmVwapMaxSlPoints" step="1" min="0"><div class="sm-hint">SL is capped to this many points above entry. Default 20.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
@@ -185,6 +188,8 @@
             if (g('sm-atmVwapTradingStartTime'))  g('sm-atmVwapTradingStartTime').value = d.atmVwapTradingStartTime || '09:17';
             if (g('sm-atmVwapTradingEndTime'))    g('sm-atmVwapTradingEndTime').value = d.atmVwapTradingEndTime || '14:30';
             if (g('sm-atmVwapSquareOffTime'))     g('sm-atmVwapSquareOffTime').value = d.atmVwapSquareOffTime || '15:25';
+            if (g('sm-atmVwapMaxCeTradesPerDay')) g('sm-atmVwapMaxCeTradesPerDay').value = d.atmVwapMaxCeTradesPerDay != null ? d.atmVwapMaxCeTradesPerDay : 3;
+            if (g('sm-atmVwapMaxPeTradesPerDay')) g('sm-atmVwapMaxPeTradesPerDay').value = d.atmVwapMaxPeTradesPerDay != null ? d.atmVwapMaxPeTradesPerDay : 3;
         }).catch(function() {});
     }
 
@@ -195,7 +200,9 @@
             atmVwapOrderType:          g('sm-atmVwapOrderType').value,
             atmVwapTradingStartTime:   (g('sm-atmVwapTradingStartTime').value || '').trim(),
             atmVwapTradingEndTime:     (g('sm-atmVwapTradingEndTime').value || '').trim(),
-            atmVwapSquareOffTime:      (g('sm-atmVwapSquareOffTime').value || '').trim()
+            atmVwapSquareOffTime:      (g('sm-atmVwapSquareOffTime').value || '').trim(),
+            atmVwapMaxCeTradesPerDay:  parseInt(g('sm-atmVwapMaxCeTradesPerDay').value, 10) || 0,
+            atmVwapMaxPeTradesPerDay:  parseInt(g('sm-atmVwapMaxPeTradesPerDay').value, 10) || 0
         };
         postSettings('/api/settings/risk', body);
     }
@@ -204,7 +211,8 @@
         var body = {
             startingCapital:          parseFloat(document.getElementById('sm-startingCapital').value) || 0,
             portfolioMaxRiskPct:      parseFloat(document.getElementById('sm-portfolioMaxRiskPct').value) || 0,
-            atmVwapMinSlPoints:       Math.max(0, parseFloat(document.getElementById('sm-atmVwapMinSlPoints').value) || 0)
+            atmVwapMinSlPoints:       Math.max(0, parseFloat(document.getElementById('sm-atmVwapMinSlPoints').value) || 0),
+            atmVwapMaxSlPoints:       Math.max(0, parseFloat(document.getElementById('sm-atmVwapMaxSlPoints').value) || 0)
         };
         postSettings('/api/settings/risk', body);
     }
@@ -261,6 +269,8 @@
             if (capInput) capInput.value = d.startingCapital != null ? d.startingCapital : 1000000;
             if (pctInput) pctInput.value = d.portfolioMaxRiskPct != null ? d.portfolioMaxRiskPct : 0;
             if (slBufInput) slBufInput.value = d.atmVwapMinSlPoints != null ? d.atmVwapMinSlPoints : 10.0;
+            var maxSlInput = document.getElementById('sm-atmVwapMaxSlPoints');
+            if (maxSlInput) maxSlInput.value = d.atmVwapMaxSlPoints != null ? d.atmVwapMaxSlPoints : 20.0;
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {
                 updatePortfolioRiskHint(parseFloat(capInput.value) || 0, parseFloat(pctInput && pctInput.value) || 0);

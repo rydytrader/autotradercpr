@@ -36,9 +36,16 @@ public class RiskSettingsStore {
         volatile String  atmVwapTradingEndTime   = "14:30"; // no new signals after this time (IST); exits keep running
         volatile String  atmVwapSquareOffTime   = "15:25";
         volatile int     atmVwapMaxConcurrentPositions = 4; // hard cap on simultaneously-open positions
-        /** Min SL floor in option-premium points. If the trigger candle's high
-         *  is smaller than this floor, the SL price is clamped up. Default 10. */
+        /** Min SL floor in option-premium points ABOVE entry. If (trigger.high − entry)
+         *  is smaller than this floor, the SL is raised to entry + minSlPoints. Default 10. */
         volatile double atmVwapMinSlPoints = 10.0;
+        /** Max SL ceiling in option-premium points ABOVE entry. If (trigger.high − entry)
+         *  is larger than this cap, the SL is capped to entry + maxSlPoints. Default 20. */
+        volatile double atmVwapMaxSlPoints = 20.0;
+        /** Hard cap on CE-side fires per session. Default 3. */
+        volatile int    atmVwapMaxCeTradesPerDay = 3;
+        /** Hard cap on PE-side fires per session. Default 3. */
+        volatile int    atmVwapMaxPeTradesPerDay = 3;
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
         /** Initial capital used as the baseline for the Analytics Home page (capital growth %,
@@ -396,6 +403,9 @@ public class RiskSettingsStore {
     public String  getAtmVwapSquareOffTime()    { return cfg().atmVwapSquareOffTime; }
     public int     getAtmVwapMaxConcurrentPositions() { return cfg().atmVwapMaxConcurrentPositions; }
     public double  getAtmVwapMinSlPoints()      { return cfg().atmVwapMinSlPoints; }
+    public double  getAtmVwapMaxSlPoints()      { return cfg().atmVwapMaxSlPoints; }
+    public int     getAtmVwapMaxCeTradesPerDay(){ return cfg().atmVwapMaxCeTradesPerDay; }
+    public int     getAtmVwapMaxPeTradesPerDay(){ return cfg().atmVwapMaxPeTradesPerDay; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getStartingCapital()      { return cfg().startingCapital; }
@@ -587,6 +597,9 @@ public class RiskSettingsStore {
     public void setAtmVwapSquareOffTime(String v)       { cfg().atmVwapSquareOffTime = v == null ? "" : v.trim(); }
     public void setAtmVwapMaxConcurrentPositions(int v) { cfg().atmVwapMaxConcurrentPositions = Math.max(1, v); }
     public void setAtmVwapMinSlPoints(double v)         { cfg().atmVwapMinSlPoints = Math.max(0, v); }
+    public void setAtmVwapMaxSlPoints(double v)         { cfg().atmVwapMaxSlPoints = Math.max(0, v); }
+    public void setAtmVwapMaxCeTradesPerDay(int v)      { cfg().atmVwapMaxCeTradesPerDay = Math.max(0, v); }
+    public void setAtmVwapMaxPeTradesPerDay(int v)      { cfg().atmVwapMaxPeTradesPerDay = Math.max(0, v); }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setStartingCapital(double v)      { cfg().startingCapital = Math.max(0, v); }
@@ -692,6 +705,9 @@ public class RiskSettingsStore {
     public String  getAtmVwapSquareOffTime(String mode)     { return cfgFor(mode).atmVwapSquareOffTime; }
     public int     getAtmVwapMaxConcurrentPositions(String mode) { return cfgFor(mode).atmVwapMaxConcurrentPositions; }
     public double  getAtmVwapMinSlPoints(String mode)       { return cfgFor(mode).atmVwapMinSlPoints; }
+    public double  getAtmVwapMaxSlPoints(String mode)       { return cfgFor(mode).atmVwapMaxSlPoints; }
+    public int     getAtmVwapMaxCeTradesPerDay(String mode) { return cfgFor(mode).atmVwapMaxCeTradesPerDay; }
+    public int     getAtmVwapMaxPeTradesPerDay(String mode) { return cfgFor(mode).atmVwapMaxPeTradesPerDay; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
     public double getStartingCapital(String mode)      { return cfgFor(mode).startingCapital; }
@@ -722,6 +738,9 @@ public class RiskSettingsStore {
     public void setAtmVwapSquareOffTime(String mode, String v)       { cfgFor(mode).atmVwapSquareOffTime = v == null ? "" : v.trim(); }
     public void setAtmVwapMaxConcurrentPositions(String mode, int v) { cfgFor(mode).atmVwapMaxConcurrentPositions = Math.max(1, v); }
     public void setAtmVwapMinSlPoints(String mode, double v)         { cfgFor(mode).atmVwapMinSlPoints = Math.max(0, v); }
+    public void setAtmVwapMaxSlPoints(String mode, double v)         { cfgFor(mode).atmVwapMaxSlPoints = Math.max(0, v); }
+    public void setAtmVwapMaxCeTradesPerDay(String mode, int v)      { cfgFor(mode).atmVwapMaxCeTradesPerDay = Math.max(0, v); }
+    public void setAtmVwapMaxPeTradesPerDay(String mode, int v)      { cfgFor(mode).atmVwapMaxPeTradesPerDay = Math.max(0, v); }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
     public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
     public void setStartingCapital(String mode, double v)      { cfgFor(mode).startingCapital = Math.max(0, v); }
@@ -762,6 +781,9 @@ public class RiskSettingsStore {
             upsert("atmVwapSquareOffTime",     c.atmVwapSquareOffTime);
             upsert("atmVwapMaxConcurrentPositions", String.valueOf(c.atmVwapMaxConcurrentPositions));
             upsert("atmVwapMinSlPoints",       String.valueOf(c.atmVwapMinSlPoints));
+            upsert("atmVwapMaxSlPoints",       String.valueOf(c.atmVwapMaxSlPoints));
+            upsert("atmVwapMaxCeTradesPerDay", String.valueOf(c.atmVwapMaxCeTradesPerDay));
+            upsert("atmVwapMaxPeTradesPerDay", String.valueOf(c.atmVwapMaxPeTradesPerDay));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("startingCapital",      String.valueOf(c.startingCapital));
@@ -934,6 +956,9 @@ public class RiskSettingsStore {
                     case "atmVwapSquareOffTime",
                          "camarillaSquareOffTime"     -> c.atmVwapSquareOffTime = v;
                     case "atmVwapMinSlPoints"         -> c.atmVwapMinSlPoints = Math.max(0, Double.parseDouble(v));
+                    case "atmVwapMaxSlPoints"         -> c.atmVwapMaxSlPoints = Math.max(0, Double.parseDouble(v));
+                    case "atmVwapMaxCeTradesPerDay"   -> c.atmVwapMaxCeTradesPerDay = Math.max(0, Integer.parseInt(v));
+                    case "atmVwapMaxPeTradesPerDay"   -> c.atmVwapMaxPeTradesPerDay = Math.max(0, Integer.parseInt(v));
                     case "atmVwapMaxConcurrentPositions",
                          "camarillaMaxConcurrentPositions" -> c.atmVwapMaxConcurrentPositions = Integer.parseInt(v);
                     // Legacy Camarilla-era keys silently consumed so old risk-settings.json
