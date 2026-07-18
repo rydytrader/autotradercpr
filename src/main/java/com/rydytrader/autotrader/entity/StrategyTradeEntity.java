@@ -34,9 +34,12 @@ public class StrategyTradeEntity {
     @Column(name = "symbol", length = 80)
     private String symbol;
 
-    /** The setup that opened this cycle — e.g. {@code H3_REVERSAL} or {@code L4_BREAKDOWN}.
-     *  Nullable for legacy rows persisted before this column existed — readers backfill from
-     *  the in-memory ring for today's rows where present, fall back to "—" otherwise. */
+    /** The setup that opened this cycle — {@code CE_SELL} or {@code PE_SELL} for
+     *  current AtmVwap trades. Historic Camarilla-era rows carry the retired
+     *  {@code H3_REVERSAL} / {@code L4_BREAKDOWN} / {@code H4_BREAKOUT} /
+     *  {@code L3_REVERSAL} / {@code VWAP_BREAKDOWN} values. Nullable for legacy
+     *  rows persisted before this column existed — readers backfill from the
+     *  in-memory ring for today's rows where present, fall back to "—" otherwise. */
     @Column(name = "setup", length = 32)
     private String setup;
 

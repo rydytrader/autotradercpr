@@ -228,9 +228,11 @@ public class AnalyticsService {
                           *  legacy rows persisted before the column existed — analytics
                           *  falls back to parsing the leg {@link #symbol} prefix. */
                          String instrument,
-                         /** Setup name (L4_BREAKDOWN / H3_REVERSAL / H4_BREAKOUT). Drives
-                          *  the analytics direction split — H4_BREAKOUT = Buy, others = Sell.
-                          *  Null for legacy rows persisted before this column existed. */
+                         /** Setup name (CE_SELL / PE_SELL). Drives the analytics By-Setup
+                          *  split. Historic Camarilla-era rows carry retired names
+                          *  (H4_BREAKOUT / H3_REVERSAL / L3_REVERSAL / L4_BREAKDOWN /
+                          *  VWAP_BREAKDOWN) — dropped from the By-Setup bins. Null for
+                          *  legacy rows persisted before this column existed. */
                          String setup) {}
 
     private List<Trade> loadTrades(String period, String strategyId, String from, String to) {
@@ -728,25 +730,21 @@ public class AnalyticsService {
         return out;
     }
 
-    /** 4-way split by setup tag (H4_BREAKOUT, L3_REVERSAL, H3_REVERSAL, L4_BREAKDOWN).
-     *  Non-matching rows (legacy / retired setups) are dropped rather than binned into
-     *  an "Other" bucket. Each setup card displays the display label (e.g. "H4 Breakout")
-     *  rather than the raw enum name. */
+    /** 2-way split by setup tag (CE_SELL, PE_SELL). Historic Camarilla-era rows
+     *  (H4_BREAKOUT, L3_REVERSAL, H3_REVERSAL, L4_BREAKDOWN, VWAP_BREAKDOWN) are
+     *  dropped rather than binned into an "Other" bucket. Each setup card
+     *  displays the display label (e.g. "CE Sell") rather than the raw enum name. */
     private Map<String, Map<String, Object>> splitBySetup(List<Trade> trades) {
         Map<String, List<Trade>> bins = new LinkedHashMap<>();
-        bins.put("H4 Breakout",  new ArrayList<>());
-        bins.put("L3 Reversal",  new ArrayList<>());
-        bins.put("H3 Reversal",  new ArrayList<>());
-        bins.put("L4 Breakdown", new ArrayList<>());
+        bins.put("CE Sell", new ArrayList<>());
+        bins.put("PE Sell", new ArrayList<>());
         for (Trade t : trades) {
             if (!isClosedStraddle(t)) continue;
             String setup = t.setup() == null ? "" : t.setup();
             switch (setup) {
-                case "H4_BREAKOUT"  -> bins.get("H4 Breakout").add(t);
-                case "L3_REVERSAL"  -> bins.get("L3 Reversal").add(t);
-                case "H3_REVERSAL"  -> bins.get("H3 Reversal").add(t);
-                case "L4_BREAKDOWN" -> bins.get("L4 Breakdown").add(t);
-                default              -> { /* dropped — no "Other" bin */ }
+                case "CE_SELL" -> bins.get("CE Sell").add(t);
+                case "PE_SELL" -> bins.get("PE Sell").add(t);
+                default        -> { /* legacy — dropped */ }
             }
         }
         return summariseBins(bins);

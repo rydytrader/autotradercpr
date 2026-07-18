@@ -83,16 +83,19 @@ public class AtmVwap implements Strategy {
     public static int lotSize() { return LOT_SIZE; }
 
     /** Setup enum kept in the shape older DB rows and state files know so their
-     *  serialized {@code setup} column deserializes cleanly. Only VWAP_BREAKDOWN
-     *  fires in the current strategy; the other values are legacy — never emitted
-     *  by the new detection code but retained so historical rows load without
-     *  exception. */
+     *  serialized {@code setup} column deserializes cleanly. Only CE_SELL and
+     *  PE_SELL fire in the current strategy — split by which leg the SELL
+     *  targets so analytics can compare CE vs PE performance. The other
+     *  values are legacy — never emitted by the new detection code but
+     *  retained so historical rows load without exception. */
     public enum ActiveSetup {
         L3_REVERSAL,      // legacy
         H3_REVERSAL,      // legacy
         H4_BREAKOUT,      // legacy
         L4_BREAKDOWN,     // legacy
-        VWAP_BREAKDOWN,   // active (bearish trigger-candle FSM)
+        VWAP_BREAKDOWN,   // legacy (pre-CE/PE split — short-lived, still in some state files)
+        CE_SELL,          // active — SELL fired on the ATM CE leg
+        PE_SELL,          // active — SELL fired on the ATM PE leg
         MANUAL            // reserved for the Options Scalper Terminal path
     }
 
@@ -645,9 +648,11 @@ public class AtmVwap implements Strategy {
         catch (Exception ignored) {}
 
         // SL is tick-based inside fastSlCheck — no broker SL order is placed.
+        // Tag the setup by which leg fired so analytics can split CE vs PE performance.
+        boolean isCeLeg = symbol.equals(state.ceSymbol);
         Position p = new Position();
         p.symbol          = symbol;
-        p.setup           = ActiveSetup.VWAP_BREAKDOWN;
+        p.setup           = isCeLeg ? ActiveSetup.CE_SELL : ActiveSetup.PE_SELL;
         p.qty             = qty;
         p.entryPrice      = entryLtp;
         p.entryOrderId    = order.getId();
