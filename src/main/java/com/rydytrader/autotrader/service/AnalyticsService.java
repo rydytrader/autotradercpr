@@ -755,9 +755,29 @@ public class AnalyticsService {
      *  synthetic OPEN_POSITION_MTM row everywhere. */
     private Map<String, Object> breakdowns(List<Trade> trades) {
         Map<String, Object> out = new LinkedHashMap<>();
+        out.put("byStrategy",   splitByStrategy(trades));
         out.put("byInstrument", splitByInstrument(trades));
         out.put("byDay",        splitByDayOfWeek(trades));
         return out;
+    }
+
+    /** 2-way split by strategy ID. Bins map strategy_id → display label:
+     *  "strangle" → "Strangle", "strangle-adjust" → "Strangle + Adj".
+     *  Historic rows (e.g. "atmvwap", "camarilla") are dropped. */
+    private Map<String, Map<String, Object>> splitByStrategy(List<Trade> trades) {
+        Map<String, List<Trade>> bins = new LinkedHashMap<>();
+        bins.put("Strangle",       new ArrayList<>());
+        bins.put("Strangle + Adj", new ArrayList<>());
+        for (Trade t : trades) {
+            if (!isClosedStraddle(t)) continue;
+            String sid = t.strategyId() == null ? "" : t.strategyId();
+            switch (sid) {
+                case "strangle"        -> bins.get("Strangle").add(t);
+                case "strangle-adjust" -> bins.get("Strangle + Adj").add(t);
+                default                 -> { /* legacy / unknown — dropped */ }
+            }
+        }
+        return summariseBins(bins);
     }
 
     /** 2-way split by instrument (NIFTY vs SENSEX). Day-aggregated rows carry the
@@ -821,19 +841,24 @@ public class AnalyticsService {
      *  ({@link Strategy#aggregatesToDay()}). Called before the analytics breakdowns run. */
     private List<Trade> aggregateTradesByDay(List<Trade> src) {
         if (src == null || src.isEmpty()) return src == null ? new ArrayList<>() : src;
-        Map<String, List<Trade>> byDate = new LinkedHashMap<>();
+        // Group by (strategyId, sessionDate) — each strategy keeps its own day-row so
+        // per-strategy attribution (byStrategy breakdown) works and "All" mode still
+        // treats each strategy-day as a separate win/loss.
+        Map<String, List<Trade>> byKey = new LinkedHashMap<>();
         for (Trade t : src) {
             String d = t.sessionDate();
             if (d == null || d.isBlank()) continue;
-            byDate.computeIfAbsent(d, k -> new ArrayList<>()).add(t);
+            String sid = t.strategyId() == null ? "" : t.strategyId();
+            byKey.computeIfAbsent(sid + "|" + d, k -> new ArrayList<>()).add(t);
         }
         List<Trade> out = new ArrayList<>();
-        for (Map.Entry<String, List<Trade>> e : byDate.entrySet()) {
+        for (Map.Entry<String, List<Trade>> e : byKey.entrySet()) {
             List<Trade> legs = e.getValue();
             double gross = 0, charges = 0, net = 0;
             long openedAt = Long.MAX_VALUE, closedAt = 0;
             String instrument = null;
             String strategyId = null;
+            String sessionDate = null;
             int slHits = 0;
             for (Trade t : legs) {
                 gross    += t.grossPnl();
@@ -846,11 +871,12 @@ public class AnalyticsService {
                     instrument = t.instrument();
                 if (strategyId == null && t.strategyId() != null && !t.strategyId().isBlank())
                     strategyId = t.strategyId();
+                if (sessionDate == null) sessionDate = t.sessionDate();
             }
             if (openedAt == Long.MAX_VALUE) openedAt = closedAt;
             out.add(new Trade(
                 strategyId == null ? "strangle" : strategyId,
-                e.getKey(),
+                sessionDate,
                 closedAt,
                 round2(gross), round2(charges), round2(net),
                 "DAY_TOTAL",     // closeReason

@@ -166,7 +166,7 @@
         if (!strip) return;
         var html = '';
         html += '<button class="sm-tab" data-tab="strangle">STRANGLE</button>';
-        html += '<button class="sm-tab" data-tab="strangle-adjust">STRANGLE + ADJ</button>';
+        html += '<button class="sm-tab" data-tab="strangle-adjust">STRANGLE-ADJ</button>';
         html += '<button class="sm-tab" data-tab="charges">CHARGES</button>';
         html += '<button class="sm-tab" data-tab="users">USERS</button>';
         html += '<button class="sm-tab" data-tab="maintenance">MAINTENANCE</button>';
