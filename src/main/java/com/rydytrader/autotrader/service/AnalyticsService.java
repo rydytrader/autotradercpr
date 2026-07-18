@@ -174,7 +174,7 @@ public class AnalyticsService {
         // exactly. The calendar year cards read these to populate per-month stat
         // cells without relying on the strategy-history endpoint (which can return
         // empty rows for dates where a legacy session entity exists alongside real
-        // Camarilla trades).
+        // AtmVwap trades).
         for (Trade t : trades) {
             String date = t.sessionDate();
             if (date == null || date.length() < 7) continue;
@@ -306,7 +306,7 @@ public class AnalyticsService {
         boolean allStrategies = strategyId == null || strategyId.isBlank() || "all".equalsIgnoreCase(strategyId);
         // NOTE: do NOT bail when strat.id() != strategyId. The strategy's cycle ring also
         // holds MANUAL cycles (strategyId="manual") and those need to flow through the Manual
-        // filter even though the registered strategy is Camarilla. Per-cycle filtering below.
+        // filter even though the registered strategy is AtmVwap. Per-cycle filtering below.
 
         String iso = today.toString();
         // Pre-compute today's persisted net + charges so OPEN_POSITION_MTM only carries the
@@ -352,7 +352,7 @@ public class AnalyticsService {
                     // Cycle-level strategy attribution. Legacy cycles (pre-MANUAL feature) don't
                     // carry "strategyId" — fall back to the registered strategy's id. New
                     // cycles persist their actual strategyId so MANUAL trades flow to "manual"
-                    // and algo trades stay at "camarilla".
+                    // and algo trades stay at "atmvwap".
                     String cycleStrategy = asString(m.get("strategyId"));
                     if (cycleStrategy == null || cycleStrategy.isBlank()) cycleStrategy = strat.id();
                     if (!allStrategies && !strategyId.equals(cycleStrategy)) continue;
@@ -416,7 +416,7 @@ public class AnalyticsService {
     }
 
     private LocalDate currentExpiryStart(LocalDate today) {
-        // Camarilla doesn't pin to a specific weekly expiry — it trades whatever this week's
+        // AtmVwap doesn't pin to a specific weekly expiry — it trades whatever this week's
         // weekly is. The "current expiry" period therefore just rolls back 7 days from today.
         return today.minusDays(7);
     }

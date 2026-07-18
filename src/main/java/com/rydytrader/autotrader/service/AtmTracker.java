@@ -28,11 +28,11 @@ import java.util.function.Consumer;
  * start time and held fixed for the rest of the session.
  *
  * <p>The ATM is resolved once per session — on the first NIFTY tick at or after
- * {@code camarillaTradingStartTime} (default 09:30 IST, configurable in
+ * {@code atmVwapTradingStartTime} (default 09:30 IST, configurable in
  * Settings) — and held fixed for the entire trading day. There is no intraday
  * drift check. If NIFTY moves 200 points by midday, the ATM the strategy was
  * set up around at start time stays the strategy's anchor. The watchlist, OI
- * subscription, and Camarilla level cache all stay on that one strike pair for
+ * subscription all stays on that one strike pair for
  * the whole session.
  *
  * <p>Why wait for the configured start time rather than 09:15:
@@ -40,8 +40,8 @@ import java.util.function.Consumer;
  *   <li>The first 15 minutes of a session are typically the noisiest. Letting
  *       NIFTY settle before locking the ATM avoids anchoring on a wick / gap
  *       that doesn't represent the day's true tradeable range.</li>
- *   <li>The Camarilla level math doesn't need it earlier — entry detection
- *       starts only after the same {@code camarillaTradingStartTime} gate.</li>
+ *   <li>The strategy doesn't need it earlier — entry detection
+ *       starts only after the same {@code atmVwapTradingStartTime} gate.</li>
  *   <li>NSE-cumulative VWAP (used by the L4/VWAP breakdown filter) starts
  *       accumulating at 09:15 regardless of when we subscribe, so the late
  *       subscribe loses no VWAP history.</li>
@@ -194,7 +194,7 @@ public class AtmTracker {
 
     /** Resolve the ATM from the current NIFTY LTP and fire the bootstrap event.
      *  No-op when already baselined (the lock is intentional — no drift), before
-     *  the configured {@code camarillaTradingStartTime}, after 15:30 IST, or when
+     *  the configured {@code atmVwapTradingStartTime}, after 15:30 IST, or when
      *  the spot can't be read yet. */
     private void tryResolveOnce() {
         if (baselineAtm > 0) return;
@@ -205,7 +205,7 @@ public class AtmTracker {
         // start time (default 09:30). Parsed every poll so a settings edit at
         // 09:18 still applies to today's resolution. Malformed/missing values
         // fall back to 09:15 — same as the legacy behaviour, fail-safe.
-        LocalTime startTime = parseStartTime(riskSettings.getCamarillaTradingStartTime());
+        LocalTime startTime = parseStartTime(riskSettings.getAtmVwapTradingStartTime());
         if (t.isBefore(startTime)) return;
 
         double spot;
@@ -226,7 +226,7 @@ public class AtmTracker {
     }
 
     /** Atomically write the current baseline + today's IST date to the
-     *  restore file. Same tmp+move pattern Camarilla state uses. Silent on
+     *  restore file. Same tmp+move pattern the AtmVwap state uses. Silent on
      *  failure — disk is a recovery aid, not a correctness dependency. */
     private void saveToDisk() {
         try {

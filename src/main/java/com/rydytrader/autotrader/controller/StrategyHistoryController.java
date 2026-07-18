@@ -21,7 +21,7 @@ import java.util.Map;
 
 /**
  * Per-strategy history endpoints. The {@code strategyId} path variable now resolves to a
- * fixed value ({@code "camarilla"}) since Camarilla is the only strategy; the
+ * fixed value ({@code "atmvwap"}) since ATM VWAP is the only strategy; the
  * {@code /api/strategies/{id}/*} URL pattern is kept so the calendar's day-detail modal
  * can stay strategy-agnostic.
  */
@@ -72,7 +72,7 @@ public class StrategyHistoryController {
             totalNet     += s.getNetPnl();
             totalRolls   += s.getRolls();
         }
-        // 2. Camarilla (and any other cycle-based strategies) persist per-cycle trade rows
+        // 2. AtmVwap (and any other cycle-based strategies) persist per-cycle trade rows
         // instead of session rows. Aggregate those by sessionDate into session-shaped maps
         // so the calendar's yearly view + day modal see real data. ONLY emit a row for
         // dates that don't already have a legacy session row, so we don't double-count.

@@ -53,7 +53,7 @@
         .band-row .left { color:var(--text-primary); font-weight:700; }
         .band-row .right { color:var(--accent-amber, #fbbf24); }
 
-        /* Camarilla formula table — six levels in a single horizontal row */
+        /* Legacy pivot formula table — kept for the hidden reference section */
         .formula-table { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin:14px 0 4px 0; }
         .formula-row { display:flex; flex-direction:column; align-items:center; gap:8px; padding:12px 8px; background:var(--bg-primary); border:1px solid var(--border); border-radius:8px; }
         .formula-chip { font-family:var(--font-mono); font-size:0.7rem; font-weight:700; letter-spacing:0.04em; text-align:center; padding:4px 12px; border-radius:4px; border:1px solid transparent; }
@@ -185,7 +185,7 @@
     <div class="page-header fade-in" style="margin-bottom:18px;">
         <div>
             <div class="page-title">Strategy</div>
-            <div class="page-subtitle">Option-premium Camarilla · 3-min confirmation + tick-triggered entry</div>
+            <div class="page-subtitle">NIFTY ATM 2-min · session VWAP · bearish premium sell</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -199,135 +199,92 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot"></span> Overview</h2>
         <p class="doc-p">
-            The bot trades <strong>NIFTY weekly options</strong>, but the source of truth is
-            NOT the NIFTY spot chart — it's the option premium itself. Each session the bot
-            locks in TWO option legs: the <strong>CE at NIFTY's H5 strike</strong> and the
-            <strong>PE at NIFTY's L5 strike</strong>. It then computes Camarilla pivots for
-            EACH option's own prior-day OHLC and monitors those option-premium 3-min candles
-            for bearish setups on each option's own Camarilla.
+            The bot sells <strong>NIFTY weekly ATM options</strong> on their own 2-min
+            timeframe. Each session locks in TWO legs at first bar close: the
+            <strong>ATM CE</strong> and the <strong>ATM PE</strong> at the strike nearest to
+            the first 2-min NIFTY close (rounded to 50). Every trade is a
+            <strong>premium sell</strong> — bearish thesis, want premium to decay.
         </p>
         <p class="doc-p">
-            Every trade is a <strong>premium sell</strong> — we sell the option we're
-            monitoring when its own premium starts breaking down. The strategy is
-            directionally biased toward premium decay: we fire only on
-            <strong>bearish setups</strong> (L4 breakdown or H3 reversal on the option's
-            own Camarilla), never on bullish setups.
+            Each option's own <strong>session VWAP</strong> (the NSE-cumulative ATP the
+            broker streams for that symbol) is the anchor. A 2-min bar that closes below
+            VWAP seeds a <em>trigger candle</em>. If the very next 2-min bar closes below
+            the trigger's low, the bot sells that leg. CE and PE run independent FSMs and
+            can both be short at the same time; their combined worst-case loss is bounded
+            by the portfolio-max-daily-loss cap.
         </p>
         <p class="doc-p">
-            Entries use a <strong>3-min confirmation + tick trigger</strong> model: a
-            confirmation bar prints (red bar wicked through the level and closed back
-            below) and seeds a pending. From that moment on, the option's LTP is
-            checked tick-by-tick — the sell fires the instant LTP touches (or drops
-            below) the confirmation candle's own low, no need to wait for the next
-            bar to close.
-            Stop loss is placed at the option's own next structural level (L3 for L4
-            breakdown, H4 for H3 reversal) as a broker order — additionally, if a 3-min
-            bar closes at or above that SL level, the bar-close backup exits the trade.
-        </p>
-        <p class="doc-p">
-            Risk management is layered: per-day loss cap with a 50 %-qty retry when a full-size
-            fire would breach the cap, portfolio exposure projection, and a daily squareoff time.
+            One-shot per leg per day — once a leg's position closes (SL hit or timed
+            squareoff), the FSM can seed again on later bars, but there's no re-entry
+            latch. No target orders — every position is held until SL hit or the
+            timed squareoff at the configured cutoff.
         </p>
     </div>
 
-    <!-- ── Camarilla Pivots ── -->
+    <!-- ── Session flow ── -->
     <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-amber, #fbbf24);"></span> Camarilla Pivots</h2>
-        <p class="doc-p">
-            Computed nightly from the previous day's <strong>H</strong>igh, <strong>L</strong>ow,
-            and <strong>C</strong>lose. The pivot range <span class="doc-inline-chip">k = 1.1 × (H − L)</span>
-            sets the scale of all six trading levels:
-        </p>
-        <div class="formula-table">
-            <div class="formula-row">
-                <div class="formula-chip h5">H5</div>
-                <div class="formula-eq">(H ÷ L) × C</div>
-                <div class="formula-role">extreme upside target</div>
-            </div>
-            <div class="formula-row">
-                <div class="formula-chip h4">H4</div>
-                <div class="formula-eq">C + k/2</div>
-                <div class="formula-role">breakout level</div>
-            </div>
-            <div class="formula-row">
-                <div class="formula-chip h3">H3</div>
-                <div class="formula-eq">C + k/4</div>
-                <div class="formula-role">upper reversal zone</div>
-            </div>
-            <div class="formula-row">
-                <div class="formula-chip l3">L3</div>
-                <div class="formula-eq">C − k/4</div>
-                <div class="formula-role">lower reversal zone</div>
-            </div>
-            <div class="formula-row">
-                <div class="formula-chip l4">L4</div>
-                <div class="formula-eq">C − k/2</div>
-                <div class="formula-role">breakdown level</div>
-            </div>
-            <div class="formula-row">
-                <div class="formula-chip l5">L5</div>
-                <div class="formula-eq">(L ÷ H) × C</div>
-                <div class="formula-role">extreme downside target</div>
-            </div>
-        </div>
-        <p class="doc-p">
-            The <strong>L3–H3 band</strong> is the "neutral" core; price spending time inside it
-            tends to mean-revert. The <strong>H4 / L4 levels</strong> mark the structural edges —
-            a sustained break beyond them signals a directional regime change. <strong>H5 / L5</strong>
-            are extreme-move targets, reached only on strong-trend days.
-        </p>
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-amber, #fbbf24);"></span> Session flow</h2>
+        <ul class="doc-list">
+            <li><strong>09:15 IST — market open.</strong> Bot subscribes NIFTY spot to the 2-min
+                candle feed. No entries yet.</li>
+            <li><strong>~09:17 IST — first 2-min NIFTY bar closes.</strong> The bar's close price
+                is snapshotted, rounded to the nearest 50-point strike, and the ATM CE + ATM PE
+                symbols are resolved from the weekly chain. Both legs are subscribed to the 2-min
+                feed and locked for the rest of the session.</li>
+            <li><strong>From Trading Start (default 09:30 IST) onward.</strong> Every 2-min bar
+                close on either option runs the trigger-candle FSM below. Only bearish sells fire.</li>
+            <li><strong>Trading End (default 14:30 IST).</strong> No new entries after this time.
+                Existing positions keep being managed.</li>
+            <li><strong>Squareoff (default 15:25 IST).</strong> Any remaining open positions are
+                flattened at market.</li>
+        </ul>
     </div>
 
-    <!-- ── The Two Setups ── -->
+    <!-- ── The FSM ── -->
     <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-purple, #a78bfa);"></span> The Two Setups</h2>
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-purple, #a78bfa);"></span> The FSM</h2>
         <p class="doc-p">
-            Both setups are <strong>bearish on the option premium</strong> — they fire when
-            the option we're monitoring starts to lose value. Applied per option leg (H5 CE
-            and L5 PE) on that option's OWN Camarilla, evaluated at each 3-min bar close.
+            One state machine per option leg. On every 2-min bar close for a leg,
+            the bot reads that leg's session VWAP (Fyers ATP) and evaluates in this
+            exact order:
         </p>
-        <div class="setup-combo">
-            <div class="setup-combo-card">
-                <div class="combo-row bear">
-                    <div class="combo-label">
-                        <span class="setup-tag">Bearish · Structural breakdown</span>
-                        <span class="setup-name" style="color:var(--accent-red, #f87171);">L4_BREAKDOWN</span>
-                    </div>
-                    <div class="combo-body">
-                        Option premium (3-min bar) prints a red candle whose <strong>high &ge; L4</strong>
-                        and whose close is <strong>&lt; L4</strong> of THIS option's own Camarilla.
-                        Seed a pending. As soon as the option's LTP ticks at or below the
-                        confirmation candle's own low, <strong>sell the option</strong>. SL = option's own <strong>L3</strong>,
-                        target = option's own <strong>L5</strong> (both broker orders + 3-min
-                        close backup).
-                    </div>
-                </div>
-                <div class="combo-row bear">
-                    <div class="combo-label">
-                        <span class="setup-tag">Bearish · Rejection</span>
-                        <span class="setup-name" style="color:var(--accent-red, #f87171);">H3_REVERSAL</span>
-                    </div>
-                    <div class="combo-body">
-                        Option premium (3-min bar) prints a red candle whose <strong>high &ge; H3</strong>
-                        and whose close is <strong>&lt; H3</strong> of THIS option's own Camarilla.
-                        Seed a pending. As soon as the option's LTP ticks at or below the
-                        confirmation candle's own low, <strong>sell the option</strong>. SL = option's own <strong>H4</strong>,
-                        target = option's own <strong>L3</strong> (both broker orders + 3-min
-                        close backup).
-                    </div>
-                </div>
+        <div style="margin-top:8px;">
+            <div class="phase-row">
+                <div class="phase-tag">S0 · seed</div>
+                <div class="phase-desc"><strong>No active trigger.</strong> If this bar's close is
+                    <strong>&lt; VWAP</strong>, it becomes the trigger candle. Otherwise stay in S0.</div>
+            </div>
+            <div class="phase-row">
+                <div class="phase-tag">S1 · fire</div>
+                <div class="phase-desc"><strong>Trigger active.</strong> If this bar's close is
+                    <strong>&lt; trigger.low</strong>, <strong>SELL the leg</strong>. This check is
+                    <em>unconditional</em> vs VWAP — the fire happens regardless of where the close
+                    sits relative to VWAP.</div>
+            </div>
+            <div class="phase-row">
+                <div class="phase-tag">S1 · promote</div>
+                <div class="phase-desc"><strong>No fire, this bar closes &lt; VWAP.</strong> The old
+                    trigger is dropped and THIS bar becomes the new trigger. Rolling behaviour —
+                    a fresh trigger seeds on every below-VWAP close until the very next bar
+                    fires it.</div>
+            </div>
+            <div class="phase-row">
+                <div class="phase-tag">S1 · invalidate</div>
+                <div class="phase-desc"><strong>No fire, this bar closes ≥ VWAP.</strong> The old
+                    trigger is dropped; no new trigger held. The state machine falls back to S0
+                    and waits for the next below-VWAP close.</div>
             </div>
         </div>
         <p class="doc-p" style="margin-top:14px;">
-            The bullish counterparts (L3_REVERSAL / H4_BREAKOUT) are intentionally not fired —
-            buying premium is not the strategy's thesis. Only bar-close geometry + red-candle
-            color qualify a confirmation; wicks alone don't. Skipping the rest of the old
-            setup diagrams — the geometry is applied to the OPTION'S own price chart, not
-            NIFTY's.
+            The trigger candle survives at most ONE follow-up bar. Either the follow-up
+            fires or the trigger is dropped — there is no multi-bar "waiting on the same
+            trigger." A bar close ≥ VWAP does <strong>not by itself</strong> invalidate anything;
+            the fire check always runs first. Invalidation is strictly "immediate
+            follow-through failed."
         </p>
     </div>
 
-    <!-- Legacy diagrams for reference — the strategy no longer trades these on NIFTY spot. -->
+    <!-- Legacy diagrams retained for future reference — hidden. -->
     <div class="doc-section fade-in" style="display:none;">
 
         <!-- Reversals subsection -->
@@ -464,78 +421,79 @@
         </div>
     </div>
 
-    <!-- ── 3-Min Confirmation + Tick Entry Model ── -->
+    <!-- ── Stop loss ── -->
     <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-green);"></span> Confirmation + Tick Entry Model</h2>
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-red, #f87171);"></span> Stop loss</h2>
         <p class="doc-p">
-            Every 3-min bar close on EACH monitored option premium runs the confirmation
-            detection. Entry is <strong>tick-triggered</strong> — once a confirmation is
-            seeded, the sell fires the instant option LTP touches the confirmation's low
-            (checked ~500 ms cadence via the same fast watcher that handles SL and target).
+            SL price = <code>max(trigger.high, atmVwapMinSlPoints)</code>. The
+            <em>Min SL floor</em> setting (default 10 option points, configurable in
+            Settings → Portfolio Risk) is the floor when the trigger candle's high is
+            smaller than the desired minimum SL — a tiny trigger candle would otherwise
+            create a stop too tight to survive normal noise.
         </p>
-        <div style="margin-top:8px;">
-            <div class="phase-row">
-                <div class="phase-tag">Fire</div>
-                <div class="phase-desc"><strong>Tick entry trigger.</strong> Once a pending confirmation exists on this option, the fast watcher (~500 ms) checks the option's LTP every tick. The moment LTP is at or below the confirmation candle's own low, <strong>sell the option at market</strong>. Position size = <code>lotsPerLeg × 65</code>, possibly halved by the portfolio-risk retry.</div>
-            </div>
-            <div class="phase-row">
-                <div class="phase-tag">Detect</div>
-                <div class="phase-desc"><strong>Fresh confirmation.</strong> If no open position AND no pending on this option, check bearish-only geometry against the option's own Camarilla:<br>
-                    &bull; <strong>L4_BREAKDOWN</strong> — red 3-min bar whose high ≥ L4 AND close &lt; L4.<br>
-                    &bull; <strong>H3_REVERSAL</strong> — red 3-min bar whose high ≥ H3 AND close &lt; H3.<br>
-                Doji bars (close == open) are rejected. A match seeds a pending on this option; the NEXT bar's close is the trigger.</div>
-            </div>
-            <div class="phase-row">
-                <div class="phase-tag">Expire</div>
-                <div class="phase-desc"><strong>Age-out</strong> — a pending older than <code>MAX_PENDING_BARS</code> (3 bars ≈ 9 min at 3-min cadence) is dropped without trading. The confirmation went stale; the move it predicted didn't materialize in time.</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- ── Order Flow ── -->
-    <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-purple, #a78bfa);"></span> Order Flow &amp; Exit Logic</h2>
         <p class="doc-p">
-            When the trigger fires, the bot places a single SELL order on the option that
-            was being monitored (H5 CE or L5 PE). Position size = <code>lotsPerLeg × 65</code>,
-            possibly halved by the portfolio-risk retry when a full-size fire would breach
-            the daily loss cap. Both exit mechanisms — SL and target — run tick-by-tick
-            inside the strategy; neither is placed as a broker order.
+            SL is monitored <strong>tick-based inside the strategy</strong> at the fast
+            scheduler cadence (~500 ms). On any LTP tick where the option's live price
+            reaches the SL level, the strategy fires a market BUY to close the short.
+            No broker stop-loss order is placed — this guarantees a market fill even on
+            gap moves or a thin order book.
         </p>
-        <ul class="doc-list">
-            <li><strong>Stop loss</strong> — tick-based, monitored inside the strategy at the fast scheduler cadence (~500 ms). On any LTP tick where the option's live price is at or above the SL level, the strategy fires a market BUY to close the short. SL level = option's own <code>L3</code> (for L4_BREAKDOWN) or <code>H4</code> (for H3_REVERSAL), plus the <em>SL Buffer</em> setting (points, default 2.0) — the cushion prevents wick-driven exits at the exact structural level. No broker stop order — dodges broker-side rejection risk and guarantees a market fill.</li>
-            <li><strong>Target</strong> — tick-based, same fast-scheduler cadence. On any LTP tick where the option's live price is at or below the target level (<code>L5</code> for L4_BREAKDOWN, <code>L3</code> for H3_REVERSAL), the strategy fires a market BUY to close the short. No broker LIMIT order — guarantees a fill even on a gap or thin book.</li>
-            <li><strong>Timed squareoff</strong> — at the configured squareoff time (default 15:15 IST), all open positions are flattened regardless of SL/target state.</li>
-        </ul>
+        <p class="doc-p">
+            <strong>No target</strong> — every open position is held until SL hit or timed
+            squareoff. There is no take-profit level.
+        </p>
     </div>
 
     <!-- ── Risk Management ── -->
     <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-red, #f87171);"></span> Risk Management</h2>
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-purple, #a78bfa);"></span> Risk management</h2>
         <ul class="doc-list">
-            <li><strong>Portfolio exposure cap</strong> — before every fire, the strategy projects the combined exposed risk (existing open positions + this new fire's <em>|entryFut − slFut| × ATM_DELTA × qty</em>) and rejects if it would breach <code>portfolioMaxDailyLoss</code>.</li>
-            <li><strong>50 % qty retry</strong> — when the full-lot fire would breach the portfolio cap, the bot retries once at half lots (rounded to whole lots, min 1). If the halved size still doesn't fit, the trade is skipped. No third try — position size never fragments below half.</li>
-            <li><strong>Realized-loss lockout</strong> — if today's <em>closed</em> losses exceed <code>portfolioMaxDailyLoss</code>, the strategy locks out for the rest of the session — no new fires on either instrument.</li>
-            <li><strong>Trading window</strong> — new entries only fire between configured Trading Start (09:30 IST default) and Trading End (13:30 IST default). Existing positions continue to be managed until squareoff.</li>
+            <li><strong>Combined-risk gate</strong> — before every fire, the strategy projects
+                <em>existing exposed risk + (SL − entry) × qty</em> for this new entry. If the
+                projected total would breach <code>portfolioMaxDailyLoss</code>, the fire is
+                rejected.</li>
+            <li><strong>50 % qty retry</strong> — when the full-lot fire would breach the
+                portfolio cap, the bot retries once at half quantity (rounded to whole lots,
+                min 1 lot). If the halved size still doesn't fit, the trade is skipped. No
+                third try.</li>
+            <li><strong>CE + PE simultaneous</strong> — both legs' FSMs run independently.
+                Both can be short at the same time, but their combined worst-case loss
+                (Σ (SL − entry) × qty across all open positions) is bounded by the same
+                portfolio cap.</li>
+            <li><strong>Realized-loss lockout</strong> — if today's <em>closed</em> losses
+                exceed <code>portfolioMaxDailyLoss</code>, the strategy locks out for the rest
+                of the session — no new fires on either leg.</li>
         </ul>
     </div>
 
-    <!-- ── Real-Time Monitoring ── -->
+    <!-- ── Session windows ── -->
     <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-amber, #fbbf24);"></span> Real-Time Monitoring</h2>
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-green);"></span> Session windows</h2>
         <p class="doc-p">
-            The bot maintains two persistent Fyers WebSocket connections during market hours: one
-            for market data (NIFTY spot + every subscribed option leg's LTP and OI) and one for
-            order events (entry fills, modifications, cancellations). Sub-second SL/target checks
-            run on every spot tick — no polling latency between a level breach and the exit
-            order going out.
+            All three windows are configurable in Settings → ATM VWAP:
         </p>
-        <p class="doc-p">
-            Two browser-side surfaces stream live state via Server-Sent Events: the navbar
-            ticker (NIFTY LTP + ΔPct) and the Positions page (per-position LTP + MTM).
-            All persistent state survives mid-day restarts and weekend gaps via JSON
-            disk snapshots.
-        </p>
+        <ul class="doc-list">
+            <li><strong>Trading Start</strong> (default <code>09:30</code>) — the FSM runs from
+                first bar close, but sells don't fire until this time. Applies to the fire
+                gate; seed/promote/invalidate still update.</li>
+            <li><strong>Trading End</strong> (default <code>14:30</code>) — no new entries after
+                this time. Existing positions keep being managed until squareoff.</li>
+            <li><strong>Squareoff</strong> (default <code>15:25</code>) — any remaining open
+                positions are flattened at market.</li>
+        </ul>
+    </div>
+
+    <!-- ── What's NOT in this strategy ── -->
+    <div class="doc-section fade-in">
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-amber, #fbbf24);"></span> What's NOT in this strategy</h2>
+        <ul class="doc-list">
+            <li>No target orders — SL-hit or timed-squareoff exits only.</li>
+            <li>No re-entry after SL — once the leg's position closes, that FSM cycles fresh
+                but there's no automatic re-fire on the same trigger.</li>
+            <li>No bullish setups — every fire is a premium sell.</li>
+            <li>No pivot levels, no ATR, no VWAP bands, no scanner filters. VWAP is the
+                only anchor.</li>
+        </ul>
     </div>
 
     <footer class="page-footer">

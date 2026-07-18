@@ -28,26 +28,17 @@ public class RiskSettingsStore {
         volatile double maxRiskPerDayPct  = 1.0;  // max risk per day as % of totalCapital
         volatile double riskPerTrade      = 1000;  // max ₹ loss per trade if SL hits
         volatile String autoSquareOffTime = "";  // empty = disabled, e.g. "15:15"
-        // ── Camarilla strategy settings (singleton) ──────────────────────────
-        volatile boolean camarillaEnabled         = true;
-        volatile int     camarillaLotsPerLeg      = 1;       // 1 lot = 65 NIFTY
-        volatile String  camarillaOrderType       = "INTRADAY"; // INTRADAY | OVERNIGHT
-        volatile String  camarillaTradingStartTime = "09:30"; // signals fire only after this time (IST)
-        volatile String  camarillaTradingEndTime   = "13:30"; // no new signals after this time (IST); exits keep running
-        volatile String  camarillaSquareOffTime   = "15:15";
-        volatile int     camarillaMaxConcurrentPositions = 4; // hard cap on simultaneously-open positions
-        /** Points cushion added to the option's own SL level when placing the
-         *  broker SL order at entry. The option is SHORT, so SL sits ABOVE
-         *  entry — buffer widens it further up:
-         *    L4_BREAKDOWN → SL = L3 + optionSlBufferPoints
-         *    H3_REVERSAL  → SL = H4 + optionSlBufferPoints
-         *  Expressed in option-premium points (rupees). Default 2.0 — one
-         *  strike-step of headroom for a NIFTY 50-point strike. Set to 0
-         *  for SL at the exact structural level. */
-        volatile double optionSlBufferPoints = 2.0;
-        // The retired ATR-mult settings (camarillaTriggerAtrMult,
-        // camarillaDirectionalSlBufferAtrMult, camarillaTargetBufferAtrMult)
-        // are silently consumed on legacy JSON load — see the load-case switch.
+        // ── ATM VWAP strategy settings (singleton) ──────────────────────────
+        volatile boolean atmVwapEnabled         = true;
+        volatile int     atmVwapLotsPerLeg      = 1;       // 1 lot = 65 NIFTY
+        volatile String  atmVwapOrderType       = "INTRADAY"; // INTRADAY | OVERNIGHT
+        volatile String  atmVwapTradingStartTime = "09:30"; // signals fire only after this time (IST)
+        volatile String  atmVwapTradingEndTime   = "14:30"; // no new signals after this time (IST); exits keep running
+        volatile String  atmVwapSquareOffTime   = "15:25";
+        volatile int     atmVwapMaxConcurrentPositions = 4; // hard cap on simultaneously-open positions
+        /** Min SL floor in option-premium points. If the trigger candle's high
+         *  is smaller than this floor, the SL price is clamped up. Default 10. */
+        volatile double atmVwapMinSlPoints = 10.0;
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
         /** Initial capital used as the baseline for the Analytics Home page (capital growth %,
@@ -397,14 +388,14 @@ public class RiskSettingsStore {
     public double getRiskPerTrade()      { return cfg().riskPerTrade; }
     public double getMaxDailyLoss()      { return cfg().totalCapital * cfg().maxRiskPerDayPct / 100.0; }
     public String getAutoSquareOffTime() { return cfg().autoSquareOffTime; }
-    public boolean isCamarillaEnabled()           { return cfg().camarillaEnabled; }
-    public int     getCamarillaLotsPerLeg()       { return cfg().camarillaLotsPerLeg; }
-    public String  getCamarillaOrderType()        { return cfg().camarillaOrderType; }
-    public String  getCamarillaTradingStartTime() { return cfg().camarillaTradingStartTime; }
-    public String  getCamarillaTradingEndTime()   { return cfg().camarillaTradingEndTime; }
-    public String  getCamarillaSquareOffTime()    { return cfg().camarillaSquareOffTime; }
-    public int     getCamarillaMaxConcurrentPositions() { return cfg().camarillaMaxConcurrentPositions; }
-    public double  getOptionSlBufferPoints() { return cfg().optionSlBufferPoints; }
+    public boolean isAtmVwapEnabled()           { return cfg().atmVwapEnabled; }
+    public int     getAtmVwapLotsPerLeg()       { return cfg().atmVwapLotsPerLeg; }
+    public String  getAtmVwapOrderType()        { return cfg().atmVwapOrderType; }
+    public String  getAtmVwapTradingStartTime() { return cfg().atmVwapTradingStartTime; }
+    public String  getAtmVwapTradingEndTime()   { return cfg().atmVwapTradingEndTime; }
+    public String  getAtmVwapSquareOffTime()    { return cfg().atmVwapSquareOffTime; }
+    public int     getAtmVwapMaxConcurrentPositions() { return cfg().atmVwapMaxConcurrentPositions; }
+    public double  getAtmVwapMinSlPoints()      { return cfg().atmVwapMinSlPoints; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getStartingCapital()      { return cfg().startingCapital; }
@@ -588,14 +579,14 @@ public class RiskSettingsStore {
     public void setMaxRiskPerDayPct(double v)  { cfg().maxRiskPerDayPct = v; }
     public void setRiskPerTrade(double v)      { cfg().riskPerTrade = v; }
     public void setAutoSquareOffTime(String v) { cfg().autoSquareOffTime = v; }
-    public void setCamarillaEnabled(boolean v)            { cfg().camarillaEnabled = v; }
-    public void setCamarillaLotsPerLeg(int v)             { cfg().camarillaLotsPerLeg = Math.max(1, v); }
-    public void setCamarillaOrderType(String v)           { cfg().camarillaOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
-    public void setCamarillaTradingStartTime(String v)    { cfg().camarillaTradingStartTime = (v == null || v.isBlank()) ? "09:30" : v.trim(); }
-    public void setCamarillaTradingEndTime(String v)      { cfg().camarillaTradingEndTime = (v == null || v.isBlank()) ? "13:30" : v.trim(); }
-    public void setCamarillaSquareOffTime(String v)       { cfg().camarillaSquareOffTime = v == null ? "" : v.trim(); }
-    public void setCamarillaMaxConcurrentPositions(int v) { cfg().camarillaMaxConcurrentPositions = Math.max(1, v); }
-    public void setOptionSlBufferPoints(double v) { cfg().optionSlBufferPoints = Math.max(0, v); }
+    public void setAtmVwapEnabled(boolean v)            { cfg().atmVwapEnabled = v; }
+    public void setAtmVwapLotsPerLeg(int v)             { cfg().atmVwapLotsPerLeg = Math.max(1, v); }
+    public void setAtmVwapOrderType(String v)           { cfg().atmVwapOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
+    public void setAtmVwapTradingStartTime(String v)    { cfg().atmVwapTradingStartTime = (v == null || v.isBlank()) ? "09:30" : v.trim(); }
+    public void setAtmVwapTradingEndTime(String v)      { cfg().atmVwapTradingEndTime = (v == null || v.isBlank()) ? "14:30" : v.trim(); }
+    public void setAtmVwapSquareOffTime(String v)       { cfg().atmVwapSquareOffTime = v == null ? "" : v.trim(); }
+    public void setAtmVwapMaxConcurrentPositions(int v) { cfg().atmVwapMaxConcurrentPositions = Math.max(1, v); }
+    public void setAtmVwapMinSlPoints(double v)         { cfg().atmVwapMinSlPoints = Math.max(0, v); }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setStartingCapital(double v)      { cfg().startingCapital = Math.max(0, v); }
@@ -693,14 +684,14 @@ public class RiskSettingsStore {
     public double getRiskPerTrade(String mode)      { return cfgFor(mode).riskPerTrade; }
     public double getMaxDailyLoss(String mode)      { return cfgFor(mode).totalCapital * cfgFor(mode).maxRiskPerDayPct / 100.0; }
     public String getAutoSquareOffTime(String mode) { return cfgFor(mode).autoSquareOffTime; }
-    public boolean isCamarillaEnabled(String mode)            { return cfgFor(mode).camarillaEnabled; }
-    public int     getCamarillaLotsPerLeg(String mode)        { return cfgFor(mode).camarillaLotsPerLeg; }
-    public String  getCamarillaOrderType(String mode)         { return cfgFor(mode).camarillaOrderType; }
-    public String  getCamarillaTradingStartTime(String mode)  { return cfgFor(mode).camarillaTradingStartTime; }
-    public String  getCamarillaTradingEndTime(String mode)    { return cfgFor(mode).camarillaTradingEndTime; }
-    public String  getCamarillaSquareOffTime(String mode)     { return cfgFor(mode).camarillaSquareOffTime; }
-    public int     getCamarillaMaxConcurrentPositions(String mode) { return cfgFor(mode).camarillaMaxConcurrentPositions; }
-    public double  getOptionSlBufferPoints(String mode) { return cfgFor(mode).optionSlBufferPoints; }
+    public boolean isAtmVwapEnabled(String mode)            { return cfgFor(mode).atmVwapEnabled; }
+    public int     getAtmVwapLotsPerLeg(String mode)        { return cfgFor(mode).atmVwapLotsPerLeg; }
+    public String  getAtmVwapOrderType(String mode)         { return cfgFor(mode).atmVwapOrderType; }
+    public String  getAtmVwapTradingStartTime(String mode)  { return cfgFor(mode).atmVwapTradingStartTime; }
+    public String  getAtmVwapTradingEndTime(String mode)    { return cfgFor(mode).atmVwapTradingEndTime; }
+    public String  getAtmVwapSquareOffTime(String mode)     { return cfgFor(mode).atmVwapSquareOffTime; }
+    public int     getAtmVwapMaxConcurrentPositions(String mode) { return cfgFor(mode).atmVwapMaxConcurrentPositions; }
+    public double  getAtmVwapMinSlPoints(String mode)       { return cfgFor(mode).atmVwapMinSlPoints; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
     public double getStartingCapital(String mode)      { return cfgFor(mode).startingCapital; }
@@ -723,14 +714,14 @@ public class RiskSettingsStore {
     public void setMaxRiskPerDayPct(String mode, double v)  { cfgFor(mode).maxRiskPerDayPct = v; }
     public void setRiskPerTrade(String mode, double v)      { cfgFor(mode).riskPerTrade = v; }
     public void setAutoSquareOffTime(String mode, String v) { cfgFor(mode).autoSquareOffTime = v; }
-    public void setCamarillaEnabled(String mode, boolean v)            { cfgFor(mode).camarillaEnabled = v; }
-    public void setCamarillaLotsPerLeg(String mode, int v)             { cfgFor(mode).camarillaLotsPerLeg = Math.max(1, v); }
-    public void setCamarillaOrderType(String mode, String v)           { cfgFor(mode).camarillaOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
-    public void setCamarillaTradingStartTime(String mode, String v)    { cfgFor(mode).camarillaTradingStartTime = (v == null || v.isBlank()) ? "09:30" : v.trim(); }
-    public void setCamarillaTradingEndTime(String mode, String v)      { cfgFor(mode).camarillaTradingEndTime = (v == null || v.isBlank()) ? "13:30" : v.trim(); }
-    public void setCamarillaSquareOffTime(String mode, String v)       { cfgFor(mode).camarillaSquareOffTime = v == null ? "" : v.trim(); }
-    public void setCamarillaMaxConcurrentPositions(String mode, int v) { cfgFor(mode).camarillaMaxConcurrentPositions = Math.max(1, v); }
-    public void setOptionSlBufferPoints(String mode, double v) { cfgFor(mode).optionSlBufferPoints = Math.max(0, v); }
+    public void setAtmVwapEnabled(String mode, boolean v)            { cfgFor(mode).atmVwapEnabled = v; }
+    public void setAtmVwapLotsPerLeg(String mode, int v)             { cfgFor(mode).atmVwapLotsPerLeg = Math.max(1, v); }
+    public void setAtmVwapOrderType(String mode, String v)           { cfgFor(mode).atmVwapOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
+    public void setAtmVwapTradingStartTime(String mode, String v)    { cfgFor(mode).atmVwapTradingStartTime = (v == null || v.isBlank()) ? "09:30" : v.trim(); }
+    public void setAtmVwapTradingEndTime(String mode, String v)      { cfgFor(mode).atmVwapTradingEndTime = (v == null || v.isBlank()) ? "14:30" : v.trim(); }
+    public void setAtmVwapSquareOffTime(String mode, String v)       { cfgFor(mode).atmVwapSquareOffTime = v == null ? "" : v.trim(); }
+    public void setAtmVwapMaxConcurrentPositions(String mode, int v) { cfgFor(mode).atmVwapMaxConcurrentPositions = Math.max(1, v); }
+    public void setAtmVwapMinSlPoints(String mode, double v)         { cfgFor(mode).atmVwapMinSlPoints = Math.max(0, v); }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
     public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
     public void setStartingCapital(String mode, double v)      { cfgFor(mode).startingCapital = Math.max(0, v); }
@@ -763,14 +754,14 @@ public class RiskSettingsStore {
             upsert("maxRiskPerDayPct", String.valueOf(c.maxRiskPerDayPct));
             upsert("riskPerTrade", String.valueOf(c.riskPerTrade));
             upsert("autoSquareOffTime", c.autoSquareOffTime);
-            upsert("camarillaEnabled",          String.valueOf(c.camarillaEnabled));
-            upsert("camarillaLotsPerLeg",       String.valueOf(c.camarillaLotsPerLeg));
-            upsert("camarillaOrderType",         c.camarillaOrderType);
-            upsert("camarillaTradingStartTime",  c.camarillaTradingStartTime);
-            upsert("camarillaTradingEndTime",    c.camarillaTradingEndTime);
-            upsert("camarillaSquareOffTime",     c.camarillaSquareOffTime);
-            upsert("camarillaMaxConcurrentPositions", String.valueOf(c.camarillaMaxConcurrentPositions));
-            upsert("optionSlBufferPoints", String.valueOf(c.optionSlBufferPoints));
+            upsert("atmVwapEnabled",          String.valueOf(c.atmVwapEnabled));
+            upsert("atmVwapLotsPerLeg",       String.valueOf(c.atmVwapLotsPerLeg));
+            upsert("atmVwapOrderType",         c.atmVwapOrderType);
+            upsert("atmVwapTradingStartTime",  c.atmVwapTradingStartTime);
+            upsert("atmVwapTradingEndTime",    c.atmVwapTradingEndTime);
+            upsert("atmVwapSquareOffTime",     c.atmVwapSquareOffTime);
+            upsert("atmVwapMaxConcurrentPositions", String.valueOf(c.atmVwapMaxConcurrentPositions));
+            upsert("atmVwapMinSlPoints",       String.valueOf(c.atmVwapMinSlPoints));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("startingCapital",      String.valueOf(c.startingCapital));
@@ -930,44 +921,50 @@ public class RiskSettingsStore {
                     case "riskPerTrade"      -> c.riskPerTrade = Double.parseDouble(v);
                     case "autoSquareOffTime" -> c.autoSquareOffTime = v;
                     case "manualAutoSquareOffTime"    -> { /* retired */ }
-                    case "camarillaEnabled"           -> c.camarillaEnabled = Boolean.parseBoolean(v);
-                    case "camarillaLotsPerLeg"        -> c.camarillaLotsPerLeg = Integer.parseInt(v);
-                    case "camarillaOrderType"         -> c.camarillaOrderType = v;
-                    case "camarillaTradingStartTime"  -> c.camarillaTradingStartTime = v;
-                    case "camarillaTradingEndTime"    -> c.camarillaTradingEndTime = v;
-                    case "camarillaSquareOffTime"     -> c.camarillaSquareOffTime = v;
-                    case "camarillaH3RevEnabled"           -> { /* retired — both setups always on */ }
-                    case "camarillaL4BdEnabled"            -> { /* retired — both setups always on */ }
-                    case "camarillaMaxConcurrentPositions" -> c.camarillaMaxConcurrentPositions = Integer.parseInt(v);
-                    case "camarillaOiBiasFilterEnabled" -> { /* retired with the OI subsystem — silently consumed */ }
-                    case "camarillaMinRRCheckEnabled"   -> { /* retired with camarillaMinRRRatio — silently consumed */ }
-                    case "camarillaMinRRRatio"          -> { /* retired R:R floor gate — silently consumed */ }
-                    case "camarillaMomentumCheckEnabled" -> { /* retired with the RSI gate — silently consumed */ }
-                    case "camarillaStrangleAtrProximity" -> { /* retired with the iron-wall strangle; silently consumed */ }
-                    case "camarillaDirectionalSlBufferPoints",
+                    case "atmVwapEnabled",
+                         "camarillaEnabled"           -> c.atmVwapEnabled = Boolean.parseBoolean(v);
+                    case "atmVwapLotsPerLeg",
+                         "camarillaLotsPerLeg"        -> c.atmVwapLotsPerLeg = Integer.parseInt(v);
+                    case "atmVwapOrderType",
+                         "camarillaOrderType"         -> c.atmVwapOrderType = v;
+                    case "atmVwapTradingStartTime",
+                         "camarillaTradingStartTime"  -> c.atmVwapTradingStartTime = v;
+                    case "atmVwapTradingEndTime",
+                         "camarillaTradingEndTime"    -> c.atmVwapTradingEndTime = v;
+                    case "atmVwapSquareOffTime",
+                         "camarillaSquareOffTime"     -> c.atmVwapSquareOffTime = v;
+                    case "atmVwapMinSlPoints"         -> c.atmVwapMinSlPoints = Math.max(0, Double.parseDouble(v));
+                    case "atmVwapMaxConcurrentPositions",
+                         "camarillaMaxConcurrentPositions" -> c.atmVwapMaxConcurrentPositions = Integer.parseInt(v);
+                    // Legacy Camarilla-era keys silently consumed so old risk-settings.json
+                    // files round-trip cleanly through the ATM-VWAP cutover. All of these
+                    // features were removed with the Camarilla strategy.
+                    case "camarillaH3RevEnabled",
+                         "camarillaL4BdEnabled",
+                         "camarillaOiBiasFilterEnabled",
+                         "camarillaMinRRCheckEnabled",
+                         "camarillaMinRRRatio",
+                         "camarillaMomentumCheckEnabled",
+                         "camarillaStrangleAtrProximity",
+                         "camarillaDirectionalSlBufferPoints",
                          "camarillaDirectionalSlBufferAtrMult",
                          "camarillaTriggerAtrMult",
-                         "camarillaTargetBufferAtrMult"        -> { /* retired with the ATR-driven fire path; silently consumed */ }
-                    case "camarillaStrongCandleCloseThreshold" -> { /* retired with STRONG/WEAK classification; silently consumed */ }
-                    case "camarillaStrongCandleBodyAtrMult"    -> { /* retired with STRONG/WEAK classification; silently consumed */ }
-                    case "camarillaBodyPastLevelPct"           -> { /* retired with STRONG/WEAK classification; silently consumed */ }
-                    case "camarillaCprSizingEnabled"           -> { /* retired with the CPR sizing bias; silently consumed */ }
-                    // Retired keys silently consumed so legacy JSON files load without
-                    // FAIL_ON_UNKNOWN_PROPERTIES errors. portfolioMaxDailyLoss is the
-                    // canonical max-risk knob now (derived ₹ from startingCapital ×
-                    // portfolioMaxRiskPct). camarillaMaxRisk + moveSlToBreakevenEnabled
-                    // + camarillaVwapFilterEnabled were all removed in the v2 cleanup.
-                    case "camarillaMaxRisk"             -> { /* retired — use portfolioMaxRiskPct */ }
-                    case "camarillaVwapFilterEnabled"   -> { /* retired — VWAP gate dropped */ }
-                    case "moveSlToBreakevenEnabled"     -> { /* retired — SL never trails */ }
-                    case "h4BreakoutBuyingEnabled"      -> { /* retired — H4 buying setup removed */ }
-                    case "weeklyExpiryDayOfWeek" -> { /* retired — replaced by NIFTY/BankNifty analytics split */ }
-                    case "camarillaMaxTradesPerDay"        -> { /* retired */ }
-                    case "camarillaPauseAfterNLosses"      -> { /* retired */ }
-                    case "camarillaDailyRiskBudget"        -> { /* retired — now uses portfolio max daily loss */ }
-                    case "camarillaL3RevEnabled"      -> { /* retired — old key silently ignored */ }
-                    case "camarillaH4BoEnabled"       -> { /* retired — old key silently ignored */ }
-                    case "optionSlBufferPoints" -> c.optionSlBufferPoints = Math.max(0, Double.parseDouble(v));
+                         "camarillaTargetBufferAtrMult",
+                         "camarillaStrongCandleCloseThreshold",
+                         "camarillaStrongCandleBodyAtrMult",
+                         "camarillaBodyPastLevelPct",
+                         "camarillaCprSizingEnabled",
+                         "camarillaMaxRisk",
+                         "camarillaVwapFilterEnabled",
+                         "camarillaMaxTradesPerDay",
+                         "camarillaPauseAfterNLosses",
+                         "camarillaDailyRiskBudget",
+                         "camarillaL3RevEnabled",
+                         "camarillaH4BoEnabled",
+                         "optionSlBufferPoints",
+                         "moveSlToBreakevenEnabled",
+                         "h4BreakoutBuyingEnabled",
+                         "weeklyExpiryDayOfWeek"          -> { /* legacy — silently consumed */ }
                     case "atrMultiplier"     -> c.atrMultiplier = Double.parseDouble(v);
                     // enableSessionMoveLimit / sessionMoveLimit removed — feature deleted.
                     case "enableSessionMoveLimit", "sessionMoveLimit" -> { /* legacy, ignored */ }

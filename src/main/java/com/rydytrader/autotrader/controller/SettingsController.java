@@ -31,15 +31,15 @@ public class SettingsController {
         result.put("tradingStartTime",    riskSettings.getTradingStartTime(effectiveMode));
         result.put("tradingEndTime",      riskSettings.getTradingEndTime(effectiveMode));
         result.put("autoSquareOffTime",   riskSettings.getAutoSquareOffTime(effectiveMode));
-        // Camarilla
-        result.put("camarillaEnabled",            riskSettings.isCamarillaEnabled(effectiveMode));
-        result.put("camarillaLotsPerLeg",         riskSettings.getCamarillaLotsPerLeg(effectiveMode));
-        result.put("camarillaOrderType",          riskSettings.getCamarillaOrderType(effectiveMode));
-        result.put("camarillaTradingStartTime",   riskSettings.getCamarillaTradingStartTime(effectiveMode));
-        result.put("camarillaTradingEndTime",     riskSettings.getCamarillaTradingEndTime(effectiveMode));
-        result.put("camarillaSquareOffTime",      riskSettings.getCamarillaSquareOffTime(effectiveMode));
-        result.put("camarillaMaxConcurrentPositions", riskSettings.getCamarillaMaxConcurrentPositions(effectiveMode));
-        result.put("optionSlBufferPoints",         riskSettings.getOptionSlBufferPoints(effectiveMode));
+        // ATM VWAP
+        result.put("atmVwapEnabled",            riskSettings.isAtmVwapEnabled(effectiveMode));
+        result.put("atmVwapLotsPerLeg",         riskSettings.getAtmVwapLotsPerLeg(effectiveMode));
+        result.put("atmVwapOrderType",          riskSettings.getAtmVwapOrderType(effectiveMode));
+        result.put("atmVwapTradingStartTime",   riskSettings.getAtmVwapTradingStartTime(effectiveMode));
+        result.put("atmVwapTradingEndTime",     riskSettings.getAtmVwapTradingEndTime(effectiveMode));
+        result.put("atmVwapSquareOffTime",      riskSettings.getAtmVwapSquareOffTime(effectiveMode));
+        result.put("atmVwapMaxConcurrentPositions", riskSettings.getAtmVwapMaxConcurrentPositions(effectiveMode));
+        result.put("atmVwapMinSlPoints",        riskSettings.getAtmVwapMinSlPoints(effectiveMode));
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
         result.put("maxRiskPerDayPct",    riskSettings.getMaxRiskPerDayPct(effectiveMode));
@@ -75,15 +75,15 @@ public class SettingsController {
             if (body.containsKey("tradingStartTime"))  riskSettings.setTradingStartTime(effectiveMode, body.get("tradingStartTime").toString());
             if (body.containsKey("tradingEndTime"))    riskSettings.setTradingEndTime(effectiveMode, body.get("tradingEndTime").toString());
             if (body.containsKey("autoSquareOffTime")) riskSettings.setAutoSquareOffTime(effectiveMode, body.get("autoSquareOffTime").toString());
-            // Camarilla
-            if (body.containsKey("camarillaEnabled"))           riskSettings.setCamarillaEnabled(effectiveMode, Boolean.parseBoolean(body.get("camarillaEnabled").toString()));
-            if (body.containsKey("camarillaLotsPerLeg"))        riskSettings.setCamarillaLotsPerLeg(effectiveMode, Integer.parseInt(body.get("camarillaLotsPerLeg").toString()));
-            if (body.containsKey("camarillaOrderType"))         riskSettings.setCamarillaOrderType(effectiveMode, body.get("camarillaOrderType").toString());
-            if (body.containsKey("camarillaTradingStartTime"))  riskSettings.setCamarillaTradingStartTime(effectiveMode, body.get("camarillaTradingStartTime").toString());
-            if (body.containsKey("camarillaTradingEndTime"))    riskSettings.setCamarillaTradingEndTime(effectiveMode, body.get("camarillaTradingEndTime").toString());
-            if (body.containsKey("camarillaSquareOffTime"))     riskSettings.setCamarillaSquareOffTime(effectiveMode, body.get("camarillaSquareOffTime").toString());
-            if (body.containsKey("camarillaMaxConcurrentPositions")) riskSettings.setCamarillaMaxConcurrentPositions(effectiveMode, Integer.parseInt(body.get("camarillaMaxConcurrentPositions").toString()));
-            if (body.containsKey("optionSlBufferPoints"))            riskSettings.setOptionSlBufferPoints(effectiveMode, Double.parseDouble(body.get("optionSlBufferPoints").toString()));
+            // ATM VWAP
+            if (body.containsKey("atmVwapEnabled"))           riskSettings.setAtmVwapEnabled(effectiveMode, Boolean.parseBoolean(body.get("atmVwapEnabled").toString()));
+            if (body.containsKey("atmVwapLotsPerLeg"))        riskSettings.setAtmVwapLotsPerLeg(effectiveMode, Integer.parseInt(body.get("atmVwapLotsPerLeg").toString()));
+            if (body.containsKey("atmVwapOrderType"))         riskSettings.setAtmVwapOrderType(effectiveMode, body.get("atmVwapOrderType").toString());
+            if (body.containsKey("atmVwapTradingStartTime"))  riskSettings.setAtmVwapTradingStartTime(effectiveMode, body.get("atmVwapTradingStartTime").toString());
+            if (body.containsKey("atmVwapTradingEndTime"))    riskSettings.setAtmVwapTradingEndTime(effectiveMode, body.get("atmVwapTradingEndTime").toString());
+            if (body.containsKey("atmVwapSquareOffTime"))     riskSettings.setAtmVwapSquareOffTime(effectiveMode, body.get("atmVwapSquareOffTime").toString());
+            if (body.containsKey("atmVwapMaxConcurrentPositions")) riskSettings.setAtmVwapMaxConcurrentPositions(effectiveMode, Integer.parseInt(body.get("atmVwapMaxConcurrentPositions").toString()));
+            if (body.containsKey("atmVwapMinSlPoints"))            riskSettings.setAtmVwapMinSlPoints(effectiveMode, Double.parseDouble(body.get("atmVwapMinSlPoints").toString()));
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
             if (body.containsKey("maxRiskPerDayPct"))  riskSettings.setMaxRiskPerDayPct(effectiveMode, Double.parseDouble(body.get("maxRiskPerDayPct").toString()));

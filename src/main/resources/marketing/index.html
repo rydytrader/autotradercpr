@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>TraderEdge — Systematic Camarilla short-options</title>
-<meta name="description" content="A rules-based short-options approach to Camarilla pivots on NIFTY and BankNifty. Two-candle confirmation, tick-cadence triggers, portfolio-aware sizing.">
+<title>TraderEdge — Systematic ATM VWAP short-options</title>
+<meta name="description" content="A rules-based short-options approach anchored on the ATM option's session VWAP. NIFTY 2-min bars, trigger-candle FSM, portfolio-aware sizing.">
 <style>
   :root {
     --bg: #FFFFFF;
@@ -387,19 +387,19 @@
       <span class="rung bear">L4</span>
       <span class="rung">L5</span>
     </div>
-    <h1>Selling options into <em>Camarilla pivots</em>, systematically.</h1>
-    <p class="lede">A rules-based short-options system on <b>NIFTY</b> and <b>BankNifty</b>. Two-candle confirmation. Tick-cadence triggers with an ATR cushion. Portfolio-aware sizing that shrinks lots when risk headroom tightens. Fully automated intraday — no discretionary clicks at the terminal.</p>
+    <h1>Selling <em>ATM options</em>, systematically, on VWAP breakdown.</h1>
+    <p class="lede">A rules-based short-options system on <b>NIFTY</b> weekly ATM options. Two-candle trigger anchored on each option's own session VWAP. Tick-cadence stop loss. Portfolio-aware sizing that shrinks lots when risk headroom tightens. Fully automated intraday — no discretionary clicks at the terminal.</p>
     <div class="hero-cta">
       <a href="#strategy" class="btn">Read the strategy</a>
       <a href="#mechanics" class="btn ghost">See the mechanics</a>
     </div>
 
-    <div class="chart-panel" aria-label="Illustrative NIFTY chart with Camarilla levels">
+    <div class="chart-panel" aria-label="Illustrative option premium chart with VWAP overlay">
       <div class="chart-meta">
         <span><strong>NIFTY 50</strong> · Illustrative session</span>
         <span>H5 · H4 · H3 · P · L3 · L4 · L5</span>
       </div>
-      <svg viewBox="0 0 900 380" role="img" aria-label="Chart showing seven horizontal Camarilla levels and a price line with two setup markers.">
+      <svg viewBox="0 0 900 380" role="img" aria-label="Chart showing an option premium series with a session VWAP overlay and setup markers.">
         <!-- Level lines -->
         <line class="lvl-line"        x1="0"  y1="30"  x2="820" y2="30"/>
         <line class="lvl-line strong" x1="0"  y1="80"  x2="820" y2="80"/>
@@ -433,8 +433,8 @@
   <!-- ── The strategy ────────────────────────────────────────── -->
   <section id="strategy">
     <p class="eyebrow">The strategy · four setups</p>
-    <h2>Four rules at the four <em>outer</em> Camarilla levels.</h2>
-    <p class="section-lede">Camarilla pivots divide the intraday session into seven horizontal reference lines. The bot watches only the outer four — H4 and H3 above, L3 and L4 below — and fires one of four setups when spot interacts with them in a specific way. Every fire sells an OTM option one level further out.</p>
+    <h2>One rule, applied to <em>each ATM option's own VWAP</em>.</h2>
+    <p class="section-lede">Every 2-min bar close on the ATM CE and ATM PE runs the same trigger-candle FSM. Below-VWAP close seeds a trigger; the very next bar closing below the trigger's low sells that leg. CE and PE run independently — either, both, or neither can fire on any given session.</p>
 
     <div class="setups">
       <div class="setup">
@@ -471,7 +471,7 @@
   <section id="mechanics">
     <p class="eyebrow">Entry mechanics · three phases</p>
     <h2>Every fire is <em>confirmed twice</em> before capital leaves the account.</h2>
-    <p class="section-lede">A close through a Camarilla level is not enough on its own — the strategy waits for a second-candle confirmation, then tracks spot at tick cadence for the actual trigger. This double filter is deliberate: it kills the classic wick-and-reverse false breakout.</p>
+    <p class="section-lede">A close below VWAP is not enough on its own — the strategy waits for the very next bar to also close below the trigger candle's own low, then sells at market. This two-bar filter is deliberate: it kills the classic single-bar mean-reversion whipsaw.</p>
 
     <div class="flow">
       <div class="step">
@@ -529,8 +529,8 @@
   <!-- ── Instruments ─────────────────────────────────────────── -->
   <section id="instruments">
     <p class="eyebrow">Instruments · two indices, one strategy</p>
-    <h2>NIFTY and BankNifty <em>in parallel</em>.</h2>
-    <p class="section-lede">Both instruments run the same four setups against their own independent Camarilla levels, RSI, and ATR. Each fires without regard to the other, but they share the portfolio risk pool — a fire on one directly consumes headroom on the next.</p>
+    <h2>CE and PE <em>in parallel</em>.</h2>
+    <p class="section-lede">Both ATM legs run the same trigger-candle FSM against their own independent session VWAP. Each fires without regard to the other, but they share the portfolio risk pool — a fire on one directly consumes headroom on the next.</p>
 
     <table class="instruments-table">
       <thead>

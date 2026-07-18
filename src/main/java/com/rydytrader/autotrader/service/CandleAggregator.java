@@ -16,23 +16,22 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 /**
- * Samples LTPs for every subscribed Fyers symbol once per second and rolls samples into 3-minute
- * OHLC buckets per symbol. On bucket close (the first sample in a new 3-min window), the closed
+ * Samples LTPs for every subscribed Fyers symbol once per second and rolls samples into 2-minute
+ * OHLC buckets per symbol. On bucket close (the first sample in a new 2-min window), the closed
  * candle is emitted to every listener registered for that symbol.
  *
- * <p>Buckets are anchored on the IST wall clock — 09:15, 09:18, 09:21, … 15:27, 15:30 — and only
- * emitted during market hours (09:15 ≤ now ≤ 15:30).
+ * <p>Buckets are anchored on the IST wall clock — 09:15, 09:17, 09:19, … 15:29, 15:31 — and only
+ * emitted during market hours (09:15 ≤ now ≤ 15:31).
  *
- * <p>{@link #BUCKET_MINUTES} is public so downstream consumers (e.g. the Camarilla strategy's
- * bar-close grace timer) can derive bar length without hardcoding it and risk drifting from
- * the aggregator's actual cadence.
+ * <p>{@link #BUCKET_MINUTES} is public so downstream consumers can derive bar length without
+ * hardcoding it and risk drifting from the aggregator's actual cadence.
  */
 @Service
 public class CandleAggregator {
 
     private static final Logger log = LoggerFactory.getLogger(CandleAggregator.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    public  static final int    BUCKET_MINUTES = 3;
+    public  static final int    BUCKET_MINUTES = 2;
 
     private final MarketDataService marketDataService;
 
@@ -43,7 +42,7 @@ public class CandleAggregator {
         this.marketDataService = marketDataService;
     }
 
-    /** Subscribe to 3-min candle closes on {@code symbol}. The symbol is also added to the
+    /** Subscribe to 2-min candle closes on {@code symbol}. The symbol is also added to the
      *  Fyers market-data feed if it isn't already streaming. Multiple subscribers per symbol
      *  are allowed; each gets called on every close. */
     public void subscribe(String symbol, Consumer<Candle> listener) {

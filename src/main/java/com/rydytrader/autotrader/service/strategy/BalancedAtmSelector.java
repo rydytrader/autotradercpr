@@ -13,7 +13,7 @@ import java.util.NavigableMap;
 import java.util.TreeMap;
 
 /**
- * Walks the NIFTY weekly option chain to pick strikes for the Camarilla strategy.
+ * Walks the NIFTY weekly option chain to pick strikes for the ATM VWAP strategy.
  *
  * <p>Two entry points:
  * <ul>
@@ -23,9 +23,9 @@ import java.util.TreeMap;
  *       never fire at the same instant, so put-call premium balance offers no value over
  *       plain spot rounding. Spot ATM is simpler, matches retail convention, and avoids the
  *       intra-bar drift that put-call parity introduces.</li>
- *   <li>{@link #resolveStrikeAtLevel(double)} — Camarilla's workhorse: given an arbitrary price
- *       level (H3, H4, L3, L4 etc.), returns the nearest tradable strike along with its CE+PE
- *       symbols and current LTPs.</li>
+ *   <li>{@link #resolveStrikeAtLevel(double)} — workhorse: given an arbitrary price
+ *       level, returns the nearest tradable strike along with its CE+PE symbols and
+ *       current LTPs.</li>
  * </ul>
  */
 @Service
@@ -60,7 +60,7 @@ public class BalancedAtmSelector {
         String  peSymbolAtChosen
     ) {}
 
-    /** Resolved strike + per-leg symbols + per-leg LTPs at a Camarilla level. Returned by
+    /** Resolved strike + per-leg symbols + per-leg LTPs at a price level. Returned by
      *  {@link #resolveStrikeAtLevel(double)}; caller picks which side (CE or PE) to trade. */
     public record StrikeAtLevel(
         double  requestedLevel,
@@ -109,9 +109,9 @@ public class BalancedAtmSelector {
 
     /**
      * Pick the strike closest to {@code level} that has BOTH CE and PE quoted, and return its
-     * symbols + LTPs. Used by the Camarilla strategy to translate a pivot level (H3, H4, L3,
-     * L4, ...) into a tradable option pair. Returns {@code null} when the chain is empty or
-     * no quoted strike exists.
+     * symbols + LTPs. Used by the ATM VWAP strategy to translate the first-bar-close NIFTY
+     * price into the ATM option pair. Returns {@code null} when the chain is empty or no
+     * quoted strike exists.
      */
     public StrikeAtLevel resolveStrikeAtLevel(double level) {
         if (level <= 0) return null;
@@ -206,10 +206,10 @@ public class BalancedAtmSelector {
     }
 
     /** Public bulk-fetch entry point: returns the entire current chain as a NavigableMap
-     *  keyed by strike. Cross-package callers (e.g. CamarillaService warm-up) use this when
-     *  they want to walk MANY strikes from a single chain response instead of calling
-     *  {@link #resolveStrikeAtLevel(double)} once per strike (which would re-fetch the
-     *  chain every time). Returns an empty map when the chain is unavailable. */
+     *  keyed by strike. Cross-package callers use this when they want to walk MANY strikes
+     *  from a single chain response instead of calling {@link #resolveStrikeAtLevel(double)}
+     *  once per strike (which would re-fetch the chain every time). Returns an empty map
+     *  when the chain is unavailable. */
     public NavigableMap<Long, ChainStrike> fetchChainStrikes() {
         NavigableMap<Long, ChainRow> raw = fetchChain();
         NavigableMap<Long, ChainStrike> out = new TreeMap<>();

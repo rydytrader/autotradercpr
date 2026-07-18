@@ -104,7 +104,7 @@ public class OptionChainController {
         if (yearsToExpiry > 0) fillDeltas(byStrike, spot, yearsToExpiry);
 
         // Synthetic-futures ATM (put-call parity) was used by the straddle bot to pick a
-        // strike that accounts for forward bias; the Camarilla strategy trades the plain
+        // strike that accounts for forward bias; the ATM VWAP strategy trades the plain
         // spot-rounded ATM, so the parity pill just confuses the chain view. Disabled —
         // syntheticAtm=0 makes every row's isSyntheticAtm=false, so the ATM pill never
         // renders. The gold band on the spot-ATM row stays (driven by isAtm against atm).

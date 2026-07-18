@@ -1,8 +1,7 @@
 /**
  * Settings modal — opened from the gear icon in the navbar.
  *
- * Tabs: CAMARILLA · PORTFOLIO RISK · CHARGES · USERS.
- * The CAMARILLA tab for the singleton strategy settings lands in Commit B.
+ * Tabs: ATM VWAP · PORTFOLIO RISK · CHARGES · USERS · MAINTENANCE.
  */
 (function() {
     var modalEl = null;
@@ -19,13 +18,13 @@
                 '</div>' +
                 '<div id="sm-tabstrip" style="display:flex;border-bottom:1px solid var(--border);padding:0 24px;overflow-x:auto;"></div>' +
                 '<div class="sm-body" id="sm-body" style="flex:1;overflow-y:auto;padding:20px 24px;">' +
-                  '<div class="sm-pane" data-pane="camarilla" style="display:none;">' +
+                  '<div class="sm-pane" data-pane="atmvwap" style="display:none;">' +
                     '<div class="sm-grid-2col">' +
-                      '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-camarillaLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 65 NIFTY.</div></div>' +
-                      '<div class="sm-field"><label>Order Type</label><select id="sm-camarillaOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select></div>' +
-                      '<div class="sm-field"><label>Trading Start (HH:mm IST)</label><input type="time" id="sm-camarillaTradingStartTime" step="60"><div class="sm-hint">Entries fire only after this time. Default 09:30.</div></div>' +
-                      '<div class="sm-field"><label>Trading End (HH:mm IST)</label><input type="time" id="sm-camarillaTradingEndTime" step="60"><div class="sm-hint">No new entries after this time. Default 13:30.</div></div>' +
-                      '<div class="sm-field sm-full"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-camarillaSquareOffTime" step="60"><div class="sm-hint">Hard exit if target/SL didn\'t trigger.</div></div>' +
+                      '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-atmVwapLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 65 NIFTY.</div></div>' +
+                      '<div class="sm-field"><label>Order Type</label><select id="sm-atmVwapOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select></div>' +
+                      '<div class="sm-field"><label>Trading Start (HH:mm IST)</label><input type="time" id="sm-atmVwapTradingStartTime" step="60"><div class="sm-hint">Entries fire only after this time. Default 09:30.</div></div>' +
+                      '<div class="sm-field"><label>Trading End (HH:mm IST)</label><input type="time" id="sm-atmVwapTradingEndTime" step="60"><div class="sm-hint">No new entries after this time. Default 14:30.</div></div>' +
+                      '<div class="sm-field sm-full"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-atmVwapSquareOffTime" step="60"><div class="sm-hint">Hard exit if SL didn\'t trigger. Default 15:25.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
@@ -33,7 +32,7 @@
                       '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline for Home analytics. Default ₹10L.</div></div>' +
                       '<div class="sm-field"><label>Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Kill switch when net day P&L drops below this % of capital. 0 = off.</div></div>' +
                       '<div class="sm-field"><label>Max Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto from Capital × Risk %.</div></div>' +
-                      '<div class="sm-field"><label>SL Buffer (option points)</label><input type="number" id="sm-optionSlBufferPoints" step="0.05" min="0"><div class="sm-hint">Points cushion above the option\'s L3/H4 SL level (₹). Default 2.0. Set 0 for SL exactly at the structural level.</div></div>' +
+                      '<div class="sm-field"><label>Min SL floor (option points)</label><input type="number" id="sm-atmVwapMinSlPoints" step="1" min="0"><div class="sm-hint">SL price is clamped up to this floor when the trigger candle\'s high is smaller. Default 10.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
@@ -135,7 +134,7 @@
         var strip = document.getElementById('sm-tabstrip');
         if (!strip) return;
         var html = '';
-        html += '<button class="sm-tab" data-tab="camarilla">CAMARILLA</button>';
+        html += '<button class="sm-tab" data-tab="atmvwap">ATM VWAP</button>';
         html += '<button class="sm-tab" data-tab="portfolio-risk">RISK</button>';
         html += '<button class="sm-tab" data-tab="charges">CHARGES</button>';
         html += '<button class="sm-tab" data-tab="users">USERS</button>';
@@ -153,9 +152,9 @@
             b.classList.toggle('active', b.getAttribute('data-tab') === tab);
         });
         modalEl.querySelectorAll('.sm-pane').forEach(function(p) { p.style.display = 'none'; });
-        if (tab === 'camarilla') {
-            var cp = modalEl.querySelector('[data-pane="camarilla"]'); if (cp) cp.style.display = '';
-            loadCamarillaValues();
+        if (tab === 'atmvwap') {
+            var cp = modalEl.querySelector('[data-pane="atmvwap"]'); if (cp) cp.style.display = '';
+            loadAtmVwapValues();
         } else if (tab === 'portfolio-risk') {
             var pp = modalEl.querySelector('[data-pane="portfolio-risk"]'); if (pp) pp.style.display = '';
             loadPortfolioRiskValues();
@@ -170,33 +169,33 @@
     }
 
     function saveSettings() {
-        if (activeTab === 'camarilla')      return saveCamarillaTab();
+        if (activeTab === 'atmvwap')        return saveAtmVwapTab();
         if (activeTab === 'portfolio-risk') return savePortfolioRiskTab();
         if (activeTab === 'charges')        return saveChargesTab();
         if (activeTab === 'users')          { showBanner('Use the row buttons to manage users.', 'info'); return; }
         showBanner('No save action for this tab.', 'info');
     }
 
-    function loadCamarillaValues() {
+    function loadAtmVwapValues() {
         fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
             var g = id => document.getElementById(id);
-            if (g('sm-camarillaLotsPerLeg'))        g('sm-camarillaLotsPerLeg').value = d.camarillaLotsPerLeg != null ? d.camarillaLotsPerLeg : 1;
-            if (g('sm-camarillaOrderType'))         g('sm-camarillaOrderType').value = d.camarillaOrderType || 'INTRADAY';
-            if (g('sm-camarillaTradingStartTime'))  g('sm-camarillaTradingStartTime').value = d.camarillaTradingStartTime || '09:30';
-            if (g('sm-camarillaTradingEndTime'))    g('sm-camarillaTradingEndTime').value = d.camarillaTradingEndTime || '13:30';
-            if (g('sm-camarillaSquareOffTime'))     g('sm-camarillaSquareOffTime').value = d.camarillaSquareOffTime || '15:15';
+            if (g('sm-atmVwapLotsPerLeg'))        g('sm-atmVwapLotsPerLeg').value = d.atmVwapLotsPerLeg != null ? d.atmVwapLotsPerLeg : 1;
+            if (g('sm-atmVwapOrderType'))         g('sm-atmVwapOrderType').value = d.atmVwapOrderType || 'INTRADAY';
+            if (g('sm-atmVwapTradingStartTime'))  g('sm-atmVwapTradingStartTime').value = d.atmVwapTradingStartTime || '09:30';
+            if (g('sm-atmVwapTradingEndTime'))    g('sm-atmVwapTradingEndTime').value = d.atmVwapTradingEndTime || '14:30';
+            if (g('sm-atmVwapSquareOffTime'))     g('sm-atmVwapSquareOffTime').value = d.atmVwapSquareOffTime || '15:25';
         }).catch(function() {});
     }
 
-    function saveCamarillaTab() {
+    function saveAtmVwapTab() {
         var g = id => document.getElementById(id);
         var body = {
-            camarillaLotsPerLeg:         parseInt(g('sm-camarillaLotsPerLeg').value, 10) || 1,
-            camarillaOrderType:          g('sm-camarillaOrderType').value,
-            camarillaTradingStartTime:   (g('sm-camarillaTradingStartTime').value || '').trim(),
-            camarillaTradingEndTime:     (g('sm-camarillaTradingEndTime').value || '').trim(),
-            camarillaSquareOffTime:      (g('sm-camarillaSquareOffTime').value || '').trim()
+            atmVwapLotsPerLeg:         parseInt(g('sm-atmVwapLotsPerLeg').value, 10) || 1,
+            atmVwapOrderType:          g('sm-atmVwapOrderType').value,
+            atmVwapTradingStartTime:   (g('sm-atmVwapTradingStartTime').value || '').trim(),
+            atmVwapTradingEndTime:     (g('sm-atmVwapTradingEndTime').value || '').trim(),
+            atmVwapSquareOffTime:      (g('sm-atmVwapSquareOffTime').value || '').trim()
         };
         postSettings('/api/settings/risk', body);
     }
@@ -205,7 +204,7 @@
         var body = {
             startingCapital:          parseFloat(document.getElementById('sm-startingCapital').value) || 0,
             portfolioMaxRiskPct:      parseFloat(document.getElementById('sm-portfolioMaxRiskPct').value) || 0,
-            optionSlBufferPoints:     Math.max(0, parseFloat(document.getElementById('sm-optionSlBufferPoints').value) || 0)
+            atmVwapMinSlPoints:       Math.max(0, parseFloat(document.getElementById('sm-atmVwapMinSlPoints').value) || 0)
         };
         postSettings('/api/settings/risk', body);
     }
@@ -258,10 +257,10 @@
             if (!d) return;
             var capInput = document.getElementById('sm-startingCapital');
             var pctInput = document.getElementById('sm-portfolioMaxRiskPct');
-            var slBufInput = document.getElementById('sm-optionSlBufferPoints');
+            var slBufInput = document.getElementById('sm-atmVwapMinSlPoints');
             if (capInput) capInput.value = d.startingCapital != null ? d.startingCapital : 1000000;
             if (pctInput) pctInput.value = d.portfolioMaxRiskPct != null ? d.portfolioMaxRiskPct : 0;
-            if (slBufInput) slBufInput.value = d.optionSlBufferPoints != null ? d.optionSlBufferPoints : 2.0;
+            if (slBufInput) slBufInput.value = d.atmVwapMinSlPoints != null ? d.atmVwapMinSlPoints : 10.0;
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {
                 updatePortfolioRiskHint(parseFloat(capInput.value) || 0, parseFloat(pctInput && pctInput.value) || 0);
@@ -304,12 +303,12 @@
             buildTabs();
             loadChargesValues();
             modalEl.dataset.tabsBuilt = '1';
-            switchTab('camarilla');
+            switchTab('atmvwap');
         } else {
-            if (activeTab === 'camarilla')           loadCamarillaValues();
+            if (activeTab === 'atmvwap')             loadAtmVwapValues();
             else if (activeTab === 'portfolio-risk') loadPortfolioRiskValues();
             else if (activeTab === 'charges')        loadChargesValues();
-            else                                     switchTab('camarilla');
+            else                                     switchTab('atmvwap');
         }
     }
 

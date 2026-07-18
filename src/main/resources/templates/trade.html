@@ -265,9 +265,9 @@
                     <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
                         <span id="hdrVixChg" style="margin-left:4px;font-weight:600;"></span></span>
                     <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
-                    <!-- Session-monitored option strikes (picked from NIFTY H5 / L5) -->
-                    <span style="color:var(--text-muted);" title="Nearest strike to NIFTY H5 — the CALL leg the strategy monitors">H5 CE <span id="hdrH5Ce" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                    <span style="color:var(--text-muted);" title="Nearest strike to NIFTY L5 — the PUT leg the strategy monitors">L5 PE <span id="hdrL5Pe" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                    <!-- Session-monitored ATM option strikes (picked at first 2-min NIFTY bar close) -->
+                    <span style="color:var(--text-muted);" title="ATM CE leg — the CALL side the strategy monitors on 2-min bars">ATM CE <span id="hdrH5Ce" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                    <span style="color:var(--text-muted);" title="ATM PE leg — the PUT side the strategy monitors on 2-min bars">ATM PE <span id="hdrL5Pe" style="color:var(--text-primary);font-weight:700;">—</span></span>
                 </div>
             </div>
             <div style="display:flex; gap:10px; align-items:center;">
@@ -404,7 +404,7 @@
         var enabled = !!t.checked;
         label.textContent = enabled ? 'Trading ON' : 'Trading OFF';
         wrap.classList.toggle('disabled', !enabled);
-        fetch('/api/camarilla/enable', {
+        fetch('/api/atmvwap/enable', {
             method: 'POST',
             headers: csrfHeaders(),
             body: JSON.stringify({ enabled: enabled })
@@ -420,7 +420,7 @@
             danger:       true
         }).then(function(ok) {
             if (!ok) return;
-            fetch('/api/camarilla/squareoff', {
+            fetch('/api/atmvwap/squareoff', {
                 method: 'POST',
                 headers: csrfHeaders(),
                 body: '{}'
@@ -436,7 +436,7 @@
             danger:       true
         }).then(function(ok) {
             if (!ok) return;
-            fetch('/api/camarilla/squareoff', {
+            fetch('/api/atmvwap/squareoff', {
                 method: 'POST',
                 headers: csrfHeaders(),
                 body: JSON.stringify({ symbol: symbol })
@@ -457,24 +457,20 @@
         // v2 header — NIFTY spot LTP + change + %change. No VWAP (index doesn't
         // have a meaningful VWAP; the gate was retired).
         if (d.atmVwap) {
-            // Camarilla levels for the spot symbol are emitted under d.perSymbolLevels
-            // keyed by the spot symbol (NSE:NIFTY50-INDEX). Pass them to the ticker
-            // renderer so they show in the LTP hover tooltip.
-            var levels = (d.perSymbolLevels && d.atmVwap.futSymbol)
-                ? d.perSymbolLevels[d.atmVwap.futSymbol] : null;
+            // perSymbolLevels is retired (no pivots in the ATM VWAP strategy).
             renderFutTickerCells(d.atmVwap.futLtp, d.atmVwap.futChange,
-                d.atmVwap.futChangePct, d.atmVwap.futSymbol, levels);
+                d.atmVwap.futChangePct, d.atmVwap.futSymbol, null);
         }
         // (Market Clock card ticks independently on a 1 s interval — see updateMarketClock())
     }
 
     function renderHeader(d) {
-        // Initial / fallback render from the camarilla state stream (2 s heartbeat).
+        // Initial / fallback render from the atmvwap state stream (2 s heartbeat).
         // VIX still rides the per-tick ticker SSE.
         var vxEl  = document.getElementById('hdrVix');
         if (vxEl)  vxEl.textContent  = d.indiaVix  != null ? Number(d.indiaVix).toFixed(2)  : '—';
-        // Session-monitored option strikes — the two legs the strategy currently
-        // watches (H5 CE + L5 PE). setupLegs already carries the resolved strikes.
+        // Session-monitored option strikes — the two ATM legs the strategy currently
+        // watches (ATM CE + ATM PE). setupLegs already carries the resolved strikes.
         var h5El = document.getElementById('hdrH5Ce');
         var l5El = document.getElementById('hdrL5Pe');
         var h5Strike = '—', l5Strike = '—';
@@ -544,7 +540,7 @@
     }
 
     function loadState() {
-        fetch('/api/camarilla/state').then(function(r) { return r.json(); })
+        fetch('/api/atmvwap/state').then(function(r) { return r.json(); })
             .then(applyState).catch(function() {});
     }
 
@@ -560,7 +556,7 @@
     }
     function startStream() {
         try {
-            sseStream = new EventSource('/api/camarilla/stream');
+            sseStream = new EventSource('/api/atmvwap/stream');
             sseStream.addEventListener('state', function(ev) {
                 stopPollFallback();
                 try { applyState(JSON.parse(ev.data)); } catch (e) {}
@@ -742,7 +738,7 @@
     }
 
     // ── Tick-level position LTP / P&L update via the shared ticker SSE ──────
-    // The camarilla state stream pushes every 2 s. To get sub-second LTP/P&L
+    // The atmvwap state stream pushes every 2 s. To get sub-second LTP/P&L
     // refresh, we tap the same ticker channel used by the scrolling ticker —
     // it streams every WS tick for every subscribed symbol (including position
     // legs). For each tick that matches an open position, surgically update
@@ -915,10 +911,9 @@
 
     /** Render the NIFTY spot ticker (LTP + signed change + signed %change) into
      *  the hdrFut / hdrFutChg cells next to VIX. Color-codes change green/red.
-     *  LTP-cell tooltip shows the underlying symbol + the seven Camarilla
-     *  pivots (H5/H4/H3/PP/L3/L4/L5) computed on prior-day OHLC. (Header still
-     *  uses #hdrFut / #hdrFutChg element IDs from the original futures-version
-     *  of this code — renaming would require an HTML edit and isn't worth it.) */
+     *  (Header still uses #hdrFut / #hdrFutChg element IDs from the original
+     *  futures-version of this code — renaming would require an HTML edit and
+     *  isn't worth it.) */
     function renderFutTickerCells(ltp, chg, pct, symbol, levels) {
         var v   = Number(ltp  || 0);
         var c   = Number(chg  || 0);
@@ -927,22 +922,7 @@
         var chgEl = document.getElementById('hdrFutChg');
         if (ltpEl) {
             ltpEl.textContent = v > 0 ? v.toFixed(2) : '—';
-            var tip = symbol || 'NIFTY spot index';
-            if (levels) {
-                // Format from highest pivot down. Resistance levels (H*) shown first,
-                // then support (L*) — matches how operators read a pivot card.
-                var lines = ['', '── Camarilla pivots ──'];
-                if (levels.h5 != null) lines.push('H5  ' + Number(levels.h5).toFixed(2));
-                if (levels.h4 != null) lines.push('H4  ' + Number(levels.h4).toFixed(2));
-                if (levels.h3 != null) lines.push('H3  ' + Number(levels.h3).toFixed(2));
-                if (levels.l3 != null) lines.push('L3  ' + Number(levels.l3).toFixed(2));
-                if (levels.l4 != null) lines.push('L4  ' + Number(levels.l4).toFixed(2));
-                if (levels.l5 != null) lines.push('L5  ' + Number(levels.l5).toFixed(2));
-                tip += lines.join('\n');
-            } else {
-                tip += '\n(levels warming up)';
-            }
-            ltpEl.title = tip;
+            ltpEl.title = symbol || 'NIFTY spot index';
         }
         if (chgEl) {
             if (v <= 0 || (c === 0 && p === 0)) {

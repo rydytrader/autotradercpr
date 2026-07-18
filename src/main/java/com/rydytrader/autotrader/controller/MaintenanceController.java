@@ -1,6 +1,7 @@
 package com.rydytrader.autotrader.controller;
 
-import com.rydytrader.autotrader.service.strategy.Camarilla;
+import com.rydytrader.autotrader.service.strategy.AtmVwap;
+
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -15,9 +16,9 @@ import java.util.Map;
 @RestController
 public class MaintenanceController {
 
-    private final Camarilla strategy;
+    private final AtmVwap strategy;
 
-    public MaintenanceController(Camarilla strategy) {
+    public MaintenanceController(AtmVwap strategy) {
         this.strategy = strategy;
     }
 

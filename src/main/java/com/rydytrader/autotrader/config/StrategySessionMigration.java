@@ -68,16 +68,18 @@ public class StrategySessionMigration {
     public void txPurgeLegacyInstancesAndSettings() { purgeLegacyInstancesAndSettings(); }
 
     /** One-shot purge of every {@code strategy_instances} row + its per-instance settings
-     *  rows. Runs once on first boot after the Camarilla cutover (gated by the
-     *  {@code camarilla.cutover.done} flag). The branch deletes Straddle + Strangle code; this
+     *  rows. Runs once on first boot after the strategy cutover (gated by the
+     *  {@code strategy.cutover.done} flag). The branch deletes Straddle + Strangle code; this
      *  removes their persisted instance rows so {@code AnalyticsService} doesn't carry them
      *  forward as orphans. Trade rows + session rows are kept — they're already empty in this
      *  user's DB (wiped earlier), and even if some history existed it stays in the
      *  {@code strategy_trades} table for analytics history. */
     private void purgeLegacyInstancesAndSettings() {
-        String flagKey = "camarilla.cutover.done";
+        String flagKey = "strategy.cutover.done";
+        String legacyFlagKey = "camarilla.cutover.done";
         try {
-            if (settingRepo.findBySettingKey(flagKey).isPresent()) return;
+            if (settingRepo.findBySettingKey(flagKey).isPresent()
+                || settingRepo.findBySettingKey(legacyFlagKey).isPresent()) return;
 
             int instances = safeUpdate("DELETE FROM strategy_instances");
             int settings  = safeUpdate(
@@ -85,11 +87,11 @@ public class StrategySessionMigration {
 
             settingRepo.save(new SettingEntity(flagKey, String.valueOf(System.currentTimeMillis())));
 
-            log.warn("[StrategyMigration] camarilla cutover — purged {} legacy strategy_instances " +
-                "row(s) + {} per-instance setting(s). Camarilla is now the only strategy.",
+            log.warn("[StrategyMigration] strategy cutover — purged {} legacy strategy_instances " +
+                "row(s) + {} per-instance setting(s). AtmVwap is now the only strategy.",
                 instances, settings);
         } catch (Exception e) {
-            log.warn("[StrategyMigration] camarilla cutover purge skipped: {}", e.getMessage());
+            log.warn("[StrategyMigration] strategy cutover purge skipped: {}", e.getMessage());
         }
     }
 
