@@ -78,6 +78,14 @@ public class AnalyticsService {
         List<Trade> trades = loadTrades(period, strategyId, from, to);
         List<Trade> closed = new ArrayList<>();
         for (Trade t : trades) if (isClosedStraddle(t)) closed.add(t);
+        // Day-aggregate rollup for strategies that treat each session as one trade
+        // (Strangle sets aggregatesToDay() = true). All hero metrics, breakdowns, and
+        // equity curve then see one row per day instead of one row per leg.
+        Strategy activeStrategy = strategy();
+        if (activeStrategy != null && activeStrategy.aggregatesToDay()) {
+            closed = aggregateTradesByDay(closed);
+            trades = aggregateTradesByDay(trades);
+        }
         double startingCapital = riskSettings.getStartingCapital();
 
         // Current Capital is the REAL account balance — starting + every trade ever
@@ -174,7 +182,7 @@ public class AnalyticsService {
         // exactly. The calendar year cards read these to populate per-month stat
         // cells without relying on the strategy-history endpoint (which can return
         // empty rows for dates where a legacy session entity exists alongside real
-        // AtmVwap trades).
+        // Strangle trades).
         for (Trade t : trades) {
             String date = t.sessionDate();
             if (date == null || date.length() < 7) continue;
@@ -228,10 +236,10 @@ public class AnalyticsService {
                           *  legacy rows persisted before the column existed — analytics
                           *  falls back to parsing the leg {@link #symbol} prefix. */
                          String instrument,
-                         /** Setup name (CE_SELL / PE_SELL). Drives the analytics By-Setup
-                          *  split. Historic Camarilla-era rows carry retired names
-                          *  (H4_BREAKOUT / H3_REVERSAL / L3_REVERSAL / L4_BREAKDOWN /
-                          *  VWAP_BREAKDOWN) — dropped from the By-Setup bins. Null for
+                         /** Setup name — "STRANGLE" for current Strangle trades; "DAY_TOTAL"
+                          *  for synthetic day-aggregate rows. Historic rows carry retired
+                          *  names (CE_SELL / PE_SELL / H4_BREAKOUT / H3_REVERSAL /
+                          *  L3_REVERSAL / L4_BREAKDOWN / VWAP_BREAKDOWN etc.). Null for
                           *  legacy rows persisted before this column existed. */
                          String setup) {}
 
@@ -308,7 +316,7 @@ public class AnalyticsService {
         boolean allStrategies = strategyId == null || strategyId.isBlank() || "all".equalsIgnoreCase(strategyId);
         // NOTE: do NOT bail when strat.id() != strategyId. The strategy's cycle ring also
         // holds MANUAL cycles (strategyId="manual") and those need to flow through the Manual
-        // filter even though the registered strategy is AtmVwap. Per-cycle filtering below.
+        // filter even though the registered strategy is Strangle. Per-cycle filtering below.
 
         String iso = today.toString();
         // Pre-compute today's persisted net + charges so OPEN_POSITION_MTM only carries the
@@ -354,7 +362,7 @@ public class AnalyticsService {
                     // Cycle-level strategy attribution. Legacy cycles (pre-MANUAL feature) don't
                     // carry "strategyId" — fall back to the registered strategy's id. New
                     // cycles persist their actual strategyId so MANUAL trades flow to "manual"
-                    // and algo trades stay at "atmvwap".
+                    // and algo trades stay at "strangle".
                     String cycleStrategy = asString(m.get("strategyId"));
                     if (cycleStrategy == null || cycleStrategy.isBlank()) cycleStrategy = strat.id();
                     if (!allStrategies && !strategyId.equals(cycleStrategy)) continue;
@@ -418,7 +426,7 @@ public class AnalyticsService {
     }
 
     private LocalDate currentExpiryStart(LocalDate today) {
-        // AtmVwap doesn't pin to a specific weekly expiry — it trades whatever this week's
+        // Strangle doesn't pin to a specific weekly expiry — it trades whatever this week's
         // weekly is. The "current expiry" period therefore just rolls back 7 days from today.
         return today.minusDays(7);
     }
@@ -717,44 +725,48 @@ public class AnalyticsService {
         return s.isBlank() ? null : s;
     }
 
-    // ── BREAKDOWN: By Setup / AM vs PM / By Day ─
+    // ── BREAKDOWN: By Instrument / By Day ─
 
-    /** Renders three side-by-side comparison cards. Each card returns
+    /** Renders two side-by-side comparison cards. Each card returns
      *  {@code { groupName: { trades, wins, losses, netPnl, winRate } }}. Filters out the
      *  synthetic OPEN_POSITION_MTM row everywhere. */
     private Map<String, Object> breakdowns(List<Trade> trades) {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("bySetup", splitBySetup(trades));
-        out.put("amVsPm",  splitAmVsPm(trades));
-        out.put("byDay",   splitByDayOfWeek(trades));
+        out.put("byInstrument", splitByInstrument(trades));
+        out.put("byDay",        splitByDayOfWeek(trades));
         return out;
     }
 
-    /** 2-way split by setup tag (CE_SELL, PE_SELL). Historic Camarilla-era rows
-     *  (H4_BREAKOUT, L3_REVERSAL, H3_REVERSAL, L4_BREAKDOWN, VWAP_BREAKDOWN) are
-     *  dropped rather than binned into an "Other" bucket. Each setup card
-     *  displays the display label (e.g. "CE Sell") rather than the raw enum name. */
-    private Map<String, Map<String, Object>> splitBySetup(List<Trade> trades) {
+    /** 2-way split by instrument (NIFTY vs SENSEX). Day-aggregated rows carry the
+     *  instrument from their first leg. Rows with unknown / null instrument are dropped. */
+    private Map<String, Map<String, Object>> splitByInstrument(List<Trade> trades) {
         Map<String, List<Trade>> bins = new LinkedHashMap<>();
-        bins.put("CE Sell", new ArrayList<>());
-        bins.put("PE Sell", new ArrayList<>());
+        bins.put("NIFTY",  new ArrayList<>());
+        bins.put("SENSEX", new ArrayList<>());
         for (Trade t : trades) {
             if (!isClosedStraddle(t)) continue;
-            String setup = t.setup() == null ? "" : t.setup();
-            switch (setup) {
-                case "CE_SELL" -> bins.get("CE Sell").add(t);
-                case "PE_SELL" -> bins.get("PE Sell").add(t);
-                default        -> { /* legacy — dropped */ }
+            String inst = t.instrument();
+            if (inst == null || inst.isBlank()) inst = instrumentFromSymbol(t.symbol());
+            if (inst == null) continue;
+            switch (inst) {
+                case "NIFTY"  -> bins.get("NIFTY").add(t);
+                case "SENSEX" -> bins.get("SENSEX").add(t);
+                default       -> { /* unknown / BANKNIFTY / legacy — dropped */ }
             }
         }
         return summariseBins(bins);
     }
 
-    /** 5-way split by day of week (Mon-Fri). Uses {@code sessionDate} to derive
-     *  the day. Bins are pre-declared in weekday order so the card renders
-     *  Mon → Fri consistently regardless of which days had trades. Rows with
-     *  invalid session dates are skipped. Weekend days aren't declared —
-     *  NSE doesn't trade weekends. */
+    private static String instrumentFromSymbol(String symbol) {
+        if (symbol == null) return null;
+        String s = symbol.toUpperCase();
+        if (s.contains("SENSEX")) return "SENSEX";
+        if (s.contains("BANKNIFTY") || s.contains("NIFTYBANK")) return "BANKNIFTY";
+        if (s.contains("NIFTY")) return "NIFTY";
+        return null;
+    }
+
+    /** 5-way split by day of week (Mon-Fri). */
     private Map<String, Map<String, Object>> splitByDayOfWeek(List<Trade> trades) {
         Map<String, List<Trade>> bins = new LinkedHashMap<>();
         bins.put("Mon", new ArrayList<>());
@@ -781,22 +793,53 @@ public class AnalyticsService {
         return summariseBins(bins);
     }
 
-    /** 12:30 IST split. Trades whose openedAtMillis falls before 12:30 → Morning, at/after → Afternoon.
-     *  Rows with openedAtMillis = 0 (legacy) fall back to closedAtMillis as a proxy. */
-    private Map<String, Map<String, Object>> splitAmVsPm(List<Trade> trades) {
-        final int cutoffMinuteOfDay = 12 * 60 + 30;
-        Map<String, List<Trade>> bins = new LinkedHashMap<>();
-        bins.put("Morning",   new ArrayList<>());
-        bins.put("Afternoon", new ArrayList<>());
-        for (Trade t : trades) {
-            if (!isClosedStraddle(t)) continue;
-            long ms = t.openedAtMillis() > 0 ? t.openedAtMillis() : t.closedAtMillis();
-            if (ms == 0) continue;
-            java.time.LocalTime lt = java.time.Instant.ofEpochMilli(ms).atZone(IST).toLocalTime();
-            int mod = lt.getHour() * 60 + lt.getMinute();
-            (mod < cutoffMinuteOfDay ? bins.get("Morning") : bins.get("Afternoon")).add(t);
+    /** Aggregate multiple per-leg trades sharing a {@code sessionDate} into a single
+     *  synthetic day-row for strategies that treat each session as one trade
+     *  ({@link Strategy#aggregatesToDay()}). Called before the analytics breakdowns run. */
+    private List<Trade> aggregateTradesByDay(List<Trade> src) {
+        if (src == null || src.isEmpty()) return src == null ? new ArrayList<>() : src;
+        Map<String, List<Trade>> byDate = new LinkedHashMap<>();
+        for (Trade t : src) {
+            String d = t.sessionDate();
+            if (d == null || d.isBlank()) continue;
+            byDate.computeIfAbsent(d, k -> new ArrayList<>()).add(t);
         }
-        return summariseBins(bins);
+        List<Trade> out = new ArrayList<>();
+        for (Map.Entry<String, List<Trade>> e : byDate.entrySet()) {
+            List<Trade> legs = e.getValue();
+            double gross = 0, charges = 0, net = 0;
+            long openedAt = Long.MAX_VALUE, closedAt = 0;
+            String instrument = null;
+            String strategyId = null;
+            int slHits = 0;
+            for (Trade t : legs) {
+                gross    += t.grossPnl();
+                charges  += t.charges();
+                net      += t.netPnl();
+                slHits   += t.slHitCount();
+                if (t.openedAtMillis() > 0 && t.openedAtMillis() < openedAt) openedAt = t.openedAtMillis();
+                if (t.closedAtMillis() > closedAt) closedAt = t.closedAtMillis();
+                if (instrument == null && t.instrument() != null && !t.instrument().isBlank())
+                    instrument = t.instrument();
+                if (strategyId == null && t.strategyId() != null && !t.strategyId().isBlank())
+                    strategyId = t.strategyId();
+            }
+            if (openedAt == Long.MAX_VALUE) openedAt = closedAt;
+            out.add(new Trade(
+                strategyId == null ? "strangle" : strategyId,
+                e.getKey(),
+                closedAt,
+                round2(gross), round2(charges), round2(net),
+                "DAY_TOTAL",     // closeReason
+                slHits,
+                "SESSION",       // symbol
+                openedAt,
+                null,            // entryOiBias
+                instrument,
+                "DAY_TOTAL"      // setup
+            ));
+        }
+        return out;
     }
 
     private Map<String, Map<String, Object>> summariseBins(Map<String, List<Trade>> bins) {

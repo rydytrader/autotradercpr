@@ -294,7 +294,7 @@
     // ── Date range selection ────────────────────────────────────────────────
     // "Today" streams via SSE and shows entryPrice / exitPrice (rich in-memory
     // shape). Other presets hit the DB via /trades-range and lack per-leg
-    // entry/exit prices (0 shown as "—"). The atmvwap state feed only
+    // entry/exit prices (0 shown as "—"). The strangle state feed only
     // carries today's trades, so we detach SSE when the user picks any
     // non-today preset and re-attach when they come back to Today.
     var currentRange = 'today';
@@ -418,13 +418,13 @@
     }
 
     function loadTodayFromState() {
-        fetch('/api/atmvwap/state').then(function(r) { return r.json(); })
+        fetch('/api/strangle/state').then(function(r) { return r.json(); })
             .then(applyState).catch(function() {});
     }
 
     function loadRange(key) {
         var b = rangeBounds(key);
-        fetch('/api/strategies/atmvwap/trades-range?from=' + encodeURIComponent(b.from) + '&to=' + encodeURIComponent(b.to))
+        fetch('/api/strategies/strangle/trades-range?from=' + encodeURIComponent(b.from) + '&to=' + encodeURIComponent(b.to))
             .then(function(r) { return r.json(); })
             .then(function(d) {
                 if (currentRange !== key) return; // user moved on
@@ -440,7 +440,7 @@
     function attachTodayStream() {
         if (sseStream) return;
         try {
-            sseStream = new EventSource('/api/atmvwap/stream');
+            sseStream = new EventSource('/api/strangle/stream');
             sseStream.addEventListener('state', function(ev) {
                 if (currentRange !== 'today') return;
                 if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }

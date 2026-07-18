@@ -28,24 +28,25 @@ public class RiskSettingsStore {
         volatile double maxRiskPerDayPct  = 1.0;  // max risk per day as % of totalCapital
         volatile double riskPerTrade      = 1000;  // max ₹ loss per trade if SL hits
         volatile String autoSquareOffTime = "";  // empty = disabled, e.g. "15:15"
-        // ── ATM VWAP strategy settings (singleton) ──────────────────────────
-        volatile boolean atmVwapEnabled         = true;
-        volatile int     atmVwapLotsPerLeg      = 1;       // 1 lot = 65 NIFTY
-        volatile String  atmVwapOrderType       = "INTRADAY"; // INTRADAY | OVERNIGHT
-        volatile String  atmVwapTradingStartTime = "09:17"; // signals fire only after this time (IST)
-        volatile String  atmVwapTradingEndTime   = "14:30"; // no new signals after this time (IST); exits keep running
-        volatile String  atmVwapSquareOffTime   = "15:25";
-        volatile int     atmVwapMaxConcurrentPositions = 4; // hard cap on simultaneously-open positions
-        /** Min SL floor in option-premium points ABOVE entry. If (trigger.high − entry)
-         *  is smaller than this floor, the SL is raised to entry + minSlPoints. Default 10. */
-        volatile double atmVwapMinSlPoints = 10.0;
-        /** Max SL ceiling in option-premium points ABOVE entry. If (trigger.high − entry)
-         *  is larger than this cap, the SL is capped to entry + maxSlPoints. Default 20. */
-        volatile double atmVwapMaxSlPoints = 20.0;
-        /** Hard cap on CE-side fires per session. Default 3. */
-        volatile int    atmVwapMaxCeTradesPerDay = 3;
-        /** Hard cap on PE-side fires per session. Default 3. */
-        volatile int    atmVwapMaxPeTradesPerDay = 3;
+        // ── Strangle strategy settings (singleton) ──────────────────────────
+        volatile boolean strangleEnabled            = true;
+        volatile int     strangleLotsPerLeg         = 1;              // × instrument lot size
+        volatile String  strangleOrderType          = "INTRADAY";     // INTRADAY | OVERNIGHT
+        volatile String  strangleEntryTime          = "09:20";        // HH:mm IST — entry fires at/after this time
+        volatile String  strangleSquareOffTime      = "15:15";        // HH:mm IST — hard flatten
+        // Per-instrument target premium (₹). NIFTY ~₹50; SENSEX ~₹120.
+        volatile double  strangleNiftyTargetPremium  = 50.0;
+        volatile double  strangleSensexTargetPremium = 120.0;
+        // SL + adjustment
+        volatile double  strangleSlMultiplier        = 2.0;   // SL price = entryPremium × this
+        volatile int     strangleHedgeStrikesAway    = 10;    // strike-steps OTM from the added-sell leg
+        volatile double  strangleHedgeQtyMultiplier  = 2.0;   // hedge qty = base qty × this
+        // Weekday routing (values: "NIFTY", "SENSEX", "DISABLED")
+        volatile String  strangleMondayInstrument    = "NIFTY";
+        volatile String  strangleTuesdayInstrument   = "NIFTY";
+        volatile String  strangleWednesdayInstrument = "SENSEX";
+        volatile String  strangleThursdayInstrument  = "SENSEX";
+        volatile String  strangleFridayInstrument    = "DISABLED";
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
         /** Initial capital used as the baseline for the Analytics Home page (capital growth %,
@@ -395,17 +396,21 @@ public class RiskSettingsStore {
     public double getRiskPerTrade()      { return cfg().riskPerTrade; }
     public double getMaxDailyLoss()      { return cfg().totalCapital * cfg().maxRiskPerDayPct / 100.0; }
     public String getAutoSquareOffTime() { return cfg().autoSquareOffTime; }
-    public boolean isAtmVwapEnabled()           { return cfg().atmVwapEnabled; }
-    public int     getAtmVwapLotsPerLeg()       { return cfg().atmVwapLotsPerLeg; }
-    public String  getAtmVwapOrderType()        { return cfg().atmVwapOrderType; }
-    public String  getAtmVwapTradingStartTime() { return cfg().atmVwapTradingStartTime; }
-    public String  getAtmVwapTradingEndTime()   { return cfg().atmVwapTradingEndTime; }
-    public String  getAtmVwapSquareOffTime()    { return cfg().atmVwapSquareOffTime; }
-    public int     getAtmVwapMaxConcurrentPositions() { return cfg().atmVwapMaxConcurrentPositions; }
-    public double  getAtmVwapMinSlPoints()      { return cfg().atmVwapMinSlPoints; }
-    public double  getAtmVwapMaxSlPoints()      { return cfg().atmVwapMaxSlPoints; }
-    public int     getAtmVwapMaxCeTradesPerDay(){ return cfg().atmVwapMaxCeTradesPerDay; }
-    public int     getAtmVwapMaxPeTradesPerDay(){ return cfg().atmVwapMaxPeTradesPerDay; }
+    public boolean isStrangleEnabled()               { return cfg().strangleEnabled; }
+    public int     getStrangleLotsPerLeg()           { return cfg().strangleLotsPerLeg; }
+    public String  getStrangleOrderType()            { return cfg().strangleOrderType; }
+    public String  getStrangleEntryTime()            { return cfg().strangleEntryTime; }
+    public String  getStrangleSquareOffTime()        { return cfg().strangleSquareOffTime; }
+    public double  getStrangleNiftyTargetPremium()   { return cfg().strangleNiftyTargetPremium; }
+    public double  getStrangleSensexTargetPremium()  { return cfg().strangleSensexTargetPremium; }
+    public double  getStrangleSlMultiplier()         { return cfg().strangleSlMultiplier; }
+    public int     getStrangleHedgeStrikesAway()     { return cfg().strangleHedgeStrikesAway; }
+    public double  getStrangleHedgeQtyMultiplier()   { return cfg().strangleHedgeQtyMultiplier; }
+    public String  getStrangleMondayInstrument()     { return cfg().strangleMondayInstrument; }
+    public String  getStrangleTuesdayInstrument()    { return cfg().strangleTuesdayInstrument; }
+    public String  getStrangleWednesdayInstrument()  { return cfg().strangleWednesdayInstrument; }
+    public String  getStrangleThursdayInstrument()   { return cfg().strangleThursdayInstrument; }
+    public String  getStrangleFridayInstrument()     { return cfg().strangleFridayInstrument; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getStartingCapital()      { return cfg().startingCapital; }
@@ -589,17 +594,31 @@ public class RiskSettingsStore {
     public void setMaxRiskPerDayPct(double v)  { cfg().maxRiskPerDayPct = v; }
     public void setRiskPerTrade(double v)      { cfg().riskPerTrade = v; }
     public void setAutoSquareOffTime(String v) { cfg().autoSquareOffTime = v; }
-    public void setAtmVwapEnabled(boolean v)            { cfg().atmVwapEnabled = v; }
-    public void setAtmVwapLotsPerLeg(int v)             { cfg().atmVwapLotsPerLeg = Math.max(1, v); }
-    public void setAtmVwapOrderType(String v)           { cfg().atmVwapOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
-    public void setAtmVwapTradingStartTime(String v)    { cfg().atmVwapTradingStartTime = (v == null || v.isBlank()) ? "09:17" : v.trim(); }
-    public void setAtmVwapTradingEndTime(String v)      { cfg().atmVwapTradingEndTime = (v == null || v.isBlank()) ? "14:30" : v.trim(); }
-    public void setAtmVwapSquareOffTime(String v)       { cfg().atmVwapSquareOffTime = v == null ? "" : v.trim(); }
-    public void setAtmVwapMaxConcurrentPositions(int v) { cfg().atmVwapMaxConcurrentPositions = Math.max(1, v); }
-    public void setAtmVwapMinSlPoints(double v)         { cfg().atmVwapMinSlPoints = Math.max(0, v); }
-    public void setAtmVwapMaxSlPoints(double v)         { cfg().atmVwapMaxSlPoints = Math.max(0, v); }
-    public void setAtmVwapMaxCeTradesPerDay(int v)      { cfg().atmVwapMaxCeTradesPerDay = Math.max(0, v); }
-    public void setAtmVwapMaxPeTradesPerDay(int v)      { cfg().atmVwapMaxPeTradesPerDay = Math.max(0, v); }
+    public void setStrangleEnabled(boolean v)              { cfg().strangleEnabled = v; }
+    public void setStrangleLotsPerLeg(int v)               { cfg().strangleLotsPerLeg = Math.max(1, v); }
+    public void setStrangleOrderType(String v)             { cfg().strangleOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
+    public void setStrangleEntryTime(String v)             { cfg().strangleEntryTime = (v == null || v.isBlank()) ? "09:20" : v.trim(); }
+    public void setStrangleSquareOffTime(String v)         { cfg().strangleSquareOffTime = (v == null || v.isBlank()) ? "15:15" : v.trim(); }
+    public void setStrangleNiftyTargetPremium(double v)    { cfg().strangleNiftyTargetPremium = Math.max(0, v); }
+    public void setStrangleSensexTargetPremium(double v)   { cfg().strangleSensexTargetPremium = Math.max(0, v); }
+    public void setStrangleSlMultiplier(double v)          { cfg().strangleSlMultiplier = Math.max(0, v); }
+    public void setStrangleHedgeStrikesAway(int v)         { cfg().strangleHedgeStrikesAway = Math.max(1, v); }
+    public void setStrangleHedgeQtyMultiplier(double v)    { cfg().strangleHedgeQtyMultiplier = Math.max(0, v); }
+    public void setStrangleMondayInstrument(String v)      { cfg().strangleMondayInstrument = normalizeStrangleInstrument(v); }
+    public void setStrangleTuesdayInstrument(String v)     { cfg().strangleTuesdayInstrument = normalizeStrangleInstrument(v); }
+    public void setStrangleWednesdayInstrument(String v)   { cfg().strangleWednesdayInstrument = normalizeStrangleInstrument(v); }
+    public void setStrangleThursdayInstrument(String v)    { cfg().strangleThursdayInstrument = normalizeStrangleInstrument(v); }
+    public void setStrangleFridayInstrument(String v)      { cfg().strangleFridayInstrument = normalizeStrangleInstrument(v); }
+
+    /** Clamps values to the valid enum set. Blank/unknown → DISABLED. */
+    private static String normalizeStrangleInstrument(String v) {
+        if (v == null) return "DISABLED";
+        String u = v.trim().toUpperCase();
+        return switch (u) {
+            case "NIFTY", "SENSEX", "DISABLED" -> u;
+            default -> "DISABLED";
+        };
+    }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setStartingCapital(double v)      { cfg().startingCapital = Math.max(0, v); }
@@ -697,17 +716,21 @@ public class RiskSettingsStore {
     public double getRiskPerTrade(String mode)      { return cfgFor(mode).riskPerTrade; }
     public double getMaxDailyLoss(String mode)      { return cfgFor(mode).totalCapital * cfgFor(mode).maxRiskPerDayPct / 100.0; }
     public String getAutoSquareOffTime(String mode) { return cfgFor(mode).autoSquareOffTime; }
-    public boolean isAtmVwapEnabled(String mode)            { return cfgFor(mode).atmVwapEnabled; }
-    public int     getAtmVwapLotsPerLeg(String mode)        { return cfgFor(mode).atmVwapLotsPerLeg; }
-    public String  getAtmVwapOrderType(String mode)         { return cfgFor(mode).atmVwapOrderType; }
-    public String  getAtmVwapTradingStartTime(String mode)  { return cfgFor(mode).atmVwapTradingStartTime; }
-    public String  getAtmVwapTradingEndTime(String mode)    { return cfgFor(mode).atmVwapTradingEndTime; }
-    public String  getAtmVwapSquareOffTime(String mode)     { return cfgFor(mode).atmVwapSquareOffTime; }
-    public int     getAtmVwapMaxConcurrentPositions(String mode) { return cfgFor(mode).atmVwapMaxConcurrentPositions; }
-    public double  getAtmVwapMinSlPoints(String mode)       { return cfgFor(mode).atmVwapMinSlPoints; }
-    public double  getAtmVwapMaxSlPoints(String mode)       { return cfgFor(mode).atmVwapMaxSlPoints; }
-    public int     getAtmVwapMaxCeTradesPerDay(String mode) { return cfgFor(mode).atmVwapMaxCeTradesPerDay; }
-    public int     getAtmVwapMaxPeTradesPerDay(String mode) { return cfgFor(mode).atmVwapMaxPeTradesPerDay; }
+    public boolean isStrangleEnabled(String mode)               { return cfgFor(mode).strangleEnabled; }
+    public int     getStrangleLotsPerLeg(String mode)           { return cfgFor(mode).strangleLotsPerLeg; }
+    public String  getStrangleOrderType(String mode)            { return cfgFor(mode).strangleOrderType; }
+    public String  getStrangleEntryTime(String mode)            { return cfgFor(mode).strangleEntryTime; }
+    public String  getStrangleSquareOffTime(String mode)        { return cfgFor(mode).strangleSquareOffTime; }
+    public double  getStrangleNiftyTargetPremium(String mode)   { return cfgFor(mode).strangleNiftyTargetPremium; }
+    public double  getStrangleSensexTargetPremium(String mode)  { return cfgFor(mode).strangleSensexTargetPremium; }
+    public double  getStrangleSlMultiplier(String mode)         { return cfgFor(mode).strangleSlMultiplier; }
+    public int     getStrangleHedgeStrikesAway(String mode)     { return cfgFor(mode).strangleHedgeStrikesAway; }
+    public double  getStrangleHedgeQtyMultiplier(String mode)   { return cfgFor(mode).strangleHedgeQtyMultiplier; }
+    public String  getStrangleMondayInstrument(String mode)     { return cfgFor(mode).strangleMondayInstrument; }
+    public String  getStrangleTuesdayInstrument(String mode)    { return cfgFor(mode).strangleTuesdayInstrument; }
+    public String  getStrangleWednesdayInstrument(String mode)  { return cfgFor(mode).strangleWednesdayInstrument; }
+    public String  getStrangleThursdayInstrument(String mode)   { return cfgFor(mode).strangleThursdayInstrument; }
+    public String  getStrangleFridayInstrument(String mode)     { return cfgFor(mode).strangleFridayInstrument; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
     public double getStartingCapital(String mode)      { return cfgFor(mode).startingCapital; }
@@ -730,17 +753,21 @@ public class RiskSettingsStore {
     public void setMaxRiskPerDayPct(String mode, double v)  { cfgFor(mode).maxRiskPerDayPct = v; }
     public void setRiskPerTrade(String mode, double v)      { cfgFor(mode).riskPerTrade = v; }
     public void setAutoSquareOffTime(String mode, String v) { cfgFor(mode).autoSquareOffTime = v; }
-    public void setAtmVwapEnabled(String mode, boolean v)            { cfgFor(mode).atmVwapEnabled = v; }
-    public void setAtmVwapLotsPerLeg(String mode, int v)             { cfgFor(mode).atmVwapLotsPerLeg = Math.max(1, v); }
-    public void setAtmVwapOrderType(String mode, String v)           { cfgFor(mode).atmVwapOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
-    public void setAtmVwapTradingStartTime(String mode, String v)    { cfgFor(mode).atmVwapTradingStartTime = (v == null || v.isBlank()) ? "09:17" : v.trim(); }
-    public void setAtmVwapTradingEndTime(String mode, String v)      { cfgFor(mode).atmVwapTradingEndTime = (v == null || v.isBlank()) ? "14:30" : v.trim(); }
-    public void setAtmVwapSquareOffTime(String mode, String v)       { cfgFor(mode).atmVwapSquareOffTime = v == null ? "" : v.trim(); }
-    public void setAtmVwapMaxConcurrentPositions(String mode, int v) { cfgFor(mode).atmVwapMaxConcurrentPositions = Math.max(1, v); }
-    public void setAtmVwapMinSlPoints(String mode, double v)         { cfgFor(mode).atmVwapMinSlPoints = Math.max(0, v); }
-    public void setAtmVwapMaxSlPoints(String mode, double v)         { cfgFor(mode).atmVwapMaxSlPoints = Math.max(0, v); }
-    public void setAtmVwapMaxCeTradesPerDay(String mode, int v)      { cfgFor(mode).atmVwapMaxCeTradesPerDay = Math.max(0, v); }
-    public void setAtmVwapMaxPeTradesPerDay(String mode, int v)      { cfgFor(mode).atmVwapMaxPeTradesPerDay = Math.max(0, v); }
+    public void setStrangleEnabled(String mode, boolean v)              { cfgFor(mode).strangleEnabled = v; }
+    public void setStrangleLotsPerLeg(String mode, int v)               { cfgFor(mode).strangleLotsPerLeg = Math.max(1, v); }
+    public void setStrangleOrderType(String mode, String v)             { cfgFor(mode).strangleOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
+    public void setStrangleEntryTime(String mode, String v)             { cfgFor(mode).strangleEntryTime = (v == null || v.isBlank()) ? "09:20" : v.trim(); }
+    public void setStrangleSquareOffTime(String mode, String v)         { cfgFor(mode).strangleSquareOffTime = (v == null || v.isBlank()) ? "15:15" : v.trim(); }
+    public void setStrangleNiftyTargetPremium(String mode, double v)    { cfgFor(mode).strangleNiftyTargetPremium = Math.max(0, v); }
+    public void setStrangleSensexTargetPremium(String mode, double v)   { cfgFor(mode).strangleSensexTargetPremium = Math.max(0, v); }
+    public void setStrangleSlMultiplier(String mode, double v)          { cfgFor(mode).strangleSlMultiplier = Math.max(0, v); }
+    public void setStrangleHedgeStrikesAway(String mode, int v)         { cfgFor(mode).strangleHedgeStrikesAway = Math.max(1, v); }
+    public void setStrangleHedgeQtyMultiplier(String mode, double v)    { cfgFor(mode).strangleHedgeQtyMultiplier = Math.max(0, v); }
+    public void setStrangleMondayInstrument(String mode, String v)      { cfgFor(mode).strangleMondayInstrument = normalizeStrangleInstrument(v); }
+    public void setStrangleTuesdayInstrument(String mode, String v)     { cfgFor(mode).strangleTuesdayInstrument = normalizeStrangleInstrument(v); }
+    public void setStrangleWednesdayInstrument(String mode, String v)   { cfgFor(mode).strangleWednesdayInstrument = normalizeStrangleInstrument(v); }
+    public void setStrangleThursdayInstrument(String mode, String v)    { cfgFor(mode).strangleThursdayInstrument = normalizeStrangleInstrument(v); }
+    public void setStrangleFridayInstrument(String mode, String v)      { cfgFor(mode).strangleFridayInstrument = normalizeStrangleInstrument(v); }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
     public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
     public void setStartingCapital(String mode, double v)      { cfgFor(mode).startingCapital = Math.max(0, v); }
@@ -773,17 +800,21 @@ public class RiskSettingsStore {
             upsert("maxRiskPerDayPct", String.valueOf(c.maxRiskPerDayPct));
             upsert("riskPerTrade", String.valueOf(c.riskPerTrade));
             upsert("autoSquareOffTime", c.autoSquareOffTime);
-            upsert("atmVwapEnabled",          String.valueOf(c.atmVwapEnabled));
-            upsert("atmVwapLotsPerLeg",       String.valueOf(c.atmVwapLotsPerLeg));
-            upsert("atmVwapOrderType",         c.atmVwapOrderType);
-            upsert("atmVwapTradingStartTime",  c.atmVwapTradingStartTime);
-            upsert("atmVwapTradingEndTime",    c.atmVwapTradingEndTime);
-            upsert("atmVwapSquareOffTime",     c.atmVwapSquareOffTime);
-            upsert("atmVwapMaxConcurrentPositions", String.valueOf(c.atmVwapMaxConcurrentPositions));
-            upsert("atmVwapMinSlPoints",       String.valueOf(c.atmVwapMinSlPoints));
-            upsert("atmVwapMaxSlPoints",       String.valueOf(c.atmVwapMaxSlPoints));
-            upsert("atmVwapMaxCeTradesPerDay", String.valueOf(c.atmVwapMaxCeTradesPerDay));
-            upsert("atmVwapMaxPeTradesPerDay", String.valueOf(c.atmVwapMaxPeTradesPerDay));
+            upsert("strangleEnabled",            String.valueOf(c.strangleEnabled));
+            upsert("strangleLotsPerLeg",         String.valueOf(c.strangleLotsPerLeg));
+            upsert("strangleOrderType",          c.strangleOrderType);
+            upsert("strangleEntryTime",          c.strangleEntryTime);
+            upsert("strangleSquareOffTime",      c.strangleSquareOffTime);
+            upsert("strangleNiftyTargetPremium",  String.valueOf(c.strangleNiftyTargetPremium));
+            upsert("strangleSensexTargetPremium", String.valueOf(c.strangleSensexTargetPremium));
+            upsert("strangleSlMultiplier",        String.valueOf(c.strangleSlMultiplier));
+            upsert("strangleHedgeStrikesAway",    String.valueOf(c.strangleHedgeStrikesAway));
+            upsert("strangleHedgeQtyMultiplier",  String.valueOf(c.strangleHedgeQtyMultiplier));
+            upsert("strangleMondayInstrument",    c.strangleMondayInstrument);
+            upsert("strangleTuesdayInstrument",   c.strangleTuesdayInstrument);
+            upsert("strangleWednesdayInstrument", c.strangleWednesdayInstrument);
+            upsert("strangleThursdayInstrument",  c.strangleThursdayInstrument);
+            upsert("strangleFridayInstrument",    c.strangleFridayInstrument);
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("startingCapital",      String.valueOf(c.startingCapital));
@@ -943,28 +974,45 @@ public class RiskSettingsStore {
                     case "riskPerTrade"      -> c.riskPerTrade = Double.parseDouble(v);
                     case "autoSquareOffTime" -> c.autoSquareOffTime = v;
                     case "manualAutoSquareOffTime"    -> { /* retired */ }
+                    // ── Strangle (active) ─────────────────────────────────────────
+                    case "strangleEnabled"             -> c.strangleEnabled = Boolean.parseBoolean(v);
+                    case "strangleLotsPerLeg"          -> c.strangleLotsPerLeg = Math.max(1, Integer.parseInt(v));
+                    case "strangleOrderType"           -> c.strangleOrderType = v;
+                    case "strangleEntryTime"           -> c.strangleEntryTime = v;
+                    case "strangleSquareOffTime"       -> c.strangleSquareOffTime = v;
+                    case "strangleNiftyTargetPremium"  -> c.strangleNiftyTargetPremium = Math.max(0, Double.parseDouble(v));
+                    case "strangleSensexTargetPremium" -> c.strangleSensexTargetPremium = Math.max(0, Double.parseDouble(v));
+                    case "strangleSlMultiplier"        -> c.strangleSlMultiplier = Math.max(0, Double.parseDouble(v));
+                    case "strangleHedgeStrikesAway"    -> c.strangleHedgeStrikesAway = Math.max(1, Integer.parseInt(v));
+                    case "strangleHedgeQtyMultiplier"  -> c.strangleHedgeQtyMultiplier = Math.max(0, Double.parseDouble(v));
+                    case "strangleMondayInstrument"    -> c.strangleMondayInstrument    = normalizeStrangleInstrument(v);
+                    case "strangleTuesdayInstrument"   -> c.strangleTuesdayInstrument   = normalizeStrangleInstrument(v);
+                    case "strangleWednesdayInstrument" -> c.strangleWednesdayInstrument = normalizeStrangleInstrument(v);
+                    case "strangleThursdayInstrument"  -> c.strangleThursdayInstrument  = normalizeStrangleInstrument(v);
+                    case "strangleFridayInstrument"    -> c.strangleFridayInstrument    = normalizeStrangleInstrument(v);
+                    // ── Legacy AtmVwap-era keys — silently consumed ────────────────
                     case "atmVwapEnabled",
-                         "camarillaEnabled"           -> c.atmVwapEnabled = Boolean.parseBoolean(v);
-                    case "atmVwapLotsPerLeg",
-                         "camarillaLotsPerLeg"        -> c.atmVwapLotsPerLeg = Integer.parseInt(v);
-                    case "atmVwapOrderType",
-                         "camarillaOrderType"         -> c.atmVwapOrderType = v;
-                    case "atmVwapTradingStartTime",
-                         "camarillaTradingStartTime"  -> c.atmVwapTradingStartTime = v;
-                    case "atmVwapTradingEndTime",
-                         "camarillaTradingEndTime"    -> c.atmVwapTradingEndTime = v;
-                    case "atmVwapSquareOffTime",
-                         "camarillaSquareOffTime"     -> c.atmVwapSquareOffTime = v;
-                    case "atmVwapMinSlPoints"         -> c.atmVwapMinSlPoints = Math.max(0, Double.parseDouble(v));
-                    case "atmVwapMaxSlPoints"         -> c.atmVwapMaxSlPoints = Math.max(0, Double.parseDouble(v));
-                    case "atmVwapMaxCeTradesPerDay"   -> c.atmVwapMaxCeTradesPerDay = Math.max(0, Integer.parseInt(v));
-                    case "atmVwapMaxPeTradesPerDay"   -> c.atmVwapMaxPeTradesPerDay = Math.max(0, Integer.parseInt(v));
-                    case "atmVwapMaxConcurrentPositions",
-                         "camarillaMaxConcurrentPositions" -> c.atmVwapMaxConcurrentPositions = Integer.parseInt(v);
+                         "atmVwapLotsPerLeg",
+                         "atmVwapOrderType",
+                         "atmVwapTradingStartTime",
+                         "atmVwapTradingEndTime",
+                         "atmVwapSquareOffTime",
+                         "atmVwapMinSlPoints",
+                         "atmVwapMaxSlPoints",
+                         "atmVwapMaxCeTradesPerDay",
+                         "atmVwapMaxPeTradesPerDay",
+                         "atmVwapMaxConcurrentPositions" -> { /* legacy — silently consumed */ }
                     // Legacy Camarilla-era keys silently consumed so old risk-settings.json
-                    // files round-trip cleanly through the ATM-VWAP cutover. All of these
-                    // features were removed with the Camarilla strategy.
-                    case "camarillaH3RevEnabled",
+                    // files round-trip cleanly. All of these features were removed with the
+                    // Camarilla strategy.
+                    case "camarillaEnabled",
+                         "camarillaLotsPerLeg",
+                         "camarillaOrderType",
+                         "camarillaTradingStartTime",
+                         "camarillaTradingEndTime",
+                         "camarillaSquareOffTime",
+                         "camarillaMaxConcurrentPositions",
+                         "camarillaH3RevEnabled",
                          "camarillaL4BdEnabled",
                          "camarillaOiBiasFilterEnabled",
                          "camarillaMinRRCheckEnabled",

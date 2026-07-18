@@ -2,7 +2,7 @@ package com.rydytrader.autotrader.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.rydytrader.autotrader.service.strategy.AtmVwap;
+import com.rydytrader.autotrader.service.strategy.Strangle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -16,29 +16,23 @@ import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Pushes ATM VWAP strategy state to every connected browser via Server-Sent Events.
- *
- * <p>The strategy calls {@link #publish()} whenever something material changes — a new entry,
- * an exit, an ATM resolution, an event log line. A 2-second heartbeat ({@link #heartbeat()})
- * also emits the latest payload so LTP/MTM keep refreshing on the open positions even when
- * no state mutation is happening.
- *
- * <p>The {@link AtmVwap} strategy is injected lazily via {@link ObjectProvider} to break the
- * AtmVwap → Broker → AtmVwap circular dependency on bean construction.
+ * Pushes Strangle strategy state to every connected browser via Server-Sent Events.
+ * State-change {@link #publish()} calls from the strategy + a 2-second heartbeat that
+ * keeps LTP / MTM refreshing on open positions.
  */
 @Service
-public class AtmVwapStreamBroker {
+public class StrangleStreamBroker {
 
-    private static final Logger log = LoggerFactory.getLogger(AtmVwapStreamBroker.class);
+    private static final Logger log = LoggerFactory.getLogger(StrangleStreamBroker.class);
 
-    private final ObjectProvider<AtmVwap> atmVwapProvider;
+    private final ObjectProvider<Strangle> strangleProvider;
     private final ObjectMapper mapper = new ObjectMapper()
         .registerModule(new JavaTimeModule())
         .findAndRegisterModules();
     private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
 
-    public AtmVwapStreamBroker(ObjectProvider<AtmVwap> atmVwapProvider) {
-        this.atmVwapProvider = atmVwapProvider;
+    public StrangleStreamBroker(ObjectProvider<Strangle> strangleProvider) {
+        this.strangleProvider = strangleProvider;
     }
 
     public void addEmitter(SseEmitter e) {
@@ -67,7 +61,7 @@ public class AtmVwapStreamBroker {
             String json = mapper.writeValueAsString(payload);
             e.send(SseEmitter.event().name("state").data(json));
         } catch (Exception ex) {
-            log.warn("[AtmVwapStream] initial snapshot send failed: {}", ex.getMessage());
+            log.warn("[StrangleStream] initial snapshot send failed: {}", ex.getMessage());
             emitters.remove(e);
         }
     }
@@ -78,7 +72,7 @@ public class AtmVwapStreamBroker {
         String json;
         try { json = mapper.writeValueAsString(payload); }
         catch (Exception e) {
-            log.warn("[AtmVwapStream] serialize failed (heartbeat will skip): {}", e.getMessage());
+            log.warn("[StrangleStream] serialize failed (heartbeat will skip): {}", e.getMessage());
             return;
         }
         for (SseEmitter e : emitters) {
@@ -87,16 +81,16 @@ public class AtmVwapStreamBroker {
                 emitters.remove(e);
                 try { e.complete(); } catch (Exception ignored) {}
             } catch (Exception ex) {
-                log.debug("[AtmVwapStream] emitter send failed (removing): {}", ex.getMessage());
+                log.debug("[StrangleStream] emitter send failed (removing): {}", ex.getMessage());
                 emitters.remove(e);
             }
         }
     }
 
     private Map<String, Object> currentState() {
-        AtmVwap c = atmVwapProvider.getIfAvailable();
-        if (c == null) return null;
-        try { return c.dashboardState(); }
-        catch (Exception e) { log.warn("[AtmVwapStream] dashboardState threw: {}", e.getMessage()); return null; }
+        Strangle s = strangleProvider.getIfAvailable();
+        if (s == null) return null;
+        try { return s.dashboardState(); }
+        catch (Exception e) { log.warn("[StrangleStream] dashboardState threw: {}", e.getMessage()); return null; }
     }
 }

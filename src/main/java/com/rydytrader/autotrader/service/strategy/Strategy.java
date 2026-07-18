@@ -8,12 +8,12 @@ import java.util.Map;
  * Straddle/Strangle code was stripped so {@code AnalyticsService} and the portfolio
  * kill-switch can call generic methods on the singleton strategy without coupling.
  *
- * <p>AtmVwap is the only implementation; the interface is here to keep that boundary clean
+ * <p>Strangle is the only implementation; the interface is here to keep that boundary clean
  * and to ease future extension.
  */
 public interface Strategy {
 
-    /** Stable identifier (e.g. {@code "atmvwap"}) used as the {@code strategy_id} column on
+    /** Stable identifier (e.g. {@code "strangle"}) used as the {@code strategy_id} column on
      *  persisted trade and session rows. */
     String id();
 
@@ -56,9 +56,17 @@ public interface Strategy {
      *  stamp). Used by the analytics live overlay. Default 0. */
     default double liveChargesToday() { return 0; }
 
-    /** Scheduler entry point — invoked on the slow loop (~5 s) by `AtmVwapScheduler`. */
+    /** Scheduler entry point — invoked on the slow loop (~5 s) by `StrangleScheduler`. */
     default void tick() {}
 
     /** Fast-path check — invoked on the fast loop (~500 ms) for low-latency exits. */
     default void fastSlCheck() {}
+
+    /** When {@code true}, `AnalyticsService` rolls all per-leg trades from the same
+     *  session date into ONE synthetic day-row for hero-metric / equity-curve /
+     *  by-day / by-instrument breakdowns. Strategies that produce many legs per
+     *  day (e.g. a strangle with adjustments + hedges) but want to be evaluated
+     *  as "one win/loss per session" set this true. Default false — analytics
+     *  counts one trade per persisted `strategy_trades` row. */
+    default boolean aggregatesToDay() { return false; }
 }

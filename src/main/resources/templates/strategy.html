@@ -185,7 +185,7 @@
     <div class="page-header fade-in" style="margin-bottom:18px;">
         <div>
             <div class="page-title">Strategy</div>
-            <div class="page-subtitle">NIFTY ATM 2-min · session VWAP · bearish premium sell</div>
+            <div class="page-subtitle">NIFTY / SENSEX intraday strangle · 100 % SL recovery adjustment</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -199,301 +199,143 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot"></span> Overview</h2>
         <p class="doc-p">
-            The bot sells <strong>NIFTY weekly ATM options</strong> on their own 2-min
-            timeframe. Each session locks in TWO legs at first bar close: the
-            <strong>ATM CE</strong> and the <strong>ATM PE</strong> at the strike nearest to
-            the first 2-min NIFTY close (rounded to 50). Every trade is a
-            <strong>premium sell</strong> — bearish thesis, want premium to decay.
+            An intraday <strong>weekly options-selling strangle</strong> that rotates between
+            NIFTY and SENSEX by weekday. Every session sells one CE + one PE strike whose
+            LTP is closest to a target premium (₹50 for NIFTY, ₹120 for SENSEX by default).
+            Per-leg SL is 100 % of the received premium.
         </p>
         <p class="doc-p">
-            Each option's own <strong>session VWAP</strong> (the NSE-cumulative ATP the
-            broker streams for that symbol) is the anchor. A 2-min bar that closes below
-            VWAP seeds a <em>trigger candle</em>. If the very next 2-min bar closes below
-            the trigger's low, the bot sells that leg. CE and PE run independent FSMs and
-            can both be short at the same time; their combined worst-case loss is bounded
-            by the portfolio-max-daily-loss cap.
+            If one leg hits SL, the strategy runs a <strong>recovery adjustment</strong>:
+            close the SL-hit leg, then on the OPPOSITE side (a) BUY a deep-OTM hedge and
+            (b) SELL a new leg at the target premium. Hedge + new sell form a defined-risk
+            bear-call or bull-put spread — the hedge caps loss and unlocks broker margin.
         </p>
         <p class="doc-p">
-            One-shot per leg per day — once a leg's position closes (SL hit or timed
-            squareoff), the FSM can seed again on later bars, but there's no re-entry
-            latch. No target orders — every position is held until SL hit or the
-            timed squareoff at the configured cutoff.
+            <strong>One-shot rule</strong>: if the adjustment leg's own SL fires, close it and
+            stop — no further recovery cycles. The other side (original short + hedge, if any)
+            rides to timed squareoff at 15:15 IST. Analytics treats each session day as
+            <strong>one trade</strong> (not one row per leg).
         </p>
     </div>
 
-    <!-- ── Session flow ── -->
+    <!-- ── Instrument rotation ── -->
     <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-amber, #fbbf24);"></span> Session flow</h2>
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-amber, #fbbf24);"></span> Instrument rotation</h2>
+        <p class="doc-p">
+            Settings-configurable per weekday. Each day picks one of <code>NIFTY</code>,
+            <code>SENSEX</code>, or <code>DISABLED</code>. Defaults:
+        </p>
         <ul class="doc-list">
-            <li><strong>09:15 IST — market open.</strong> Bot subscribes NIFTY spot to the 2-min
-                candle feed. No entries yet.</li>
-            <li><strong>~09:17 IST — first 2-min NIFTY bar closes.</strong> The bar's close price
-                is snapshotted, rounded to the nearest 50-point strike, and the ATM CE + ATM PE
-                symbols are resolved from the weekly chain. Both legs are subscribed to the 2-min
-                feed and locked for the rest of the session.</li>
-            <li><strong>From Trading Start (default 09:17 IST) onward.</strong> Every 2-min bar
-                close on either option runs the trigger-candle FSM below. Only bearish sells fire.</li>
-            <li><strong>Trading End (default 14:30 IST).</strong> No new entries after this time.
-                Existing positions keep being managed.</li>
-            <li><strong>Squareoff (default 15:25 IST).</strong> Any remaining open positions are
-                flattened at market.</li>
+            <li><strong>Monday, Tuesday</strong> → NIFTY (spot <code>NSE:NIFTY50-INDEX</code>, lot 65, strike step 50).</li>
+            <li><strong>Wednesday, Thursday</strong> → SENSEX (spot <code>BSE:SENSEX-INDEX</code>, lot 20, strike step 100).</li>
+            <li><strong>Friday</strong> → DISABLED (no trading).</li>
+        </ul>
+        <p class="doc-p">
+            The instrument chosen for the day is locked at 09:20 entry and persisted. A
+            mid-session restart keeps the same instrument.
+        </p>
+    </div>
+
+    <!-- ── Entry (09:20 IST) ── -->
+    <div class="doc-section fade-in">
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-purple, #a78bfa);"></span> Entry (09:20 IST)</h2>
+        <ul class="doc-list">
+            <li>Fetch today's option chain from the resolved spot symbol (NIFTY or SENSEX).</li>
+            <li>Pick the <strong>CE strike whose LTP is closest to the target premium</strong>
+                (₹50 for NIFTY, ₹120 for SENSEX). SELL 1 × lots.</li>
+            <li>Pick the <strong>PE strike whose LTP is closest to the target premium</strong>. SELL 1 × lots.</li>
+            <li>SL price for each leg = <code>entryPremium × slMultiplier</code> (default 2.0
+                — SL triggers when the option's premium reaches 2× the received premium, i.e.
+                a 100 % loss of the received credit).</li>
+            <li>No target — legs are held until SL hit or timed squareoff.</li>
         </ul>
     </div>
 
-    <!-- ── The FSM ── -->
+    <!-- ── Adjustment (SL recovery) ── -->
     <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-purple, #a78bfa);"></span> The FSM</h2>
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-red, #f87171);"></span> Adjustment (SL recovery)</h2>
         <p class="doc-p">
-            One state machine per option leg. On every 2-min bar close for a leg,
-            the bot reads that leg's session VWAP (Fyers ATP) and evaluates in this
-            exact order:
+            Triggered when either <strong>initial</strong> leg hits its 100 % SL. The
+            adjustment side is the OPPOSITE of the SL-hit side (CE SL → new PE + PE hedge;
+            PE SL → new CE + CE hedge).
         </p>
-        <div style="margin-top:8px;">
-            <div class="phase-row">
-                <div class="phase-tag">S0 · seed</div>
-                <div class="phase-desc"><strong>No active trigger.</strong> If this bar's close is
-                    <strong>&lt; VWAP</strong>, it becomes the trigger candle. Otherwise stay in S0.</div>
-            </div>
-            <div class="phase-row">
-                <div class="phase-tag">S1 · fire</div>
-                <div class="phase-desc"><strong>Trigger active.</strong> If this bar's close is
-                    <strong>&lt; trigger.low</strong>, <strong>SELL the leg</strong>. This check is
-                    <em>unconditional</em> vs VWAP — the fire happens regardless of where the close
-                    sits relative to VWAP.</div>
-            </div>
-            <div class="phase-row">
-                <div class="phase-tag">S1 · promote</div>
-                <div class="phase-desc"><strong>No fire, this bar closes &lt; VWAP.</strong> The old
-                    trigger is dropped and THIS bar becomes the new trigger. Rolling behaviour —
-                    a fresh trigger seeds on every below-VWAP close until the very next bar
-                    fires it.</div>
-            </div>
-            <div class="phase-row">
-                <div class="phase-tag">S1 · invalidate</div>
-                <div class="phase-desc"><strong>No fire, this bar closes ≥ VWAP.</strong> The old
-                    trigger is dropped; no new trigger held. The state machine falls back to S0
-                    and waits for the next below-VWAP close.</div>
-            </div>
-        </div>
-        <p class="doc-p" style="margin-top:14px;">
-            The trigger candle survives at most ONE follow-up bar. Either the follow-up
-            fires or the trigger is dropped — there is no multi-bar "waiting on the same
-            trigger." A bar close ≥ VWAP does <strong>not by itself</strong> invalidate anything;
-            the fire check always runs first. Invalidation is strictly "immediate
-            follow-through failed."
+        <ul class="doc-list">
+            <li>Close the SL-hit leg at market.</li>
+            <li><strong>BUY hedge FIRST</strong> — deep-OTM on the adjustment side,
+                <code>hedgeStrikesAway</code> strike-steps further OTM from the strike about
+                to be sold (default 10 steps = 500 pts for NIFTY, 1000 pts for SENSEX).
+                Qty = base × <code>hedgeQtyMultiplier</code> (default 2×) for margin relief.</li>
+            <li><strong>SELL new leg</strong> at the strike whose current LTP is closest to
+                the target premium.</li>
+            <li>The hedge + new sell together form a <strong>defined-risk vertical spread</strong>
+                (bear call or bull put): max loss is bounded by strike difference − net credit.</li>
+        </ul>
+        <p class="doc-p">
+            <strong>One-shot</strong>: if the adjustment leg's own SL fires, close it and
+            stop. No further recovery cycles. The remaining shorts and hedges continue
+            managed until squareoff.
         </p>
-    </div>
-
-    <!-- Legacy diagrams retained for future reference — hidden. -->
-    <div class="doc-section fade-in" style="display:none;">
-
-        <!-- Reversals subsection -->
-        <h3 class="doc-h3" style="margin-top:22px;">Reversals · L3 / H3</h3>
-        <div class="setup-combo">
-            <div class="setup-combo-card">
-                <div class="combo-row bull">
-                    <div class="combo-label">
-                        <span class="setup-tag">Bullish · Mean-reversion</span>
-                        <span class="setup-name" style="color:var(--accent-green);">L3_REVERSAL</span>
-                    </div>
-                    <div class="combo-body">
-                        NIFTY wicks below <strong>L3</strong> and recovers back above. Bot sells
-                        <code>PE near L3</code>, targets <strong>H3</strong>. SL = confirmation
-                        candle low + buffer.
-                    </div>
-                </div>
-                <div class="combo-row bear">
-                    <div class="combo-label">
-                        <span class="setup-tag">Bearish · Mean-reversion</span>
-                        <span class="setup-name" style="color:var(--accent-red, #f87171);">H3_REVERSAL</span>
-                    </div>
-                    <div class="combo-body">
-                        NIFTY wicks above <strong>H3</strong> and rejects back below. Bot sells
-                        <code>CE near H3</code>, targets <strong>L3</strong>. SL = confirmation
-                        candle high + buffer.
-                    </div>
-                </div>
-            </div>
-            <div class="doc-svg-card" style="margin:0;">
-                <svg viewBox="0 0 380 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="L3 and H3 reversal setups">
-                    <defs>
-                        <marker id="arrG1" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#34d399"/></marker>
-                        <marker id="arrR1" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#f87171"/></marker>
-                    </defs>
-                    <rect x="6"  y="35" width="26" height="14" rx="3" fill="rgba(248,113,113,0.12)" stroke="rgba(248,113,113,0.4)" stroke-width="0.8"/>
-                    <text x="19" y="45" class="lvl-pill lvl-h4" text-anchor="middle">H4</text>
-                    <line x1="36" y1="42" x2="372" y2="42" stroke="#f87171" stroke-width="1.6"/>
-                    <rect x="6"  y="92" width="26" height="14" rx="3" fill="rgba(252,165,165,0.12)" stroke="rgba(252,165,165,0.4)" stroke-width="0.8"/>
-                    <text x="19" y="102" class="lvl-pill lvl-h3" text-anchor="middle">H3</text>
-                    <line x1="36" y1="99" x2="372" y2="99" stroke="#fca5a5" stroke-width="1.3" stroke-dasharray="6,4"/>
-                    <rect x="6"  y="180" width="26" height="14" rx="3" fill="rgba(134,239,172,0.12)" stroke="rgba(134,239,172,0.4)" stroke-width="0.8"/>
-                    <text x="19" y="190" class="lvl-pill lvl-l3" text-anchor="middle">L3</text>
-                    <line x1="36" y1="187" x2="372" y2="187" stroke="#86efac" stroke-width="1.3" stroke-dasharray="6,4"/>
-                    <rect x="6"  y="237" width="26" height="14" rx="3" fill="rgba(52,211,153,0.12)" stroke="rgba(52,211,153,0.4)" stroke-width="0.8"/>
-                    <text x="19" y="247" class="lvl-pill lvl-l4" text-anchor="middle">L4</text>
-                    <line x1="36" y1="244" x2="372" y2="244" stroke="#34d399" stroke-width="1.6"/>
-                    <!-- BULLISH @ L3 -->
-                    <line x1="85"  y1="172" x2="85"  y2="212" stroke="#9ca3af" stroke-width="1"/>
-                    <rect x="78"  y="177" width="14" height="15" fill="#f87171" stroke="#9ca3af" stroke-width="0.5"/>
-                    <line x1="120" y1="152" x2="120" y2="182" stroke="#9ca3af" stroke-width="1"/>
-                    <rect x="113" y="157" width="14" height="22" fill="#34d399" stroke="#9ca3af" stroke-width="0.5"/>
-                    <path d="M 95 178 Q 107 167 111 162" fill="none" stroke="#34d399" stroke-width="1.3" stroke-dasharray="2,2" marker-end="url(#arrG1)"/>
-                    <text x="70" y="270" font-size="9" font-weight="700" class="ann-bull">L3_REVERSAL</text>
-                    <text x="70" y="282" font-size="8" class="ann-mute">sell PE @ L4 · tgt H3</text>
-                    <!-- BEARISH @ H3 -->
-                    <line x1="270" y1="76"  x2="270" y2="118" stroke="#9ca3af" stroke-width="1"/>
-                    <rect x="263" y="104" width="14" height="13" fill="#34d399" stroke="#9ca3af" stroke-width="0.5"/>
-                    <line x1="305" y1="108" x2="305" y2="138" stroke="#9ca3af" stroke-width="1"/>
-                    <rect x="298" y="113" width="14" height="22" fill="#f87171" stroke="#9ca3af" stroke-width="0.5"/>
-                    <path d="M 280 114 Q 290 128 296 132" fill="none" stroke="#f87171" stroke-width="1.3" stroke-dasharray="2,2" marker-end="url(#arrR1)"/>
-                    <text x="255" y="270" font-size="9" font-weight="700" class="ann-bear">H3_REVERSAL</text>
-                    <text x="255" y="282" font-size="8" class="ann-mute">sell CE @ H4 · tgt L3</text>
-                </svg>
-            </div>
-        </div>
-
-        <!-- Breakouts subsection -->
-        <h3 class="doc-h3" style="margin-top:24px;">Breakouts · H4 / L4</h3>
-        <div class="setup-combo">
-            <div class="setup-combo-card">
-                <div class="combo-row bull">
-                    <div class="combo-label">
-                        <span class="setup-tag">Bullish · Trend continuation</span>
-                        <span class="setup-name" style="color:var(--accent-green);">H4_BREAKOUT</span>
-                    </div>
-                    <div class="combo-body">
-                        NIFTY closes above <strong>H4</strong>, breaking out of the pivot
-                        band. Bot sells <code>PE near H4</code>, targets <strong>H5</strong>.
-                        SL = confirmation candle low + buffer.
-                    </div>
-                </div>
-                <div class="combo-row bear">
-                    <div class="combo-label">
-                        <span class="setup-tag">Bearish · Trend continuation</span>
-                        <span class="setup-name" style="color:var(--accent-red, #f87171);">L4_BREAKDOWN</span>
-                    </div>
-                    <div class="combo-body">
-                        NIFTY closes below <strong>L4</strong>, breaking down through the
-                        floor. Bot sells <code>CE near L4</code>, targets <strong>L5</strong>.
-                        SL = confirmation candle high + buffer.
-                    </div>
-                </div>
-            </div>
-            <div class="doc-svg-card" style="margin:0;">
-                <svg viewBox="0 0 380 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="H4 breakout and L4 breakdown setups">
-                    <defs>
-                        <marker id="arrG2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#34d399"/></marker>
-                        <marker id="arrR2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#f87171"/></marker>
-                    </defs>
-                    <rect x="6"  y="13" width="26" height="14" rx="3" fill="rgba(251,191,36,0.10)" stroke="rgba(251,191,36,0.35)" stroke-width="0.8"/>
-                    <text x="19" y="23" class="lvl-pill lvl-h5" text-anchor="middle">H5</text>
-                    <line x1="36" y1="20" x2="372" y2="20" stroke="#fbbf24" stroke-width="1" stroke-dasharray="3,4"/>
-                    <rect x="6"  y="63" width="26" height="14" rx="3" fill="rgba(248,113,113,0.12)" stroke="rgba(248,113,113,0.4)" stroke-width="0.8"/>
-                    <text x="19" y="73" class="lvl-pill lvl-h4" text-anchor="middle">H4</text>
-                    <line x1="36" y1="70" x2="372" y2="70" stroke="#f87171" stroke-width="1.6"/>
-                    <rect x="6"  y="118" width="26" height="14" rx="3" fill="rgba(252,165,165,0.10)" stroke="rgba(252,165,165,0.35)" stroke-width="0.8"/>
-                    <text x="19" y="128" class="lvl-pill lvl-h3" text-anchor="middle">H3</text>
-                    <line x1="36" y1="125" x2="372" y2="125" stroke="#fca5a5" stroke-width="1.1" stroke-dasharray="6,4"/>
-                    <rect x="6"  y="178" width="26" height="14" rx="3" fill="rgba(134,239,172,0.10)" stroke="rgba(134,239,172,0.35)" stroke-width="0.8"/>
-                    <text x="19" y="188" class="lvl-pill lvl-l3" text-anchor="middle">L3</text>
-                    <line x1="36" y1="185" x2="372" y2="185" stroke="#86efac" stroke-width="1.1" stroke-dasharray="6,4"/>
-                    <rect x="6"  y="233" width="26" height="14" rx="3" fill="rgba(52,211,153,0.12)" stroke="rgba(52,211,153,0.4)" stroke-width="0.8"/>
-                    <text x="19" y="243" class="lvl-pill lvl-l4" text-anchor="middle">L4</text>
-                    <line x1="36" y1="240" x2="372" y2="240" stroke="#34d399" stroke-width="1.6"/>
-                    <!-- BULLISH BREAKOUT @ H4 -->
-                    <line x1="85"  y1="55" x2="85"  y2="85" stroke="#9ca3af" stroke-width="1"/>
-                    <rect x="78"  y="58" width="14" height="22" fill="#34d399" stroke="#9ca3af" stroke-width="0.5"/>
-                    <line x1="120" y1="32" x2="120" y2="60" stroke="#9ca3af" stroke-width="1"/>
-                    <rect x="113" y="36" width="14" height="20" fill="#34d399" stroke="#9ca3af" stroke-width="0.5"/>
-                    <path d="M 95 55 Q 107 45 111 41" fill="none" stroke="#34d399" stroke-width="1.3" stroke-dasharray="2,2" marker-end="url(#arrG2)"/>
-                    <text x="70" y="105" font-size="9" font-weight="700" fill="#f87171">H4_BREAKOUT</text>
-                    <text x="70" y="117" font-size="8" class="ann-mute">sell PE @ H3 · tgt H5</text>
-                    <!-- BEARISH BREAKDOWN @ L4 -->
-                    <line x1="270" y1="225" x2="270" y2="258" stroke="#9ca3af" stroke-width="1"/>
-                    <rect x="263" y="230" width="14" height="22" fill="#f87171" stroke="#9ca3af" stroke-width="0.5"/>
-                    <line x1="305" y1="247" x2="305" y2="270" stroke="#9ca3af" stroke-width="1"/>
-                    <rect x="298" y="250" width="14" height="15" fill="#f87171" stroke="#9ca3af" stroke-width="0.5"/>
-                    <path d="M 280 248 Q 290 256 296 256" fill="none" stroke="#f87171" stroke-width="1.3" stroke-dasharray="2,2" marker-end="url(#arrR2)"/>
-                    <text x="240" y="160" font-size="9" font-weight="700" fill="#34d399">L4_BREAKDOWN</text>
-                    <text x="240" y="172" font-size="8" class="ann-mute">sell CE @ L3 · tgt L5</text>
-                </svg>
-            </div>
-        </div>
     </div>
 
     <!-- ── Stop loss ── -->
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-red, #f87171);"></span> Stop loss</h2>
         <p class="doc-p">
-            SL price = <code>max(trigger.high, atmVwapMinSlPoints)</code>. The
-            <em>Min SL floor</em> setting (default 10 option points, configurable in
-            Settings → Portfolio Risk) is the floor when the trigger candle's high is
-            smaller than the desired minimum SL — a tiny trigger candle would otherwise
-            create a stop too tight to survive normal noise.
+            SL price = <code>entryPremium × slMultiplier</code>. With the default multiplier
+            of 2.0, a leg sold at ₹50 has SL at ₹100 — a 100 % loss of the received credit.
         </p>
         <p class="doc-p">
-            SL is monitored <strong>tick-based inside the strategy</strong> at the fast
-            scheduler cadence (~500 ms). On any LTP tick where the option's live price
-            reaches the SL level, the strategy fires a market BUY to close the short.
-            No broker stop-loss order is placed — this guarantees a market fill even on
-            gap moves or a thin order book.
+            SL is tick-based inside the strategy at the fast scheduler cadence (~500 ms).
+            On any LTP tick where the leg's live price reaches its SL level, the strategy
+            fires a market BUY to close the short and trigger the adjustment cycle if
+            eligible.
         </p>
         <p class="doc-p">
-            <strong>No target</strong> — every open position is held until SL hit or timed
-            squareoff. There is no take-profit level.
+            Hedges are BUYs — they have no SL and stay open until the timed squareoff at
+            15:15 IST (deep OTM, typically decays to near-zero).
         </p>
-    </div>
-
-    <!-- ── Risk Management ── -->
-    <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-purple, #a78bfa);"></span> Risk management</h2>
-        <ul class="doc-list">
-            <li><strong>Combined-risk gate</strong> — before every fire, the strategy projects
-                <em>existing exposed risk + (SL − entry) × qty</em> for this new entry. If the
-                projected total would breach <code>portfolioMaxDailyLoss</code>, the fire is
-                rejected.</li>
-            <li><strong>50 % qty retry</strong> — when the full-lot fire would breach the
-                portfolio cap, the bot retries once at half quantity (rounded to whole lots,
-                min 1 lot). If the halved size still doesn't fit, the trade is skipped. No
-                third try.</li>
-            <li><strong>CE + PE simultaneous</strong> — both legs' FSMs run independently.
-                Both can be short at the same time, but their combined worst-case loss
-                (Σ (SL − entry) × qty across all open positions) is bounded by the same
-                portfolio cap.</li>
-            <li><strong>Realized-loss lockout</strong> — if today's <em>closed</em> losses
-                exceed <code>portfolioMaxDailyLoss</code>, the strategy locks out for the rest
-                of the session — no new fires on either leg.</li>
-        </ul>
     </div>
 
     <!-- ── Session windows ── -->
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-green);"></span> Session windows</h2>
         <p class="doc-p">
-            All three windows are configurable in Settings → ATM VWAP:
+            Both configurable in Settings → STRANGLE:
         </p>
         <ul class="doc-list">
-            <li><strong>Trading Start</strong> (default <code>09:17</code>) — the FSM runs from
-                first bar close, but sells don't fire until this time. Applies to the fire
-                gate; seed/promote/invalidate still update. Earliest fire opportunity is
-                the 09:21 bar close (when the 09:19 trigger candle's low is broken).</li>
-            <li><strong>Trading End</strong> (default <code>14:30</code>) — no new entries after
-                this time. Existing positions keep being managed until squareoff.</li>
-            <li><strong>Squareoff</strong> (default <code>15:25</code>) — any remaining open
-                positions are flattened at market.</li>
+            <li><strong>Entry Time</strong> (default <code>09:20</code>) — strangle fires once
+                at/after this time on eligible weekdays.</li>
+            <li><strong>Squareoff Time</strong> (default <code>15:15</code>) — every remaining
+                open leg is flattened at market.</li>
         </ul>
+    </div>
+
+    <!-- ── Analytics ── -->
+    <div class="doc-section fade-in">
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-cyan);"></span> Analytics — day-as-one-trade</h2>
+        <p class="doc-p">
+            Each session day rolls up to one row for the Home hero metrics, equity curve,
+            By-Instrument breakdown, and By-Day-of-Week breakdown. So a day with 5 legs
+            (2 initial + 2 adjust + 1 hedge) but a net profit counts as
+            <strong>1 win</strong>, not 5. The Trade Log page still shows every individual
+            leg for detail.
+        </p>
+        <p class="doc-p">
+            <strong>By Instrument</strong> bins P&amp;L into NIFTY-day vs SENSEX-day totals
+            (natural for the weekday rotation). <strong>By Day</strong> bins Mon–Fri.
+        </p>
     </div>
 
     <!-- ── What's NOT in this strategy ── -->
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-amber, #fbbf24);"></span> What's NOT in this strategy</h2>
         <ul class="doc-list">
-            <li>No target orders — SL-hit or timed-squareoff exits only.</li>
-            <li>No re-entry after SL — once the leg's position closes, that FSM cycles fresh
-                but there's no automatic re-fire on the same trigger.</li>
-            <li>No bullish setups — every fire is a premium sell.</li>
-            <li>No pivot levels, no ATR, no VWAP bands, no scanner filters. VWAP is the
-                only anchor.</li>
+            <li>No recursive adjustment — one recovery per side per session, then stop.</li>
+            <li>No target orders — exits are SL, adjustment SL, or timed squareoff only.</li>
+            <li>No VWAP / bar-close FSM / trigger candles / ATR.</li>
+            <li>No re-entry after squareoff. Next day starts fresh at 09:20.</li>
+            <li>No weekend trading. Friday defaults to DISABLED but can be flipped to NIFTY
+                or SENSEX in Settings if desired.</li>
         </ul>
     </div>
 

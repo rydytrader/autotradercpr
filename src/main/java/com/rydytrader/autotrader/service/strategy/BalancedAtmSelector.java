@@ -205,6 +205,67 @@ public class BalancedAtmSelector {
             && row.peSym != null && !row.peSym.isEmpty();
     }
 
+    /** Pick the strike whose LTP on the requested side is closest to {@code targetPremium}.
+     *  Used by the Strangle strategy to find "the CE strike currently priced at ~₹50" (and
+     *  the mirrored PE side). Skips strikes whose side is unquoted (0 LTP or blank symbol).
+     *  Returns null when the chain is empty or nothing quotes on the requested side. */
+    public StrikeAtLevel resolveStrikeByTargetPremium(String spotSymbol, String side, double targetPremium) {
+        if (spotSymbol == null || spotSymbol.isBlank()) return null;
+        if (side == null || (!"CE".equalsIgnoreCase(side) && !"PE".equalsIgnoreCase(side))) return null;
+        if (targetPremium <= 0) return null;
+        NavigableMap<Long, ChainRow> chain = fetchChain(spotSymbol);
+        if (chain == null || chain.isEmpty()) return null;
+        boolean isCe = "CE".equalsIgnoreCase(side);
+        long bestStrike = 0;
+        double bestDiff = Double.MAX_VALUE;
+        ChainRow bestRow = null;
+        for (Map.Entry<Long, ChainRow> e : chain.entrySet()) {
+            ChainRow r = e.getValue();
+            if (r == null) continue;
+            double ltp = isCe ? r.ce : r.pe;
+            String sym = isCe ? r.ceSym : r.peSym;
+            if (ltp <= 0 || sym == null || sym.isEmpty()) continue;
+            double diff = Math.abs(ltp - targetPremium);
+            if (diff < bestDiff) {
+                bestDiff = diff;
+                bestStrike = e.getKey();
+                bestRow = r;
+            }
+        }
+        if (bestRow == null) {
+            log.warn("[atm-selector] resolveStrikeByTargetPremium({}, {}, {}): no quoted strike found",
+                spotSymbol, side, targetPremium);
+            return null;
+        }
+        return new StrikeAtLevel(targetPremium, bestStrike,
+            bestRow.ceSym == null ? "" : bestRow.ceSym,
+            bestRow.peSym == null ? "" : bestRow.peSym,
+            bestRow.ce, bestRow.pe);
+    }
+
+    /** Resolve the strike N strike-steps away from {@code fromStrike} in the given direction
+     *  ("UP" = deeper OTM CE / higher strike, "DOWN" = deeper OTM PE / lower strike). Walks
+     *  outward if the exact target isn't quoted. Returns null when the chain is empty or no
+     *  strike in the direction qualifies. */
+    public StrikeAtLevel resolveStrikeNAway(String spotSymbol, long strikeStep,
+                                             long fromStrike, int nSteps, String direction) {
+        if (spotSymbol == null || spotSymbol.isBlank()) return null;
+        if (nSteps <= 0 || strikeStep <= 0) return null;
+        boolean up = "UP".equalsIgnoreCase(direction);
+        long target = up ? (fromStrike + (long) nSteps * strikeStep)
+                         : (fromStrike - (long) nSteps * strikeStep);
+        NavigableMap<Long, ChainRow> chain = fetchChain(spotSymbol);
+        if (chain == null || chain.isEmpty()) return null;
+        long chosen = nearestStrikeWithBothLegs(chain, target);
+        if (chosen <= 0) {
+            log.warn("[atm-selector] resolveStrikeNAway({}, {}, {}, {}): no quoted strike found",
+                spotSymbol, fromStrike, nSteps, direction);
+            return null;
+        }
+        ChainRow row = chain.get(chosen);
+        return new StrikeAtLevel(target, chosen, row.ceSym, row.peSym, row.ce, row.pe);
+    }
+
     /** Public bulk-fetch entry point: returns the entire current chain as a NavigableMap
      *  keyed by strike. Cross-package callers use this when they want to walk MANY strikes
      *  from a single chain response instead of calling {@link #resolveStrikeAtLevel(double)}

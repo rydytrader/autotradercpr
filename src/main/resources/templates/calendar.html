@@ -355,8 +355,8 @@
             fetch('/api/market-holidays').then(r => r.json()).catch(() => [])
         ]).then(([holidays]) => {
             (holidays || []).forEach(h => NSE_HOLIDAYS[h.date] = h.name || 'Holiday');
-            // AtmVwap branch — singleton strategy. No /api/strategies, no manual terminal.
-            const list = [{ id: 'atmvwap' }];
+            // Strangle branch — singleton strategy. No /api/strategies, no manual terminal.
+            const list = [{ id: 'strangle' }];
             const histPromises = list.map(s =>
                 fetch('/api/strategies/' + encodeURIComponent(s.id) + '/history')
                     .then(r => r.json()).catch(() => ({ sessions: [] }))
@@ -577,7 +577,7 @@
             // Year-grid month cards — patch Win % / Gross / Charges / Trades cells
             // from the per-month analytics aggregate. The strategy-history endpoint
             // can return empty sessions when a legacy session row coexists with
-            // real AtmVwap trades for the same date (legacy row wins, blocks
+            // real Strangle trades for the same date (legacy row wins, blocks
             // trade aggregation), so we override here with the source of truth.
             const byMonth = d.byMonth || {};
             document.querySelectorAll('.cal-month-card[data-ym]').forEach(function(card) {
@@ -730,7 +730,7 @@
             const y = m >= 4 ? curFyStart : curFyStart + 1;
             const monthSessions = filterSessions(y, m);
             const agg = aggregate(monthSessions);
-            // Old legacy session rows (pre-AtmVwap straddle/strangle days)
+            // Old legacy session rows (pre-Strangle straddle/strangle days)
             // sometimes carry real grossPnl / charges / netPnl with entries=0
             // — treat the month as "having data" whenever ANY non-zero numeric
             // shows up, not just a positive trade count.
@@ -827,7 +827,7 @@
         const netCls  = net > 0 ? 'pnl-positive' : (net < 0 ? 'pnl-negative' : '');
 
         // Hero block — aggregated day totals on one row, plus two trade sections:
-        // ALGO (atmvwap strategy) and MANUAL (Options Terminal). Rendered side-by-side
+        // ALGO (strangle strategy) and MANUAL (Options Terminal). Rendered side-by-side
         // so the operator sees algo and manual P&L contribution distinctly while the
         // hero totals already aggregate both.
         const heroHtml = '<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:14px 28px;">' +
@@ -862,7 +862,7 @@
                         document.getElementById(containerId),
                         rows, 'Symbol', sectionLabel);
                 });
-        loadSection('atmvwap', 'calDayAlgo',    'Algo Trades');
+        loadSection('strangle', 'calDayAlgo',    'Algo Trades');
         loadSection('manual',    'calDayManual',  'Manual Trades');
     };
 

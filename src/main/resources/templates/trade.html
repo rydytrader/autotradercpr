@@ -265,9 +265,9 @@
                     <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
                         <span id="hdrVixChg" style="margin-left:4px;font-weight:600;"></span></span>
                     <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
-                    <!-- Session-monitored ATM option strikes (picked at first 2-min NIFTY bar close) -->
-                    <span style="color:var(--text-muted);" title="ATM CE leg — the CALL side the strategy monitors on 2-min bars">ATM CE <span id="hdrH5Ce" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                    <span style="color:var(--text-muted);" title="ATM PE leg — the PUT side the strategy monitors on 2-min bars">ATM PE <span id="hdrL5Pe" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                    <!-- Strangle legs — picked at entry (~09:20) by target premium -->
+                    <span style="color:var(--text-muted);" title="Original CE short (near target premium)">CE <span id="hdrH5Ce" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                    <span style="color:var(--text-muted);" title="Original PE short (near target premium)">PE <span id="hdrL5Pe" style="color:var(--text-primary);font-weight:700;">—</span></span>
                 </div>
             </div>
             <div style="display:flex; gap:10px; align-items:center;">
@@ -404,7 +404,7 @@
         var enabled = !!t.checked;
         label.textContent = enabled ? 'Trading ON' : 'Trading OFF';
         wrap.classList.toggle('disabled', !enabled);
-        fetch('/api/atmvwap/enable', {
+        fetch('/api/strangle/enable', {
             method: 'POST',
             headers: csrfHeaders(),
             body: JSON.stringify({ enabled: enabled })
@@ -420,7 +420,7 @@
             danger:       true
         }).then(function(ok) {
             if (!ok) return;
-            fetch('/api/atmvwap/squareoff', {
+            fetch('/api/strangle/squareoff', {
                 method: 'POST',
                 headers: csrfHeaders(),
                 body: '{}'
@@ -436,7 +436,7 @@
             danger:       true
         }).then(function(ok) {
             if (!ok) return;
-            fetch('/api/atmvwap/squareoff', {
+            fetch('/api/strangle/squareoff', {
                 method: 'POST',
                 headers: csrfHeaders(),
                 body: JSON.stringify({ symbol: symbol })
@@ -454,36 +454,30 @@
         renderPositions(d);
         renderEvents(d);
         renderKillSwitch(d);
-        // v2 header — NIFTY spot LTP + change + %change. No VWAP (index doesn't
-        // have a meaningful VWAP; the gate was retired).
-        if (d.atmVwap) {
-            // perSymbolLevels is retired (no pivots in the ATM VWAP strategy).
-            renderFutTickerCells(d.atmVwap.futLtp, d.atmVwap.futChange,
-                d.atmVwap.futChangePct, d.atmVwap.futSymbol, null);
+        // Spot LTP for header ticker chip. Strangle payload exposes spotSymbol + spotLtp
+        // once today's instrument is resolved; before entry those keys are absent so we
+        // leave the chips as their fallback ("—").
+        if (d.spotSymbol && d.spotLtp != null) {
+            renderFutTickerCells(d.spotLtp, 0, 0, d.spotSymbol, null);
         }
         // (Market Clock card ticks independently on a 1 s interval — see updateMarketClock())
     }
 
     function renderHeader(d) {
-        // Initial / fallback render from the atmvwap state stream (2 s heartbeat).
+        // Initial / fallback render from the strangle state stream (2 s heartbeat).
         // VIX still rides the per-tick ticker SSE.
         var vxEl  = document.getElementById('hdrVix');
         if (vxEl)  vxEl.textContent  = d.indiaVix  != null ? Number(d.indiaVix).toFixed(2)  : '—';
-        // Session-monitored option strikes — the two ATM legs the strategy currently
-        // watches (ATM CE + ATM PE). setupLegs already carries the resolved strikes.
-        var h5El = document.getElementById('hdrH5Ce');
-        var l5El = document.getElementById('hdrL5Pe');
-        var h5Strike = '—', l5Strike = '—';
-        if (Array.isArray(d.setupLegs)) {
-            for (var i = 0; i < d.setupLegs.length; i++) {
-                var L = d.setupLegs[i];
-                if (!L) continue;
-                if (L.side === 'CE' && L.strike) h5Strike = String(L.strike);
-                if (L.side === 'PE' && L.strike) l5Strike = String(L.strike);
-            }
+        // Original strangle strikes (set at 09:20 entry).
+        var ceEl = document.getElementById('hdrH5Ce');
+        var peEl = document.getElementById('hdrL5Pe');
+        var ceStrike = '—', peStrike = '—';
+        if (d.strangle) {
+            if (d.strangle.originalCeStrike) ceStrike = String(d.strangle.originalCeStrike);
+            if (d.strangle.originalPeStrike) peStrike = String(d.strangle.originalPeStrike);
         }
-        if (h5El) h5El.textContent = h5Strike;
-        if (l5El) l5El.textContent = l5Strike;
+        if (ceEl) ceEl.textContent = ceStrike;
+        if (peEl) peEl.textContent = peStrike;
     }
 
 
@@ -540,7 +534,7 @@
     }
 
     function loadState() {
-        fetch('/api/atmvwap/state').then(function(r) { return r.json(); })
+        fetch('/api/strangle/state').then(function(r) { return r.json(); })
             .then(applyState).catch(function() {});
     }
 
@@ -556,7 +550,7 @@
     }
     function startStream() {
         try {
-            sseStream = new EventSource('/api/atmvwap/stream');
+            sseStream = new EventSource('/api/strangle/stream');
             sseStream.addEventListener('state', function(ev) {
                 stopPollFallback();
                 try { applyState(JSON.parse(ev.data)); } catch (e) {}
@@ -738,7 +732,7 @@
     }
 
     // ── Tick-level position LTP / P&L update via the shared ticker SSE ──────
-    // The atmvwap state stream pushes every 2 s. To get sub-second LTP/P&L
+    // The strangle state stream pushes every 2 s. To get sub-second LTP/P&L
     // refresh, we tap the same ticker channel used by the scrolling ticker —
     // it streams every WS tick for every subscribed symbol (including position
     // legs). For each tick that matches an open position, surgically update

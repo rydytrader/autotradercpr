@@ -14,7 +14,7 @@ import org.springframework.stereotype.Service;
  * Portfolio-wide kill switch — fires when the active strategy's live net day P&L drops
  * below the configured {@code portfolioMaxRiskPct} of {@code startingCapital}.
  *
- * <p>Since AtmVwap is the only strategy, the "portfolio" here is just the singleton's
+ * <p>Since Strangle is the only strategy, the "portfolio" here is just the singleton's
  * P&L. Kept as a separate service so the threshold can fire even on strategies we may add
  * later, and so the manual-terminal book stays independent.
  *

@@ -31,18 +31,22 @@ public class SettingsController {
         result.put("tradingStartTime",    riskSettings.getTradingStartTime(effectiveMode));
         result.put("tradingEndTime",      riskSettings.getTradingEndTime(effectiveMode));
         result.put("autoSquareOffTime",   riskSettings.getAutoSquareOffTime(effectiveMode));
-        // ATM VWAP
-        result.put("atmVwapEnabled",            riskSettings.isAtmVwapEnabled(effectiveMode));
-        result.put("atmVwapLotsPerLeg",         riskSettings.getAtmVwapLotsPerLeg(effectiveMode));
-        result.put("atmVwapOrderType",          riskSettings.getAtmVwapOrderType(effectiveMode));
-        result.put("atmVwapTradingStartTime",   riskSettings.getAtmVwapTradingStartTime(effectiveMode));
-        result.put("atmVwapTradingEndTime",     riskSettings.getAtmVwapTradingEndTime(effectiveMode));
-        result.put("atmVwapSquareOffTime",      riskSettings.getAtmVwapSquareOffTime(effectiveMode));
-        result.put("atmVwapMaxConcurrentPositions", riskSettings.getAtmVwapMaxConcurrentPositions(effectiveMode));
-        result.put("atmVwapMinSlPoints",        riskSettings.getAtmVwapMinSlPoints(effectiveMode));
-        result.put("atmVwapMaxSlPoints",        riskSettings.getAtmVwapMaxSlPoints(effectiveMode));
-        result.put("atmVwapMaxCeTradesPerDay",  riskSettings.getAtmVwapMaxCeTradesPerDay(effectiveMode));
-        result.put("atmVwapMaxPeTradesPerDay",  riskSettings.getAtmVwapMaxPeTradesPerDay(effectiveMode));
+        // Strangle
+        result.put("strangleEnabled",               riskSettings.isStrangleEnabled(effectiveMode));
+        result.put("strangleLotsPerLeg",            riskSettings.getStrangleLotsPerLeg(effectiveMode));
+        result.put("strangleOrderType",             riskSettings.getStrangleOrderType(effectiveMode));
+        result.put("strangleEntryTime",             riskSettings.getStrangleEntryTime(effectiveMode));
+        result.put("strangleSquareOffTime",         riskSettings.getStrangleSquareOffTime(effectiveMode));
+        result.put("strangleNiftyTargetPremium",    riskSettings.getStrangleNiftyTargetPremium(effectiveMode));
+        result.put("strangleSensexTargetPremium",   riskSettings.getStrangleSensexTargetPremium(effectiveMode));
+        result.put("strangleSlMultiplier",          riskSettings.getStrangleSlMultiplier(effectiveMode));
+        result.put("strangleHedgeStrikesAway",      riskSettings.getStrangleHedgeStrikesAway(effectiveMode));
+        result.put("strangleHedgeQtyMultiplier",    riskSettings.getStrangleHedgeQtyMultiplier(effectiveMode));
+        result.put("strangleMondayInstrument",      riskSettings.getStrangleMondayInstrument(effectiveMode));
+        result.put("strangleTuesdayInstrument",     riskSettings.getStrangleTuesdayInstrument(effectiveMode));
+        result.put("strangleWednesdayInstrument",   riskSettings.getStrangleWednesdayInstrument(effectiveMode));
+        result.put("strangleThursdayInstrument",    riskSettings.getStrangleThursdayInstrument(effectiveMode));
+        result.put("strangleFridayInstrument",      riskSettings.getStrangleFridayInstrument(effectiveMode));
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
         result.put("maxRiskPerDayPct",    riskSettings.getMaxRiskPerDayPct(effectiveMode));
@@ -78,18 +82,22 @@ public class SettingsController {
             if (body.containsKey("tradingStartTime"))  riskSettings.setTradingStartTime(effectiveMode, body.get("tradingStartTime").toString());
             if (body.containsKey("tradingEndTime"))    riskSettings.setTradingEndTime(effectiveMode, body.get("tradingEndTime").toString());
             if (body.containsKey("autoSquareOffTime")) riskSettings.setAutoSquareOffTime(effectiveMode, body.get("autoSquareOffTime").toString());
-            // ATM VWAP
-            if (body.containsKey("atmVwapEnabled"))           riskSettings.setAtmVwapEnabled(effectiveMode, Boolean.parseBoolean(body.get("atmVwapEnabled").toString()));
-            if (body.containsKey("atmVwapLotsPerLeg"))        riskSettings.setAtmVwapLotsPerLeg(effectiveMode, Integer.parseInt(body.get("atmVwapLotsPerLeg").toString()));
-            if (body.containsKey("atmVwapOrderType"))         riskSettings.setAtmVwapOrderType(effectiveMode, body.get("atmVwapOrderType").toString());
-            if (body.containsKey("atmVwapTradingStartTime"))  riskSettings.setAtmVwapTradingStartTime(effectiveMode, body.get("atmVwapTradingStartTime").toString());
-            if (body.containsKey("atmVwapTradingEndTime"))    riskSettings.setAtmVwapTradingEndTime(effectiveMode, body.get("atmVwapTradingEndTime").toString());
-            if (body.containsKey("atmVwapSquareOffTime"))     riskSettings.setAtmVwapSquareOffTime(effectiveMode, body.get("atmVwapSquareOffTime").toString());
-            if (body.containsKey("atmVwapMaxConcurrentPositions")) riskSettings.setAtmVwapMaxConcurrentPositions(effectiveMode, Integer.parseInt(body.get("atmVwapMaxConcurrentPositions").toString()));
-            if (body.containsKey("atmVwapMinSlPoints"))            riskSettings.setAtmVwapMinSlPoints(effectiveMode, Double.parseDouble(body.get("atmVwapMinSlPoints").toString()));
-            if (body.containsKey("atmVwapMaxSlPoints"))            riskSettings.setAtmVwapMaxSlPoints(effectiveMode, Double.parseDouble(body.get("atmVwapMaxSlPoints").toString()));
-            if (body.containsKey("atmVwapMaxCeTradesPerDay"))      riskSettings.setAtmVwapMaxCeTradesPerDay(effectiveMode, Integer.parseInt(body.get("atmVwapMaxCeTradesPerDay").toString()));
-            if (body.containsKey("atmVwapMaxPeTradesPerDay"))      riskSettings.setAtmVwapMaxPeTradesPerDay(effectiveMode, Integer.parseInt(body.get("atmVwapMaxPeTradesPerDay").toString()));
+            // Strangle
+            if (body.containsKey("strangleEnabled"))              riskSettings.setStrangleEnabled(effectiveMode, Boolean.parseBoolean(body.get("strangleEnabled").toString()));
+            if (body.containsKey("strangleLotsPerLeg"))           riskSettings.setStrangleLotsPerLeg(effectiveMode, Integer.parseInt(body.get("strangleLotsPerLeg").toString()));
+            if (body.containsKey("strangleOrderType"))            riskSettings.setStrangleOrderType(effectiveMode, body.get("strangleOrderType").toString());
+            if (body.containsKey("strangleEntryTime"))            riskSettings.setStrangleEntryTime(effectiveMode, body.get("strangleEntryTime").toString());
+            if (body.containsKey("strangleSquareOffTime"))        riskSettings.setStrangleSquareOffTime(effectiveMode, body.get("strangleSquareOffTime").toString());
+            if (body.containsKey("strangleNiftyTargetPremium"))   riskSettings.setStrangleNiftyTargetPremium(effectiveMode, Double.parseDouble(body.get("strangleNiftyTargetPremium").toString()));
+            if (body.containsKey("strangleSensexTargetPremium"))  riskSettings.setStrangleSensexTargetPremium(effectiveMode, Double.parseDouble(body.get("strangleSensexTargetPremium").toString()));
+            if (body.containsKey("strangleSlMultiplier"))         riskSettings.setStrangleSlMultiplier(effectiveMode, Double.parseDouble(body.get("strangleSlMultiplier").toString()));
+            if (body.containsKey("strangleHedgeStrikesAway"))     riskSettings.setStrangleHedgeStrikesAway(effectiveMode, Integer.parseInt(body.get("strangleHedgeStrikesAway").toString()));
+            if (body.containsKey("strangleHedgeQtyMultiplier"))   riskSettings.setStrangleHedgeQtyMultiplier(effectiveMode, Double.parseDouble(body.get("strangleHedgeQtyMultiplier").toString()));
+            if (body.containsKey("strangleMondayInstrument"))     riskSettings.setStrangleMondayInstrument(effectiveMode, body.get("strangleMondayInstrument").toString());
+            if (body.containsKey("strangleTuesdayInstrument"))    riskSettings.setStrangleTuesdayInstrument(effectiveMode, body.get("strangleTuesdayInstrument").toString());
+            if (body.containsKey("strangleWednesdayInstrument"))  riskSettings.setStrangleWednesdayInstrument(effectiveMode, body.get("strangleWednesdayInstrument").toString());
+            if (body.containsKey("strangleThursdayInstrument"))   riskSettings.setStrangleThursdayInstrument(effectiveMode, body.get("strangleThursdayInstrument").toString());
+            if (body.containsKey("strangleFridayInstrument"))     riskSettings.setStrangleFridayInstrument(effectiveMode, body.get("strangleFridayInstrument").toString());
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
             if (body.containsKey("maxRiskPerDayPct"))  riskSettings.setMaxRiskPerDayPct(effectiveMode, Double.parseDouble(body.get("maxRiskPerDayPct").toString()));
