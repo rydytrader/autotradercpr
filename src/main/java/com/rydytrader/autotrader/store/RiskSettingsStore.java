@@ -32,7 +32,7 @@ public class RiskSettingsStore {
         volatile boolean atmVwapEnabled         = true;
         volatile int     atmVwapLotsPerLeg      = 1;       // 1 lot = 65 NIFTY
         volatile String  atmVwapOrderType       = "INTRADAY"; // INTRADAY | OVERNIGHT
-        volatile String  atmVwapTradingStartTime = "09:30"; // signals fire only after this time (IST)
+        volatile String  atmVwapTradingStartTime = "09:17"; // signals fire only after this time (IST)
         volatile String  atmVwapTradingEndTime   = "14:30"; // no new signals after this time (IST); exits keep running
         volatile String  atmVwapSquareOffTime   = "15:25";
         volatile int     atmVwapMaxConcurrentPositions = 4; // hard cap on simultaneously-open positions
@@ -582,7 +582,7 @@ public class RiskSettingsStore {
     public void setAtmVwapEnabled(boolean v)            { cfg().atmVwapEnabled = v; }
     public void setAtmVwapLotsPerLeg(int v)             { cfg().atmVwapLotsPerLeg = Math.max(1, v); }
     public void setAtmVwapOrderType(String v)           { cfg().atmVwapOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
-    public void setAtmVwapTradingStartTime(String v)    { cfg().atmVwapTradingStartTime = (v == null || v.isBlank()) ? "09:30" : v.trim(); }
+    public void setAtmVwapTradingStartTime(String v)    { cfg().atmVwapTradingStartTime = (v == null || v.isBlank()) ? "09:17" : v.trim(); }
     public void setAtmVwapTradingEndTime(String v)      { cfg().atmVwapTradingEndTime = (v == null || v.isBlank()) ? "14:30" : v.trim(); }
     public void setAtmVwapSquareOffTime(String v)       { cfg().atmVwapSquareOffTime = v == null ? "" : v.trim(); }
     public void setAtmVwapMaxConcurrentPositions(int v) { cfg().atmVwapMaxConcurrentPositions = Math.max(1, v); }
@@ -717,7 +717,7 @@ public class RiskSettingsStore {
     public void setAtmVwapEnabled(String mode, boolean v)            { cfgFor(mode).atmVwapEnabled = v; }
     public void setAtmVwapLotsPerLeg(String mode, int v)             { cfgFor(mode).atmVwapLotsPerLeg = Math.max(1, v); }
     public void setAtmVwapOrderType(String mode, String v)           { cfgFor(mode).atmVwapOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
-    public void setAtmVwapTradingStartTime(String mode, String v)    { cfgFor(mode).atmVwapTradingStartTime = (v == null || v.isBlank()) ? "09:30" : v.trim(); }
+    public void setAtmVwapTradingStartTime(String mode, String v)    { cfgFor(mode).atmVwapTradingStartTime = (v == null || v.isBlank()) ? "09:17" : v.trim(); }
     public void setAtmVwapTradingEndTime(String mode, String v)      { cfgFor(mode).atmVwapTradingEndTime = (v == null || v.isBlank()) ? "14:30" : v.trim(); }
     public void setAtmVwapSquareOffTime(String mode, String v)       { cfgFor(mode).atmVwapSquareOffTime = v == null ? "" : v.trim(); }
     public void setAtmVwapMaxConcurrentPositions(String mode, int v) { cfgFor(mode).atmVwapMaxConcurrentPositions = Math.max(1, v); }

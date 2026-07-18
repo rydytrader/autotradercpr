@@ -180,6 +180,10 @@ public class AtmVwap implements Strategy {
         try { ensureSessionLegsSubscribed(); }
         catch (Exception e) { log.warn("[AtmVwap] session-legs boot re-subscribe failed: {}", e.getMessage()); }
 
+        // If pre-warm was in progress before the crash (09:15-09:17 window), re-subscribe.
+        try { resumeWarmingIfNeeded(); }
+        catch (Exception e) { log.warn("[AtmVwap] resume-warming failed: {}", e.getMessage()); }
+
         log.info("[AtmVwap] booted — enabled={}, lots={}, squareoff={}, restoredPositions={}",
             riskSettings.isAtmVwapEnabled(), riskSettings.getAtmVwapLotsPerLeg(),
             riskSettings.getAtmVwapSquareOffTime(), state.openPositions.size());
@@ -339,6 +343,7 @@ public class AtmVwap implements Strategy {
         rolloverIfNewDay();
         watchSquareoff();
         refreshUnresolvedFills();
+        warmupIfDue();
         double maxRisk = riskSettings.getPortfolioMaxDailyLoss();
         if (maxRisk > 0 && !state.dailyLossLockout) {
             double consumed = consumedRiskNow();
@@ -407,11 +412,171 @@ public class AtmVwap implements Strategy {
         }
     }
 
-    // ── Session start — resolve ATM CE + PE ────────────────────────────────
+    // ── Session start — pre-warm at 09:15, resolve ATM CE + PE at 09:17 ────
 
-    /** First 2-min NIFTY spot bar close of the day. Round its close to the nearest 50-point
-     *  strike, pick the ATM CE + PE symbols with both legs quoted, subscribe them to the
-     *  2-min feed. Idempotent — no-op if today's ATM is already resolved. */
+    /** Pre-warm width — ±10 strikes each side (21 strikes total, 42 option symbols).
+     *  Covers ±500 pts of first-2-min NIFTY move. Extreme opens beyond this range
+     *  fall back to the slow (racy) path. */
+    private static final int PRE_WARM_STRIKES_EACH_SIDE = 10;
+    private static final LocalTime MARKET_OPEN_IST      = LocalTime.of(9, 15);
+    private static final LocalTime PRE_WARM_CUTOFF_IST  = LocalTime.of(9, 17);
+
+    /** Called from {@link #tick()} on the 5 s slow loop. Subscribes ±10 strikes of ATM
+     *  candidate legs so the aggregator has 2 min of tick history for whichever strike
+     *  ends up being the 09:17 ATM. Idempotent — same-day short-circuits. */
+    private synchronized void warmupIfDue() {
+        if (!isEnabled()) return;
+        LocalTime now = ZonedDateTime.now(IST).toLocalTime();
+        if (now.isBefore(MARKET_OPEN_IST)) return;                    // too early
+        if (!now.isBefore(PRE_WARM_CUTOFF_IST)) return;               // too late — resolveAtmFromFirstBar will handle it
+        if (state.ceSymbol != null && !state.ceSymbol.isBlank()) return;  // ATM already resolved
+        if (!state.warmingStrikes.isEmpty()) return;                  // already warming
+        String today = LocalDate.now(IST).toString();
+        if (today.equals(state.preWarmDayKey)) return;                // already ran today
+        double niftyLtp;
+        try { niftyLtp = marketDataService.getLtp(NIFTY_SYMBOL); }
+        catch (Exception e) { return; }
+        if (niftyLtp <= 0) return;                                     // WS not warm yet
+
+        long baseAtm = Math.round(niftyLtp / (double) STRIKE_STEP) * STRIKE_STEP;
+        long lo = baseAtm - (long) PRE_WARM_STRIKES_EACH_SIDE * STRIKE_STEP;
+        long hi = baseAtm + (long) PRE_WARM_STRIKES_EACH_SIDE * STRIKE_STEP;
+
+        java.util.NavigableMap<Long, BalancedAtmSelector.ChainStrike> chain;
+        try { chain = atmSelector.fetchChainStrikes(); }
+        catch (Exception e) {
+            log.warn("[AtmVwap] pre-warm chain fetch failed: {}", e.getMessage());
+            return;
+        }
+        if (chain == null || chain.isEmpty()) {
+            log.warn("[AtmVwap] pre-warm skipped — empty chain response");
+            return;
+        }
+
+        List<String> subs = new ArrayList<>();
+        for (Map.Entry<Long, BalancedAtmSelector.ChainStrike> e : chain.entrySet()) {
+            long strike = e.getKey();
+            if (strike < lo || strike > hi) continue;
+            BalancedAtmSelector.ChainStrike cs = e.getValue();
+            String ce = cs.ceSymbol(), pe = cs.peSymbol();
+            if (ce == null || ce.isBlank() || pe == null || pe.isBlank()) continue;
+            if (cs.ceLtp() <= 0 || cs.peLtp() <= 0) continue;
+            state.warmingStrikes.add(strike);
+            state.warmingCeByStrike.put(strike, ce);
+            state.warmingPeByStrike.put(strike, pe);
+            subs.add(ce);
+            subs.add(pe);
+        }
+
+        if (subs.isEmpty()) {
+            log.warn("[AtmVwap] pre-warm found no quoted strikes near {} (range {}–{})",
+                baseAtm, lo, hi);
+            return;
+        }
+
+        try { marketDataService.subscribeAdditional(subs); }
+        catch (Exception ignored) {}
+        for (String sym : subs) {
+            final String s = sym;
+            candleAggregator.subscribe(s, cc -> onCandleClose(s, cc));
+        }
+        state.preWarmDayKey = today;
+        saveToDisk();
+
+        event("[INFO]", "Setup",
+            "pre-warm subscribed " + state.warmingStrikes.size() + " strikes around ATM "
+            + baseAtm + " (range " + lo + "–" + hi + ")");
+    }
+
+    /** Called on a mid-warm boot restart. Re-subscribes the warming set that was
+     *  persisted before the crash so the aggregator continues sampling. Called from
+     *  {@link #boot()} after the state is loaded. */
+    private synchronized void resumeWarmingIfNeeded() {
+        if (state.warmingStrikes.isEmpty()) return;
+        if (state.ceSymbol != null && !state.ceSymbol.isBlank()) {
+            // ATM already resolved before the crash — warming set is stale.
+            trimWarmingSet();
+            return;
+        }
+        String today = LocalDate.now(IST).toString();
+        if (!today.equals(state.preWarmDayKey)) {
+            // Yesterday's warming set — abandon (no live subscriptions to unsubscribe;
+            // the WS was already closed on shutdown).
+            state.warmingStrikes.clear();
+            state.warmingCeByStrike.clear();
+            state.warmingPeByStrike.clear();
+            state.preWarmDayKey = "";
+            saveToDisk();
+            return;
+        }
+        LocalTime now = ZonedDateTime.now(IST).toLocalTime();
+        if (!now.isBefore(PRE_WARM_CUTOFF_IST)) {
+            // Past 09:17 with no ATM resolved and stale warming — likely a bug case.
+            // Drop the warming set; resolveAtmFromFirstBar will slow-path when NIFTY closes.
+            state.warmingStrikes.clear();
+            state.warmingCeByStrike.clear();
+            state.warmingPeByStrike.clear();
+            state.preWarmDayKey = "";
+            saveToDisk();
+            return;
+        }
+        List<String> subs = new ArrayList<>();
+        for (Long strike : state.warmingStrikes) {
+            String ce = state.warmingCeByStrike.get(strike);
+            String pe = state.warmingPeByStrike.get(strike);
+            if (ce != null && !ce.isBlank()) subs.add(ce);
+            if (pe != null && !pe.isBlank()) subs.add(pe);
+        }
+        if (subs.isEmpty()) return;
+        try { marketDataService.subscribeAdditional(subs); }
+        catch (Exception ignored) {}
+        for (String sym : subs) {
+            final String s = sym;
+            candleAggregator.subscribe(s, cc -> onCandleClose(s, cc));
+        }
+        event("[INFO]", "Setup",
+            "resuming pre-warm from persisted state — " + state.warmingStrikes.size() + " strikes");
+    }
+
+    /** Unsubscribe every pre-warmed symbol that isn't the resolved ATM CE or PE, and
+     *  clear the warming state. Called by {@link #resolveAtmFromFirstBar} at 09:17. */
+    private synchronized void trimWarmingSet() {
+        if (state.warmingStrikes.isEmpty()) return;
+        java.util.Set<String> keep = new java.util.HashSet<>();
+        if (state.ceSymbol != null && !state.ceSymbol.isBlank()) keep.add(state.ceSymbol);
+        if (state.peSymbol != null && !state.peSymbol.isBlank()) keep.add(state.peSymbol);
+
+        List<String> drop = new ArrayList<>();
+        for (Long strike : state.warmingStrikes) {
+            String ce = state.warmingCeByStrike.get(strike);
+            String pe = state.warmingPeByStrike.get(strike);
+            if (ce != null && !ce.isBlank() && !keep.contains(ce)) drop.add(ce);
+            if (pe != null && !pe.isBlank() && !keep.contains(pe)) drop.add(pe);
+        }
+
+        if (!drop.isEmpty()) {
+            try { marketDataService.unsubscribeAdditional(drop); }
+            catch (Exception ignored) {}
+            for (String sym : drop) candleAggregator.unsubscribe(sym);
+        }
+
+        int dropped = drop.size();
+        state.warmingStrikes.clear();
+        state.warmingCeByStrike.clear();
+        state.warmingPeByStrike.clear();
+        saveToDisk();
+
+        if (dropped > 0) {
+            event("[INFO]", "Setup",
+                "pre-warm trimmed — kept ATM legs, unsubscribed " + dropped + " symbol(s)");
+        }
+    }
+
+    /** First 2-min NIFTY spot bar close of the day. Rounds close to the nearest 50-point
+     *  strike, picks the ATM CE + PE symbols. Fast path: pre-warm already subscribed the
+     *  target strike (~99% of days). Slow path: the strike fell outside the ±10 pre-warm
+     *  window (extreme open) — subscribe fresh and log a warning (that bar's OHLC will be
+     *  partial). Idempotent — no-op if today's ATM is already resolved. */
     private synchronized void resolveAtmFromFirstBar(Candle c) {
         String today = LocalDate.now(IST).toString();
         if (today.equals(state.sessionSetupDayKey) && state.atmStrike > 0
@@ -422,6 +587,36 @@ public class AtmVwap implements Strategy {
         double close = c.close();
         if (close <= 0) return;
         long strike = Math.round(close / (double) STRIKE_STEP) * STRIKE_STEP;
+
+        String ce = state.warmingCeByStrike.get(strike);
+        String pe = state.warmingPeByStrike.get(strike);
+
+        if (ce != null && !ce.isBlank() && pe != null && !pe.isBlank()) {
+            // Fast path — pre-warm hit. The strike was subscribed at 09:15 so the
+            // 09:17-09:19 aggregator bucket has been continuously sampling since ~09:15.
+            state.firstBarCloseSymbol = NIFTY_SYMBOL;
+            state.firstBarClose       = close;
+            state.atmStrike           = strike;
+            state.ceSymbol            = ce;
+            state.peSymbol            = pe;
+            state.ceRefLtp            = safeLtp(ce);
+            state.peRefLtp            = safeLtp(pe);
+            state.sessionSetupDayKey  = today;
+            trimWarmingSet();
+            event("[INFO]", "Setup",
+                "NIFTY ATM Resolved (pre-warm HIT) — CE " + strike + " (" + shortSym(ce)
+                + ") | PE " + strike + " (" + shortSym(pe) + ")");
+            saveToDisk();
+            return;
+        }
+
+        // Slow path — extreme move outside the ±10 pre-warm window, OR pre-warm never ran
+        // (fresh install, no market-open tick received in time). Warn and subscribe fresh.
+        if (!state.warmingStrikes.isEmpty()) {
+            event("[WARNING]", "Setup",
+                "NIFTY ATM " + strike + " outside pre-warm window — resolving fresh "
+                + "(first bar OHLC may be partial)");
+        }
         BalancedAtmSelector.StrikeAtLevel row = atmSelector.resolveStrikeAtLevel(close);
         if (row == null || row.ceSymbol() == null || row.peSymbol() == null
             || row.ceSymbol().isBlank() || row.peSymbol().isBlank()) {
@@ -439,6 +634,7 @@ public class AtmVwap implements Strategy {
         state.sessionSetupDayKey  = today;
 
         ensureSessionLegsSubscribed();
+        trimWarmingSet();  // drop the useless pre-warm (its ATM guess was wrong)
         event("[INFO]", "Setup",
             "NIFTY ATM Resolved — CE " + state.atmStrike + " (" + shortSym(state.ceSymbol)
             + ") | PE " + state.atmStrike + " (" + shortSym(state.peSymbol) + ")");
@@ -474,6 +670,24 @@ public class AtmVwap implements Strategy {
             try { marketDataService.unsubscribeAdditional(legs); }
             catch (Exception ignored) {}
         }
+        // Also drop any still-warming symbols (defensive — should be empty by now).
+        if (!state.warmingStrikes.isEmpty()) {
+            List<String> drop = new ArrayList<>();
+            for (Long strike : state.warmingStrikes) {
+                String ce = state.warmingCeByStrike.get(strike);
+                String pe = state.warmingPeByStrike.get(strike);
+                if (ce != null && !ce.isBlank() && !openSymbols.contains(ce)) drop.add(ce);
+                if (pe != null && !pe.isBlank() && !openSymbols.contains(pe)) drop.add(pe);
+            }
+            if (!drop.isEmpty()) {
+                try { marketDataService.unsubscribeAdditional(drop); }
+                catch (Exception ignored) {}
+                for (String sym : drop) candleAggregator.unsubscribe(sym);
+            }
+            state.warmingStrikes.clear();
+            state.warmingCeByStrike.clear();
+            state.warmingPeByStrike.clear();
+        }
         state.ceSymbol           = "";
         state.peSymbol           = "";
         state.atmStrike          = 0;
@@ -481,6 +695,7 @@ public class AtmVwap implements Strategy {
         state.peRefLtp           = 0;
         state.firstBarClose      = 0;
         state.sessionSetupDayKey = "";
+        state.preWarmDayKey      = "";
     }
 
     // ── Trigger-candle FSM ─────────────────────────────────────────────────
@@ -1155,6 +1370,16 @@ public class AtmVwap implements Strategy {
         public double peRefLtp;
         /** YYYY-MM-DD on which today's ATM was resolved. Mismatch → force re-resolve. */
         public String sessionSetupDayKey = "";
+
+        // ── Pre-warm (±10 strikes subscribed at 09:15 to eliminate second-candle OHLC race) ─
+        /** Strikes we pre-warmed at 09:15. Empty after the 09:17 trim. */
+        public List<Long> warmingStrikes = new ArrayList<>();
+        /** Per-strike CE / PE Fyers symbols captured from the chain at pre-warm time. */
+        public Map<Long, String> warmingCeByStrike = new ConcurrentHashMap<>();
+        public Map<Long, String> warmingPeByStrike = new ConcurrentHashMap<>();
+        /** YYYY-MM-DD of the last pre-warm run. Same-day short-circuits re-warm; different-day
+         *  triggers a fresh warm on the next tick where guards pass. */
+        public String preWarmDayKey = "";
     }
 
     /** A 2-min bar that closed below its option's session VWAP. If the very next bar closes
@@ -1251,6 +1476,9 @@ public class AtmVwap implements Strategy {
                 if (state.recentEvents == null)     state.recentEvents     = new ArrayList<>();
                 if (state.triggerByOption == null)  state.triggerByOption  = new ConcurrentHashMap<>();
                 if (state.symbolRole == null)       state.symbolRole       = new ConcurrentHashMap<>();
+                if (state.warmingStrikes == null)     state.warmingStrikes     = new ArrayList<>();
+                if (state.warmingCeByStrike == null)  state.warmingCeByStrike  = new ConcurrentHashMap<>();
+                if (state.warmingPeByStrike == null)  state.warmingPeByStrike  = new ConcurrentHashMap<>();
                 purgeRetiredEntries();
                 migrateOpenPositionsKeyFormat();
             }

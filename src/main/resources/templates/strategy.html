@@ -231,7 +231,7 @@
                 is snapshotted, rounded to the nearest 50-point strike, and the ATM CE + ATM PE
                 symbols are resolved from the weekly chain. Both legs are subscribed to the 2-min
                 feed and locked for the rest of the session.</li>
-            <li><strong>From Trading Start (default 09:30 IST) onward.</strong> Every 2-min bar
+            <li><strong>From Trading Start (default 09:17 IST) onward.</strong> Every 2-min bar
                 close on either option runs the trigger-candle FSM below. Only bearish sells fire.</li>
             <li><strong>Trading End (default 14:30 IST).</strong> No new entries after this time.
                 Existing positions keep being managed.</li>
@@ -473,9 +473,10 @@
             All three windows are configurable in Settings → ATM VWAP:
         </p>
         <ul class="doc-list">
-            <li><strong>Trading Start</strong> (default <code>09:30</code>) — the FSM runs from
+            <li><strong>Trading Start</strong> (default <code>09:17</code>) — the FSM runs from
                 first bar close, but sells don't fire until this time. Applies to the fire
-                gate; seed/promote/invalidate still update.</li>
+                gate; seed/promote/invalidate still update. Earliest fire opportunity is
+                the 09:21 bar close (when the 09:19 trigger candle's low is broken).</li>
             <li><strong>Trading End</strong> (default <code>14:30</code>) — no new entries after
                 this time. Existing positions keep being managed until squareoff.</li>
             <li><strong>Squareoff</strong> (default <code>15:25</code>) — any remaining open
