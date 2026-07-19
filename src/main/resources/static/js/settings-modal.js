@@ -36,6 +36,8 @@
                       '<div class="sm-field"><label>Max Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto from Capital × Risk %.</div></div>' +
                       '<div class="sm-field"><label>Min SL (points above entry)</label><input type="number" id="sm-atmVwapMinSlPoints" step="1" min="0"><div class="sm-hint">SL is at least this many points above entry. Default 10.</div></div>' +
                       '<div class="sm-field"><label>Max SL (points above entry)</label><input type="number" id="sm-atmVwapMaxSlPoints" step="1" min="0"><div class="sm-hint">SL is capped to this many points above entry. Default 20.</div></div>' +
+                      '<div class="sm-field"><label>OI bias threshold %</label><input type="number" id="sm-atmVwapOiBiasThresholdPct" step="1" min="0" max="500"><div class="sm-hint">Percent by which one side\'s cumulative OI change must exceed the other to flip the trend pill. Default 40 (cumCE ≥ 1.40 × cumPE → BEARISH).</div></div>' +
+                      '<div class="sm-field"><label><input type="checkbox" id="sm-atmVwapOiBiasFilterEnabled" style="margin-right:6px;vertical-align:middle;">OI bias trade filter</label><div class="sm-hint">When ON, skip CE_SELL fires while OI bias reads BULLISH and skip PE_SELL fires while BEARISH. NEUTRAL / STALE never block. Default off.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
@@ -190,6 +192,8 @@
             if (g('sm-atmVwapSquareOffTime'))     g('sm-atmVwapSquareOffTime').value = d.atmVwapSquareOffTime || '15:25';
             if (g('sm-atmVwapMaxCeTradesPerDay')) g('sm-atmVwapMaxCeTradesPerDay').value = d.atmVwapMaxCeTradesPerDay != null ? d.atmVwapMaxCeTradesPerDay : 3;
             if (g('sm-atmVwapMaxPeTradesPerDay')) g('sm-atmVwapMaxPeTradesPerDay').value = d.atmVwapMaxPeTradesPerDay != null ? d.atmVwapMaxPeTradesPerDay : 3;
+            if (g('sm-atmVwapOiBiasThresholdPct')) g('sm-atmVwapOiBiasThresholdPct').value = d.atmVwapOiBiasThresholdPct != null ? d.atmVwapOiBiasThresholdPct : 40;
+            if (g('sm-atmVwapOiBiasFilterEnabled')) g('sm-atmVwapOiBiasFilterEnabled').checked = d.atmVwapOiBiasFilterEnabled === true;
         }).catch(function() {});
     }
 
@@ -202,7 +206,9 @@
             atmVwapTradingEndTime:     (g('sm-atmVwapTradingEndTime').value || '').trim(),
             atmVwapSquareOffTime:      (g('sm-atmVwapSquareOffTime').value || '').trim(),
             atmVwapMaxCeTradesPerDay:  parseInt(g('sm-atmVwapMaxCeTradesPerDay').value, 10) || 0,
-            atmVwapMaxPeTradesPerDay:  parseInt(g('sm-atmVwapMaxPeTradesPerDay').value, 10) || 0
+            atmVwapMaxPeTradesPerDay:  parseInt(g('sm-atmVwapMaxPeTradesPerDay').value, 10) || 0,
+            atmVwapOiBiasThresholdPct: Math.max(0, parseFloat(g('sm-atmVwapOiBiasThresholdPct').value) || 40),
+            atmVwapOiBiasFilterEnabled: !!(g('sm-atmVwapOiBiasFilterEnabled') && g('sm-atmVwapOiBiasFilterEnabled').checked)
         };
         postSettings('/api/settings/risk', body);
     }

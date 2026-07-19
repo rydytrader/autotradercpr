@@ -58,6 +58,19 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
     // SSE emitters
     private final CopyOnWriteArrayList<SseEmitter> emitters = new CopyOnWriteArrayList<>();
 
+    // OI listeners — side channel for open interest ticks on option symbols. Non-blocking,
+    // fanned out to each registered consumer on every option tick that carries a positive
+    // OI value. Used by OptionOiTracker to maintain cumulative-since-baseline aggregates.
+    /** Raw open interest event. {@code exchFeedTimeSec} is the exchange dissemination time
+     *  in epoch seconds (0 when the parser couldn't extract it). */
+    public record OiTick(String fyersSymbol, long oi, long exchFeedTimeSec) {}
+    private final CopyOnWriteArrayList<java.util.function.Consumer<OiTick>> oiListeners = new CopyOnWriteArrayList<>();
+    /** Registers a listener that receives every option-symbol OI tick. Callers must not
+     *  block — listeners run inline on the WebSocket callback thread. */
+    public void addOiListener(java.util.function.Consumer<OiTick> l) {
+        if (l != null) oiListeners.add(l);
+    }
+
     // WS state
     private volatile FyersDataWebSocket wsClient;
     private ScheduledExecutorService scheduler;
@@ -283,6 +296,15 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         tick.recalcChange();
         dirty = true;
 
+        // OI side channel — options only, positive OI only. Fan out to registered
+        // listeners so OptionOiTracker can maintain cumulative-since-baseline aggregates
+        // without polluting the TickData path used by the scrolling ticker.
+        if (raw.oi > 0 && !oiListeners.isEmpty() && isOptionSymbol(fyersSymbol)) {
+            OiTick evt = new OiTick(fyersSymbol, raw.oi, raw.exchFeedTime);
+            for (var l : oiListeners) {
+                try { l.accept(evt); } catch (Exception ignored) {}
+            }
+        }
     }
 
     @Override

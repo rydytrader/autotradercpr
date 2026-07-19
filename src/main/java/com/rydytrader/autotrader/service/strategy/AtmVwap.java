@@ -121,6 +121,14 @@ public class AtmVwap implements Strategy {
     private final RiskSettingsStore     riskSettings;
     private final ObjectProvider<StrategyTradeRepository> tradeRepoProvider;
     private final ObjectProvider<AtmVwapStreamBroker>     streamBrokerProvider;
+    /** OI subscriber. Injected via {@code ObjectProvider} so the AtmVwap bean can boot
+     *  even if the OI wiring is disabled or the class hasn't been instantiated yet
+     *  (e.g. in a stripped-down test context). */
+    private final ObjectProvider<com.rydytrader.autotrader.service.OptionOiSubscriber> optionOiSubscriberProvider;
+    /** OI tracker snapshot source for the CE/PE-side entry filter. Same provider
+     *  pattern as {@link #optionOiSubscriberProvider} so the strategy tolerates the
+     *  tracker being absent. */
+    private final ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> optionOiTrackerProvider;
 
     private final ObjectMapper mapper = new ObjectMapper()
         .findAndRegisterModules()
@@ -138,16 +146,48 @@ public class AtmVwap implements Strategy {
                    EventService eventService,
                    RiskSettingsStore riskSettings,
                    ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
-                   ObjectProvider<AtmVwapStreamBroker> streamBrokerProvider) {
-        this.candleAggregator     = candleAggregator;
-        this.atmTracker           = atmTracker;
-        this.atmSelector          = atmSelector;
-        this.marketDataService    = marketDataService;
-        this.orderService         = orderService;
-        this.eventService         = eventService;
-        this.riskSettings         = riskSettings;
-        this.tradeRepoProvider    = tradeRepoProvider;
-        this.streamBrokerProvider = streamBrokerProvider;
+                   ObjectProvider<AtmVwapStreamBroker> streamBrokerProvider,
+                   ObjectProvider<com.rydytrader.autotrader.service.OptionOiSubscriber> optionOiSubscriberProvider,
+                   ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> optionOiTrackerProvider) {
+        this.candleAggregator          = candleAggregator;
+        this.atmTracker                = atmTracker;
+        this.atmSelector               = atmSelector;
+        this.marketDataService         = marketDataService;
+        this.orderService              = orderService;
+        this.eventService              = eventService;
+        this.riskSettings              = riskSettings;
+        this.tradeRepoProvider         = tradeRepoProvider;
+        this.streamBrokerProvider      = streamBrokerProvider;
+        this.optionOiSubscriberProvider = optionOiSubscriberProvider;
+        this.optionOiTrackerProvider   = optionOiTrackerProvider;
+    }
+
+    /** Current OI bias — {@code BULLISH} / {@code BEARISH} / {@code NEUTRAL} / {@code STALE} /
+     *  {@code UNKNOWN}. Reads {@link com.rydytrader.autotrader.service.OptionOiTracker#snapshot()}
+     *  when the tracker bean is available; returns {@code "UNKNOWN"} otherwise so the
+     *  filter never fires on a missing dependency. */
+    private String currentOiBias() {
+        try {
+            var t = optionOiTrackerProvider == null ? null : optionOiTrackerProvider.getIfAvailable();
+            if (t == null) return "UNKNOWN";
+            var snap = t.snapshot();
+            String b = snap == null ? null : snap.bias();
+            return (b == null || b.isBlank()) ? "UNKNOWN" : b;
+        } catch (Exception e) {
+            return "UNKNOWN";
+        }
+    }
+
+    /** Fires the OI subscriber for the day's ATM. Called from both fast + slow paths of
+     *  {@code resolveAtmFromFirstBar} once the strike is locked. No-op when the provider
+     *  hasn't materialised (e.g. dependency missing in a test context). */
+    private void notifyOiWindow(long atm) {
+        try {
+            var sub = optionOiSubscriberProvider == null ? null : optionOiSubscriberProvider.getIfAvailable();
+            if (sub != null) sub.onAtmSelected(atm);
+        } catch (Exception e) {
+            log.warn("[AtmVwap] OI subscriber notify failed for ATM={}: {}", atm, e.getMessage());
+        }
     }
 
     /** Push the latest dashboard state to every SSE-connected browser. No-op when no clients. */
@@ -582,6 +622,9 @@ public class AtmVwap implements Strategy {
         if (today.equals(state.sessionSetupDayKey) && state.atmStrike > 0
             && !state.ceSymbol.isBlank() && !state.peSymbol.isBlank()) {
             ensureSessionLegsSubscribed();
+            // Re-establish OI subscriptions after a restart — idempotent when the window
+            // is already active in the tracker.
+            notifyOiWindow(state.atmStrike);
             return;
         }
         double close = c.close();
@@ -607,6 +650,7 @@ public class AtmVwap implements Strategy {
                 "NIFTY ATM Resolved (pre-warm HIT) — CE " + strike + " (" + shortSym(ce)
                 + ") | PE " + strike + " (" + shortSym(pe) + ")");
             saveToDisk();
+            notifyOiWindow(state.atmStrike);
             return;
         }
 
@@ -639,6 +683,7 @@ public class AtmVwap implements Strategy {
             "NIFTY ATM Resolved — CE " + state.atmStrike + " (" + shortSym(state.ceSymbol)
             + ") | PE " + state.atmStrike + " (" + shortSym(state.peSymbol) + ")");
         saveToDisk();
+        notifyOiWindow(state.atmStrike);
     }
 
     private void ensureSessionLegsSubscribed() {
@@ -820,6 +865,24 @@ public class AtmVwap implements Strategy {
                 shortSym(symbol) + " — PE fire cap reached (" + state.peTradesToday
                 + "/" + maxPe + "), skipping");
             return;
+        }
+
+        // OI bias trade filter. Opt-in gate — when ON, don't fight a directional flow:
+        // BULLISH OI (put writers dominant → market bullish) blocks CE_SELL; BEARISH OI
+        // (call writers dominant → market bearish) blocks PE_SELL. NEUTRAL / STALE /
+        // UNKNOWN never block (STALE = feed dead > 5 min, UNKNOWN = tracker not present).
+        if (riskSettings.isAtmVwapOiBiasFilterEnabled()) {
+            String bias = currentOiBias();
+            if (isCeLeg && "BULLISH".equals(bias)) {
+                event("[WARNING]", "OI Bias",
+                    shortSym(symbol) + " — CE_SELL blocked, market is BULLISH per OI flow");
+                return;
+            }
+            if (!isCeLeg && "BEARISH".equals(bias)) {
+                event("[WARNING]", "OI Bias",
+                    shortSym(symbol) + " — PE_SELL blocked, market is BEARISH per OI flow");
+                return;
+            }
         }
 
         // Portfolio realized-loss lockout.

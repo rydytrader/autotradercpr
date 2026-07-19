@@ -43,6 +43,8 @@ public class SettingsController {
         result.put("atmVwapMaxSlPoints",        riskSettings.getAtmVwapMaxSlPoints(effectiveMode));
         result.put("atmVwapMaxCeTradesPerDay",  riskSettings.getAtmVwapMaxCeTradesPerDay(effectiveMode));
         result.put("atmVwapMaxPeTradesPerDay",  riskSettings.getAtmVwapMaxPeTradesPerDay(effectiveMode));
+        result.put("atmVwapOiBiasThresholdPct", riskSettings.getAtmVwapOiBiasThresholdPct(effectiveMode));
+        result.put("atmVwapOiBiasFilterEnabled", riskSettings.isAtmVwapOiBiasFilterEnabled(effectiveMode));
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
         result.put("maxRiskPerDayPct",    riskSettings.getMaxRiskPerDayPct(effectiveMode));
@@ -90,6 +92,8 @@ public class SettingsController {
             if (body.containsKey("atmVwapMaxSlPoints"))            riskSettings.setAtmVwapMaxSlPoints(effectiveMode, Double.parseDouble(body.get("atmVwapMaxSlPoints").toString()));
             if (body.containsKey("atmVwapMaxCeTradesPerDay"))      riskSettings.setAtmVwapMaxCeTradesPerDay(effectiveMode, Integer.parseInt(body.get("atmVwapMaxCeTradesPerDay").toString()));
             if (body.containsKey("atmVwapMaxPeTradesPerDay"))      riskSettings.setAtmVwapMaxPeTradesPerDay(effectiveMode, Integer.parseInt(body.get("atmVwapMaxPeTradesPerDay").toString()));
+            if (body.containsKey("atmVwapOiBiasThresholdPct"))     riskSettings.setAtmVwapOiBiasThresholdPct(effectiveMode, Double.parseDouble(body.get("atmVwapOiBiasThresholdPct").toString()));
+            if (body.containsKey("atmVwapOiBiasFilterEnabled"))    riskSettings.setAtmVwapOiBiasFilterEnabled(effectiveMode, Boolean.parseBoolean(body.get("atmVwapOiBiasFilterEnabled").toString()));
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
             if (body.containsKey("maxRiskPerDayPct"))  riskSettings.setMaxRiskPerDayPct(effectiveMode, Double.parseDouble(body.get("maxRiskPerDayPct").toString()));

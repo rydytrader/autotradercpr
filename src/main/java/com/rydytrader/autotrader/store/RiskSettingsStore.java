@@ -46,6 +46,16 @@ public class RiskSettingsStore {
         volatile int    atmVwapMaxCeTradesPerDay = 3;
         /** Hard cap on PE-side fires per session. Default 3. */
         volatile int    atmVwapMaxPeTradesPerDay = 3;
+        /** OI bias threshold as a percent. Governs when the tracker labels the market
+         *  BULLISH / BEARISH: one side's cumulative-since-baseline change must exceed
+         *  the other by at least this percent to earn a directional bias — otherwise
+         *  NEUTRAL. Default 40 (i.e. cumCE ≥ 1.40 · cumPE → BEARISH). */
+        volatile double atmVwapOiBiasThresholdPct = 40.0;
+        /** OI-bias trade filter. When ON, AtmVwap will skip CE_SELL fires while the OI
+         *  bias reads BULLISH (writers stacking puts — market bullish, don't fight it)
+         *  and skip PE_SELL fires while the bias reads BEARISH. NEUTRAL and STALE
+         *  never block. Default OFF — opt-in per operator. */
+        volatile boolean atmVwapOiBiasFilterEnabled = false;
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
         /** Initial capital used as the baseline for the Analytics Home page (capital growth %,
@@ -406,6 +416,8 @@ public class RiskSettingsStore {
     public double  getAtmVwapMaxSlPoints()      { return cfg().atmVwapMaxSlPoints; }
     public int     getAtmVwapMaxCeTradesPerDay(){ return cfg().atmVwapMaxCeTradesPerDay; }
     public int     getAtmVwapMaxPeTradesPerDay(){ return cfg().atmVwapMaxPeTradesPerDay; }
+    public double  getAtmVwapOiBiasThresholdPct(){ return cfg().atmVwapOiBiasThresholdPct; }
+    public boolean isAtmVwapOiBiasFilterEnabled(){ return cfg().atmVwapOiBiasFilterEnabled; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getStartingCapital()      { return cfg().startingCapital; }
@@ -600,6 +612,8 @@ public class RiskSettingsStore {
     public void setAtmVwapMaxSlPoints(double v)         { cfg().atmVwapMaxSlPoints = Math.max(0, v); }
     public void setAtmVwapMaxCeTradesPerDay(int v)      { cfg().atmVwapMaxCeTradesPerDay = Math.max(0, v); }
     public void setAtmVwapMaxPeTradesPerDay(int v)      { cfg().atmVwapMaxPeTradesPerDay = Math.max(0, v); }
+    public void setAtmVwapOiBiasThresholdPct(double v)  { cfg().atmVwapOiBiasThresholdPct = Math.max(0, Math.min(500, v)); }
+    public void setAtmVwapOiBiasFilterEnabled(boolean v){ cfg().atmVwapOiBiasFilterEnabled = v; }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setStartingCapital(double v)      { cfg().startingCapital = Math.max(0, v); }
@@ -708,6 +722,8 @@ public class RiskSettingsStore {
     public double  getAtmVwapMaxSlPoints(String mode)       { return cfgFor(mode).atmVwapMaxSlPoints; }
     public int     getAtmVwapMaxCeTradesPerDay(String mode) { return cfgFor(mode).atmVwapMaxCeTradesPerDay; }
     public int     getAtmVwapMaxPeTradesPerDay(String mode) { return cfgFor(mode).atmVwapMaxPeTradesPerDay; }
+    public double  getAtmVwapOiBiasThresholdPct(String mode) { return cfgFor(mode).atmVwapOiBiasThresholdPct; }
+    public boolean isAtmVwapOiBiasFilterEnabled(String mode) { return cfgFor(mode).atmVwapOiBiasFilterEnabled; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
     public double getStartingCapital(String mode)      { return cfgFor(mode).startingCapital; }
@@ -741,6 +757,8 @@ public class RiskSettingsStore {
     public void setAtmVwapMaxSlPoints(String mode, double v)         { cfgFor(mode).atmVwapMaxSlPoints = Math.max(0, v); }
     public void setAtmVwapMaxCeTradesPerDay(String mode, int v)      { cfgFor(mode).atmVwapMaxCeTradesPerDay = Math.max(0, v); }
     public void setAtmVwapMaxPeTradesPerDay(String mode, int v)      { cfgFor(mode).atmVwapMaxPeTradesPerDay = Math.max(0, v); }
+    public void setAtmVwapOiBiasThresholdPct(String mode, double v)  { cfgFor(mode).atmVwapOiBiasThresholdPct = Math.max(0, Math.min(500, v)); }
+    public void setAtmVwapOiBiasFilterEnabled(String mode, boolean v){ cfgFor(mode).atmVwapOiBiasFilterEnabled = v; }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
     public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
     public void setStartingCapital(String mode, double v)      { cfgFor(mode).startingCapital = Math.max(0, v); }
@@ -784,6 +802,8 @@ public class RiskSettingsStore {
             upsert("atmVwapMaxSlPoints",       String.valueOf(c.atmVwapMaxSlPoints));
             upsert("atmVwapMaxCeTradesPerDay", String.valueOf(c.atmVwapMaxCeTradesPerDay));
             upsert("atmVwapMaxPeTradesPerDay", String.valueOf(c.atmVwapMaxPeTradesPerDay));
+            upsert("atmVwapOiBiasThresholdPct", String.valueOf(c.atmVwapOiBiasThresholdPct));
+            upsert("atmVwapOiBiasFilterEnabled", String.valueOf(c.atmVwapOiBiasFilterEnabled));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("startingCapital",      String.valueOf(c.startingCapital));
@@ -959,6 +979,10 @@ public class RiskSettingsStore {
                     case "atmVwapMaxSlPoints"         -> c.atmVwapMaxSlPoints = Math.max(0, Double.parseDouble(v));
                     case "atmVwapMaxCeTradesPerDay"   -> c.atmVwapMaxCeTradesPerDay = Math.max(0, Integer.parseInt(v));
                     case "atmVwapMaxPeTradesPerDay"   -> c.atmVwapMaxPeTradesPerDay = Math.max(0, Integer.parseInt(v));
+                    case "atmVwapOiStrikesEachSide"   -> { /* legacy — hard-coded to 15 in code; silently consume */ }
+                    case "atmVwapOiBiasThresholdPct"  -> c.atmVwapOiBiasThresholdPct = Math.max(0, Math.min(500, Double.parseDouble(v)));
+                    case "atmVwapOiBiasFilterEnabled",
+                         "camarillaOiBiasFilterEnabled" -> c.atmVwapOiBiasFilterEnabled = Boolean.parseBoolean(v);
                     case "atmVwapMaxConcurrentPositions",
                          "camarillaMaxConcurrentPositions" -> c.atmVwapMaxConcurrentPositions = Integer.parseInt(v);
                     // Legacy Camarilla-era keys silently consumed so old risk-settings.json
@@ -966,7 +990,6 @@ public class RiskSettingsStore {
                     // features were removed with the Camarilla strategy.
                     case "camarillaH3RevEnabled",
                          "camarillaL4BdEnabled",
-                         "camarillaOiBiasFilterEnabled",
                          "camarillaMinRRCheckEnabled",
                          "camarillaMinRRRatio",
                          "camarillaMomentumCheckEnabled",
