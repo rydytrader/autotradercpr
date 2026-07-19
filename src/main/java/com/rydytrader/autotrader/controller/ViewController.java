@@ -211,6 +211,11 @@ public class ViewController {
         return "trade";
     }
 
+    @GetMapping("/chart")
+    public String chart() {
+        return "chart";
+    }
+
     @GetMapping("/trades")
     public String trades() {
         return "trades";

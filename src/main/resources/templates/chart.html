@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" data-strategy-id="chart">
+<head>
+    <title>TraderEdge — Chart</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/shared.css?v=36">
+    <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+    <script>
+        (function() {
+            const t = localStorage.getItem('traderedge-theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', t);
+            document.addEventListener('DOMContentLoaded', function() {
+                const btn = document.getElementById('themeToggle');
+                if (btn) btn.textContent = t === 'light' ? '☀️' : t === 'forest' ? '🌲' : '🌙';
+            });
+        })();
+    </script>
+    <style>
+        .nav-icon:hover { color:var(--text-primary) !important; background:var(--bg-card-hover) !important; border-color:var(--border) !important; }
+        .nav-icon.active { color:var(--accent-cyan) !important; background:rgba(125,211,252,0.12) !important; border-color:rgba(125,211,252,0.35) !important; }
+
+        /* Chart page grid — row 1 = NIFTY (full width), row 2 = CE (left) + PE (right). */
+        .chart-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 16px;
+            height: calc(100vh - 240px);
+            min-height: 420px;
+        }
+        .chart-panel-nifty { grid-column: 1 / span 2; grid-row: 1; }
+        .chart-panel-ce    { grid-column: 1; grid-row: 2; }
+        .chart-panel-pe    { grid-column: 2; grid-row: 2; }
+        .chart-panel { display: flex; flex-direction: column; margin: 0; }
+        .chart-panel .chart-wrap {
+            flex: 1; min-height: 0;
+            padding: 8px 12px 12px;
+            position: relative;
+        }
+        .chart-hdr-sym {
+            font-family: var(--font-mono); font-size: 0.62rem; font-weight: 700;
+            letter-spacing: 0.06em; color: var(--text-muted);
+            background: rgba(125,211,252,0.08); border: 1px solid rgba(125,211,252,0.20);
+            padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+        }
+        .chart-hdr-price {
+            font-family: var(--font-mono); font-size: 1.05rem; font-weight: 700;
+            letter-spacing: 0.02em; color: var(--text-primary);
+        }
+        .chart-hdr-chg {
+            font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+        .chart-empty {
+            position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+            color: var(--text-muted); font-size: 0.78rem; font-family: var(--font-mono);
+            text-align: center; padding: 0 24px;
+        }
+        .pnl-positive { color: var(--accent-green, #34d399); }
+        .pnl-negative { color: var(--accent-red, #f87171); }
+    </style>
+</head>
+<body style="margin:0;display:flex;flex-direction:column;min-height:100vh;">
+<nav class="navbar" style="padding:0 16px;">
+    <div class="navbar-inner">
+        <a href="/home" style="display:flex;align-items:center;gap:10px;text-decoration:none;margin-right:18px;">
+            <span style="font-size:1.45rem;line-height:1;">⚡</span>
+            <div style="display:flex;flex-direction:column;line-height:1.1;">
+                <span style="font-family:var(--font-mono);font-weight:700;font-size:1.05rem;letter-spacing:0.08em;color:var(--text-primary);">TRADER<span style="color:var(--accent-cyan);">EDGE</span></span>
+                <span style="display:flex;align-items:center;gap:4px;margin-top:6px;">
+                    <span class="status-dot" id="statusDot" style="width:5px;height:5px;"></span>
+                    <span id="connectionStatus" style="color:var(--text-muted);font-size:0.52rem;letter-spacing:0.04em;">Checking…</span>
+                </span>
+            </div>
+        </a>
+        <div class="ticker-wrap" id="tickerWrap"><div class="ticker-track" id="tickerTrack"></div></div>
+        <div class="nav-right">
+            <button class="theme-toggle" id="settingsBtn" title="Settings" onclick="SettingsModal.open()" style="font-size:1rem;">⚙</button>
+            <button class="theme-toggle" id="chainBtn" title="Options Chain" onclick="OptionChainModal.open()" style="font-size:1rem;">⊞</button>
+            <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
+            <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
+        </div>
+    </div>
+</nav>
+
+<div style="display:flex;flex:1;min-height:0;">
+<aside class="strategy-nav-aside"
+       style="width:96px;flex-shrink:0;background:var(--navbar-bg);backdrop-filter:blur(16px);
+              border-right:1px solid var(--border);
+              display:flex;flex-direction:column;align-items:center;padding:20px 6px 28px;gap:14px;">
+    <div style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;
+                color:var(--text-muted);text-transform:uppercase;text-align:center;
+                width:78px;margin:0 0 4px;">MENU</div>
+    <a href="/home" class="nav-icon" title="Home" data-nav-key="home"
+       style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+              width:78px;padding:14px 6px 10px;gap:6px;
+              border-radius:14px;text-decoration:none;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">
+        <span style="font-size:1.75rem;line-height:1;">◉</span>
+        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">HOME</span>
+    </a>
+    <a href="/trade" class="nav-icon" title="Positions" data-nav-key="trade"
+       style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+              width:78px;padding:14px 6px 10px;gap:6px;
+              border-radius:14px;text-decoration:none;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">
+        <span style="font-size:1.75rem;line-height:1;">⬡</span>
+        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">POSITIONS</span>
+    </a>
+    <a href="/chart" class="nav-icon active" title="Chart" data-nav-key="chart"
+       style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+              width:78px;padding:14px 6px 10px;gap:6px;
+              border-radius:14px;text-decoration:none;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">
+        <span style="font-size:1.75rem;line-height:1;">▥</span>
+        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">CHART</span>
+    </a>
+    <a href="/trades" class="nav-icon" title="Trades" data-nav-key="trades"
+       style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+              width:78px;padding:14px 6px 10px;gap:6px;
+              border-radius:14px;text-decoration:none;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">
+        <span style="font-size:1.95rem;line-height:1;">≡</span>
+        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">TRADES</span>
+    </a>
+    <a href="/calendar" class="nav-icon" title="Calendar" data-nav-key="calendar"
+       style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+              width:78px;padding:14px 6px 10px;gap:6px;
+              border-radius:14px;text-decoration:none;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">
+        <span style="font-size:1.75rem;line-height:1;">▦</span>
+        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">CALENDAR</span>
+    </a>
+    <a href="/strategy" class="nav-icon" title="Strategy" data-nav-key="strategy"
+       style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+              width:78px;padding:14px 6px 10px;gap:6px;
+              border-radius:14px;text-decoration:none;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">
+        <span style="font-size:1.75rem;line-height:1;">◈</span>
+        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">STRATEGY</span>
+    </a>
+</aside>
+<div class="app-main" style="flex:1;min-width:0;margin-left:0;width:auto;padding:20px 24px;">
+
+    <div class="page-header fade-in" style="margin-bottom:14px;">
+        <div>
+            <div class="page-title">Chart</div>
+            <div class="page-subtitle">NIFTY spot · selected ATM CE + PE · 2-min OHLC with VWAP</div>
+        </div>
+        <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
+            <div style="font-size:1rem; color:var(--text-secondary);">
+                Welcome, <span id="userName" style="color:var(--text-primary); font-weight:600;">—</span>
+            </div>
+            <div id="fyersIdLine" style="font-size:0.72rem; color:var(--text-muted); margin-top:10px;">—</div>
+        </div>
+    </div>
+
+    <div class="chart-grid fade-in">
+        <!-- NIFTY spot — full-height left column -->
+        <div class="section-card chart-panel chart-panel-nifty">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:#fbbf24;"></div> NIFTY 50</div>
+                <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
+                    <span class="chart-hdr-price" id="niftyPrice">—</span>
+                    <span class="chart-hdr-chg" id="niftyChg"></span>
+                    <span class="chart-hdr-sym">NSE:NIFTY50-INDEX</span>
+                </div>
+            </div>
+            <div class="chart-wrap">
+                <div id="chartNifty" style="position:absolute; inset:0;"></div>
+                <div class="chart-empty" id="chartNiftyEmpty">Market opens at 09:15 IST…</div>
+            </div>
+        </div>
+
+        <!-- ATM CE — top right -->
+        <div class="section-card chart-panel chart-panel-ce">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green, #34d399);"></div>
+                    ATM CE <span id="ceStrikeLabel" style="color:var(--text-primary); font-weight:700; margin-left:6px;">—</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
+                    <span class="chart-hdr-price" id="cePrice">—</span>
+                    <span class="chart-hdr-chg" id="ceChg"></span>
+                </div>
+            </div>
+            <div class="chart-wrap">
+                <div id="chartCe" style="position:absolute; inset:0;"></div>
+                <div class="chart-empty" id="chartCeEmpty">Waits until first 2-min bar closes and ATM locks (~09:17 IST)…</div>
+            </div>
+        </div>
+
+        <!-- ATM PE — bottom right -->
+        <div class="section-card chart-panel chart-panel-pe">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-red, #f87171);"></div>
+                    ATM PE <span id="peStrikeLabel" style="color:var(--text-primary); font-weight:700; margin-left:6px;">—</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
+                    <span class="chart-hdr-price" id="pePrice">—</span>
+                    <span class="chart-hdr-chg" id="peChg"></span>
+                </div>
+            </div>
+            <div class="chart-wrap">
+                <div id="chartPe" style="position:absolute; inset:0;"></div>
+                <div class="chart-empty" id="chartPeEmpty">Waits until first 2-min bar closes and ATM locks (~09:17 IST)…</div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="page-footer" style="margin-top:14px;">
+        <div class="footer-copy">&copy; <span id="footerYear"></span> TraderEdge. All rights reserved.</div>
+        <div class="footer-author">Built by <strong style="color: var(--text-secondary); margin: 0 4px;">Prabhu Arumugham</strong>
+            <span class="footer-tag">rydytrader</span></div>
+    </footer>
+</div>
+</div>
+
+<script>
+    // Charts render 2-min close prices as a line, with the rightmost point animated by the
+    // in-progress bucket's live close (LTP). Poll cadence:
+    //   • /api/chart/candles per symbol every 2 s — smooth live rightmost point.
+    //   • /api/chart/symbols  every 15 s — catches AtmVwap's ATM lock at ~09:17 IST.
+
+    var charts = { nifty: null, ce: null, pe: null };
+    var currentCeSym = '', currentPeSym = '';
+    var NIFTY_SYM = 'NSE:NIFTY50-INDEX';
+
+    function fmtHhmm(ms) {
+        try {
+            var d = new Date(Number(ms));
+            var h = String(d.getHours()).padStart(2, '0');
+            var m = String(d.getMinutes()).padStart(2, '0');
+            return h + ':' + m;
+        } catch (e) { return ''; }
+    }
+    function fmtPx(v) {
+        if (v == null) return '—';
+        var n = Number(v);
+        if (!isFinite(n)) return '—';
+        return n.toFixed(2);
+    }
+    function pnlClass(v) { return v > 0 ? 'pnl-positive' : (v < 0 ? 'pnl-negative' : ''); }
+
+    // TradingView Lightweight Charts — candlestick + VWAP line overlay per panel.
+    // Chart / candlestick series / VWAP line series stored per panel key.
+    var candleSeries = { nifty: null, ce: null, pe: null };
+    var vwapSeries   = { nifty: null, ce: null, pe: null };
+    // IST offset used to shift bar timestamps so LightweightCharts (which formats in UTC
+    // by default) renders IST wall-clock labels. 5 h 30 min = 19800 s.
+    var IST_OFFSET_S = 5.5 * 3600;
+
+    function themeColors() {
+        var t = document.documentElement.getAttribute('data-theme') || 'dark';
+        var isDark = t !== 'light';
+        return {
+            text:  isDark ? '#94a3b8' : '#475569',
+            grid:  'rgba(128,128,128,0.08)',
+            vwap:  '#a78bfa',      // purple — same accent as the OI card dot
+            up:    '#34d399',
+            down:  '#f87171',
+            unchg: '#94a3b8'
+        };
+    }
+
+    function ensureChart(panelKey, containerId, priceDecimals) {
+        if (candleSeries[panelKey]) return candleSeries[panelKey];
+        var container = document.getElementById(containerId);
+        if (!container || typeof LightweightCharts === 'undefined') return null;
+        var col = themeColors();
+        var minMove = priceDecimals >= 1 ? Math.pow(10, -priceDecimals) : 1;
+        var chart = LightweightCharts.createChart(container, {
+            autoSize: true,
+            layout: {
+                background: { type: 'solid', color: 'transparent' },
+                textColor: col.text,
+                fontFamily: 'Roboto Mono, monospace',
+                fontSize: 10
+            },
+            grid: {
+                vertLines: { color: col.grid },
+                horzLines: { color: col.grid }
+            },
+            rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.08, bottom: 0.08 } },
+            timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
+            crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
+        });
+        charts[panelKey] = chart;
+        candleSeries[panelKey] = chart.addCandlestickSeries({
+            upColor: col.up,
+            downColor: col.down,
+            wickUpColor: col.up,
+            wickDownColor: col.down,
+            borderVisible: false,
+            priceFormat: { type: 'price', precision: priceDecimals, minMove: minMove }
+        });
+        vwapSeries[panelKey] = chart.addLineSeries({
+            color: col.vwap,
+            lineWidth: 1,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+            priceFormat: { type: 'price', precision: priceDecimals, minMove: minMove }
+        });
+        return candleSeries[panelKey];
+    }
+
+    function applyData(panelKey, history, current) {
+        var candles = candleSeries[panelKey];
+        var vwap    = vwapSeries[panelKey];
+        if (!candles) return { firstClose: null, lastClose: null };
+        var bars = [];
+        var vwapPoints = [];
+        var seenTimes = {};
+        function pushBar(c) {
+            var t = Math.floor(Number(c.startMillis) / 1000) + IST_OFFSET_S;
+            // LightweightCharts requires strictly ascending, unique time values.
+            if (seenTimes[t]) return;
+            seenTimes[t] = 1;
+            bars.push({ time: t, open: Number(c.open), high: Number(c.high), low: Number(c.low), close: Number(c.close) });
+            var v = Number(c.vwap || 0);
+            if (v > 0) vwapPoints.push({ time: t, value: v });
+        }
+        (history || []).forEach(pushBar);
+        if (current) pushBar(current);
+        candles.setData(bars);
+        vwap.setData(vwapPoints);
+        return {
+            firstClose: bars.length ? bars[0].close : null,
+            lastClose:  bars.length ? bars[bars.length - 1].close : null
+        };
+    }
+
+    function updatePanel(panelKey, symbol, priceElId, chgElId, emptyElId, priceDecimals) {
+        if (!symbol) return;
+        fetch('/api/chart/candles?symbol=' + encodeURIComponent(symbol)).then(function(r) { return r.json(); }).then(function(d) {
+            if (!d) return;
+            var history = d.history || [];
+            var current = d.current || null;
+            var empty = document.getElementById(emptyElId);
+            var hasData = history.length > 0 || current;
+            if (empty) empty.style.display = hasData ? 'none' : 'flex';
+            if (!hasData) return;
+            ensureChart(panelKey, 'chart' + panelKey.charAt(0).toUpperCase() + panelKey.slice(1), priceDecimals);
+            var res = applyData(panelKey, history, current);
+            var priceEl = document.getElementById(priceElId);
+            var chgEl   = document.getElementById(chgElId);
+            if (priceEl) priceEl.textContent = fmtPx(res.lastClose);
+            if (chgEl && res.firstClose != null && res.lastClose != null) {
+                var diff = res.lastClose - res.firstClose;
+                var pct  = res.firstClose > 0 ? (diff / res.firstClose) * 100 : 0;
+                var sign = diff >= 0 ? '+' : '';
+                chgEl.textContent = sign + diff.toFixed(2) + ' (' + sign + pct.toFixed(2) + '%)';
+                chgEl.className = 'chart-hdr-chg ' + pnlClass(diff);
+            }
+        }).catch(function() {});
+    }
+
+    function loadWelcome() {
+        fetch('/api/user/me').then(function(r){ return r.json(); }).then(function(u){
+            if (!u || !u.email) return;
+            var nm = document.getElementById('userName');
+            var id = document.getElementById('fyersIdLine');
+            if (nm) nm.textContent = (u.firstName || u.email).trim();
+            if (id) id.textContent = u.email;
+        }).catch(function(){});
+    }
+
+    function refreshSymbols() {
+        fetch('/api/chart/symbols').then(function(r) { return r.json(); }).then(function(d) {
+            if (!d) return;
+            var atm = d.atmStrike || 0;
+            var ce  = d.ceSymbol  || '';
+            var pe  = d.peSymbol  || '';
+            // Panel titles now carry the strike inline — no separate ATM display in the
+            // welcome block. Strike is the same for both legs by definition.
+            var ceStrikeEl = document.getElementById('ceStrikeLabel');
+            var peStrikeEl = document.getElementById('peStrikeLabel');
+            var strikeText = atm > 0 ? String(atm) : '—';
+            if (ceStrikeEl) ceStrikeEl.textContent = strikeText;
+            if (peStrikeEl) peStrikeEl.textContent = strikeText;
+            currentCeSym = ce;
+            currentPeSym = pe;
+        }).catch(function() {});
+    }
+
+    function pollAll() {
+        if (document.visibilityState !== 'visible') return;
+        // NIFTY spot ticks in whole points; option premiums show one decimal.
+        updatePanel('nifty', NIFTY_SYM, 'niftyPrice', 'niftyChg', 'chartNiftyEmpty', 0);
+        if (currentCeSym) updatePanel('ce', currentCeSym, 'cePrice', 'ceChg', 'chartCeEmpty', 1);
+        if (currentPeSym) updatePanel('pe', currentPeSym, 'pePrice', 'peChg', 'chartPeEmpty', 1);
+    }
+
+    // Welcome-line reload also runs on interval so tab-switch back reflects any user change.
+
+    document.addEventListener('DOMContentLoaded', function() {
+        var yr = document.getElementById('footerYear');
+        if (yr) yr.textContent = new Date().getFullYear();
+        loadWelcome();
+        refreshSymbols();
+        pollAll();
+        setInterval(refreshSymbols, 15000);
+        setInterval(pollAll, 2000);
+    });
+</script>
+
+
+<script src="/js/common.js?v=41"></script>
+<script src="/js/ticker.js?v=36"></script>
+<script src="/js/settings-modal.js?v=73"></script>
+<script src="/js/option-chain-modal.js?v=99"></script>
+</body>
+</html>

@@ -454,10 +454,14 @@ public class AtmVwap implements Strategy {
 
     // ── Session start — pre-warm at 09:15, resolve ATM CE + PE at 09:17 ────
 
-    /** Pre-warm width — ±10 strikes each side (21 strikes total, 42 option symbols).
-     *  Covers ±500 pts of first-2-min NIFTY move. Extreme opens beyond this range
-     *  fall back to the slow (racy) path. */
-    private static final int PRE_WARM_STRIKES_EACH_SIDE = 10;
+    /** Pre-warm width — ±15 strikes each side (31 strikes total, 62 option symbols).
+     *  Covers ±750 pts of first-2-min NIFTY move so the resolved ATM's CE + PE almost
+     *  always fall inside the window and their first 09:15–09:17 candle has full OHLC.
+     *  Also matches the {@code OptionOiSubscriber}'s ±15 window, so the OI tracker's
+     *  per-strike baseline can be taken from the first WS OI tick at 09:15 rather than
+     *  waiting for ATM lock at 09:17. Extreme opens beyond ±750 pts still fall back to
+     *  the slow (racy) path with a partial-first-bar warning. */
+    private static final int PRE_WARM_STRIKES_EACH_SIDE = 15;
     private static final LocalTime MARKET_OPEN_IST      = LocalTime.of(9, 15);
     private static final LocalTime PRE_WARM_CUTOFF_IST  = LocalTime.of(9, 17);
 
