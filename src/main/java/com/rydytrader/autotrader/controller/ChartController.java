@@ -2,6 +2,7 @@ package com.rydytrader.autotrader.controller;
 
 import com.rydytrader.autotrader.dto.Candle;
 import com.rydytrader.autotrader.service.CandleAggregator;
+import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.strategy.AtmVwap;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,13 +25,32 @@ public class ChartController {
 
     private static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
 
-    private final CandleAggregator candleAggregator;
+    private final CandleAggregator  candleAggregator;
+    private final MarketDataService marketDataService;
     private final ObjectProvider<AtmVwap> atmVwapProvider;
 
     public ChartController(CandleAggregator candleAggregator,
+                           MarketDataService marketDataService,
                            ObjectProvider<AtmVwap> atmVwapProvider) {
-        this.candleAggregator = candleAggregator;
-        this.atmVwapProvider  = atmVwapProvider;
+        this.candleAggregator  = candleAggregator;
+        this.marketDataService = marketDataService;
+        this.atmVwapProvider   = atmVwapProvider;
+    }
+
+    /** Compact tick block for a single symbol. Reads directly from the in-memory tick
+     *  cache — always returns the last-known value even off-market-hours, unlike the
+     *  SSE stream which is only push-on-change. */
+    private Map<String, Object> tickBlock(String fyersSymbol) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        if (fyersSymbol == null || fyersSymbol.isBlank()) return m;
+        m.put("ltp", round2(marketDataService.getLtp(fyersSymbol)));
+        m.put("ch",  round2(marketDataService.getChange(fyersSymbol)));
+        m.put("chp", round2(marketDataService.getChangePercent(fyersSymbol)));
+        return m;
+    }
+
+    private static double round2(double v) {
+        return Math.round(v * 100.0) / 100.0;
     }
 
     /** Which symbols the chart page should render. NIFTY is fixed; CE / PE come from
@@ -41,9 +61,17 @@ public class ChartController {
         out.put("nifty", NIFTY_SYMBOL);
         AtmVwap strat = atmVwapProvider == null ? null : atmVwapProvider.getIfAvailable();
         Map<String, Object> dash = strat == null ? Map.of() : strat.dashboardState();
+        String ceSymbol = String.valueOf(dash.getOrDefault("ceSymbol", ""));
+        String peSymbol = String.valueOf(dash.getOrDefault("peSymbol", ""));
         out.put("atmStrike", dash.getOrDefault("atmStrike", 0));
-        out.put("ceSymbol",  dash.getOrDefault("ceSymbol", ""));
-        out.put("peSymbol",  dash.getOrDefault("peSymbol", ""));
+        out.put("ceSymbol",  ceSymbol);
+        out.put("peSymbol",  peSymbol);
+        // Prime the header cells with the last-known WS-cached tick per symbol so the
+        // chart page shows NIFTY / CE / PE values instantly even when the ticker SSE
+        // hasn't pushed anything yet (initial load, off-hours, or paused feed).
+        out.put("niftyTick", tickBlock(NIFTY_SYMBOL));
+        out.put("ceTick",    tickBlock(ceSymbol));
+        out.put("peTick",    tickBlock(peSymbol));
         return out;
     }
 

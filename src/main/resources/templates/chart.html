@@ -41,6 +41,32 @@
             padding: 8px 12px 12px;
             position: relative;
         }
+        /* Expanded / fullscreen chart panel. Covers the viewport; the chart itself
+           picks up the new container size on the next resize tick via autoSize. */
+        .chart-panel.chart-panel-expanded {
+            position: fixed !important;
+            inset: 0 !important;
+            z-index: 9999;
+            margin: 0 !important;
+            border-radius: 0;
+            grid-column: unset !important;
+            grid-row: unset !important;
+        }
+        /* Hide any other panels + the app chrome behind the expanded one so ESC / click-out
+           can't leave overlapping content pushed underneath the fullscreen chart. */
+        body.chart-expanded .chart-grid > .chart-panel:not(.chart-panel-expanded) {
+            visibility: hidden;
+        }
+        .chart-expand-btn {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 24px; height: 24px;
+            font-family: var(--font-mono); font-size: 0.85rem; line-height: 1;
+            color: var(--text-muted); background: transparent;
+            border: 1px solid var(--border); border-radius: 6px;
+            cursor: pointer; transition: color 0.15s, border-color 0.15s;
+            margin-left: 8px;
+        }
+        .chart-expand-btn:hover { color: var(--accent-cyan); border-color: rgba(125,211,252,0.35); }
         .chart-hdr-sym {
             font-family: var(--font-mono); font-size: 0.62rem; font-weight: 700;
             letter-spacing: 0.06em; color: var(--text-muted);
@@ -163,11 +189,22 @@
         <!-- NIFTY spot — full-height left column -->
         <div class="section-card chart-panel chart-panel-nifty">
             <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:#fbbf24;"></div> NIFTY 50</div>
-                <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
+                <div class="section-title" style="display:flex; align-items:center; gap:12px;">
+                    <div class="section-title-dot" style="background:#fbbf24;"></div>
+                    <span>NIFTY 50</span>
                     <span class="chart-hdr-price" id="niftyPrice">—</span>
                     <span class="chart-hdr-chg" id="niftyChg"></span>
-                    <span class="chart-hdr-sym">NSE:NIFTY50-INDEX</span>
+                </div>
+                <div style="margin-left:auto; display:flex; align-items:center; gap:10px; font-family:var(--font-mono); font-size:0.66rem; font-weight:700; letter-spacing:0.04em;">
+                    <span style="color:var(--text-muted);">ΔCE <span id="niftyHdrCeOi" style="color:#f87171;">—</span></span>
+                    <span style="color:var(--text-muted);">ΔPE <span id="niftyHdrPeOi" style="color:#34d399;">—</span></span>
+                    <span id="niftyOiTrendPill"
+                          style="font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
+                                 letter-spacing:0.06em; color:var(--text-muted); background:rgba(128,128,128,0.10);
+                                 border:1px solid var(--border); padding:3px 10px; border-radius:999px;">
+                        NEUTRAL
+                    </span>
+                    <button class="chart-expand-btn" data-panel="nifty" onclick="toggleExpand('nifty')" title="Expand chart">⛶</button>
                 </div>
             </div>
             <div class="chart-wrap">
@@ -185,6 +222,7 @@
                 <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
                     <span class="chart-hdr-price" id="cePrice">—</span>
                     <span class="chart-hdr-chg" id="ceChg"></span>
+                    <button class="chart-expand-btn" data-panel="ce" onclick="toggleExpand('ce')" title="Expand chart">⛶</button>
                 </div>
             </div>
             <div class="chart-wrap">
@@ -202,6 +240,7 @@
                 <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
                     <span class="chart-hdr-price" id="pePrice">—</span>
                     <span class="chart-hdr-chg" id="peChg"></span>
+                    <button class="chart-expand-btn" data-panel="pe" onclick="toggleExpand('pe')" title="Expand chart">⛶</button>
                 </div>
             </div>
             <div class="chart-wrap">
@@ -369,6 +408,46 @@
         }).catch(function(){});
     }
 
+    // ── OI bias summary on NIFTY chart header ─────────────────────────────
+    // Mirrors the OI Bias card on /trade — same trend states, same
+    // Indian-style signed formatting for the two side sums. Polled every 30 s
+    // against /api/atmvwap/oi/state; visibility-gated to skip background tabs.
+    var oiThresholdPct = 40;
+    function oiInFmt(v) {
+        try { return new Intl.NumberFormat('en-IN').format(v); } catch (e) { return String(v); }
+    }
+    function oiSigned(v) {
+        var n = Number(v || 0);
+        return (n >= 0 ? '+' : '−') + oiInFmt(Math.abs(n));
+    }
+    function oiTrendStyle(bias) {
+        switch (bias) {
+            case 'BEARISH': return { color:'#f87171', bg:'rgba(248,113,113,0.10)', border:'rgba(248,113,113,0.35)' };
+            case 'BULLISH': return { color:'#34d399', bg:'rgba(52,211,153,0.10)', border:'rgba(52,211,153,0.35)' };
+            case 'STALE':   return { color:'#fbbf24', bg:'rgba(251,191,36,0.10)', border:'rgba(251,191,36,0.35)' };
+            default:        return { color:'var(--text-muted)', bg:'rgba(128,128,128,0.10)', border:'var(--border)' };
+        }
+    }
+    function pollOiState() {
+        if (document.visibilityState !== 'visible') return;
+        fetch('/api/atmvwap/oi/state').then(function(r){ return r.json(); }).then(function(d){
+            if (!d) return;
+            if (typeof d.biasThresholdPct === 'number') oiThresholdPct = d.biasThresholdPct;
+            var ceEl = document.getElementById('niftyHdrCeOi');
+            var peEl = document.getElementById('niftyHdrPeOi');
+            var pill = document.getElementById('niftyOiTrendPill');
+            if (ceEl) ceEl.textContent = d.cumulativeCeChange != null ? oiSigned(d.cumulativeCeChange) : '—';
+            if (peEl) peEl.textContent = d.cumulativePeChange != null ? oiSigned(d.cumulativePeChange) : '—';
+            if (pill) {
+                var style = oiTrendStyle(d.bias || 'NEUTRAL');
+                pill.textContent = (d.bias || 'NEUTRAL') + ' · ' + oiThresholdPct.toFixed(0) + '%';
+                pill.style.color        = style.color;
+                pill.style.background   = style.bg;
+                pill.style.borderColor  = style.border;
+            }
+        }).catch(function(){});
+    }
+
     function refreshSymbols() {
         fetch('/api/chart/symbols').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
@@ -384,8 +463,54 @@
             if (peStrikeEl) peStrikeEl.textContent = strikeText;
             currentCeSym = ce;
             currentPeSym = pe;
+            // Prime the header LTP + change cells from the in-memory tick cache. The
+            // ticker SSE only pushes on tick change and the initial snapshot may have
+            // already landed before attachTickerHeaderUpdates ran — so this poll
+            // guarantees the header shows a value on load and off-hours.
+            var nt = d.niftyTick || {};
+            if (nt.ltp) setHeaderCells('niftyPrice', 'niftyChg', nt.ltp, nt.ch, nt.chp, 0);
+            var cet = d.ceTick || {};
+            if (cet.ltp) setHeaderCells('cePrice', 'ceChg', cet.ltp, cet.ch, cet.chp, 1);
+            var pet = d.peTick || {};
+            if (pet.ltp) setHeaderCells('pePrice', 'peChg', pet.ltp, pet.ch, pet.chp, 1);
         }).catch(function() {});
     }
+
+    // ── Panel fullscreen expand / collapse ──────────────────────────────────
+    // Toggles the .chart-panel-expanded class on the clicked panel and dims the
+    // others (via body.chart-expanded on the <body>). LightweightCharts uses a
+    // ResizeObserver on autoSize: true, so it refits automatically; we still call
+    // requestAnimationFrame + resize as a belt-and-braces nudge for browsers that
+    // batch the observer callback after a paint.
+    var expandedPanel = null;
+    function toggleExpand(panelKey) {
+        var panelIds = { nifty: 'chart-panel-nifty', ce: 'chart-panel-ce', pe: 'chart-panel-pe' };
+        var panel = document.querySelector('.' + panelIds[panelKey]);
+        if (!panel) return;
+        if (expandedPanel === panelKey) {
+            panel.classList.remove('chart-panel-expanded');
+            document.body.classList.remove('chart-expanded');
+            expandedPanel = null;
+        } else {
+            if (expandedPanel) {
+                var prev = document.querySelector('.' + panelIds[expandedPanel]);
+                if (prev) prev.classList.remove('chart-panel-expanded');
+            }
+            panel.classList.add('chart-panel-expanded');
+            document.body.classList.add('chart-expanded');
+            expandedPanel = panelKey;
+        }
+        // Nudge LightweightCharts to refit into the new container size.
+        requestAnimationFrame(function() {
+            var chart = charts[panelKey];
+            if (chart && typeof chart.applyOptions === 'function') {
+                try { chart.applyOptions({ autoSize: true }); } catch (e) {}
+            }
+        });
+    }
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && expandedPanel) toggleExpand(expandedPanel);
+    });
 
     function pollAll() {
         if (document.visibilityState !== 'visible') return;
@@ -393,6 +518,49 @@
         updatePanel('nifty', NIFTY_SYM, 'niftyPrice', 'niftyChg', 'chartNiftyEmpty', 0);
         if (currentCeSym) updatePanel('ce', currentCeSym, 'cePrice', 'ceChg', 'chartCeEmpty', 1);
         if (currentPeSym) updatePanel('pe', currentPeSym, 'pePrice', 'peChg', 'chartPeEmpty', 1);
+    }
+
+    // ── Tick-level header updates via the shared ticker SSE ──────────────
+    // The 2-s poll of /api/chart/candles gives smooth chart updates, but the header
+    // price / change cells feel snappier when driven off every WS tick. Same pattern
+    // trade.html uses to update its NIFTY / VIX header cells. Fields on the tick:
+    //   t.fyers  — full Fyers symbol (matches whatever /api/chart/symbols returned)
+    //   t.lp     — last price
+    //   t.ch     — change vs prev close (rupees)
+    //   t.chp    — change vs prev close (%)
+    function setHeaderCells(priceElId, chgElId, ltp, ch, chp, decimals) {
+        var pEl = document.getElementById(priceElId);
+        var cEl = document.getElementById(chgElId);
+        if (pEl && typeof ltp === 'number' && ltp > 0) pEl.textContent = ltp.toFixed(decimals);
+        if (cEl) {
+            var diff = Number(ch || 0);
+            var pct  = Number(chp || 0);
+            var sign = diff >= 0 ? '+' : '';
+            cEl.textContent = sign + diff.toFixed(2) + ' (' + sign + pct.toFixed(2) + '%)';
+            cEl.className = 'chart-hdr-chg ' + pnlClass(diff);
+        }
+    }
+    function attachTickerHeaderUpdates() {
+        var src = window.__tickerSSE;
+        if (!src) { setTimeout(attachTickerHeaderUpdates, 500); return; }
+        src.addEventListener('ticker', function(ev) {
+            try {
+                var arr = JSON.parse(ev.data);
+                if (!arr || !arr.length) return;
+                for (var i = 0; i < arr.length; i++) {
+                    var t = arr[i];
+                    var full = t.fyers || t.fullSymbol || '';
+                    if (!full) continue;
+                    if (full === NIFTY_SYM) {
+                        setHeaderCells('niftyPrice', 'niftyChg', t.lp, t.ch, t.chp, 0);
+                    } else if (currentCeSym && full === currentCeSym) {
+                        setHeaderCells('cePrice', 'ceChg', t.lp, t.ch, t.chp, 1);
+                    } else if (currentPeSym && full === currentPeSym) {
+                        setHeaderCells('pePrice', 'peChg', t.lp, t.ch, t.chp, 1);
+                    }
+                }
+            } catch (e) {}
+        });
     }
 
     // Welcome-line reload also runs on interval so tab-switch back reflects any user change.
@@ -403,8 +571,11 @@
         loadWelcome();
         refreshSymbols();
         pollAll();
+        pollOiState();
+        attachTickerHeaderUpdates();
         setInterval(refreshSymbols, 15000);
         setInterval(pollAll, 2000);
+        setInterval(pollOiState, 30000);
     });
 </script>
 
