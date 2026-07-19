@@ -51,17 +51,20 @@ public class OptionOiSubscriber {
     private final FyersProperties      fyersProperties;
     private final MarketDataService    marketDataService;
     private final OptionOiTracker      oiTracker;
+    private final MarketHolidayService marketHolidayService;
 
     public OptionOiSubscriber(FyersClientRouter fyersClient,
                               TokenStore        tokenStore,
                               FyersProperties   fyersProperties,
                               MarketDataService marketDataService,
-                              OptionOiTracker   oiTracker) {
-        this.fyersClient       = fyersClient;
-        this.tokenStore        = tokenStore;
-        this.fyersProperties   = fyersProperties;
-        this.marketDataService = marketDataService;
-        this.oiTracker         = oiTracker;
+                              OptionOiTracker   oiTracker,
+                              MarketHolidayService marketHolidayService) {
+        this.fyersClient          = fyersClient;
+        this.tokenStore           = tokenStore;
+        this.fyersProperties      = fyersProperties;
+        this.marketDataService    = marketDataService;
+        this.oiTracker            = oiTracker;
+        this.marketHolidayService = marketHolidayService;
     }
 
     @PostConstruct
@@ -78,6 +81,14 @@ public class OptionOiSubscriber {
      *  no-op when the window hasn't changed). */
     public synchronized void onAtmSelected(long atm) {
         if (atm <= 0) return;
+        // NSE closed — weekend or listed holiday. AtmVwap's boot-time re-entry into
+        // resolveAtmFromFirstBar can still fire this hook from a persisted state file,
+        // but there's no OI feed to consume today so no need to burn a chain fetch or
+        // spam subscribe calls at the WS.
+        if (marketHolidayService != null && !marketHolidayService.isTradingDay()) {
+            log.info("[OptionOiSubscriber] skipping OI window setup — not a trading day");
+            return;
+        }
         if (!tokenStore.isTokenAvailable()) {
             log.warn("[OptionOiSubscriber] ATM={} but Fyers token unavailable — skipping OI window setup", atm);
             return;
