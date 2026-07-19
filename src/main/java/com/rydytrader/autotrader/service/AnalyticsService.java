@@ -78,6 +78,13 @@ public class AnalyticsService {
         List<Trade> trades = loadTrades(period, strategyId, from, to);
         List<Trade> closed = new ArrayList<>();
         for (Trade t : trades) if (isClosedStraddle(t)) closed.add(t);
+        // Session-level analytics: each trading day is one "trade". Every cycle
+        // closed that day is summed into a single synthetic Trade — positive net
+        // = winning session, negative = losing session. All performance /
+        // extremes / streaks / edge / breakdowns run off this list so the win
+        // rate, expectancy, drawdown, Sharpe etc. describe daily P&L outcomes
+        // rather than per-cycle churn.
+        List<Trade> dailyClosed = aggregateByDay(closed);
         double startingCapital = riskSettings.getStartingCapital();
 
         // Current Capital is the REAL account balance — starting + every trade ever
@@ -91,19 +98,49 @@ public class AnalyticsService {
         out.put("strategyId",    strategyId);
         out.put("from",          from);
         out.put("to",            to);
-        out.put("straddleCount", closed.size());
-        out.put("sessionCount",  distinctDates(closed));
+        out.put("straddleCount", dailyClosed.size());
+        out.put("sessionCount",  dailyClosed.size());
         out.put("includeAdjustments", false);
 
         out.put("capital",     capital(trades, startingCapital, allTimeNet));
-        out.put("performance", performance(closed));
-        out.put("extremes",    extremes(closed));
-        out.put("streaks",     streaks(closed));
-        out.put("edge",        edge(closed, startingCapital));
+        out.put("performance", performance(dailyClosed));
+        out.put("extremes",    extremes(dailyClosed));
+        out.put("streaks",     streaks(dailyClosed));
+        out.put("edge",        edge(dailyClosed, startingCapital));
         out.put("equityCurve", equityCurve(trades, startingCapital));
-        out.put("byMonth",     byMonth(trades, closed));
-        out.put("byDate",      byDate(trades, closed));
-        out.put("breakdowns",  breakdowns(closed));
+        out.put("byMonth",     byMonth(trades, dailyClosed));
+        out.put("byDate",      byDate(trades, dailyClosed));
+        return out;
+    }
+
+    /** Collapse per-cycle closed trades into one synthetic Trade per trading day.
+     *  netPnl / grossPnl / charges / slHitCount are summed; sessionDate keyed;
+     *  closedAtMillis takes the day's latest close so downstream ordering is
+     *  stable. Symbol / setup / instrument / OI bias are dropped — those are
+     *  cycle-level attributes that don't survive daily aggregation. Rows with
+     *  a blank sessionDate are skipped. */
+    private List<Trade> aggregateByDay(List<Trade> closed) {
+        java.util.NavigableMap<String, double[]> sums = new java.util.TreeMap<>();
+        // [grossPnl, charges, netPnl, slHitCount, closedAtMillis]
+        Map<String, String> strategyByDay = new LinkedHashMap<>();
+        for (Trade t : closed) {
+            String d = t.sessionDate();
+            if (d == null || d.isBlank()) continue;
+            double[] s = sums.computeIfAbsent(d, k -> new double[5]);
+            s[0] += t.grossPnl();
+            s[1] += t.charges();
+            s[2] += t.netPnl();
+            s[3] += t.slHitCount();
+            if (t.closedAtMillis() > s[4]) s[4] = t.closedAtMillis();
+            strategyByDay.putIfAbsent(d, t.strategyId());
+        }
+        List<Trade> out = new ArrayList<>();
+        for (Map.Entry<String, double[]> e : sums.entrySet()) {
+            double[] s = e.getValue();
+            out.add(new Trade(strategyByDay.get(e.getKey()), e.getKey(), (long) s[4],
+                s[0], s[1], s[2], "DAY_AGGREGATE", (int) s[3],
+                null, 0L, null, null, null));
+        }
         return out;
     }
 
@@ -717,110 +754,4 @@ public class AnalyticsService {
         return s.isBlank() ? null : s;
     }
 
-    // ── BREAKDOWN: By Setup / AM vs PM / By Day ─
-
-    /** Renders three side-by-side comparison cards. Each card returns
-     *  {@code { groupName: { trades, wins, losses, netPnl, winRate } }}. Filters out the
-     *  synthetic OPEN_POSITION_MTM row everywhere. */
-    private Map<String, Object> breakdowns(List<Trade> trades) {
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("bySetup", splitBySetup(trades));
-        out.put("amVsPm",  splitAmVsPm(trades));
-        out.put("byDay",   splitByDayOfWeek(trades));
-        return out;
-    }
-
-    /** 2-way split by setup tag (CE_SELL, PE_SELL). Historic Camarilla-era rows
-     *  (H4_BREAKOUT, L3_REVERSAL, H3_REVERSAL, L4_BREAKDOWN, VWAP_BREAKDOWN) are
-     *  dropped rather than binned into an "Other" bucket. Each setup card
-     *  displays the display label (e.g. "CE Sell") rather than the raw enum name. */
-    private Map<String, Map<String, Object>> splitBySetup(List<Trade> trades) {
-        Map<String, List<Trade>> bins = new LinkedHashMap<>();
-        bins.put("CE Sell", new ArrayList<>());
-        bins.put("PE Sell", new ArrayList<>());
-        for (Trade t : trades) {
-            if (!isClosedStraddle(t)) continue;
-            String setup = t.setup() == null ? "" : t.setup();
-            switch (setup) {
-                case "CE_SELL" -> bins.get("CE Sell").add(t);
-                case "PE_SELL" -> bins.get("PE Sell").add(t);
-                default        -> { /* legacy — dropped */ }
-            }
-        }
-        return summariseBins(bins);
-    }
-
-    /** 5-way split by day of week (Mon-Fri). Uses {@code sessionDate} to derive
-     *  the day. Bins are pre-declared in weekday order so the card renders
-     *  Mon → Fri consistently regardless of which days had trades. Rows with
-     *  invalid session dates are skipped. Weekend days aren't declared —
-     *  NSE doesn't trade weekends. */
-    private Map<String, Map<String, Object>> splitByDayOfWeek(List<Trade> trades) {
-        Map<String, List<Trade>> bins = new LinkedHashMap<>();
-        bins.put("Mon", new ArrayList<>());
-        bins.put("Tue", new ArrayList<>());
-        bins.put("Wed", new ArrayList<>());
-        bins.put("Thu", new ArrayList<>());
-        bins.put("Fri", new ArrayList<>());
-        for (Trade t : trades) {
-            if (!isClosedStraddle(t)) continue;
-            String iso = t.sessionDate();
-            if (iso == null) continue;
-            try {
-                java.time.DayOfWeek dow = LocalDate.parse(iso).getDayOfWeek();
-                switch (dow) {
-                    case MONDAY    -> bins.get("Mon").add(t);
-                    case TUESDAY   -> bins.get("Tue").add(t);
-                    case WEDNESDAY -> bins.get("Wed").add(t);
-                    case THURSDAY  -> bins.get("Thu").add(t);
-                    case FRIDAY    -> bins.get("Fri").add(t);
-                    default         -> { /* weekend — no bin */ }
-                }
-            } catch (Exception ignored) {}
-        }
-        return summariseBins(bins);
-    }
-
-    /** 12:30 IST split. Trades whose openedAtMillis falls before 12:30 → Morning, at/after → Afternoon.
-     *  Rows with openedAtMillis = 0 (legacy) fall back to closedAtMillis as a proxy. */
-    private Map<String, Map<String, Object>> splitAmVsPm(List<Trade> trades) {
-        final int cutoffMinuteOfDay = 12 * 60 + 30;
-        Map<String, List<Trade>> bins = new LinkedHashMap<>();
-        bins.put("Morning",   new ArrayList<>());
-        bins.put("Afternoon", new ArrayList<>());
-        for (Trade t : trades) {
-            if (!isClosedStraddle(t)) continue;
-            long ms = t.openedAtMillis() > 0 ? t.openedAtMillis() : t.closedAtMillis();
-            if (ms == 0) continue;
-            java.time.LocalTime lt = java.time.Instant.ofEpochMilli(ms).atZone(IST).toLocalTime();
-            int mod = lt.getHour() * 60 + lt.getMinute();
-            (mod < cutoffMinuteOfDay ? bins.get("Morning") : bins.get("Afternoon")).add(t);
-        }
-        return summariseBins(bins);
-    }
-
-    private Map<String, Map<String, Object>> summariseBins(Map<String, List<Trade>> bins) {
-        Map<String, Map<String, Object>> out = new LinkedHashMap<>();
-        for (Map.Entry<String, List<Trade>> e : bins.entrySet()) {
-            List<Trade> list = e.getValue();
-            int wins = 0, losses = 0;
-            double netSum = 0;
-            for (Trade t : list) {
-                double n = t.netPnl();
-                netSum += n;
-                if (n > 0) wins++;
-                else if (n < 0) losses++;
-            }
-            int total = list.size();
-            double winRate = total > 0 ? (wins / (double) total) * 100.0 : 0.0;
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("trades",  total);
-            m.put("wins",    wins);
-            m.put("losses",  losses);
-            m.put("netPnl",  round2(netSum));
-            m.put("winRate", round2(winRate));
-            out.put(e.getKey(), m);
-        }
-        return out;
-    }
 }

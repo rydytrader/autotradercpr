@@ -230,14 +230,14 @@
     <!-- FOUR DETAIL CARDS (drill-down stats — only metrics NOT already in the hero) -->
     <div class="fade-in ah-detail-grid" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:20px;">
 
-        <!-- Straddle Performance -->
+        <!-- Session Performance -->
         <div class="section-card" style="margin-bottom:0;">
             <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Trade Performance</div>
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Session Performance</div>
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;" title="Per trade, not per day.">Wins / Losses</span>
+                    <span class="stat-label" style="margin:0;" title="Winning sessions vs losing sessions. Each day is one session — its net P&L sign decides which side it counts on.">Wins / Losses</span>
                     <span style="font-family:var(--font-mono); font-size:0.95rem; font-weight:700;">
                         <span class="pnl-positive" id="ahWins">0</span>
                         <span style="color:var(--text-muted);"> / </span>
@@ -245,11 +245,11 @@
                     </span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;" title="Average winning trade net P&L vs average losing trade.">Avg Win / Loss</span>
+                    <span class="stat-label" style="margin:0;" title="Average winning session net P&L vs average losing session.">Avg Win / Loss</span>
                     <span class="stat-value" id="ahAvgWinLoss" style="font-size:0.85rem;">— / —</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;" title="Single best and single worst trade in scope.">Best / Worst</span>
+                    <span class="stat-label" style="margin:0;" title="Single best and single worst session in scope.">Best / Worst</span>
                     <span class="stat-value" id="ahBestWorst" style="font-size:0.85rem;">— / —</span>
                 </div>
             </div>
@@ -287,7 +287,7 @@
                     <span class="stat-value" id="ahTotalCharges" style="font-size:1rem;">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Avg per Trade</span>
+                    <span class="stat-label" style="margin:0;">Avg per Session</span>
                     <span class="stat-value" id="ahAvgCharges" style="font-size:1rem; color:var(--text-muted);">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -335,29 +335,6 @@
         </div>
     </div>
 
-    <!-- ── Breakdown cards (By Setup, AM vs PM, By Day) ── -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin-bottom:20px;" id="ahBreakdowns">
-        <div class="section-card fade-in" style="margin:0;">
-            <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:#a78bfa;"></div> By Setup</div>
-            </div>
-            <div id="ahBreakdownBySetup" style="padding:14px 18px;"></div>
-        </div>
-        <div class="section-card fade-in" style="margin:0;">
-            <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:#fbbf24;"></div> Morning vs Afternoon</div>
-                <span class="section-badge" style="font-size:0.58rem;margin-left:auto;">Split at 12:30 IST</span>
-            </div>
-            <div id="ahBreakdownAmVsPm" style="padding:14px 18px;"></div>
-        </div>
-        <div class="section-card fade-in" style="margin:0;">
-            <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:#34d399;"></div> By Day</div>
-                <span class="section-badge" style="font-size:0.58rem;margin-left:auto;">Mon → Fri</span>
-            </div>
-            <div id="ahBreakdownByDay" style="padding:14px 18px;"></div>
-        </div>
-    </div>
 
     <footer class="page-footer">
         <div class="footer-copy">&copy; <span id="footerYear"></span> TraderEdge. All rights reserved.</div>
@@ -643,12 +620,13 @@
             var edge = d.edge     || {};
             var eq  = d.equityCurve || { labels: [], values: [] };
 
-            // Header cycle-count badge — total closed strategy cycles (straddles + strangles)
-            // in scope. Strategy-neutral wording since the pool now mixes both.
+            // Header session-count badge — total trading days in scope. Each
+            // day is one session regardless of how many cycles ran; the sign
+            // of the day's net P&L decides win vs loss.
             var scEl = document.getElementById('ahSessionCount');
             if (scEl) {
                 var n = d.straddleCount || 0;
-                scEl.textContent = n + ' trade' + (n === 1 ? '' : 's');
+                scEl.textContent = n + ' session' + (n === 1 ? '' : 's');
             }
 
             // ── HERO STRIP ─────────────────────────────────────────────────
@@ -660,7 +638,7 @@
                 subEl.textContent = 'Started ' + fmtRs(cap.startingCapital)
                     + ' • ' + sign + fmtRs(cap.totalReturn)
                     + ' (' + fmtPct(cap.totalReturnPct) + ')'
-                    + ' • ' + cyclesN + ' trade' + (cyclesN === 1 ? '' : 's');
+                    + ' • ' + cyclesN + ' session' + (cyclesN === 1 ? '' : 's');
             }
             setVal('ahTotalReturn',  fmtRs(cap.totalReturn), cap.totalReturn);
             setVal('ahWinRate',      (perf.winRate != null ? perf.winRate.toFixed(1) : '0') + '%',
@@ -686,9 +664,9 @@
             // Edge Metrics card removed — operator considered low-signal at current scale.
             // Costs card
             var charges = Number(st.totalCharges || 0);
-            // Backend emits perf.straddles (count of rows in the trade pool — one per cycle
-            // now that multi-straddle days are supported). Use that as the divisor for
-            // "avg charges per straddle"; perf.sessions never existed and was always undefined.
+            // Backend emits perf.straddles as the count of trading SESSIONS in scope
+            // (one per day, regardless of how many cycles that day ran). Use it as the
+            // divisor for per-session averages (avg charges, expectancy, etc.).
             var numStraddles = Number(perf.straddles || 0);
             var grossSum = (Number(ext.avgProfit || 0) * (perf.wins || 0))
                          + (Number(ext.avgLoss   || 0) * (perf.losses || 0));
@@ -731,42 +709,9 @@
                 lastEquityRenderMs = nowMs;
             }
 
-            renderBreakdowns(d.breakdowns || {});
         }).catch(function() {});
     }
 
-    function renderBreakdowns(b) {
-        renderBin('ahBreakdownBySetup', b.bySetup || {});
-        renderBin('ahBreakdownAmVsPm',  b.amVsPm  || {});
-        renderBin('ahBreakdownByDay',   b.byDay   || {});
-    }
-
-    /** Render a {groupName: {trades, wins, losses, netPnl, winRate}} object as a small
-     *  stacked-row table. Skips groups with 0 trades unless they're the only entry — keeps
-     *  the cards visually compact when one side dominates. */
-    function renderBin(containerId, bin) {
-        var el = document.getElementById(containerId);
-        if (!el) return;
-        var keys = Object.keys(bin);
-        if (keys.length === 0) { el.innerHTML = '<div style="color:var(--text-muted);font-size:0.74rem;">No data yet.</div>'; return; }
-        var anyNonZero = keys.some(function(k) { return (bin[k].trades || 0) > 0; });
-        var rows = keys
-            .filter(function(k) { return anyNonZero ? (bin[k].trades || 0) > 0 : true; })
-            .map(function(k) {
-                var g = bin[k];
-                var net = Number(g.netPnl || 0);
-                var pnlClass = net > 0 ? 'pnl-positive' : (net < 0 ? 'pnl-negative' : '');
-                var wr = Number(g.winRate || 0);
-                return '<div style="display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:baseline;padding:8px 0;border-top:1px solid rgba(128,128,128,0.10);font-family:var(--font-mono);font-size:0.74rem;">'
-                    + '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;">' + k + '</span>'
-                    + '<span style="color:var(--text-muted);">' + g.trades + ' trade' + (g.trades === 1 ? '' : 's') + '</span>'
-                    + '<span style="color:var(--text-muted);">WR ' + wr.toFixed(0) + '%</span>'
-                    + '<span class="' + pnlClass + '" style="font-weight:700;">' + fmtRs(net) + '</span>'
-                    + '</div>';
-            }).join('');
-        if (!rows) { el.innerHTML = '<div style="color:var(--text-muted);font-size:0.74rem;">No closed trades.</div>'; return; }
-        el.innerHTML = rows;
-    }
     loadSummary(true);
     // Live refresh: while the tab is visible AND the current scope includes today, re-poll
     // every 5s so Total Return + hero metrics reflect the open straddle's MTM as it moves.
