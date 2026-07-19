@@ -107,7 +107,7 @@ function isFyersGateSuppressed() {
     if (p === '/login' || p.indexOf('/fyers/login') === 0) return true;
     if (p === '/home' || p.indexOf('/home') === 0) return true;
     if (p === '/calendar' || p.indexOf('/calendar') === 0) return true;
-    if (p === '/trades') return true;
+    if (p === '/strategy' || p.indexOf('/strategy') === 0) return true;
     if (p === '/' || p === '') return true;
     return false;
 }

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org" data-strategy-id="trade">
+<html xmlns:th="http://www.thymeleaf.org" data-strategy-id="strangle">
 <head>
-    <title>TraderEdge — Trade</title>
+    <title>TraderEdge — Strangle</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -146,21 +146,21 @@
         <span style="font-size:1.75rem;line-height:1;">◉</span>
         <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">HOME</span>
     </a>
-    <a href="/trade" class="nav-icon active" title="Positions" data-nav-key="trade"
+    <a href="/strangle" class="nav-icon active" title="Strangle" data-nav-key="strangle"
        style="display:flex;flex-direction:column;align-items:center;justify-content:center;
               width:78px;padding:14px 6px 10px;gap:6px;
               border-radius:14px;text-decoration:none;color:var(--text-secondary);
               border:1px solid transparent;background:transparent;cursor:pointer;">
         <span style="font-size:1.75rem;line-height:1;">⬡</span>
-        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">POSITIONS</span>
+        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">STRANGLE</span>
     </a>
-    <a href="/trades" class="nav-icon" title="Trades" data-nav-key="trades"
+    <a href="/strangle-adjust" class="nav-icon" title="Strangle + Adj" data-nav-key="strangle-adjust"
        style="display:flex;flex-direction:column;align-items:center;justify-content:center;
               width:78px;padding:14px 6px 10px;gap:6px;
               border-radius:14px;text-decoration:none;color:var(--text-secondary);
               border:1px solid transparent;background:transparent;cursor:pointer;">
         <span style="font-size:1.95rem;line-height:1;">≡</span>
-        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">TRADES</span>
+        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">STR-ADJ</span>
     </a>
     <a href="/calendar" class="nav-icon" title="Calendar" data-nav-key="calendar"
        style="display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -242,6 +242,62 @@
             </div>
         </div>
 
+    </div>
+
+    <!-- ── Leg Cards: CE Short / PE Short / CE Hedge / PE Hedge ──────────── -->
+    <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:20px;" class="fade-in">
+        <div class="section-card leg-card" id="legCardCeShort" data-role="ENTRY_CE" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-red, #f87171);"></div> CE Short</div>
+                <span class="leg-pill" style="margin-left:auto; font-family:var(--font-mono); font-size:0.62rem; font-weight:700; letter-spacing:0.06em; color:var(--text-muted); background:rgba(128,128,128,0.08); border:1px solid var(--border); padding:3px 10px; border-radius:999px;">IDLE</span>
+            </div>
+            <div class="leg-body" style="padding:14px 20px; display:flex; flex-direction:column; gap:12px;">
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Strike</span><span class="stat-value leg-strike" style="font-size:0.9rem;">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Qty</span><span class="stat-value leg-qty" style="font-size:0.9rem;">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Entry / LTP</span><span class="stat-value leg-entry-ltp" style="font-size:0.9rem;">— / —</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">SL Trigger</span><span class="stat-value leg-sl" style="font-size:0.9rem; color:var(--accent-red, #f87171);">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">MTM</span><span class="stat-value leg-mtm" style="font-size:1rem;">0.00</span></div>
+            </div>
+        </div>
+        <div class="section-card leg-card" id="legCardPeShort" data-role="ENTRY_PE" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-red, #f87171);"></div> PE Short</div>
+                <span class="leg-pill" style="margin-left:auto; font-family:var(--font-mono); font-size:0.62rem; font-weight:700; letter-spacing:0.06em; color:var(--text-muted); background:rgba(128,128,128,0.08); border:1px solid var(--border); padding:3px 10px; border-radius:999px;">IDLE</span>
+            </div>
+            <div class="leg-body" style="padding:14px 20px; display:flex; flex-direction:column; gap:12px;">
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Strike</span><span class="stat-value leg-strike" style="font-size:0.9rem;">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Qty</span><span class="stat-value leg-qty" style="font-size:0.9rem;">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Entry / LTP</span><span class="stat-value leg-entry-ltp" style="font-size:0.9rem;">— / —</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">SL Trigger</span><span class="stat-value leg-sl" style="font-size:0.9rem; color:var(--accent-red, #f87171);">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">MTM</span><span class="stat-value leg-mtm" style="font-size:1rem;">0.00</span></div>
+            </div>
+        </div>
+        <div class="section-card leg-card" id="legCardCeHedge" data-role="HEDGE_CE" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green, #34d399);"></div> CE Hedge</div>
+                <span class="leg-pill" style="margin-left:auto; font-family:var(--font-mono); font-size:0.62rem; font-weight:700; letter-spacing:0.06em; color:var(--text-muted); background:rgba(128,128,128,0.08); border:1px solid var(--border); padding:3px 10px; border-radius:999px;">IDLE</span>
+            </div>
+            <div class="leg-body" style="padding:14px 20px; display:flex; flex-direction:column; gap:12px;">
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Strike</span><span class="stat-value leg-strike" style="font-size:0.9rem;">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Qty</span><span class="stat-value leg-qty" style="font-size:0.9rem;">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Entry / LTP</span><span class="stat-value leg-entry-ltp" style="font-size:0.9rem;">— / —</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Type</span><span class="stat-value" style="font-size:0.9rem; color:var(--text-muted);">BUY (protective)</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">MTM</span><span class="stat-value leg-mtm" style="font-size:1rem;">0.00</span></div>
+            </div>
+        </div>
+        <div class="section-card leg-card" id="legCardPeHedge" data-role="HEDGE_PE" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green, #34d399);"></div> PE Hedge</div>
+                <span class="leg-pill" style="margin-left:auto; font-family:var(--font-mono); font-size:0.62rem; font-weight:700; letter-spacing:0.06em; color:var(--text-muted); background:rgba(128,128,128,0.08); border:1px solid var(--border); padding:3px 10px; border-radius:999px;">IDLE</span>
+            </div>
+            <div class="leg-body" style="padding:14px 20px; display:flex; flex-direction:column; gap:12px;">
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Strike</span><span class="stat-value leg-strike" style="font-size:0.9rem;">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Qty</span><span class="stat-value leg-qty" style="font-size:0.9rem;">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Entry / LTP</span><span class="stat-value leg-entry-ltp" style="font-size:0.9rem;">— / —</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Type</span><span class="stat-value" style="font-size:0.9rem; color:var(--text-muted);">BUY (protective)</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">MTM</span><span class="stat-value leg-mtm" style="font-size:1rem;">0.00</span></div>
+            </div>
+        </div>
     </div>
 
     <!-- ── Live Positions table ─────────────────────────────────────────── -->
@@ -404,7 +460,7 @@
         var enabled = !!t.checked;
         label.textContent = enabled ? 'Trading ON' : 'Trading OFF';
         wrap.classList.toggle('disabled', !enabled);
-        fetch('/api/strangle-adjust/enable', {
+        fetch('/api/strangle/enable', {
             method: 'POST',
             headers: csrfHeaders(),
             body: JSON.stringify({ enabled: enabled })
@@ -420,7 +476,7 @@
             danger:       true
         }).then(function(ok) {
             if (!ok) return;
-            fetch('/api/strangle-adjust/squareoff', {
+            fetch('/api/strangle/squareoff', {
                 method: 'POST',
                 headers: csrfHeaders(),
                 body: '{}'
@@ -436,7 +492,7 @@
             danger:       true
         }).then(function(ok) {
             if (!ok) return;
-            fetch('/api/strangle-adjust/squareoff', {
+            fetch('/api/strangle/squareoff', {
                 method: 'POST',
                 headers: csrfHeaders(),
                 body: JSON.stringify({ symbol: symbol })
@@ -534,7 +590,7 @@
     }
 
     function loadState() {
-        fetch('/api/strangle-adjust/state').then(function(r) { return r.json(); })
+        fetch('/api/strangle/state').then(function(r) { return r.json(); })
             .then(applyState).catch(function() {});
     }
 
@@ -550,7 +606,7 @@
     }
     function startStream() {
         try {
-            sseStream = new EventSource('/api/strangle-adjust/stream');
+            sseStream = new EventSource('/api/strangle/stream');
             sseStream.addEventListener('state', function(ev) {
                 stopPollFallback();
                 try { applyState(JSON.parse(ev.data)); } catch (e) {}
@@ -627,7 +683,66 @@
         document.getElementById('squareOffBtn').disabled = positions.length === 0;
     }
 
+    function renderLegCards(d) {
+        var positions = (d.openPositions || []);
+        function pickByRole(rolePrefix, side) {
+            for (var i = 0; i < positions.length; i++) {
+                var p = positions[i];
+                if (!p || !p.role) continue;
+                if (p.role === rolePrefix + '_' + side) return p;
+            }
+            return null;
+        }
+        function pickShort(side) {
+            return pickByRole('ENTRY', side) || pickByRole('ADJUST', side);
+        }
+        function pickHedge(side) {
+            return pickByRole('HEDGE', side);
+        }
+        var map = {
+            legCardCeShort: pickShort('CE'),
+            legCardPeShort: pickShort('PE'),
+            legCardCeHedge: pickHedge('CE'),
+            legCardPeHedge: pickHedge('PE')
+        };
+        Object.keys(map).forEach(function(cardId) {
+            var card = document.getElementById(cardId);
+            if (!card) return;
+            var p = map[cardId];
+            var pill = card.querySelector('.leg-pill');
+            var strikeEl = card.querySelector('.leg-strike');
+            var qtyEl = card.querySelector('.leg-qty');
+            var entryLtpEl = card.querySelector('.leg-entry-ltp');
+            var slEl = card.querySelector('.leg-sl');
+            var mtmEl = card.querySelector('.leg-mtm');
+            if (!p) {
+                if (pill) { pill.textContent = 'IDLE'; pill.style.color = 'var(--text-muted)'; pill.style.background = 'rgba(128,128,128,0.08)'; pill.style.borderColor = 'var(--border)'; }
+                if (strikeEl) strikeEl.textContent = '—';
+                if (qtyEl) qtyEl.textContent = '—';
+                if (entryLtpEl) entryLtpEl.textContent = '— / —';
+                if (slEl) slEl.textContent = '—';
+                if (mtmEl) { mtmEl.textContent = '0.00'; mtmEl.className = 'stat-value leg-mtm'; mtmEl.style.fontSize = '1rem'; }
+                card.style.opacity = '0.55';
+                return;
+            }
+            card.style.opacity = '1';
+            if (pill) { pill.textContent = 'OPEN'; pill.style.color = 'var(--accent-cyan)'; pill.style.background = 'rgba(125,211,252,0.10)'; pill.style.borderColor = 'rgba(125,211,252,0.35)'; }
+            if (strikeEl) strikeEl.textContent = (p.strike != null ? String(p.strike) : '—') + (p.role && p.role.indexOf('CE') >= 0 ? ' CE' : ' PE');
+            if (qtyEl) qtyEl.textContent = String(p.qty || '—');
+            if (entryLtpEl) entryLtpEl.textContent = fmtRs(p.entryPrice) + ' / ' + fmtRs(p.ltp);
+            if (slEl) slEl.textContent = (p.slLevel && Number(p.slLevel) > 0) ? fmtRs(p.slLevel) : '—';
+            if (mtmEl) {
+                var mtm = Number(p.mtm || 0);
+                mtmEl.textContent = fmtRs(mtm);
+                mtmEl.className = 'stat-value leg-mtm ' + pnlClass(mtm);
+                mtmEl.style.fontSize = '1rem';
+                mtmEl.style.fontWeight = '700';
+            }
+        });
+    }
+
     function renderPositions(d) {
+        renderLegCards(d);
         var positions = (d.openPositions || []).slice();
         var tbody = document.getElementById('positionsTableBody');
         if (positions.length === 0) {

@@ -206,13 +206,13 @@ public class ViewController {
         return "strategy";
     }
 
-    @GetMapping("/trade")
-    public String trade() {
-        return "trade";
+    @GetMapping("/strangle")
+    public String strangle() {
+        return "strangle";
     }
 
-    @GetMapping("/trades")
-    public String trades() {
-        return "trades";
+    @GetMapping("/strangle-adjust")
+    public String strangleAdjust() {
+        return "strangle-adjust";
     }
 }

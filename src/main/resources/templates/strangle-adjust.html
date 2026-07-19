@@ -1,0 +1,1077 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" data-strategy-id="strangle-adjust">
+<head>
+    <title>TraderEdge — Strangle + Adjustments</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/shared.css?v=36">
+    <script>
+        (function() {
+            const t = localStorage.getItem('traderedge-theme') || 'dark';
+            document.documentElement.setAttribute('data-theme', t);
+            document.addEventListener('DOMContentLoaded', function() {
+                const btn = document.getElementById('themeToggle');
+                if (btn) btn.textContent = t === 'light' ? '☀️' : t === 'forest' ? '🌲' : '🌙';
+            });
+        })();
+    </script>
+    <style>
+        .nav-icon:hover { color:var(--text-primary) !important; background:var(--bg-card-hover) !important; border-color:var(--border) !important; }
+        .nav-icon.active { color:var(--accent-cyan) !important; background:rgba(125,211,252,0.12) !important; border-color:rgba(125,211,252,0.35) !important; }
+
+        /* Equities-Positions parity styles */
+        .fixed-card { display: flex; flex-direction: column; }
+        .fixed-card-log { display: flex; flex-direction: column; }
+        /* Both cards at 250 px outer; Live Positions table scrolls up to 420 px when full */
+        .fixed-card .table-wrap { flex: 1; overflow-y: auto; min-height: 250px; max-height: 420px; }
+        .fixed-card .table-wrap .data-table { width: 100%; }
+        /* When the empty-state placeholder row is shown, vertically center it inside the wrap. */
+        .fixed-card .table-wrap .empty-state { padding: 65px 20px; }
+        /* Real data rows keep their natural height — no stretching. */
+        .fixed-card-log .log-wrap { flex: 1; overflow-y: auto; height: 250px; min-height: 250px; max-height: 250px; }
+        .fixed-card-log .log-wrap::-webkit-scrollbar { width: 4px; }
+        .fixed-card-log .log-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        .fixed-card-log .log-wrap::-webkit-scrollbar-track { background: transparent; }
+
+        .refresh-btn {
+            display:inline-flex; align-items:center; gap:8px;
+            background:rgba(99,179,237,0.08); border:1px solid rgba(99,179,237,0.2);
+            color:var(--accent-blue); padding:9px 12px; border-radius:8px;
+            font-family:var(--font-mono); font-size:0.78rem; font-weight:700;
+            letter-spacing:0.05em; text-decoration:none; transition: all 0.2s ease;
+        }
+        .refresh-btn:hover { background:rgba(99,179,237,0.15); border-color:rgba(99,179,237,0.45); transform:translateY(-1px); }
+        .squareoff-btn {
+            display:inline-flex; align-items:center; gap:8px;
+            background:rgba(248,113,113,0.10); border:1px solid rgba(248,113,113,0.3);
+            color:var(--accent-red); padding:9px 22px; border-radius:8px;
+            font-family:var(--font-mono); font-size:0.78rem; font-weight:700;
+            letter-spacing:0.05em; cursor:pointer; transition: all 0.2s ease;
+        }
+        .squareoff-btn:hover { background:rgba(248,113,113,0.2); border-color:rgba(248,113,113,0.55); transform:translateY(-1px); }
+        .squareoff-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+
+        .kill-switch-wrap { display:flex; align-items:center; gap:10px; padding:6px 14px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); }
+        .kill-switch-wrap.disabled { border-color: rgba(248,113,113,0.35); }
+        .kill-switch-label { font-family: var(--font-mono); font-size:0.72rem; font-weight:700; letter-spacing:0.06em; color: var(--accent-green); transition: color 0.3s ease; }
+        .kill-switch-wrap.disabled .kill-switch-label { color: var(--accent-red); }
+        .kill-switch { position:relative; display:inline-block; width:40px; height:22px; }
+        .kill-switch input { opacity:0; width:0; height:0; }
+        .kill-switch-slider {
+            position:absolute; cursor:pointer; inset:0;
+            background: rgba(248,113,113,0.5); border-radius:22px; transition: background 0.3s ease;
+        }
+        .kill-switch-slider:before {
+            content:""; position:absolute; height:16px; width:16px;
+            left:3px; bottom:3px; background:white; border-radius:50%;
+            transition: transform 0.3s ease;
+        }
+        .kill-switch input:checked + .kill-switch-slider { background: rgba(52,211,153,0.6); }
+        .kill-switch input:checked + .kill-switch-slider:before { transform: translateX(18px); }
+
+        .lvl-card { display:flex; flex-direction:column; gap:4px; padding:10px 14px; border:1px solid var(--border); border-radius:8px; background:var(--bg-primary); font-family:var(--font-mono); }
+        .lvl-card .lvl-label { font-size:0.6rem; color:var(--text-muted); letter-spacing:0.10em; text-transform:uppercase; }
+        .lvl-card .lvl-value { font-size:0.96rem; font-weight:700; color:var(--text-primary); }
+        .lvl-h3 .lvl-value, .lvl-h4 .lvl-value, .lvl-h5 .lvl-value { color:var(--accent-red, #f87171); }
+        .lvl-l3 .lvl-value, .lvl-l4 .lvl-value, .lvl-l5 .lvl-value { color:var(--accent-green, #34d399); }
+        .lvl-pp .lvl-value { color:var(--accent-cyan); }
+
+        .pnl-positive { color:var(--accent-green, #34d399) !important; }
+        .pnl-negative { color:var(--accent-red, #f87171) !important; }
+
+        /* Compact info chip — Live Positions section header.
+           Reused by the VWAP CE / VWAP PE displays; kept generic so future header
+           chips can drop in without new CSS. */
+        .oi-buildup-chip {
+            display:inline-flex; align-items:center; gap:6px;
+            padding:3px 8px; border:1px solid var(--border); border-radius:5px;
+            font-family:var(--font-mono); font-size:0.66rem; font-weight:600;
+            color:var(--text-muted); background:rgba(128,128,128,0.05);
+            white-space:nowrap;
+        }
+        /* Event-log row grid: timestamp | severity | source | message.
+           Source column was 160px which left a big gap before short labels like
+           [ATM]; tightened to 110px to fit the longest real label
+           ([MANUAL ENTRY] = 14 chars at ~0.78rem mono ≈ 100px) with a small
+           breathing margin. */
+        .event-row { display:grid; grid-template-columns:70px 60px 110px 1fr; gap:6px; padding:6px 10px; border-bottom:1px solid rgba(128,128,128,0.10); font-family:var(--font-mono); font-size:0.78rem; }
+        .event-src   { color:var(--accent-cyan, #67e8f9); text-transform:uppercase; white-space:nowrap; }
+        .event-msg   { color:var(--text-secondary); min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .sev-INFO    { color:var(--accent-blue, #63b3ed); }
+        .sev-SUCCESS { color:var(--accent-green); }
+        .sev-WARNING { color:var(--accent-amber, #fbbf24); }
+        .sev-ERROR   { color:var(--accent-red, #f87171); }
+
+    </style>
+</head>
+<body style="margin:0;display:flex;flex-direction:column;min-height:100vh;">
+<nav class="navbar" style="padding:0 16px;">
+    <div class="navbar-inner">
+        <a href="/home" style="display:flex;align-items:center;gap:10px;text-decoration:none;margin-right:18px;">
+            <span style="font-size:1.45rem;line-height:1;">⚡</span>
+            <div style="display:flex;flex-direction:column;line-height:1.1;">
+                <span style="font-family:var(--font-mono);font-weight:700;font-size:1.05rem;letter-spacing:0.08em;color:var(--text-primary);">TRADER<span style="color:var(--accent-cyan);">EDGE</span></span>
+                <span style="display:flex;align-items:center;gap:4px;margin-top:6px;">
+                    <span class="status-dot" id="statusDot" style="width:5px;height:5px;"></span>
+                    <span id="connectionStatus" style="color:var(--text-muted);font-size:0.52rem;letter-spacing:0.04em;">Checking…</span>
+                </span>
+            </div>
+        </a>
+        <div class="ticker-wrap" id="tickerWrap"><div class="ticker-track" id="tickerTrack"></div></div>
+        <div class="nav-right">
+            <button class="theme-toggle" id="settingsBtn" title="Settings" onclick="SettingsModal.open()" style="font-size:1rem;">⚙</button>
+            <button class="theme-toggle" id="chainBtn" title="Options Chain" onclick="OptionChainModal.open()" style="font-size:1rem;">⊞</button>
+            <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
+            <button class="logout-btn" title="Logout" onclick="logout()">⏻</button>
+        </div>
+    </div>
+</nav>
+
+<div style="display:flex;flex:1;min-height:0;">
+<aside class="strategy-nav-aside"
+       style="width:96px;flex-shrink:0;background:var(--navbar-bg);backdrop-filter:blur(16px);
+              border-right:1px solid var(--border);
+              display:flex;flex-direction:column;align-items:center;padding:20px 6px 28px;gap:14px;">
+    <div style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;
+                color:var(--text-muted);text-transform:uppercase;text-align:center;
+                width:78px;margin:0 0 4px;">MENU</div>
+    <a href="/home" class="nav-icon" title="Home" data-nav-key="home"
+       style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+              width:78px;padding:14px 6px 10px;gap:6px;
+              border-radius:14px;text-decoration:none;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">
+        <span style="font-size:1.75rem;line-height:1;">◉</span>
+        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">HOME</span>
+    </a>
+    <a href="/strangle" class="nav-icon" title="Strangle" data-nav-key="strangle"
+       style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+              width:78px;padding:14px 6px 10px;gap:6px;
+              border-radius:14px;text-decoration:none;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">
+        <span style="font-size:1.75rem;line-height:1;">⬡</span>
+        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">STRANGLE</span>
+    </a>
+    <a href="/strangle-adjust" class="nav-icon active" title="Strangle + Adj" data-nav-key="strangle-adjust"
+       style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+              width:78px;padding:14px 6px 10px;gap:6px;
+              border-radius:14px;text-decoration:none;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">
+        <span style="font-size:1.95rem;line-height:1;">≡</span>
+        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">STR-ADJ</span>
+    </a>
+    <a href="/calendar" class="nav-icon" title="Calendar" data-nav-key="calendar"
+       style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+              width:78px;padding:14px 6px 10px;gap:6px;
+              border-radius:14px;text-decoration:none;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">
+        <span style="font-size:1.75rem;line-height:1;">▦</span>
+        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">CALENDAR</span>
+    </a>
+    <a href="/strategy" class="nav-icon" title="Strategy" data-nav-key="strategy"
+       style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+              width:78px;padding:14px 6px 10px;gap:6px;
+              border-radius:14px;text-decoration:none;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">
+        <span style="font-size:1.75rem;line-height:1;">◈</span>
+        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">STRATEGY</span>
+    </a>
+</aside>
+<div class="app-main" style="flex:1;min-width:0;margin-left:0;width:auto;padding:20px 24px;">
+
+    <!-- ── Page header — left: title + subtitle | right: welcome + fyers id (mirrors Home / Calendar) ── -->
+    <div class="page-header fade-in" style="margin-bottom:18px;">
+        <div>
+            <div class="page-title">Positions</div>
+            <div class="page-subtitle" id="tradeSubtitle">Live market positions &amp; trade activity</div>
+        </div>
+        <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
+            <div style="font-size:1rem; color:var(--text-secondary);">
+                Welcome, <span id="userName" style="color:var(--text-primary); font-weight:600;">—</span>
+            </div>
+            <div id="fyersIdLine" style="font-size:0.72rem; color:var(--text-muted); margin-top:10px;">—</div>
+        </div>
+    </div>
+
+    <!-- ── Four hero stat cards (Open Positions / Net Day P&L / Exposed Risk / Market Clock) ── -->
+    <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:20px;" class="fade-in">
+
+        <!-- Open Positions -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div style="padding:20px 22px; text-align:center;">
+                <div class="stat-label" style="margin-bottom:8px;">Open Positions</div>
+                <div class="stat-value" id="statCount" style="font-size:2rem; color:var(--accent-cyan);">0</div>
+                <div class="stat-sub" style="margin-top:8px;">
+                    Side: <span id="statSide">—</span>
+                    <span style="color:var(--border); margin:0 6px;">|</span>
+                    <span style="color:var(--text-muted);" id="statNotional">Premium: ₹0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Net Day P&L -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div style="padding:20px 22px; text-align:center;">
+                <div class="stat-label" style="margin-bottom:8px;">Net Day P&amp;L</div>
+                <div class="stat-value" id="statPnl" style="font-size:2rem;">—</div>
+                <div class="stat-sub" id="statPnlSub" style="margin-top:8px;">Realized + Unrealized</div>
+            </div>
+        </div>
+
+        <!-- Exposed Risk -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div style="padding:20px 22px; text-align:center;">
+                <div class="stat-label" style="margin-bottom:8px;">Exposed Risk</div>
+                <div class="stat-value" id="exposedRiskVal" style="font-size:2rem; color:#f6ad55;">₹0</div>
+                <div class="stat-sub" style="margin-top:8px;">
+                    Consumed: <span id="consumedRiskVal" style="color:#fc8181;">₹0</span>
+                    <span style="color:var(--text-muted); margin-left:6px;">Budget:</span>
+                    <span id="riskBudgetVal" style="color:#68d391;">—</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Market Clock -->
+        <div class="section-card" style="margin-bottom:0;">
+            <div style="padding:20px 22px; text-align:center;">
+                <div class="stat-label" style="margin-bottom:8px;">Market Clock</div>
+                <div class="stat-value" id="marketClock" style="font-size:2rem;">—</div>
+                <div class="stat-sub" id="marketClockSub" style="margin-top:8px;">Checking…</div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ── Leg Cards: CE Short / PE Short / CE Hedge / PE Hedge ──────────── -->
+    <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:20px;" class="fade-in">
+        <div class="section-card leg-card" id="legCardCeShort" data-role="ENTRY_CE" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-red, #f87171);"></div> CE Short</div>
+                <span class="leg-pill" style="margin-left:auto; font-family:var(--font-mono); font-size:0.62rem; font-weight:700; letter-spacing:0.06em; color:var(--text-muted); background:rgba(128,128,128,0.08); border:1px solid var(--border); padding:3px 10px; border-radius:999px;">IDLE</span>
+            </div>
+            <div class="leg-body" style="padding:14px 20px; display:flex; flex-direction:column; gap:12px;">
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Strike</span><span class="stat-value leg-strike" style="font-size:0.9rem;">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Qty</span><span class="stat-value leg-qty" style="font-size:0.9rem;">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Entry / LTP</span><span class="stat-value leg-entry-ltp" style="font-size:0.9rem;">— / —</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">SL Trigger</span><span class="stat-value leg-sl" style="font-size:0.9rem; color:var(--accent-red, #f87171);">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">MTM</span><span class="stat-value leg-mtm" style="font-size:1rem;">0.00</span></div>
+            </div>
+        </div>
+        <div class="section-card leg-card" id="legCardPeShort" data-role="ENTRY_PE" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-red, #f87171);"></div> PE Short</div>
+                <span class="leg-pill" style="margin-left:auto; font-family:var(--font-mono); font-size:0.62rem; font-weight:700; letter-spacing:0.06em; color:var(--text-muted); background:rgba(128,128,128,0.08); border:1px solid var(--border); padding:3px 10px; border-radius:999px;">IDLE</span>
+            </div>
+            <div class="leg-body" style="padding:14px 20px; display:flex; flex-direction:column; gap:12px;">
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Strike</span><span class="stat-value leg-strike" style="font-size:0.9rem;">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Qty</span><span class="stat-value leg-qty" style="font-size:0.9rem;">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Entry / LTP</span><span class="stat-value leg-entry-ltp" style="font-size:0.9rem;">— / —</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">SL Trigger</span><span class="stat-value leg-sl" style="font-size:0.9rem; color:var(--accent-red, #f87171);">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">MTM</span><span class="stat-value leg-mtm" style="font-size:1rem;">0.00</span></div>
+            </div>
+        </div>
+        <div class="section-card leg-card" id="legCardCeHedge" data-role="HEDGE_CE" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green, #34d399);"></div> CE Hedge</div>
+                <span class="leg-pill" style="margin-left:auto; font-family:var(--font-mono); font-size:0.62rem; font-weight:700; letter-spacing:0.06em; color:var(--text-muted); background:rgba(128,128,128,0.08); border:1px solid var(--border); padding:3px 10px; border-radius:999px;">IDLE</span>
+            </div>
+            <div class="leg-body" style="padding:14px 20px; display:flex; flex-direction:column; gap:12px;">
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Strike</span><span class="stat-value leg-strike" style="font-size:0.9rem;">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Qty</span><span class="stat-value leg-qty" style="font-size:0.9rem;">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Entry / LTP</span><span class="stat-value leg-entry-ltp" style="font-size:0.9rem;">— / —</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Type</span><span class="stat-value" style="font-size:0.9rem; color:var(--text-muted);">BUY (protective)</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">MTM</span><span class="stat-value leg-mtm" style="font-size:1rem;">0.00</span></div>
+            </div>
+        </div>
+        <div class="section-card leg-card" id="legCardPeHedge" data-role="HEDGE_PE" style="margin-bottom:0;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green, #34d399);"></div> PE Hedge</div>
+                <span class="leg-pill" style="margin-left:auto; font-family:var(--font-mono); font-size:0.62rem; font-weight:700; letter-spacing:0.06em; color:var(--text-muted); background:rgba(128,128,128,0.08); border:1px solid var(--border); padding:3px 10px; border-radius:999px;">IDLE</span>
+            </div>
+            <div class="leg-body" style="padding:14px 20px; display:flex; flex-direction:column; gap:12px;">
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Strike</span><span class="stat-value leg-strike" style="font-size:0.9rem;">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Qty</span><span class="stat-value leg-qty" style="font-size:0.9rem;">—</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Entry / LTP</span><span class="stat-value leg-entry-ltp" style="font-size:0.9rem;">— / —</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Type</span><span class="stat-value" style="font-size:0.9rem; color:var(--text-muted);">BUY (protective)</span></div>
+                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">MTM</span><span class="stat-value leg-mtm" style="font-size:1rem;">0.00</span></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Live Positions table ─────────────────────────────────────────── -->
+    <div class="section-card fixed-card fade-in">
+        <div class="section-header">
+            <div class="section-title" style="display:flex; align-items:center; gap:18px; flex-wrap:wrap;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <div class="section-title-dot"></div>
+                    Live Positions
+                </div>
+                <!-- Vertical separator after the section title — visually delineates the
+                     market-stats cluster from the title. -->
+                <span style="border-left:1px solid var(--border); height:18px; display:inline-block;"></span>
+                <div style="display:flex; gap:14px; align-items:center; font-family:var(--font-mono); font-size:0.72rem; font-weight:normal; flex-wrap:wrap;">
+                    <!-- NIFTY cluster: LTP + change + 5m ATR. Amber label.
+                         Legacy 'Fut' IDs retained for back-compat with the JS. -->
+                    <span style="color:#fbbf24;">NIFTY <span id="hdrFut" style="color:var(--text-primary);font-weight:700;cursor:help;">—</span>
+                        <span id="hdrFutChg" style="margin-left:4px;font-weight:600;"></span></span>
+                    <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
+                    <!-- VIX -->
+                    <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
+                        <span id="hdrVixChg" style="margin-left:4px;font-weight:600;"></span></span>
+                    <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
+                    <!-- Strangle legs — picked at entry (~09:20) by target premium -->
+                    <span style="color:var(--text-muted);" title="Original CE short (near target premium)">CE <span id="hdrH5Ce" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                    <span style="color:var(--text-muted);" title="Original PE short (near target premium)">PE <span id="hdrL5Pe" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                </div>
+            </div>
+            <div style="display:flex; gap:10px; align-items:center;">
+                <div class="kill-switch-wrap" id="killSwitchWrap">
+                    <span class="kill-switch-label" id="killSwitchLabel">Trading ON</span>
+                    <label class="kill-switch">
+                        <input type="checkbox" id="killSwitchToggle" checked onchange="toggleKillSwitch()">
+                        <span class="kill-switch-slider"></span>
+                    </label>
+                </div>
+                <button class="squareoff-btn" id="squareOffBtn" onclick="executeSquareOff()" disabled>⬛ Square Off</button>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Time</th>
+                        <th>Symbol</th>
+                        <th class="text-right">Quantity</th>
+                        <th class="text-center">Side</th>
+                        <th class="text-center">Setup</th>
+                        <th class="text-right">Entry</th>
+                        <th class="text-right">SL</th>
+                        <th class="text-right">Target</th>
+                        <th class="text-right">LTP</th>
+                        <th class="text-right">P&amp;L</th>
+                        <th class="text-center">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="positionsTableBody">
+                    <tr>
+                        <td colspan="12">
+                            <div class="empty-state">
+                                <div class="empty-icon">◎</div>
+                                No active positions
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ── Event Log ────────────────────────────────────────────────────── -->
+    <div id="chartRow" style="margin-top:18px;">
+        <div class="section-card fixed-card-log fade-in" style="margin:0;">
+            <div class="section-header">
+                <div class="section-title">
+                    <div class="section-title-dot" style="background: var(--accent-cyan)"></div>
+                    Event Log
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;margin-left:auto;">
+                    <select id="logSymbolFilter" onchange="filterLogs()" style="
+                        background:var(--bg-card);color:var(--text-secondary);border:1px solid var(--border);
+                        border-radius:4px;padding:2px 8px;font-size:0.65rem;font-family:var(--font-mono);
+                        outline:none;cursor:pointer;min-width:140px;">
+                        <option value="">All Symbols</option>
+                    </select>
+                    <span class="section-badge" id="logStatusBadge" style="color: var(--accent-cyan); border-color: rgba(34,211,238,0.2); background: rgba(34,211,238,0.07);">Live</span>
+                </div>
+            </div>
+            <div class="log-wrap">
+                <div id="eventsBody">
+                    <div class="empty-state">
+                        <div class="empty-icon">⌁</div>
+                        No events recorded
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="page-footer">
+        <div class="footer-copy">&copy; <span id="footerYear"></span> TraderEdge. All rights reserved.</div>
+        <div class="footer-author">Built by <strong style="color: var(--text-secondary); margin: 0 4px;">Prabhu Arumugham</strong>
+            <span class="footer-tag">rydytrader</span></div>
+    </footer>
+</div>
+</div>
+
+<script>
+    // ── Helpers ────────────────────────────────────────────────────────────
+    function fmtRs(v) {
+        var n = Number(v);
+        if (!isFinite(n)) return '₹0.00';
+        var sign = n < 0 ? '-' : '';
+        // Always show two decimal places (xx.yy).
+        return sign + '₹' + Math.abs(n).toLocaleString('en-IN', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+    }
+    /** Target / SL level cell formatter — v2 positions render the futures price
+     *  with a 'FUT' suffix (no ₹ sign — these are index points, not currency).
+     *  v1 positions keep the legacy ₹-prefixed option-premium format. The
+     *  position payload carries triggerSymbol; presence = v2 row. */
+    function fmtLevel(p, v) {
+        var n = Number(v);
+        if (!isFinite(n)) return '—';
+        if (p && p.triggerSymbol) {
+            // Spot/futures point value — fixed 2dp, separator-grouped, FUT tag.
+            // Rendered muted so the operator visually distinguishes it from
+            // option-premium values shown on manual trades (which stay coloured
+            // via the parent td's pnl-negative / pnl-positive class). Inline
+            // colour wins over the td class via specificity.
+            return '<span style="color:var(--text-muted);font-weight:500;">'
+                 + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                 + ' <span style="font-size:0.6rem;letter-spacing:0.05em;margin-left:4px;">FUT</span>'
+                 + '</span>';
+        }
+        return fmtRs(v);
+    }
+    function fmtTime(ms) {
+        if (!ms) return '—';
+        var d = new Date(Number(ms));
+        return d.toTimeString().slice(0, 8);
+    }
+    function escapeHtml(s) {
+        if (s == null) return '';
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+    function pnlClass(v) { return Number(v) >= 0 ? 'pnl-positive' : 'pnl-negative'; }
+
+    var lastState = null;
+    var logFilterValue = '';
+
+    // ── Kill switch ────────────────────────────────────────────────────────
+    function toggleKillSwitch() {
+        var t = document.getElementById('killSwitchToggle');
+        var wrap = document.getElementById('killSwitchWrap');
+        var label = document.getElementById('killSwitchLabel');
+        var enabled = !!t.checked;
+        label.textContent = enabled ? 'Trading ON' : 'Trading OFF';
+        wrap.classList.toggle('disabled', !enabled);
+        fetch('/api/strangle-adjust/enable', {
+            method: 'POST',
+            headers: csrfHeaders(),
+            body: JSON.stringify({ enabled: enabled })
+        }).catch(function() {});
+    }
+
+    // ── Squareoff ──────────────────────────────────────────────────────────
+    function executeSquareOff() {
+        AppConfirm.ask({
+            title:        'Square Off All',
+            message:      'Square off every open position?\n\nThis places market exits for both algo and manual positions.',
+            confirmLabel: 'Square Off',
+            danger:       true
+        }).then(function(ok) {
+            if (!ok) return;
+            fetch('/api/strangle-adjust/squareoff', {
+                method: 'POST',
+                headers: csrfHeaders(),
+                body: '{}'
+            }).then(function() { setTimeout(loadState, 500); })
+              .catch(function() {});
+        });
+    }
+    function squareOffRow(symbol) {
+        AppConfirm.ask({
+            title:        'Close Position',
+            message:      'Close ' + symbol + ' at market?',
+            confirmLabel: 'Close',
+            danger:       true
+        }).then(function(ok) {
+            if (!ok) return;
+            fetch('/api/strangle-adjust/squareoff', {
+                method: 'POST',
+                headers: csrfHeaders(),
+                body: JSON.stringify({ symbol: symbol })
+            }).then(function() { setTimeout(loadState, 500); })
+              .catch(function() {});
+        });
+    }
+
+    // ── State refresh (SSE primary, REST poll fallback) ────────────────────
+    function applyState(d) {
+        if (!d) return;
+        lastState = d;
+        renderHeader(d);
+        renderStats(d);
+        renderPositions(d);
+        renderEvents(d);
+        renderKillSwitch(d);
+        // Spot LTP for header ticker chip. Strangle payload exposes spotSymbol + spotLtp
+        // once today's instrument is resolved; before entry those keys are absent so we
+        // leave the chips as their fallback ("—").
+        if (d.spotSymbol && d.spotLtp != null) {
+            renderFutTickerCells(d.spotLtp, 0, 0, d.spotSymbol, null);
+        }
+        // (Market Clock card ticks independently on a 1 s interval — see updateMarketClock())
+    }
+
+    function renderHeader(d) {
+        // Initial / fallback render from the strangle state stream (2 s heartbeat).
+        // VIX still rides the per-tick ticker SSE.
+        var vxEl  = document.getElementById('hdrVix');
+        if (vxEl)  vxEl.textContent  = d.indiaVix  != null ? Number(d.indiaVix).toFixed(2)  : '—';
+        // Original strangle strikes (set at 09:20 entry).
+        var ceEl = document.getElementById('hdrH5Ce');
+        var peEl = document.getElementById('hdrL5Pe');
+        var ceStrike = '—', peStrike = '—';
+        if (d.strangle) {
+            if (d.strangle.originalCeStrike) ceStrike = String(d.strangle.originalCeStrike);
+            if (d.strangle.originalPeStrike) peStrike = String(d.strangle.originalPeStrike);
+        }
+        if (ceEl) ceEl.textContent = ceStrike;
+        if (peEl) peEl.textContent = peStrike;
+    }
+
+
+    // ── Tick-level NIFTY / VIX / ATM updates via the shared ticker SSE ─────
+    function fmtChg(ch, chp) {
+        if (typeof ch !== 'number' || !isFinite(ch) || typeof chp !== 'number' || !isFinite(chp)) return null;
+        var arrow = ch >= 0 ? '▲' : '▼';
+        return arrow + ' ' + Math.abs(ch).toFixed(2) + ' (' + Math.abs(chp).toFixed(2) + '%)';
+    }
+    function chgColor(ch) {
+        if (typeof ch !== 'number' || !isFinite(ch)) return 'var(--text-muted)';
+        return ch >= 0 ? 'var(--accent-green,#34d399)' : 'var(--accent-red,#f87171)';
+    }
+    function setVixHeader(lp, ch, chp) {
+        setTickerHeader('hdrVix', 'hdrVixChg', lp, ch, chp);
+    }
+    // Shared: writes LTP + change into the given pair of DOM elements. Blank
+    // cells when LTP is 0 or when both change values are 0 (pre-market before
+    // Fyers has published prev_close).
+    function setTickerHeader(ltpId, chgId, lp, ch, chp) {
+        var ltpEl = document.getElementById(ltpId);
+        var chgEl = document.getElementById(chgId);
+        var v = Number(lp || 0), c = Number(ch || 0), p = Number(chp || 0);
+        if (ltpEl) ltpEl.textContent = v > 0
+            ? v.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})
+            : '—';
+        if (!chgEl) return;
+        if (v <= 0 || (c === 0 && p === 0)) {
+            chgEl.textContent = '';
+            chgEl.style.color = '';
+            return;
+        }
+        var txt = fmtChg(c, p);
+        chgEl.textContent = txt || '';
+        chgEl.style.color = chgColor(c);
+    }
+    function attachTickerHeaderUpdates() {
+        var src = window.__tickerSSE;
+        if (!src) { setTimeout(attachTickerHeaderUpdates, 500); return; }
+        src.addEventListener('ticker', function(ev) {
+            try {
+                var arr = JSON.parse(ev.data);
+                if (!arr || !arr.length) return;
+                for (var i = 0; i < arr.length; i++) {
+                    var t = arr[i];
+                    var full = t.fyers || t.fullSymbol || '';
+                    var shrt = t.symbol || '';
+                    if (full === 'NSE:INDIAVIX-INDEX' || shrt === 'India VIX' || shrt === 'INDIA VIX') {
+                        setVixHeader(t.lp, t.ch, t.chp);
+                    }
+                }
+            } catch (e) {}
+        });
+    }
+
+    function loadState() {
+        fetch('/api/strangle-adjust/state').then(function(r) { return r.json(); })
+            .then(applyState).catch(function() {});
+    }
+
+    var sseStream = null;
+    var pollTimer = null;
+    function startPollFallback() {
+        if (pollTimer) return;
+        loadState();
+        pollTimer = setInterval(loadState, 5000);
+    }
+    function stopPollFallback() {
+        if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    }
+    function startStream() {
+        try {
+            sseStream = new EventSource('/api/strangle-adjust/stream');
+            sseStream.addEventListener('state', function(ev) {
+                stopPollFallback();
+                try { applyState(JSON.parse(ev.data)); } catch (e) {}
+            });
+            sseStream.onerror = function() {
+                // Browser auto-retries SSE, but flip on polling so the page stays live in the meantime.
+                startPollFallback();
+            };
+        } catch (e) {
+            startPollFallback();
+        }
+    }
+
+    function renderKillSwitch(d) {
+        var t = document.getElementById('killSwitchToggle');
+        var wrap = document.getElementById('killSwitchWrap');
+        var label = document.getElementById('killSwitchLabel');
+        var enabled = !!d.enabled;
+        // Avoid flicker if user is mid-click
+        if (t.checked !== enabled) t.checked = enabled;
+        label.textContent = enabled ? 'Trading ON' : 'Trading OFF';
+        wrap.classList.toggle('disabled', !enabled);
+    }
+
+    function renderStats(d) {
+        var positions = d.openPositions || [];
+
+        // ── Open Positions card: count + side + notional ──
+        var sides = new Set();
+        var notional = 0;
+        positions.forEach(function(p) {
+            if (/CE$/.test(p.symbol)) sides.add('CE');
+            else if (/PE$/.test(p.symbol)) sides.add('PE');
+            notional += Number(p.entryPrice || 0) * Number(p.qty || 0);
+        });
+        var sideLabel = positions.length === 0 ? '—'
+            : (sides.has('CE') && sides.has('PE') ? 'CE+PE'
+                : sides.has('CE') ? 'CE'
+                : sides.has('PE') ? 'PE' : '—');
+        document.getElementById('statCount').textContent = positions.length;
+        document.getElementById('statSide').textContent = sideLabel;
+        document.getElementById('statNotional').textContent = 'Premium: ' + fmtRs(notional);
+
+        // ── Net Day P&L card ──
+        var closed = (d.todayClosedTrades || []).reduce(function(a, b) { return a + Number(b.netPnl || 0); }, 0);
+        var openMtm = positions.reduce(function(a, p) { return a + Number(p.mtm || 0); }, 0);
+        var net = closed + openMtm;
+        var statPnlEl = document.getElementById('statPnl');
+        statPnlEl.textContent = fmtRs(net);
+        statPnlEl.className = 'stat-value ' + pnlClass(net);
+
+        // ── Exposed Risk card (replaces the section-header badges) ──
+        var risk = d.risk || { exposedRisk: 0, consumedRisk: 0, dailyRiskBudget: 0 };
+        var exposed  = Number(risk.exposedRisk || 0);
+        var consumed = Number(risk.consumedRisk || 0);
+        var budget   = Number(risk.dailyRiskBudget || 0);
+        document.getElementById('exposedRiskVal').textContent  = fmtRs(exposed);
+        document.getElementById('consumedRiskVal').textContent = fmtRs(consumed);
+        var budgetEl = document.getElementById('riskBudgetVal');
+        var used = exposed + consumed;
+        budgetEl.textContent = budget > 0
+            ? (fmtRs(used) + ' / ' + fmtRs(budget))
+            : fmtRs(used);
+        if (budget > 0) {
+            var pct = used / budget;
+            if (pct >= 1)        budgetEl.style.color = '#fc8181';
+            else if (pct >= 0.8) budgetEl.style.color = '#f6ad55';
+            else                 budgetEl.style.color = '#68d391';
+        } else {
+            budgetEl.style.color = 'var(--text-muted)';
+        }
+
+        // Disable squareoff when nothing open
+        document.getElementById('squareOffBtn').disabled = positions.length === 0;
+    }
+
+    function renderLegCards(d) {
+        var positions = (d.openPositions || []);
+        // Match by role. Strangle roles are ENTRY_CE / ENTRY_PE / HEDGE_CE / HEDGE_PE.
+        // StrangleAdjust may replace an ENTRY_ with ADJUST_ after a repair — treat that
+        // as the current CE/PE short so the card keeps showing something live.
+        function pickByRole(rolePrefix, side) {
+            for (var i = 0; i < positions.length; i++) {
+                var p = positions[i];
+                if (!p || !p.role) continue;
+                if (p.role === rolePrefix + '_' + side) return p;
+            }
+            return null;
+        }
+        function pickShort(side) {
+            return pickByRole('ENTRY', side) || pickByRole('ADJUST', side);
+        }
+        function pickHedge(side) {
+            return pickByRole('HEDGE', side);
+        }
+        var map = {
+            legCardCeShort: pickShort('CE'),
+            legCardPeShort: pickShort('PE'),
+            legCardCeHedge: pickHedge('CE'),
+            legCardPeHedge: pickHedge('PE')
+        };
+        Object.keys(map).forEach(function(cardId) {
+            var card = document.getElementById(cardId);
+            if (!card) return;
+            var p = map[cardId];
+            var pill = card.querySelector('.leg-pill');
+            var strikeEl = card.querySelector('.leg-strike');
+            var qtyEl = card.querySelector('.leg-qty');
+            var entryLtpEl = card.querySelector('.leg-entry-ltp');
+            var slEl = card.querySelector('.leg-sl');
+            var mtmEl = card.querySelector('.leg-mtm');
+            if (!p) {
+                if (pill) { pill.textContent = 'IDLE'; pill.style.color = 'var(--text-muted)'; pill.style.background = 'rgba(128,128,128,0.08)'; pill.style.borderColor = 'var(--border)'; }
+                if (strikeEl) strikeEl.textContent = '—';
+                if (qtyEl) qtyEl.textContent = '—';
+                if (entryLtpEl) entryLtpEl.textContent = '— / —';
+                if (slEl) slEl.textContent = '—';
+                if (mtmEl) { mtmEl.textContent = '0.00'; mtmEl.className = 'stat-value leg-mtm'; mtmEl.style.fontSize = '1rem'; }
+                card.style.opacity = '0.55';
+                return;
+            }
+            card.style.opacity = '1';
+            if (pill) { pill.textContent = 'OPEN'; pill.style.color = 'var(--accent-cyan)'; pill.style.background = 'rgba(125,211,252,0.10)'; pill.style.borderColor = 'rgba(125,211,252,0.35)'; }
+            if (strikeEl) strikeEl.textContent = (p.strike != null ? String(p.strike) : '—') + (p.role && p.role.indexOf('CE') >= 0 ? ' CE' : ' PE');
+            if (qtyEl) qtyEl.textContent = String(p.qty || '—');
+            if (entryLtpEl) entryLtpEl.textContent = fmtRs(p.entryPrice) + ' / ' + fmtRs(p.ltp);
+            if (slEl) slEl.textContent = (p.slLevel && Number(p.slLevel) > 0) ? fmtRs(p.slLevel) : '—';
+            if (mtmEl) {
+                var mtm = Number(p.mtm || 0);
+                mtmEl.textContent = fmtRs(mtm);
+                mtmEl.className = 'stat-value leg-mtm ' + pnlClass(mtm);
+                mtmEl.style.fontSize = '1rem';
+                mtmEl.style.fontWeight = '700';
+            }
+        });
+    }
+
+    function renderPositions(d) {
+        renderLegCards(d);
+        var positions = (d.openPositions || []).slice();
+        var tbody = document.getElementById('positionsTableBody');
+        if (positions.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state"><div class="empty-icon">◎</div>No active positions</div></td></tr>';
+        } else {
+            tbody.innerHTML = positions.map(function(p, i) {
+                var pnl = Number(p.mtm || 0);
+                return '<tr>'
+                    + '<td>' + (i + 1) + '</td>'
+                    + '<td>' + fmtTime(p.openMillis) + '</td>'
+                    + '<td>' + escapeHtml(p.symbol) + '</td>'
+                    + '<td class="text-right">' + escapeHtml(String(p.qty)) + '</td>'
+                    + '<td class="text-center">'
+                        + (p.isShort === false
+                            ? '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;background:rgba(52,211,153,0.10);color:#34d399;border:1px solid rgba(52,211,153,0.35);">BUY</span>'
+                            : '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;background:rgba(248,113,113,0.10);color:#f87171;border:1px solid rgba(248,113,113,0.35);">SELL</span>')
+                      + '</td>'
+                    + '<td class="text-center">' + escapeHtml(p.setup) + '</td>'
+                    + '<td class="text-right">' + fmtRs(p.entryPrice) + '</td>'
+                    + '<td class="text-right pnl-negative">' + fmtLevel(p, p.slLevel)
+                        + (p.breakevenMoved
+                            ? ' <span title="SL moved to breakeven" style="color:#fbbf24;font-size:0.7rem;margin-left:6px;cursor:help;">▲</span>'
+                            : '')
+                        + '</td>'
+                    + '<td class="text-right pnl-positive">' + fmtLevel(p, p.targetLevel) + '</td>'
+                    + '<td class="text-right">' + fmtRs(p.ltp) + '</td>'
+                    + '<td class="text-right ' + pnlClass(pnl) + '" style="font-weight:700;">' + fmtRs(pnl) + '</td>'
+                    + '<td class="text-center"><button class="squareoff-btn" style="padding:4px 10px;font-size:0.65rem;" onclick="squareOffRow(\'' + escapeHtml(p.symbol).replace(/'/g, "&#39;") + '\')">×</button></td>'
+                + '</tr>';
+            }).join('');
+        }
+    }
+
+    // "NSE:NIFTY2662325100PE" → "NIFTY 25100 PE". Falls back to original on no-match
+    // so non-NIFTY-option symbols (or other formats) pass through unchanged.
+    function shortenSymbol(sym) {
+        if (!sym) return sym;
+        var m = String(sym).match(/^NSE:NIFTY[\dA-Z]+?(\d{4,5})(CE|PE)$/);
+        if (!m) return sym;
+        return 'NIFTY ' + m[1] + ' ' + m[2];
+    }
+    function shortenSymbolInText(text) {
+        if (!text) return text;
+        return String(text).replace(/NSE:NIFTY[\dA-Z]+(?:CE|PE)\b/g, function(full) {
+            return shortenSymbol(full);
+        });
+    }
+
+    function renderEvents(d) {
+        var events = (d.recentEvents || []).slice();
+        var filter = logFilterValue;
+        if (filter) {
+            events = events.filter(function(e) { return (e.message || '').indexOf(filter) >= 0; });
+        }
+        // Refresh filter options — use any symbol appearing in messages
+        var symbolSet = new Set();
+        (d.recentEvents || []).forEach(function(e) {
+            var m = String(e.message || '').match(/NSE:NIFTY[^\s]+/);
+            if (m) symbolSet.add(m[0]);
+        });
+        var sel = document.getElementById('logSymbolFilter');
+        var prior = sel.value;
+        var all = Array.from(symbolSet);
+        // Display the shortened label but keep the full Fyers symbol as the option value so
+        // the indexOf-on-message filter logic still matches what's in the event text.
+        sel.innerHTML = '<option value="">All Symbols</option>'
+            + all.map(function(s) { return '<option value="' + escapeHtml(s) + '">' + escapeHtml(shortenSymbol(s)) + '</option>'; }).join('');
+        if (all.indexOf(prior) >= 0) sel.value = prior;
+
+        var body = document.getElementById('eventsBody');
+        if (events.length === 0) {
+            body.innerHTML = '<div class="empty-state"><div class="empty-icon">⌁</div>No events recorded</div>';
+            return;
+        }
+        // Legacy source labels rewritten at render time. The strategy used to emit
+        // "ManualSL", "ManualEntry", "BreakEven", and a generic "Entry" before the
+        // recent rename to "MANUAL SL", "MANUAL ENTRY", "AUTO SL", "AUTO ENTRY".
+        // Persisted events from before the rename still carry the old strings — patch
+        // them here so the operator sees the new labels without needing to clear the
+        // event ring.
+        function normalizeEventSource(s) {
+            if (s === 'ManualSL')     return 'MANUAL SL';
+            if (s === 'ManualEntry')  return 'MANUAL ENTRY';
+            if (s === 'BreakEven')    return 'AUTO SL';
+            return s;
+        }
+        body.innerHTML = events.map(function(e) {
+            var sev = String(e.severity || '').replace(/[\[\]]/g, '');
+            var src = normalizeEventSource(String(e.source || 'Strategy').replace(/[\[\]]/g, ''));
+            return '<div class="event-row">'
+                + '<span style="color:var(--text-muted);">' + fmtTime(e.ts) + '</span>'
+                + '<span class="sev-' + sev + '">' + escapeHtml(sev) + '</span>'
+                + '<span class="event-src">[' + escapeHtml(src) + ']</span>'
+                + '<span class="event-msg">' + escapeHtml(shortenSymbolInText(e.message)) + '</span>'
+                + '</div>';
+        }).join('');
+    }
+
+    function filterLogs() {
+        logFilterValue = document.getElementById('logSymbolFilter').value;
+        if (lastState) { renderEvents(lastState); }
+    }
+
+    // ── Tick-level position LTP / P&L update via the shared ticker SSE ──────
+    // The strangle state stream pushes every 2 s. To get sub-second LTP/P&L
+    // refresh, we tap the same ticker channel used by the scrolling ticker —
+    // it streams every WS tick for every subscribed symbol (including position
+    // legs). For each tick that matches an open position, surgically update
+    // the LTP and P&L cells without re-rendering the whole table.
+    function patchPositionRow(symbol, ltp) {
+        if (!lastState || !lastState.openPositions) return false;
+        var positions = lastState.openPositions;
+        var rowIdx = -1;
+        for (var i = 0; i < positions.length; i++) {
+            if (positions[i].symbol === symbol) { rowIdx = i; break; }
+        }
+        if (rowIdx < 0) return false;
+        var p = positions[rowIdx];
+        var newMtm = (Number(p.entryPrice) - Number(ltp)) * Number(p.qty);
+        p.ltp = ltp;
+        p.mtm = newMtm;
+        // Find the actual DOM row (taking the symbol filter into account)
+        var tbody = document.getElementById('positionsTableBody');
+        if (!tbody) return true;
+        var visibleRows = tbody.querySelectorAll('tr');
+        for (var r = 0; r < visibleRows.length; r++) {
+            var rowSym = visibleRows[r].children[2];  // 3rd column = Symbol
+            if (rowSym && rowSym.textContent === symbol) {
+                // Columns: # Time Symbol Qty Side Setup Entry SL Target LTP P&L Action
+                //         0  1    2      3   4    5     6     7  8      9   10  11
+                var ltpCell = visibleRows[r].children[9];
+                var pnlCell = visibleRows[r].children[10];
+                if (ltpCell) ltpCell.textContent = fmtRs(ltp);
+                if (pnlCell) {
+                    pnlCell.textContent = fmtRs(newMtm);
+                    pnlCell.className = 'text-right ' + pnlClass(newMtm);
+                    pnlCell.style.fontWeight = '700';
+                }
+                break;
+            }
+        }
+        return true;
+    }
+    function attachTickerPositionUpdates() {
+        var src = window.__tickerSSE;
+        if (!src) { setTimeout(attachTickerPositionUpdates, 500); return; }
+        src.addEventListener('ticker', function(ev) {
+            if (!lastState || !lastState.openPositions || !lastState.openPositions.length) return;
+            try {
+                var arr = JSON.parse(ev.data);
+                if (!arr || !arr.length) return;
+                var anyChanged = false;
+                for (var i = 0; i < arr.length; i++) {
+                    var t = arr[i];
+                    var fyersSym = t.fyers || t.fullSymbol;
+                    if (!fyersSym || typeof t.lp !== 'number') continue;
+                    if (patchPositionRow(fyersSym, t.lp)) anyChanged = true;
+                }
+                // If at least one position's MTM changed, refresh the hero
+                // Net Day P&L card and the Exposed Risk card to keep totals in sync.
+                if (anyChanged) renderStats(lastState);
+            } catch (e) {}
+        });
+    }
+
+    // ── Market Clock ────────────────────────────────────────────────────────
+    function isWeekend(d) { var dow = d.getDay(); return dow === 0 || dow === 6; }
+    // NSE holiday cache — populated on page load via /api/market-holidays.
+    // Map of "yyyy-MM-dd" → holiday name. Empty until the fetch lands.
+    var nseHolidays = {};
+    function isoDate(d) {
+        var y = d.getFullYear(), m = d.getMonth() + 1, day = d.getDate();
+        return y + '-' + (m < 10 ? '0' : '') + m + '-' + (day < 10 ? '0' : '') + day;
+    }
+    function isHoliday(d) { return !!nseHolidays[isoDate(d)]; }
+    function holidayName(d) { return nseHolidays[isoDate(d)] || ''; }
+    function loadHolidays() {
+        fetch('/api/market-holidays').then(function(r){ return r.ok ? r.json() : []; })
+            .then(function(arr) {
+                (arr || []).forEach(function(h) {
+                    if (h && h.date) nseHolidays[h.date] = h.name || 'Holiday';
+                });
+            }).catch(function(){});
+    }
+    function nextTradingDay(d) {
+        var nxt = new Date(d.getTime());
+        nxt.setDate(nxt.getDate() + 1);
+        while (isWeekend(nxt) || isHoliday(nxt)) nxt.setDate(nxt.getDate() + 1);
+        return nxt.toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' });
+    }
+    function updateMarketClock() {
+        var now = new Date();
+        var clockEl = document.getElementById('marketClock');
+        var subEl = document.getElementById('marketClockSub');
+        if (!clockEl || !subEl) return;
+        if (isWeekend(now)) {
+            clockEl.textContent = now.toLocaleTimeString('en-IN', { hour12: false });
+            var dayName = now.getDay() === 0 ? 'Sunday' : 'Saturday';
+            subEl.textContent = dayName + ' — ' + nextTradingDay(now);
+            subEl.style.color = 'var(--accent-red)';
+            return;
+        }
+        if (isHoliday(now)) {
+            clockEl.textContent = now.toLocaleTimeString('en-IN', { hour12: false });
+            subEl.textContent = 'Holiday: ' + holidayName(now) + ' — ' + nextTradingDay(now);
+            subEl.style.color = 'var(--accent-red)';
+            return;
+        }
+        var h = now.getHours(), m = now.getMinutes();
+        var mins = h * 60 + m;
+        var preMarket   = 9 * 60;           // 09:00
+        var marketOpen  = 9 * 60 + 15;     // 09:15
+        var marketClose = 15 * 60 + 30;    // 15:30
+        clockEl.textContent = now.toLocaleTimeString('en-IN', { hour12: false });
+        if (mins < preMarket) {
+            var diff = preMarket - mins;
+            var dh = Math.floor(diff / 60), dm = diff % 60;
+            subEl.textContent = 'Pre-market in ' + (dh > 0 ? dh + 'h ' : '') + dm + 'm';
+            subEl.style.color = 'var(--accent-yellow)';
+        } else if (mins < marketOpen) {
+            subEl.textContent = 'Pre-Market (' + (marketOpen - mins) + 'm to open)';
+            subEl.style.color = 'var(--accent-yellow)';
+        } else if (mins < marketClose) {
+            var rem = marketClose - mins;
+            var rh = Math.floor(rem / 60), rm2 = rem % 60;
+            subEl.textContent = 'Market Open (' + rh + 'h ' + rm2 + 'm left)';
+            subEl.style.color = 'var(--accent-green)';
+        } else {
+            subEl.textContent = 'Market Closed — ' + nextTradingDay(now);
+            subEl.style.color = 'var(--accent-red)';
+        }
+    }
+
+    // ── Connection status (matches home.html / calendar.html) ──────────────
+    function checkConnection() {
+        var ctrl = new AbortController();
+        var tid = setTimeout(function(){ ctrl.abort(); }, 3000);
+        fetch('/status', { signal: ctrl.signal })
+            .then(r => { clearTimeout(tid); return r.json(); })
+            .then(d => {
+                var dot = document.getElementById('statusDot');
+                var label = document.getElementById('connectionStatus');
+                var status = d.status || 'DISCONNECTED';
+                if (status.indexOf('WS CONNECTED') >= 0) {
+                    dot.className = 'status-dot connected';
+                    label.textContent = status; label.style.color = 'var(--accent-green)';
+                } else if (status.indexOf('CONNECTING') >= 0 || status.indexOf('RECONNECTING') >= 0
+                        || status === 'POLLING' || status === 'SYNCING') {
+                    dot.className = 'status-dot syncing';
+                    label.textContent = status; label.style.color = 'var(--accent-yellow)';
+                } else {
+                    dot.className = 'status-dot disconnected';
+                    label.textContent = 'DISCONNECTED'; label.style.color = 'var(--accent-red)';
+                }
+            }).catch(() => {
+                document.getElementById('statusDot').className = 'status-dot disconnected';
+                document.getElementById('connectionStatus').textContent = 'DISCONNECTED';
+                document.getElementById('connectionStatus').style.color = 'var(--accent-red)';
+            });
+    }
+
+    // ── Welcome line — populate from /api/user/me ─────────────────────────
+    function loadWelcome() {
+        fetch('/api/user/me').then(function(r){ return r.json(); }).then(function(u){
+            if (!u || !u.email) return;
+            var nm = document.getElementById('userName');
+            var id = document.getElementById('fyersIdLine');
+            if (nm) nm.textContent = (u.firstName || u.email).trim();
+            if (id) id.textContent = u.email;
+        }).catch(function(){});
+    }
+
+    // ── v2 header chips ────────────────────────────────────────────────────
+    // Futures-driven feed (LTP, VWAP) + the two SHORT option trade-leg LTPs.
+
+    /** Render the NIFTY spot ticker (LTP + signed change + signed %change) into
+     *  the hdrFut / hdrFutChg cells next to VIX. Color-codes change green/red.
+     *  (Header still uses #hdrFut / #hdrFutChg element IDs from the original
+     *  futures-version of this code — renaming would require an HTML edit and
+     *  isn't worth it.) */
+    function renderFutTickerCells(ltp, chg, pct, symbol, levels) {
+        var v   = Number(ltp  || 0);
+        var c   = Number(chg  || 0);
+        var p   = Number(pct  || 0);
+        var ltpEl = document.getElementById('hdrFut');
+        var chgEl = document.getElementById('hdrFutChg');
+        if (ltpEl) {
+            ltpEl.textContent = v > 0 ? v.toFixed(2) : '—';
+            ltpEl.title = symbol || 'NIFTY spot index';
+        }
+        if (chgEl) {
+            if (v <= 0 || (c === 0 && p === 0)) {
+                chgEl.textContent = '';
+                chgEl.style.color = '';
+                return;
+            }
+            var sign = c > 0 ? '+' : (c < 0 ? '−' : '');
+            var pctStr = p === 0 ? '' : ' (' + sign + Math.abs(p).toFixed(2) + '%)';
+            chgEl.textContent = sign + Math.abs(c).toFixed(2) + pctStr;
+            chgEl.style.color = c > 0 ? 'var(--accent-green, #34d399)'
+                : (c < 0 ? 'var(--accent-red, #f87171)' : 'var(--text-muted)');
+        }
+    }
+
+    // ── Boot ───────────────────────────────────────────────────────────────
+    document.addEventListener('DOMContentLoaded', function() {
+        var yr = document.getElementById('footerYear');
+        if (yr) yr.textContent = new Date().getFullYear();
+        // Prime the page immediately, then attach the SSE stream for live updates.
+        loadState();
+        startStream();
+        loadHolidays();
+        updateMarketClock();
+        setInterval(updateMarketClock, 1000);
+        attachTickerHeaderUpdates();
+        attachTickerPositionUpdates();
+        checkConnection();
+        setInterval(checkConnection, 5000);
+        loadWelcome();
+    });
+</script>
+
+
+<script src="/js/common.js?v=41"></script>
+<script src="/js/ticker.js?v=36"></script>
+<script src="/js/settings-modal.js?v=73"></script>
+<script src="/js/option-chain-modal.js?v=99"></script>
+</body>
+</html>
