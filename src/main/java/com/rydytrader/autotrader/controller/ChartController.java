@@ -59,11 +59,15 @@ public class ChartController {
     public Map<String, Object> symbols() {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("nifty", NIFTY_SYMBOL);
+        // Read the session-locked ATM state DIRECTLY from AtmVwap rather than fishing
+        // through dashboardState — the top-level dashboardState map has no ceSymbol /
+        // peSymbol keys (they live nested under `atmVwap` and are hardcoded to "" there),
+        // which was returning empty strings and starving the CE / PE chart panels.
         AtmVwap strat = atmVwapProvider == null ? null : atmVwapProvider.getIfAvailable();
-        Map<String, Object> dash = strat == null ? Map.of() : strat.dashboardState();
-        String ceSymbol = String.valueOf(dash.getOrDefault("ceSymbol", ""));
-        String peSymbol = String.valueOf(dash.getOrDefault("peSymbol", ""));
-        out.put("atmStrike", dash.getOrDefault("atmStrike", 0));
+        long   atmStrike = strat == null ? 0  : strat.getAtmStrike();
+        String ceSymbol  = strat == null ? "" : strat.getCeSymbol();
+        String peSymbol  = strat == null ? "" : strat.getPeSymbol();
+        out.put("atmStrike", atmStrike);
         out.put("ceSymbol",  ceSymbol);
         out.put("peSymbol",  peSymbol);
         // Prime the header cells with the last-known WS-cached tick per symbol so the
@@ -72,6 +76,10 @@ public class ChartController {
         out.put("niftyTick", tickBlock(NIFTY_SYMBOL));
         out.put("ceTick",    tickBlock(ceSymbol));
         out.put("peTick",    tickBlock(peSymbol));
+        // Active SL levels for the CE / PE legs — drives a horizontal SL price line
+        // on the corresponding chart. Zero when no position is open on that side.
+        out.put("ceSl", strat == null ? 0.0 : round2(strat.getOpenSlLevel(ceSymbol)));
+        out.put("peSl", strat == null ? 0.0 : round2(strat.getOpenSlLevel(peSymbol)));
         return out;
     }
 

@@ -26,15 +26,14 @@
         /* Chart page grid — row 1 = NIFTY (full width), row 2 = CE (left) + PE (right). */
         .chart-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr;
             grid-template-rows: 1fr 1fr;
             gap: 16px;
             height: calc(100vh - 240px);
             min-height: 420px;
         }
-        .chart-panel-nifty { grid-column: 1 / span 2; grid-row: 1; }
-        .chart-panel-ce    { grid-column: 1; grid-row: 2; }
-        .chart-panel-pe    { grid-column: 2; grid-row: 2; }
+        .chart-panel-ce    { grid-column: 1; grid-row: 1; }
+        .chart-panel-pe    { grid-column: 1; grid-row: 2; }
         .chart-panel { display: flex; flex-direction: column; margin: 0; }
         .chart-panel .chart-wrap {
             flex: 1; min-height: 0;
@@ -175,7 +174,7 @@
     <div class="page-header fade-in" style="margin-bottom:14px;">
         <div>
             <div class="page-title">Chart</div>
-            <div class="page-subtitle">NIFTY spot · selected ATM CE + PE · 2-min OHLC with VWAP</div>
+            <div class="page-subtitle">Selected ATM CE + PE · 2-min OHLC with VWAP</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -186,34 +185,7 @@
     </div>
 
     <div class="chart-grid fade-in">
-        <!-- NIFTY spot — full-height left column -->
-        <div class="section-card chart-panel chart-panel-nifty">
-            <div class="section-header">
-                <div class="section-title" style="display:flex; align-items:center; gap:12px;">
-                    <div class="section-title-dot" style="background:#fbbf24;"></div>
-                    <span>NIFTY 50</span>
-                    <span class="chart-hdr-price" id="niftyPrice">—</span>
-                    <span class="chart-hdr-chg" id="niftyChg"></span>
-                </div>
-                <div style="margin-left:auto; display:flex; align-items:center; gap:10px; font-family:var(--font-mono); font-size:0.66rem; font-weight:700; letter-spacing:0.04em;">
-                    <span style="color:var(--text-muted);">ΔCE <span id="niftyHdrCeOi" style="color:#f87171;">—</span></span>
-                    <span style="color:var(--text-muted);">ΔPE <span id="niftyHdrPeOi" style="color:#34d399;">—</span></span>
-                    <span id="niftyOiTrendPill"
-                          style="font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
-                                 letter-spacing:0.06em; color:var(--text-muted); background:rgba(128,128,128,0.10);
-                                 border:1px solid var(--border); padding:3px 10px; border-radius:999px;">
-                        NEUTRAL
-                    </span>
-                    <button class="chart-expand-btn" data-panel="nifty" onclick="toggleExpand('nifty')" title="Expand chart">⛶</button>
-                </div>
-            </div>
-            <div class="chart-wrap">
-                <div id="chartNifty" style="position:absolute; inset:0;"></div>
-                <div class="chart-empty" id="chartNiftyEmpty">Market opens at 09:15 IST…</div>
-            </div>
-        </div>
-
-        <!-- ATM CE — top right -->
+        <!-- ATM CE — top -->
         <div class="section-card chart-panel chart-panel-ce">
             <div class="section-header">
                 <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green, #34d399);"></div>
@@ -231,7 +203,7 @@
             </div>
         </div>
 
-        <!-- ATM PE — bottom right -->
+        <!-- ATM PE — bottom -->
         <div class="section-card chart-panel chart-panel-pe">
             <div class="section-header">
                 <div class="section-title"><div class="section-title-dot" style="background:var(--accent-red, #f87171);"></div>
@@ -266,7 +238,7 @@
 
     var charts = { nifty: null, ce: null, pe: null };
     var currentCeSym = '', currentPeSym = '';
-    var NIFTY_SYM = 'NSE:NIFTY50-INDEX';
+    // NIFTY spot no longer plotted here — page keeps CE + PE panels only.
 
     function fmtHhmm(ms) {
         try {
@@ -288,6 +260,10 @@
     // Chart / candlestick series / VWAP line series stored per panel key.
     var candleSeries = { nifty: null, ce: null, pe: null };
     var vwapSeries   = { nifty: null, ce: null, pe: null };
+    // Active SL price line per panel — created when an option position opens with an
+    // SL level, removed when the position closes or SL changes (then re-created).
+    var slPriceLine  = { ce: null, pe: null };
+    var slPriceLevel = { ce: 0,    pe: 0 };
     // IST offset used to shift bar timestamps so LightweightCharts (which formats in UTC
     // by default) renders IST wall-clock labels. 5 h 30 min = 19800 s.
     var IST_OFFSET_S = 5.5 * 3600;
@@ -298,7 +274,7 @@
         return {
             text:  isDark ? '#94a3b8' : '#475569',
             grid:  'rgba(128,128,128,0.08)',
-            vwap:  '#a78bfa',      // purple — same accent as the OI card dot
+            vwap:  '#ec4899',      // pink — distinct against green/red candles + white grid
             up:    '#34d399',
             down:  '#f87171',
             unchg: '#94a3b8'
@@ -324,7 +300,20 @@
                 horzLines: { color: col.grid }
             },
             rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.08, bottom: 0.08 } },
-            timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
+            timeScale: {
+                borderVisible: false,
+                timeVisible: true,
+                secondsVisible: false,
+                // Left-anchor sparse data. rightOffset keeps a small gap after the
+                // rightmost bar so newly-forming candles have room to slide in without
+                // reflowing the whole chart, while fitContent() (called after every
+                // setData in applyData) stretches the existing bars to fill the width
+                // — otherwise LWC defaults to right-packing and thin data floats in
+                // the middle of the panel.
+                rightOffset: 4,
+                fixLeftEdge: true,
+                shiftVisibleRangeOnNewBar: true
+            },
             crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
         });
         charts[panelKey] = chart;
@@ -338,7 +327,7 @@
         });
         vwapSeries[panelKey] = chart.addLineSeries({
             color: col.vwap,
-            lineWidth: 1,
+            lineWidth: 2,
             priceLineVisible: false,
             lastValueVisible: false,
             crosshairMarkerVisible: false,
@@ -365,8 +354,29 @@
         }
         (history || []).forEach(pushBar);
         if (current) pushBar(current);
+        // NIFTY spot doesn't carry Fyers ATP (index feeds have no volume), so the
+        // server-side vwap field is 0 across the day. Fall back to a session-anchored
+        // typical-price average — cumulative (H+L+C)/3 divided by bar count — which
+        // gives a stable reference line comparable to a proper VWAP without needing
+        // volume weights. Only used when the server didn't provide any positive vwap
+        // points; options keep their true Fyers-ATP curve.
+        if (vwapPoints.length === 0 && bars.length > 0) {
+            var cumTyp = 0, cnt = 0;
+            for (var i = 0; i < bars.length; i++) {
+                var b = bars[i];
+                cumTyp += (b.high + b.low + b.close) / 3;
+                cnt++;
+                vwapPoints.push({ time: b.time, value: cumTyp / cnt });
+            }
+        }
         candles.setData(bars);
         vwap.setData(vwapPoints);
+        // Fit the existing bars to the full panel width so sparse data left-anchors
+        // instead of floating in the middle. rightOffset (set in ensureChart) keeps a
+        // small gap after the last bar for the next candle to slide in.
+        if (bars.length) {
+            try { charts[panelKey].timeScale().fitContent(); } catch (e) {}
+        }
         return {
             firstClose: bars.length ? bars[0].close : null,
             lastClose:  bars.length ? bars[bars.length - 1].close : null
@@ -375,6 +385,12 @@
 
     function updatePanel(panelKey, symbol, priceElId, chgElId, emptyElId, priceDecimals) {
         if (!symbol) return;
+        // Chart-only: this poll fetches history + current bucket and redraws the
+        // candles. Header LTP + change cells are OWNED by attachTickerHeaderUpdates
+        // (SSE tick, sub-second) and refreshSymbols (/symbols poll, 15 s fallback).
+        // Writing them here as well caused flicker — the candle poll's session-anchored
+        // change math and the SSE's Fyers day-change math don't agree, so the two
+        // sources kept overwriting each other every couple of seconds.
         fetch('/api/chart/candles?symbol=' + encodeURIComponent(symbol)).then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
             var history = d.history || [];
@@ -384,17 +400,7 @@
             if (empty) empty.style.display = hasData ? 'none' : 'flex';
             if (!hasData) return;
             ensureChart(panelKey, 'chart' + panelKey.charAt(0).toUpperCase() + panelKey.slice(1), priceDecimals);
-            var res = applyData(panelKey, history, current);
-            var priceEl = document.getElementById(priceElId);
-            var chgEl   = document.getElementById(chgElId);
-            if (priceEl) priceEl.textContent = fmtPx(res.lastClose);
-            if (chgEl && res.firstClose != null && res.lastClose != null) {
-                var diff = res.lastClose - res.firstClose;
-                var pct  = res.firstClose > 0 ? (diff / res.firstClose) * 100 : 0;
-                var sign = diff >= 0 ? '+' : '';
-                chgEl.textContent = sign + diff.toFixed(2) + ' (' + sign + pct.toFixed(2) + '%)';
-                chgEl.className = 'chart-hdr-chg ' + pnlClass(diff);
-            }
+            applyData(panelKey, history, current);
         }).catch(function() {});
     }
 
@@ -408,44 +414,31 @@
         }).catch(function(){});
     }
 
-    // ── OI bias summary on NIFTY chart header ─────────────────────────────
-    // Mirrors the OI Bias card on /trade — same trend states, same
-    // Indian-style signed formatting for the two side sums. Polled every 30 s
-    // against /api/atmvwap/oi/state; visibility-gated to skip background tabs.
-    var oiThresholdPct = 40;
-    function oiInFmt(v) {
-        try { return new Intl.NumberFormat('en-IN').format(v); } catch (e) { return String(v); }
-    }
-    function oiSigned(v) {
-        var n = Number(v || 0);
-        return (n >= 0 ? '+' : '−') + oiInFmt(Math.abs(n));
-    }
-    function oiTrendStyle(bias) {
-        switch (bias) {
-            case 'BEARISH': return { color:'#f87171', bg:'rgba(248,113,113,0.10)', border:'rgba(248,113,113,0.35)' };
-            case 'BULLISH': return { color:'#34d399', bg:'rgba(52,211,153,0.10)', border:'rgba(52,211,153,0.35)' };
-            case 'STALE':   return { color:'#fbbf24', bg:'rgba(251,191,36,0.10)', border:'rgba(251,191,36,0.35)' };
-            default:        return { color:'var(--text-muted)', bg:'rgba(128,128,128,0.10)', border:'var(--border)' };
+    /** Draw / update / remove the SL horizontal line on a CE or PE panel. Only the
+     *  price changes trigger a full re-create — same-price updates are no-ops so the
+     *  15-s poll doesn't visually flicker. */
+    function applySlLine(panelKey, slValue) {
+        var series = candleSeries[panelKey];
+        if (!series || typeof series.createPriceLine !== 'function') return;
+        var current = slPriceLevel[panelKey] || 0;
+        var target  = Number(slValue) || 0;
+        if (current === target) return;                       // no change
+        if (slPriceLine[panelKey]) {
+            try { series.removePriceLine(slPriceLine[panelKey]); } catch (e) {}
+            slPriceLine[panelKey] = null;
         }
-    }
-    function pollOiState() {
-        if (document.visibilityState !== 'visible') return;
-        fetch('/api/atmvwap/oi/state').then(function(r){ return r.json(); }).then(function(d){
-            if (!d) return;
-            if (typeof d.biasThresholdPct === 'number') oiThresholdPct = d.biasThresholdPct;
-            var ceEl = document.getElementById('niftyHdrCeOi');
-            var peEl = document.getElementById('niftyHdrPeOi');
-            var pill = document.getElementById('niftyOiTrendPill');
-            if (ceEl) ceEl.textContent = d.cumulativeCeChange != null ? oiSigned(d.cumulativeCeChange) : '—';
-            if (peEl) peEl.textContent = d.cumulativePeChange != null ? oiSigned(d.cumulativePeChange) : '—';
-            if (pill) {
-                var style = oiTrendStyle(d.bias || 'NEUTRAL');
-                pill.textContent = (d.bias || 'NEUTRAL') + ' · ' + oiThresholdPct.toFixed(0) + '%';
-                pill.style.color        = style.color;
-                pill.style.background   = style.bg;
-                pill.style.borderColor  = style.border;
-            }
-        }).catch(function(){});
+        slPriceLevel[panelKey] = target;
+        if (target <= 0) return;                               // no active position → line removed
+        try {
+            slPriceLine[panelKey] = series.createPriceLine({
+                price: target,
+                color: '#f87171',
+                lineWidth: 2,
+                lineStyle: LightweightCharts.LineStyle.Dashed,
+                axisLabelVisible: true,
+                title: 'SL'
+            });
+        } catch (e) {}
     }
 
     function refreshSymbols() {
@@ -463,16 +456,19 @@
             if (peStrikeEl) peStrikeEl.textContent = strikeText;
             currentCeSym = ce;
             currentPeSym = pe;
-            // Prime the header LTP + change cells from the in-memory tick cache. The
-            // ticker SSE only pushes on tick change and the initial snapshot may have
-            // already landed before attachTickerHeaderUpdates ran — so this poll
-            // guarantees the header shows a value on load and off-hours.
-            var nt = d.niftyTick || {};
-            if (nt.ltp) setHeaderCells('niftyPrice', 'niftyChg', nt.ltp, nt.ch, nt.chp, 0);
+            // Prime the CE / PE header LTP + change cells from the in-memory tick cache.
+            // Option ticks aren't in the shared ticker SSE (filtered server-side), so
+            // this /symbols poll is the only source of live CE/PE prices in the chart
+            // headers.
             var cet = d.ceTick || {};
             if (cet.ltp) setHeaderCells('cePrice', 'ceChg', cet.ltp, cet.ch, cet.chp, 1);
             var pet = d.peTick || {};
             if (pet.ltp) setHeaderCells('pePrice', 'peChg', pet.ltp, pet.ch, pet.chp, 1);
+            // Overlay the active SL as a dashed horizontal price line on the CE / PE
+            // charts. Reads d.ceSl / d.peSl from AtmVwap's live position state — zero
+            // when no position is open on that side, so the line is removed cleanly.
+            applySlLine('ce', Number(d.ceSl || 0));
+            applySlLine('pe', Number(d.peSl || 0));
         }).catch(function() {});
     }
 
@@ -484,7 +480,7 @@
     // batch the observer callback after a paint.
     var expandedPanel = null;
     function toggleExpand(panelKey) {
-        var panelIds = { nifty: 'chart-panel-nifty', ce: 'chart-panel-ce', pe: 'chart-panel-pe' };
+        var panelIds = { ce: 'chart-panel-ce', pe: 'chart-panel-pe' };
         var panel = document.querySelector('.' + panelIds[panelKey]);
         if (!panel) return;
         if (expandedPanel === panelKey) {
@@ -514,8 +510,13 @@
 
     function pollAll() {
         if (document.visibilityState !== 'visible') return;
-        // NIFTY spot ticks in whole points; option premiums show one decimal.
-        updatePanel('nifty', NIFTY_SYM, 'niftyPrice', 'niftyChg', 'chartNiftyEmpty', 0);
+        // While CE / PE haven't been resolved yet (pre-ATM-lock or fresh page load),
+        // fold /symbols into the fast 2-s cycle so the moment AtmVwap picks the ATM
+        // the option panels start populating — instead of waiting up to 15 s for the
+        // slow refreshSymbols interval.
+        if (!currentCeSym || !currentPeSym) refreshSymbols();
+        // Only CE + PE panels remain — NIFTY chart was removed; its LTP still shows
+        // in the page-header strip via the SSE ticker handler + /symbols poll.
         if (currentCeSym) updatePanel('ce', currentCeSym, 'cePrice', 'ceChg', 'chartCeEmpty', 1);
         if (currentPeSym) updatePanel('pe', currentPeSym, 'pePrice', 'peChg', 'chartPeEmpty', 1);
     }
@@ -540,29 +541,6 @@
             cEl.className = 'chart-hdr-chg ' + pnlClass(diff);
         }
     }
-    function attachTickerHeaderUpdates() {
-        var src = window.__tickerSSE;
-        if (!src) { setTimeout(attachTickerHeaderUpdates, 500); return; }
-        src.addEventListener('ticker', function(ev) {
-            try {
-                var arr = JSON.parse(ev.data);
-                if (!arr || !arr.length) return;
-                for (var i = 0; i < arr.length; i++) {
-                    var t = arr[i];
-                    var full = t.fyers || t.fullSymbol || '';
-                    if (!full) continue;
-                    if (full === NIFTY_SYM) {
-                        setHeaderCells('niftyPrice', 'niftyChg', t.lp, t.ch, t.chp, 0);
-                    } else if (currentCeSym && full === currentCeSym) {
-                        setHeaderCells('cePrice', 'ceChg', t.lp, t.ch, t.chp, 1);
-                    } else if (currentPeSym && full === currentPeSym) {
-                        setHeaderCells('pePrice', 'peChg', t.lp, t.ch, t.chp, 1);
-                    }
-                }
-            } catch (e) {}
-        });
-    }
-
     // Welcome-line reload also runs on interval so tab-switch back reflects any user change.
 
     document.addEventListener('DOMContentLoaded', function() {
@@ -571,11 +549,8 @@
         loadWelcome();
         refreshSymbols();
         pollAll();
-        pollOiState();
-        attachTickerHeaderUpdates();
         setInterval(refreshSymbols, 15000);
         setInterval(pollAll, 2000);
-        setInterval(pollOiState, 30000);
     });
 </script>
 

@@ -1,17 +1,28 @@
 package com.rydytrader.autotrader.service;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rydytrader.autotrader.dto.Candle;
+import com.rydytrader.autotrader.util.FileIoUtils;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -36,6 +47,9 @@ public class CandleAggregator {
     private static final Logger log = LoggerFactory.getLogger(CandleAggregator.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     public  static final int    BUCKET_MINUTES = 2;
+    /** NSE market open in minutes-of-day (IST). Bucket boundaries are computed relative
+     *  to this so the first 2-min bar spans 09:15→09:17, not 09:14→09:16. */
+    private static final int    MARKET_OPEN_MINUTE_OF_DAY = 9 * 60 + 15;
 
     private final MarketDataService marketDataService;
 
@@ -48,8 +62,39 @@ public class CandleAggregator {
     private static final int HISTORY_CAP = 250;
     private final Map<String, Deque<Candle>> historyBySymbol = new ConcurrentHashMap<>();
 
+    /** Where the closed-candle rings + in-progress buckets get persisted. Reloaded on
+     *  boot when the file's dayKey matches today so a mid-day JVM restart doesn't wipe
+     *  the intraday chart history. Kept under {@code store/cache/} alongside the
+     *  strategy state files — {@code store/data/} is reserved for permanent per-day
+     *  event / trade artefacts. */
+    private static final String STATE_FILE = "../store/cache/candle-aggregator-state.json";
+    private final ObjectMapper mapper = new ObjectMapper()
+        .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+        .findAndRegisterModules();
+    private volatile boolean dirty = false;
+
     public CandleAggregator(MarketDataService marketDataService) {
         this.marketDataService = marketDataService;
+    }
+
+    @PostConstruct
+    public void boot() {
+        Path p = Path.of(STATE_FILE);
+        boolean exists = Files.exists(p);
+        log.info("[CandleAggregator] boot — state file {} at {}",
+            exists ? "present" : "absent", p.toAbsolutePath());
+        loadFromDisk();
+        if (!exists) {
+            log.info("[CandleAggregator] fresh start — no prior state to restore; history will accumulate from now on");
+        }
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        // Best-effort final flush so a graceful shutdown captures the latest in-progress
+        // buckets too. Uncaught exceptions get swallowed by Spring's PreDestroy handler
+        // anyway; saveToDisk logs internally.
+        saveToDisk();
     }
 
     /** Subscribe to 2-min candle closes on {@code symbol}. The symbol is also added to the
@@ -90,7 +135,14 @@ public class CandleAggregator {
         }
 
         int minuteOfDay = t.getHour() * 60 + t.getMinute();
-        int bucketStart = (minuteOfDay / BUCKET_MINUTES) * BUCKET_MINUTES;
+        // Bucket boundaries anchored on 09:15 IST — the true market-open minute — not on
+        // midnight. Otherwise 09:15 (odd) rounds down to the 09:14 even-minute bucket and
+        // the "first 2-min bar" closes at 09:16 after only ~1 minute of data. Anchoring
+        // on 09:15 gives 09:15→09:17, 09:17→09:19, … as the docs promise.
+        int minutesSinceOpen = minuteOfDay - MARKET_OPEN_MINUTE_OF_DAY;
+        int bucketStart      = minutesSinceOpen >= 0
+            ? MARKET_OPEN_MINUTE_OF_DAY + (minutesSinceOpen / BUCKET_MINUTES) * BUCKET_MINUTES
+            : (minuteOfDay / BUCKET_MINUTES) * BUCKET_MINUTES;   // pre-open safety net
 
         for (String symbol : listenersBySymbol.keySet()) {
             double ltp;
@@ -109,6 +161,7 @@ public class CandleAggregator {
                 // First sample for this symbol — open a bucket without emitting anything.
                 b.start(bucketStart, ltp, nowIst);
                 if (vwap > 0) b.vwapLast = vwap;
+                dirty = true;
                 continue;
             }
             if (bucketStart != b.currentBucketMinute) {
@@ -116,6 +169,7 @@ public class CandleAggregator {
                 emitClosed(symbol, b);
                 b.start(bucketStart, ltp, nowIst);
                 if (vwap > 0) b.vwapLast = vwap;
+                dirty = true;
                 continue;
             }
             // Same bucket — update OHLC + latest VWAP.
@@ -123,7 +177,119 @@ public class CandleAggregator {
             if (ltp < b.lowPx)  b.lowPx  = ltp;
             b.closePx = ltp;
             if (vwap > 0) b.vwapLast = vwap;
+            dirty = true;
         }
+    }
+
+    // ── Persistence ────────────────────────────────────────────────────────────
+
+    /** Periodic writer — flushes state to disk if anything changed since the last save.
+     *  30-s cadence caps write frequency (one write ≈ 15 symbols × 200 candles ≈ 300 KB)
+     *  regardless of how many bucket updates the tick sampler produces per second. */
+    @Scheduled(fixedDelay = 30_000, initialDelay = 30_000)
+    public void periodicSave() {
+        if (!dirty) return;
+        saveToDisk();
+    }
+
+    /** Deserialise the on-disk state into the runtime maps. Any prior-day snapshot is
+     *  discarded — cross-session persistence for chart history would show stale bars,
+     *  and the strategy state is intraday anyway. */
+    private synchronized void loadFromDisk() {
+        try {
+            Path p = Path.of(STATE_FILE);
+            if (!Files.exists(p)) return;
+            State s = mapper.readValue(Files.readString(p), State.class);
+            if (s == null) return;
+            String today = LocalDate.now(IST).toString();
+            if (!today.equals(s.dayKey)) {
+                log.info("[CandleAggregator] discarding stale state.json — dayKey={} today={}", s.dayKey, today);
+                return;
+            }
+            int candles = 0;
+            if (s.historyBySymbol != null) {
+                for (Map.Entry<String, List<Candle>> e : s.historyBySymbol.entrySet()) {
+                    if (e.getKey() == null || e.getValue() == null || e.getValue().isEmpty()) continue;
+                    historyBySymbol.put(e.getKey(), new ConcurrentLinkedDeque<>(e.getValue()));
+                    candles += e.getValue().size();
+                }
+            }
+            int buckets = 0;
+            if (s.bucketBySymbol != null) {
+                for (Map.Entry<String, SerBucket> e : s.bucketBySymbol.entrySet()) {
+                    if (e.getKey() == null || e.getValue() == null) continue;
+                    Bucket b = new Bucket();
+                    SerBucket sb = e.getValue();
+                    b.currentBucketMinute  = sb.currentBucketMinute;
+                    b.currentBucketStartMs = sb.currentBucketStartMs;
+                    b.openPx               = sb.openPx;
+                    b.highPx               = sb.highPx;
+                    b.lowPx                = sb.lowPx;
+                    b.closePx              = sb.closePx;
+                    b.vwapLast             = sb.vwapLast;
+                    bucketBySymbol.put(e.getKey(), b);
+                    buckets++;
+                }
+            }
+            log.info("[CandleAggregator] restored {} candles across {} symbols + {} in-progress buckets for {}",
+                candles, historyBySymbol.size(), buckets, today);
+        } catch (IOException e) {
+            log.warn("[CandleAggregator] failed to load state: {}", e.getMessage());
+        }
+    }
+
+    /** Serialise the current state atomically. Rolls a stale dayKey on first save of a
+     *  new day so tomorrow's history doesn't inherit yesterday's leftovers on disk. */
+    private synchronized void saveToDisk() {
+        try {
+            String today = LocalDate.now(IST).toString();
+            State s = new State();
+            s.dayKey = today;
+            for (Map.Entry<String, Deque<Candle>> e : historyBySymbol.entrySet()) {
+                s.historyBySymbol.put(e.getKey(), new ArrayList<>(e.getValue()));
+            }
+            for (Map.Entry<String, Bucket> e : bucketBySymbol.entrySet()) {
+                Bucket b = e.getValue();
+                if (b == null || b.currentBucketMinute < 0) continue;
+                SerBucket sb = new SerBucket();
+                sb.currentBucketMinute  = b.currentBucketMinute;
+                sb.currentBucketStartMs = b.currentBucketStartMs;
+                sb.openPx               = b.openPx;
+                sb.highPx               = b.highPx;
+                sb.lowPx                = b.lowPx;
+                sb.closePx              = b.closePx;
+                sb.vwapLast             = b.vwapLast;
+                s.bucketBySymbol.put(e.getKey(), sb);
+            }
+
+            Path dst = Path.of(STATE_FILE);
+            File parent = dst.toFile().getParentFile();
+            if (parent != null && !parent.exists()) parent.mkdirs();
+            Path tmp = Path.of(STATE_FILE + ".tmp");
+            Files.writeString(tmp, mapper.writeValueAsString(s));
+            FileIoUtils.atomicMoveWithRetry(tmp, dst);
+            dirty = false;
+        } catch (IOException e) {
+            log.warn("[CandleAggregator] failed to save state: {}", e.getMessage());
+        }
+    }
+
+    // ── Serialisation POJOs ───────────────────────────────────────────────────
+
+    /** Persisted snapshot of the aggregator. Discarded on load if {@link #dayKey} isn't
+     *  today. */
+    public static class State {
+        public String dayKey = "";
+        public Map<String, List<Candle>> historyBySymbol = new LinkedHashMap<>();
+        public Map<String, SerBucket>    bucketBySymbol  = new LinkedHashMap<>();
+    }
+
+    /** Public mirror of the private {@link Bucket} so Jackson can round-trip it. */
+    public static class SerBucket {
+        public int    currentBucketMinute   = -1;
+        public long   currentBucketStartMs  = 0;
+        public double openPx = 0, highPx = 0, lowPx = 0, closePx = 0;
+        public double vwapLast = 0;
     }
 
     private void emitClosed(String symbol, Bucket b) {
@@ -138,6 +304,7 @@ public class CandleAggregator {
         Deque<Candle> ring = historyBySymbol.computeIfAbsent(symbol, k -> new ConcurrentLinkedDeque<>());
         ring.addLast(c);
         while (ring.size() > HISTORY_CAP) ring.pollFirst();
+        dirty = true;
         CopyOnWriteArrayList<Consumer<Candle>> ls = listenersBySymbol.get(symbol);
         if (ls == null) return;
         for (Consumer<Candle> l : ls) {

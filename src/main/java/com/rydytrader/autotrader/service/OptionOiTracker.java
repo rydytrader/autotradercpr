@@ -71,7 +71,7 @@ public class OptionOiTracker {
      *  restarts — the cumulative curve resumes from disk, the routing map rebuilds
      *  from persisted window symbols, and the next OI tick keeps counting deltas
      *  against the on-disk per-strike baselines. */
-    private static final String STATE_FILE = "../store/data/option-oi-state.json";
+    private static final String STATE_FILE = "../store/cache/option-oi-state.json";
 
     private final ObjectMapper mapper = new ObjectMapper()
         .registerModule(new JavaTimeModule())
@@ -277,7 +277,29 @@ public class OptionOiTracker {
             bias,
             state.atmStrike,
             state.activeStrikes == null ? 0 : state.activeStrikes.size(),
-            round2(currentBiasThreshold() * 100.0));
+            round2(currentBiasThreshold() * 100.0),
+            round2(actualBiasPct(state.cumulativeCeChange, state.cumulativePeChange)));
+    }
+
+    /** Actual bias magnitude — the difference between CE and PE cumulative OI change
+     *  expressed as a percent of the LARGER side. Signed: positive = CE dominant
+     *  (bearish tilt), negative = PE dominant (bullish tilt). Bounded in [-100, 100].
+     *
+     *  <p>Example: CE=100, PE=50 → (100−50)/100 × 100 = 50%. The same threshold value
+     *  (40% default) is compared against this metric in {@link #evaluateBias}, so a
+     *  pill reading of "50%" is a stronger signal than the 40% threshold and correctly
+     *  flips to BEARISH.
+     *
+     *  <p>Cumulative flows that go negative (writers unwinding) are clamped to 0 for
+     *  this calculation — bias reflects OI BUILDING, not OI reduction. */
+    static double actualBiasPct(long cumCe, long cumPe) {
+        double ce = Math.max(0, cumCe);
+        double pe = Math.max(0, cumPe);
+        if (ce == 0 && pe == 0) return 0;
+        double bigger = Math.max(ce, pe);
+        double smaller = Math.min(ce, pe);
+        double magnitude = (bigger - smaller) / bigger * 100.0;
+        return ce >= pe ? magnitude : -magnitude;
     }
 
     public synchronized History history() {
@@ -297,18 +319,25 @@ public class OptionOiTracker {
         state.bias        = evaluateBias(state.cumulativeCeChange, state.cumulativePeChange, currentBiasThreshold());
     }
 
-    /** Three-state bias — one side must exceed the other by ≥ {@code threshold} (a
-     *  decimal fraction, e.g. 0.40 for 40 %) to earn a directional label. All
-     *  comparisons are on the absolute cumulative change since baseline (positive =
-     *  writers building, negative = writers unwinding). */
+    /** Three-state bias — the difference between the two sides must be at least
+     *  {@code threshold} (decimal, e.g. 0.40 = 40%) of the LARGER side to earn a
+     *  directional label. Same metric as {@link #actualBiasPct} so the pill's
+     *  displayed % and the threshold configured by the operator are directly
+     *  comparable (e.g. pill shows "BEARISH · 50%" only when the display metric
+     *  is ≥ the 40% threshold).
+     *
+     *  <p>Sign handling: cumulative-since-baseline can go negative when writers
+     *  unwind. Only positive OI-build flows count toward a directional bias here;
+     *  a negative side is treated as 0 flow. Both ≤ 0 → NEUTRAL. */
     static String evaluateBias(long cumCe, long cumPe, double threshold) {
-        if (cumCe == 0 && cumPe == 0) return "NEUTRAL";
-        if (cumPe == 0) return cumCe > 0 ? "BEARISH" : "BULLISH";
-        if (cumCe == 0) return cumPe > 0 ? "BULLISH" : "BEARISH";
-        double factor = 1.0 + Math.max(0, threshold);
-        if (cumCe >= cumPe * factor) return "BEARISH";
-        if (cumPe >= cumCe * factor) return "BULLISH";
-        return "NEUTRAL";
+        double ce = Math.max(0, cumCe);
+        double pe = Math.max(0, cumPe);
+        if (ce == 0 && pe == 0) return "NEUTRAL";
+        double bigger = Math.max(ce, pe);
+        double smaller = Math.min(ce, pe);
+        double diffPctOfBigger = (bigger - smaller) / bigger;   // 0.0 … 1.0
+        if (diffPctOfBigger < Math.max(0, threshold)) return "NEUTRAL";
+        return ce >= pe ? "BEARISH" : "BULLISH";
     }
 
     static double computeRatio(long cumCe, long cumPe) {
@@ -413,7 +442,11 @@ public class OptionOiTracker {
                            String        bias,
                            long          atmStrike,
                            int           activeStrikeCount,
-                           double        biasThresholdPct) {}
+                           double        biasThresholdPct,
+                           /** Signed actual percent by which one side exceeds the other
+                            *  since baseline. +ve = CE > PE (bearish tilt), −ve = PE > CE
+                            *  (bullish tilt). See {@link #actualBiasPct}. */
+                           double        biasActualPct) {}
 
     public record History(LocalDateTime baselineTakenAt, List<SampleRecord> samples) {}
 

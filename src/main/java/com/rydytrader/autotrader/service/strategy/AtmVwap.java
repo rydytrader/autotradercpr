@@ -137,6 +137,15 @@ public class AtmVwap implements Strategy {
 
     private volatile State state = new State();
     private final Map<String, Object> symbolLocks = new ConcurrentHashMap<>();
+    /** Symbols for which we've already registered a {@code candleAggregator.subscribe}
+     *  listener this JVM lifetime. Prevents duplicate registrations when
+     *  {@link #ensureSessionLegsSubscribed()} is called repeatedly (which happens every
+     *  2-min NIFTY candle close via the same-day early-return branch of
+     *  {@code resolveAtmFromFirstBar}). Without this guard, each pass added another
+     *  listener → {@code processOptionBar} ran N times per bar → trigger promoted /
+     *  seeded / invalidated events fired N times. Cleared on day rollover, kill switch,
+     *  logout — anywhere the session's option legs are released. */
+    private final java.util.Set<String> aggregatorSubscribedSymbols = ConcurrentHashMap.newKeySet();
 
     public AtmVwap(CandleAggregator candleAggregator,
                    AtmTracker atmTracker,
@@ -224,6 +233,20 @@ public class AtmVwap implements Strategy {
         try { resumeWarmingIfNeeded(); }
         catch (Exception e) { log.warn("[AtmVwap] resume-warming failed: {}", e.getMessage()); }
 
+        // Mid-day restart with an already-resolved ATM: re-fire the OI-window subscribe
+        // immediately so the OI feed resumes within seconds of boot instead of waiting
+        // ~2-3 min for the next NIFTY 2-min candle close to trigger the usual re-entry
+        // path. Idempotent — the subscriber's per-day guard prevents any duplicate work
+        // when the 09:17-ish real resolution also fires.
+        try {
+            String today = LocalDate.now(IST).toString();
+            if (state.atmStrike > 0 && today.equals(state.sessionSetupDayKey)) {
+                notifyOiWindow(state.atmStrike);
+            }
+        } catch (Exception e) {
+            log.warn("[AtmVwap] OI-window boot re-subscribe failed: {}", e.getMessage());
+        }
+
         log.info("[AtmVwap] booted — enabled={}, lots={}, squareoff={}, restoredPositions={}",
             riskSettings.isAtmVwapEnabled(), riskSettings.getAtmVwapLotsPerLeg(),
             riskSettings.getAtmVwapSquareOffTime(), state.openPositions.size());
@@ -289,6 +312,23 @@ public class AtmVwap implements Strategy {
     @Override public String id() { return STRATEGY_ID; }
     @Override public String displayName() { return "ATM VWAP"; }
     @Override public String description() { return "NIFTY ATM 2-min · session VWAP · bearish premium sell"; }
+    /** Session-locked ATM strike, or 0 before the first 2-min close resolves it. */
+    public long getAtmStrike() { return state.atmStrike; }
+    /** Selected ATM CE leg Fyers symbol, or "" before ATM resolution. */
+    public String getCeSymbol() { return state.ceSymbol == null ? "" : state.ceSymbol; }
+    /** Selected ATM PE leg Fyers symbol, or "" before ATM resolution. */
+    public String getPeSymbol() { return state.peSymbol == null ? "" : state.peSymbol; }
+    /** SL price of the currently-open CE / PE leg position (matched by symbol), or 0
+     *  when no such position is active. Used by the Chart page to draw an SL price
+     *  line on the corresponding option chart. */
+    public double getOpenSlLevel(String fyersSymbol) {
+        if (fyersSymbol == null || fyersSymbol.isBlank()) return 0;
+        for (Position p : state.openPositions.values()) {
+            if (p != null && fyersSymbol.equals(p.symbol) && p.slLevel > 0) return p.slLevel;
+        }
+        return 0;
+    }
+
     @Override public String currentState() {
         if (state.doneForDay) return "DONE_FOR_DAY";
         return state.openPositions.isEmpty() ? "IDLE" : "OPEN(" + state.openPositions.size() + ")";
@@ -521,8 +561,10 @@ public class AtmVwap implements Strategy {
         try { marketDataService.subscribeAdditional(subs); }
         catch (Exception ignored) {}
         for (String sym : subs) {
+            if (aggregatorSubscribedSymbols.contains(sym)) continue;
             final String s = sym;
             candleAggregator.subscribe(s, cc -> onCandleClose(s, cc));
+            aggregatorSubscribedSymbols.add(sym);
         }
         state.preWarmDayKey = today;
         saveToDisk();
@@ -575,8 +617,10 @@ public class AtmVwap implements Strategy {
         try { marketDataService.subscribeAdditional(subs); }
         catch (Exception ignored) {}
         for (String sym : subs) {
+            if (aggregatorSubscribedSymbols.contains(sym)) continue;
             final String s = sym;
             candleAggregator.subscribe(s, cc -> onCandleClose(s, cc));
+            aggregatorSubscribedSymbols.add(sym);
         }
         event("[INFO]", "Setup",
             "resuming pre-warm from persisted state — " + state.warmingStrikes.size() + " strikes");
@@ -695,11 +739,17 @@ public class AtmVwap implements Strategy {
         if (state.ceSymbol != null && !state.ceSymbol.isBlank()) legs.add(state.ceSymbol);
         if (state.peSymbol != null && !state.peSymbol.isBlank()) legs.add(state.peSymbol);
         if (legs.isEmpty()) return;
+        // WS subscribe is safely idempotent (the underlying subscribedHsmTokens set
+        // dedups). Candle-aggregator subscribe is NOT — every call adds another
+        // listener. Guard with aggregatorSubscribedSymbols so we register exactly one
+        // listener per session leg per JVM lifetime.
         try { marketDataService.subscribeAdditional(legs); }
         catch (Exception ignored) {}
         for (String sym : legs) {
+            if (aggregatorSubscribedSymbols.contains(sym)) continue;
             final String s = sym;
             candleAggregator.subscribe(s, cc -> onCandleClose(s, cc));
+            aggregatorSubscribedSymbols.add(sym);
         }
     }
 
@@ -713,6 +763,7 @@ public class AtmVwap implements Strategy {
             if (sym != null && !sym.isBlank() && !openSymbols.contains(sym)) {
                 legs.add(sym);
                 candleAggregator.unsubscribe(sym);
+                aggregatorSubscribedSymbols.remove(sym);
             }
         }
         if (!legs.isEmpty()) {
@@ -731,7 +782,10 @@ public class AtmVwap implements Strategy {
             if (!drop.isEmpty()) {
                 try { marketDataService.unsubscribeAdditional(drop); }
                 catch (Exception ignored) {}
-                for (String sym : drop) candleAggregator.unsubscribe(sym);
+                for (String sym : drop) {
+                    candleAggregator.unsubscribe(sym);
+                    aggregatorSubscribedSymbols.remove(sym);
+                }
             }
             state.warmingStrikes.clear();
             state.warmingCeByStrike.clear();
@@ -1035,9 +1089,31 @@ public class AtmVwap implements Strategy {
         int closeSide = p.isShort ? +1 : -1;
         OrderDTO close = orderService.placeExitOrder(symbol, p.qty, closeSide, productType);
         double exitPrice = 0;
-        if (close != null) {
+        String exitOrderId = close == null ? null : close.getId();
+        // Prefer the actual filled trade price from Fyers tradebook. Market squareoff
+        // orders usually fill within a few hundred ms; poll a short window before
+        // falling back to LTP so the persisted P&L reflects real execution, not a
+        // moving-window LTP snapshot.
+        if (exitOrderId != null && !exitOrderId.isBlank()) {
+            for (int attempt = 0; attempt < 5; attempt++) {
+                try {
+                    orderService.invalidateTradebookCache();
+                    double filled = orderService.getFilledPriceByOrderId(exitOrderId);
+                    if (filled > 0) { exitPrice = filled; break; }
+                    Thread.sleep(300);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    break;
+                } catch (Exception ignored) {}
+            }
+        }
+        if (exitPrice <= 0 && close != null) {
             try { exitPrice = marketDataService.getLtp(symbol); }
             catch (Exception ignored) {}
+            if (exitPrice > 0) {
+                log.warn("[AtmVwap] exit fill not resolved for order {} on {} — persisting LTP {} as fallback",
+                    exitOrderId, symbol, round2(exitPrice));
+            }
         }
         double sellTurnover = (p.isShort ? p.entryPrice : exitPrice) * p.qty;
         double buyTurnover  = (p.isShort ? exitPrice    : p.entryPrice) * p.qty;

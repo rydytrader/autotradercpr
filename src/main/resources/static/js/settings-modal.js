@@ -192,8 +192,6 @@
             if (g('sm-atmVwapSquareOffTime'))     g('sm-atmVwapSquareOffTime').value = d.atmVwapSquareOffTime || '15:25';
             if (g('sm-atmVwapMaxCeTradesPerDay')) g('sm-atmVwapMaxCeTradesPerDay').value = d.atmVwapMaxCeTradesPerDay != null ? d.atmVwapMaxCeTradesPerDay : 3;
             if (g('sm-atmVwapMaxPeTradesPerDay')) g('sm-atmVwapMaxPeTradesPerDay').value = d.atmVwapMaxPeTradesPerDay != null ? d.atmVwapMaxPeTradesPerDay : 3;
-            if (g('sm-atmVwapOiBiasThresholdPct')) g('sm-atmVwapOiBiasThresholdPct').value = d.atmVwapOiBiasThresholdPct != null ? d.atmVwapOiBiasThresholdPct : 40;
-            if (g('sm-atmVwapOiBiasFilterEnabled')) g('sm-atmVwapOiBiasFilterEnabled').checked = d.atmVwapOiBiasFilterEnabled === true;
         }).catch(function() {});
     }
 
@@ -206,19 +204,20 @@
             atmVwapTradingEndTime:     (g('sm-atmVwapTradingEndTime').value || '').trim(),
             atmVwapSquareOffTime:      (g('sm-atmVwapSquareOffTime').value || '').trim(),
             atmVwapMaxCeTradesPerDay:  parseInt(g('sm-atmVwapMaxCeTradesPerDay').value, 10) || 0,
-            atmVwapMaxPeTradesPerDay:  parseInt(g('sm-atmVwapMaxPeTradesPerDay').value, 10) || 0,
-            atmVwapOiBiasThresholdPct: Math.max(0, parseFloat(g('sm-atmVwapOiBiasThresholdPct').value) || 40),
-            atmVwapOiBiasFilterEnabled: !!(g('sm-atmVwapOiBiasFilterEnabled') && g('sm-atmVwapOiBiasFilterEnabled').checked)
+            atmVwapMaxPeTradesPerDay:  parseInt(g('sm-atmVwapMaxPeTradesPerDay').value, 10) || 0
         };
         postSettings('/api/settings/risk', body);
     }
 
     function savePortfolioRiskTab() {
+        var g = id => document.getElementById(id);
         var body = {
-            startingCapital:          parseFloat(document.getElementById('sm-startingCapital').value) || 0,
-            portfolioMaxRiskPct:      parseFloat(document.getElementById('sm-portfolioMaxRiskPct').value) || 0,
-            atmVwapMinSlPoints:       Math.max(0, parseFloat(document.getElementById('sm-atmVwapMinSlPoints').value) || 0),
-            atmVwapMaxSlPoints:       Math.max(0, parseFloat(document.getElementById('sm-atmVwapMaxSlPoints').value) || 0)
+            startingCapital:          parseFloat(g('sm-startingCapital').value) || 0,
+            portfolioMaxRiskPct:      parseFloat(g('sm-portfolioMaxRiskPct').value) || 0,
+            atmVwapMinSlPoints:       Math.max(0, parseFloat(g('sm-atmVwapMinSlPoints').value) || 0),
+            atmVwapMaxSlPoints:       Math.max(0, parseFloat(g('sm-atmVwapMaxSlPoints').value) || 0),
+            atmVwapOiBiasThresholdPct: Math.max(0, parseFloat(g('sm-atmVwapOiBiasThresholdPct').value) || 40),
+            atmVwapOiBiasFilterEnabled: !!(g('sm-atmVwapOiBiasFilterEnabled') && g('sm-atmVwapOiBiasFilterEnabled').checked)
         };
         postSettings('/api/settings/risk', body);
     }
@@ -269,14 +268,19 @@
     function loadPortfolioRiskValues() {
         fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
-            var capInput = document.getElementById('sm-startingCapital');
-            var pctInput = document.getElementById('sm-portfolioMaxRiskPct');
-            var slBufInput = document.getElementById('sm-atmVwapMinSlPoints');
+            var g = id => document.getElementById(id);
+            var capInput = g('sm-startingCapital');
+            var pctInput = g('sm-portfolioMaxRiskPct');
+            var slBufInput = g('sm-atmVwapMinSlPoints');
             if (capInput) capInput.value = d.startingCapital != null ? d.startingCapital : 1000000;
             if (pctInput) pctInput.value = d.portfolioMaxRiskPct != null ? d.portfolioMaxRiskPct : 0;
             if (slBufInput) slBufInput.value = d.atmVwapMinSlPoints != null ? d.atmVwapMinSlPoints : 10.0;
-            var maxSlInput = document.getElementById('sm-atmVwapMaxSlPoints');
+            var maxSlInput = g('sm-atmVwapMaxSlPoints');
             if (maxSlInput) maxSlInput.value = d.atmVwapMaxSlPoints != null ? d.atmVwapMaxSlPoints : 20.0;
+            // OI bias fields live on the Risk pane too — hydrate them here so their
+            // values survive tab switches + get sent in savePortfolioRiskTab below.
+            if (g('sm-atmVwapOiBiasThresholdPct')) g('sm-atmVwapOiBiasThresholdPct').value = d.atmVwapOiBiasThresholdPct != null ? d.atmVwapOiBiasThresholdPct : 40;
+            if (g('sm-atmVwapOiBiasFilterEnabled')) g('sm-atmVwapOiBiasFilterEnabled').checked = d.atmVwapOiBiasFilterEnabled === true;
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {
                 updatePortfolioRiskHint(parseFloat(capInput.value) || 0, parseFloat(pctInput && pctInput.value) || 0);
