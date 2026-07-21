@@ -110,6 +110,87 @@ public class AnalyticsService {
         out.put("equityCurve", equityCurve(trades, startingCapital));
         out.put("byMonth",     byMonth(trades, dailyClosed));
         out.put("byDate",      byDate(trades, dailyClosed));
+        out.put("oiBiasEffectiveness", oiBiasEffectiveness(closed));
+        return out;
+    }
+
+    /** Per-cycle split of closed trades by whether they were entered AGAINST the
+     *  OI bias (i.e., trades the bias filter would have blocked): CE_SELL fired
+     *  while bias = BULLISH, or PE_SELL fired while bias = BEARISH.
+     *
+     *  <p>Rows are marked at fire time in {@code AtmVwap.fire()} — only against-bias
+     *  trades get a non-null {@code entryOiBias} value. Everything else (with-bias,
+     *  neutral, stale, unknown, historical pre-fix rows) is null and buckets as
+     *  "other". Aggregates net P&L + win-rate for each bucket + a projected impact
+     *  block the UI can render directly.
+     *
+     *  <p>Walks per-cycle {@code closed} — NOT the daily-aggregated list —
+     *  because bias is a per-trade attribute. */
+    private Map<String, Object> oiBiasEffectiveness(List<Trade> closed) {
+        int againstT = 0, againstW = 0, againstL = 0;
+        double againstNet = 0;
+        int ceT = 0, ceW = 0, ceL = 0;    double ceNet = 0;
+        int peT = 0, peW = 0, peL = 0;    double peNet = 0;
+        int otherT = 0, otherW = 0, otherL = 0;
+        double otherNet = 0;
+        for (Trade t : closed) {
+            double pnl = t.netPnl();
+            String bias = t.entryOiBias();
+            boolean against = bias != null && !bias.isBlank();
+            if (against) {
+                againstT++;
+                againstNet += pnl;
+                if (pnl > 0) againstW++;
+                else if (pnl < 0) againstL++;
+                if ("CE_SELL".equals(t.setup())) {
+                    ceT++; ceNet += pnl;
+                    if (pnl > 0) ceW++;
+                    else if (pnl < 0) ceL++;
+                } else if ("PE_SELL".equals(t.setup())) {
+                    peT++; peNet += pnl;
+                    if (pnl > 0) peW++;
+                    else if (pnl < 0) peL++;
+                }
+            } else {
+                otherT++;
+                otherNet += pnl;
+                if (pnl > 0) otherW++;
+                else if (pnl < 0) otherL++;
+            }
+        }
+        Map<String, Object> against = new LinkedHashMap<>();
+        against.put("trades",  againstT);
+        against.put("wins",    againstW);
+        against.put("losses",  againstL);
+        against.put("winRate", round2(againstT > 0 ? (againstW * 100.0 / againstT) : 0));
+        against.put("netPnl",  round2(againstNet));
+        Map<String, Object> ceSell = new LinkedHashMap<>();
+        ceSell.put("trades",  ceT);
+        ceSell.put("wins",    ceW);
+        ceSell.put("winRate", round2(ceT > 0 ? (ceW * 100.0 / ceT) : 0));
+        ceSell.put("netPnl",  round2(ceNet));
+        Map<String, Object> peSell = new LinkedHashMap<>();
+        peSell.put("trades",  peT);
+        peSell.put("wins",    peW);
+        peSell.put("winRate", round2(peT > 0 ? (peW * 100.0 / peT) : 0));
+        peSell.put("netPnl",  round2(peNet));
+        against.put("ceSell", ceSell);
+        against.put("peSell", peSell);
+        Map<String, Object> other = new LinkedHashMap<>();
+        other.put("trades",  otherT);
+        other.put("wins",    otherW);
+        other.put("losses",  otherL);
+        other.put("winRate", round2(otherT > 0 ? (otherW * 100.0 / otherT) : 0));
+        other.put("netPnl",  round2(otherNet));
+        Map<String, Object> impact = new LinkedHashMap<>();
+        impact.put("wouldBlockTrades", againstT);
+        impact.put("wouldBlockWins",   againstW);
+        impact.put("wouldBlockLosses", againstL);
+        impact.put("netPnlIfEnabled",  round2(-againstNet));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("against", against);
+        out.put("other",   other);
+        out.put("projectedFilterImpact", impact);
         return out;
     }
 

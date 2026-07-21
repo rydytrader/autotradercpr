@@ -160,7 +160,7 @@
               width:78px;padding:14px 6px 10px;gap:6px;
               border-radius:14px;text-decoration:none;color:var(--text-secondary);
               border:1px solid transparent;background:transparent;cursor:pointer;">
-        <span style="font-size:1.75rem;line-height:1;">▥</span>
+        <span style="font-size:1.75rem;line-height:1;">↗</span>
         <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">CHART</span>
     </a>
     <a href="/trades" class="nav-icon" title="Trades" data-nav-key="trades"
@@ -302,7 +302,6 @@
                         <th class="text-center">Setup</th>
                         <th class="text-right">Entry</th>
                         <th class="text-right">SL</th>
-                        <th class="text-right">Target</th>
                         <th class="text-right">LTP</th>
                         <th class="text-right">P&amp;L</th>
                         <th class="text-center">Action</th>
@@ -310,7 +309,7 @@
                 </thead>
                 <tbody id="positionsTableBody">
                     <tr>
-                        <td colspan="12">
+                        <td colspan="11">
                             <div class="empty-state">
                                 <div class="empty-icon">◎</div>
                                 No active positions
@@ -699,7 +698,6 @@
                             ? ' <span title="SL moved to breakeven" style="color:#fbbf24;font-size:0.7rem;margin-left:6px;cursor:help;">▲</span>'
                             : '')
                         + '</td>'
-                    + '<td class="text-right pnl-positive">' + fmtLevel(p, p.targetLevel) + '</td>'
                     + '<td class="text-right">' + fmtRs(p.ltp) + '</td>'
                     + '<td class="text-right ' + pnlClass(pnl) + '" style="font-weight:700;">' + fmtRs(pnl) + '</td>'
                     + '<td class="text-center"><button class="squareoff-btn" style="padding:4px 10px;font-size:0.65rem;" onclick="squareOffRow(\'' + escapeHtml(p.symbol).replace(/'/g, "&#39;") + '\')">×</button></td>'
@@ -803,10 +801,10 @@
         for (var r = 0; r < visibleRows.length; r++) {
             var rowSym = visibleRows[r].children[2];  // 3rd column = Symbol
             if (rowSym && rowSym.textContent === symbol) {
-                // Columns: # Time Symbol Qty Side Setup Entry SL Target LTP P&L Action
-                //         0  1    2      3   4    5     6     7  8      9   10  11
-                var ltpCell = visibleRows[r].children[9];
-                var pnlCell = visibleRows[r].children[10];
+                // Columns: # Time Symbol Qty Side Setup Entry SL LTP P&L Action
+                //         0  1    2      3   4    5     6     7  8   9   10
+                var ltpCell = visibleRows[r].children[8];
+                var pnlCell = visibleRows[r].children[9];
                 if (ltpCell) ltpCell.textContent = fmtRs(ltp);
                 if (pnlCell) {
                     pnlCell.textContent = fmtRs(newMtm);

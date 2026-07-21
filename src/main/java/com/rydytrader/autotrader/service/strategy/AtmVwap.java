@@ -329,6 +329,34 @@ public class AtmVwap implements Strategy {
         return 0;
     }
 
+    /** Per-side trade counter for today (CE_SELL fires). */
+    public int getCeTradesToday() { return state.ceTradesToday; }
+    /** Per-side trade counter for today (PE_SELL fires). */
+    public int getPeTradesToday() { return state.peTradesToday; }
+
+    /** Realised + open-MTM net P&L of the CE_SELL leg for today. Closed cycles read
+     *  from {@code todayClosedTrades} filtered by setup; open positions add live MTM
+     *  minus their projected cycle charges. */
+    public double getCeSideNetPnlToday() { return sideNetPnlToday(ActiveSetup.CE_SELL); }
+    public double getPeSideNetPnlToday() { return sideNetPnlToday(ActiveSetup.PE_SELL); }
+
+    private synchronized double sideNetPnlToday(ActiveSetup side) {
+        rolloverIfNewDay();
+        double net = 0;
+        String sideName = side.name();
+        for (Map<String, Object> m : state.todayClosedTrades) {
+            if (sideName.equals(String.valueOf(m.getOrDefault("setup", "")))) {
+                net += asDouble(m.get("netPnl"));
+            }
+        }
+        for (Position p : state.openPositions.values()) {
+            if (p != null && p.setup == side) {
+                net += openPositionMtm(p) - cycleChargesFor(p);
+            }
+        }
+        return round2(net);
+    }
+
     @Override public String currentState() {
         if (state.doneForDay) return "DONE_FOR_DAY";
         return state.openPositions.isEmpty() ? "IDLE" : "OPEN(" + state.openPositions.size() + ")";
@@ -813,6 +841,16 @@ public class AtmVwap implements Strategy {
             return;
         }
 
+        // After the configured trading end time, no new entries will fire — so the FSM
+        // work (seeding / promoting / invalidating triggers) is dead weight and just
+        // spams the event log. Silently skip. Existing open positions keep running via
+        // fastSlCheck + watchSquareoff independently of this method.
+        if (!canFireNewEntry()) {
+            // Also drop any stale trigger so it doesn't linger past squareoff / next day.
+            state.triggerByOption.remove(symbol);
+            return;
+        }
+
         // Skip if a position is already open on this symbol (no stacking).
         for (Position p : state.openPositions.values()) {
             if (p == null) continue;
@@ -1025,6 +1063,16 @@ public class AtmVwap implements Strategy {
         p.productType     = productType;
         p.breakevenMoved  = false;
         p.lockedAtm       = state.atmStrike;
+        // Record entryOiBias ONLY when the trade is against the current bias — those
+        // are the ones the filter would have blocked. With-bias / neutral / stale /
+        // unknown trades leave the column NULL so analytics can trivially split
+        // "against" from "everything else". Only accumulates while the filter is off
+        // (with it on, fire() short-circuits earlier and no row is written at all).
+        String biasAtEntry = currentOiBias();
+        boolean againstBias =
+            (isCeLeg && "BULLISH".equals(biasAtEntry)) ||
+            (!isCeLeg && "BEARISH".equals(biasAtEntry));
+        if (againstBias) p.entryOiBias = biasAtEntry;
 
         state.openPositions.put(posKey(p), p);
         state.tradesToday++;

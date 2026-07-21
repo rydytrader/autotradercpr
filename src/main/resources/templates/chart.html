@@ -141,7 +141,7 @@
               width:78px;padding:14px 6px 10px;gap:6px;
               border-radius:14px;text-decoration:none;color:var(--text-secondary);
               border:1px solid transparent;background:transparent;cursor:pointer;">
-        <span style="font-size:1.75rem;line-height:1;">▥</span>
+        <span style="font-size:1.75rem;line-height:1;">↗</span>
         <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">CHART</span>
     </a>
     <a href="/trades" class="nav-icon" title="Trades" data-nav-key="trades"
@@ -188,12 +188,15 @@
         <!-- ATM CE — top -->
         <div class="section-card chart-panel chart-panel-ce">
             <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green, #34d399);"></div>
-                    ATM CE <span id="ceStrikeLabel" style="color:var(--text-primary); font-weight:700; margin-left:6px;">—</span>
-                </div>
-                <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
+                <div class="section-title" style="display:flex; align-items:center; gap:10px;">
+                    <div class="section-title-dot" style="background:var(--accent-green, #34d399);"></div>
+                    <span>ATM CE <span id="ceStrikeLabel" style="color:var(--text-primary); font-weight:700; margin-left:6px;">—</span></span>
                     <span class="chart-hdr-price" id="cePrice">—</span>
                     <span class="chart-hdr-chg" id="ceChg"></span>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
+                    <span id="ceTradeCount" style="font-family:var(--font-mono); font-size:0.74rem; font-weight:700; color:#34d399; background:rgba(52,211,153,0.12); border:1px solid rgba(52,211,153,0.40); padding:2px 9px; border-radius:999px;">0 / 3</span>
+                    <span id="cePnl" style="font-family:var(--font-mono); font-size:0.78rem; font-weight:700; color:var(--text-muted);">P&amp;L —</span>
                     <button class="chart-expand-btn" data-panel="ce" onclick="toggleExpand('ce')" title="Expand chart">⛶</button>
                 </div>
             </div>
@@ -206,12 +209,15 @@
         <!-- ATM PE — bottom -->
         <div class="section-card chart-panel chart-panel-pe">
             <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-red, #f87171);"></div>
-                    ATM PE <span id="peStrikeLabel" style="color:var(--text-primary); font-weight:700; margin-left:6px;">—</span>
-                </div>
-                <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
+                <div class="section-title" style="display:flex; align-items:center; gap:10px;">
+                    <div class="section-title-dot" style="background:var(--accent-red, #f87171);"></div>
+                    <span>ATM PE <span id="peStrikeLabel" style="color:var(--text-primary); font-weight:700; margin-left:6px;">—</span></span>
                     <span class="chart-hdr-price" id="pePrice">—</span>
                     <span class="chart-hdr-chg" id="peChg"></span>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
+                    <span id="peTradeCount" style="font-family:var(--font-mono); font-size:0.74rem; font-weight:700; color:#f87171; background:rgba(248,113,113,0.12); border:1px solid rgba(248,113,113,0.40); padding:2px 9px; border-radius:999px;">0 / 3</span>
+                    <span id="pePnl" style="font-family:var(--font-mono); font-size:0.78rem; font-weight:700; color:var(--text-muted);">P&amp;L —</span>
                     <button class="chart-expand-btn" data-panel="pe" onclick="toggleExpand('pe')" title="Expand chart">⛶</button>
                 </div>
             </div>
@@ -264,9 +270,33 @@
     // SL level, removed when the position closes or SL changes (then re-created).
     var slPriceLine  = { ce: null, pe: null };
     var slPriceLevel = { ce: 0,    pe: 0 };
+    // Last real close price per panel — the countdown price line is pinned here.
+    var lastClosePerPanel = { ce: null, pe: null };
+    // TradingView-style countdown "price line" — invisible line, axis label carries
+    // the mm:ss text. Recreated when lastClose changes; title updated every second.
+    var countdownPriceLine  = { ce: null, pe: null };
+    var countdownPriceLevel = { ce: 0,    pe: 0 };
     // IST offset used to shift bar timestamps so LightweightCharts (which formats in UTC
     // by default) renders IST wall-clock labels. 5 h 30 min = 19800 s.
     var IST_OFFSET_S = 5.5 * 3600;
+
+    /** Session bounds (09:15 → 15:30 IST) for TODAY, in the same time coordinates the
+     *  candle series uses (epoch seconds + IST_OFFSET_S so LWC displays IST labels).
+     *  Used to pre-draw the full-day X axis so sparse morning candles left-anchor
+     *  instead of being stretched to fill the panel width. */
+    function todaySessionRange() {
+        var now = new Date();
+        var istMs = now.getTime() + IST_OFFSET_S * 1000;
+        var istDate = new Date(istMs);
+        var y = istDate.getUTCFullYear(), mo = istDate.getUTCMonth(), d = istDate.getUTCDate();
+        // 09:15 IST = 03:45 UTC, 15:30 IST = 10:00 UTC.
+        var openUtcSec  = Date.UTC(y, mo, d, 3, 45) / 1000;
+        var closeUtcSec = Date.UTC(y, mo, d, 10, 0) / 1000;
+        return {
+            from: openUtcSec  + IST_OFFSET_S,
+            to:   closeUtcSec + IST_OFFSET_S
+        };
+    }
 
     function themeColors() {
         var t = document.documentElement.getAttribute('data-theme') || 'dark';
@@ -304,14 +334,10 @@
                 borderVisible: false,
                 timeVisible: true,
                 secondsVisible: false,
-                // Left-anchor sparse data. rightOffset keeps a small gap after the
-                // rightmost bar so newly-forming candles have room to slide in without
-                // reflowing the whole chart, while fitContent() (called after every
-                // setData in applyData) stretches the existing bars to fill the width
-                // — otherwise LWC defaults to right-packing and thin data floats in
-                // the middle of the panel.
-                rightOffset: 4,
-                fixLeftEdge: true,
+                // TradingView-style: axis extends only as far as data exists. Latest
+                // bar sits near the right edge; rightOffset keeps a small gap after
+                // it so the forming candle has room to render.
+                rightOffset: 6,
                 shiftVisibleRangeOnNewBar: true
             },
             crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
@@ -340,26 +366,32 @@
         var candles = candleSeries[panelKey];
         var vwap    = vwapSeries[panelKey];
         if (!candles) return { firstClose: null, lastClose: null };
-        var bars = [];
-        var vwapPoints = [];
-        var seenTimes = {};
+        var byTime = {};   // bar-time → bar data (accumulated as we walk history + current)
+        var vwapMap = {};  // bar-time → vwap value
         function pushBar(c) {
             var t = Math.floor(Number(c.startMillis) / 1000) + IST_OFFSET_S;
-            // LightweightCharts requires strictly ascending, unique time values.
-            if (seenTimes[t]) return;
-            seenTimes[t] = 1;
-            bars.push({ time: t, open: Number(c.open), high: Number(c.high), low: Number(c.low), close: Number(c.close) });
+            byTime[t] = { time: t, open: Number(c.open), high: Number(c.high), low: Number(c.low), close: Number(c.close) };
             var v = Number(c.vwap || 0);
-            if (v > 0) vwapPoints.push({ time: t, value: v });
+            if (v > 0) vwapMap[t] = v;
         }
         (history || []).forEach(pushBar);
         if (current) pushBar(current);
+
+        // Real bars only — no whitespace pre-fill. Axis extends only up to the
+        // latest bar, with a small rightOffset gap for the forming candle.
+        var bars = Object.keys(byTime)
+            .map(function(k) { return byTime[Number(k)]; })
+            .sort(function(a, b) { return a.time - b.time; });
+        var firstClose = bars.length ? bars[0].close : null;
+        var lastClose  = bars.length ? bars[bars.length - 1].close : null;
+
+        // VWAP series — only real points, no whitespace (line series handles gaps).
+        var vwapPoints = Object.keys(vwapMap)
+            .map(function(k) { return { time: Number(k), value: vwapMap[k] }; })
+            .sort(function(a, b) { return a.time - b.time; });
         // NIFTY spot doesn't carry Fyers ATP (index feeds have no volume), so the
-        // server-side vwap field is 0 across the day. Fall back to a session-anchored
-        // typical-price average — cumulative (H+L+C)/3 divided by bar count — which
-        // gives a stable reference line comparable to a proper VWAP without needing
-        // volume weights. Only used when the server didn't provide any positive vwap
-        // points; options keep their true Fyers-ATP curve.
+        // server-side vwap field is 0. Fall back to a session-anchored typical-price
+        // average — cumulative (H+L+C)/3 divided by bar count.
         if (vwapPoints.length === 0 && bars.length > 0) {
             var cumTyp = 0, cnt = 0;
             for (var i = 0; i < bars.length; i++) {
@@ -371,15 +403,14 @@
         }
         candles.setData(bars);
         vwap.setData(vwapPoints);
-        // Fit the existing bars to the full panel width so sparse data left-anchors
-        // instead of floating in the middle. rightOffset (set in ensureChart) keeps a
-        // small gap after the last bar for the next candle to slide in.
-        if (bars.length) {
-            try { charts[panelKey].timeScale().fitContent(); } catch (e) {}
-        }
+        // Cache last real close so the countdown price-line badge can pin to it.
+        lastClosePerPanel[panelKey] = lastClose;
+        // Fit real bars corner-to-corner (with rightOffset gap). Axis extends only
+        // to the latest bar, then a small gap for the next forming candle.
+        try { charts[panelKey].timeScale().fitContent(); } catch (e) {}
         return {
-            firstClose: bars.length ? bars[0].close : null,
-            lastClose:  bars.length ? bars[bars.length - 1].close : null
+            firstClose: firstClose,
+            lastClose:  lastClose
         };
     }
 
@@ -469,7 +500,30 @@
             // when no position is open on that side, so the line is removed cleanly.
             applySlLine('ce', Number(d.ceSl || 0));
             applySlLine('pe', Number(d.peSl || 0));
+            // Per-side trade count + P&L chips in the CE / PE headers.
+            applySideStats('ce', d.ceStats);
+            applySideStats('pe', d.peStats);
         }).catch(function() {});
+    }
+
+    /** Render "(n / max) · P&L" chips for the CE / PE panel headers. */
+    function applySideStats(panelKey, stats) {
+        stats = stats || {};
+        var countEl = document.getElementById(panelKey + 'TradeCount');
+        var pnlEl   = document.getElementById(panelKey + 'Pnl');
+        if (countEl) {
+            var count = Number(stats.count || 0);
+            var max   = Number(stats.max   || 0);
+            countEl.textContent = count + ' / ' + max;
+        }
+        if (pnlEl) {
+            var pnl = Number(stats.pnl || 0);
+            var sign = pnl >= 0 ? '+' : '−';
+            pnlEl.textContent = 'P&L ' + sign + '₹' + Math.abs(pnl).toLocaleString('en-IN', { maximumFractionDigits: 0 });
+            pnlEl.style.color = pnl > 0 ? 'var(--accent-green, #34d399)'
+                              : pnl < 0 ? 'var(--accent-red, #f87171)'
+                              : 'var(--text-muted)';
+        }
     }
 
     // ── Panel fullscreen expand / collapse ──────────────────────────────────
@@ -510,11 +564,11 @@
 
     function pollAll() {
         if (document.visibilityState !== 'visible') return;
-        // While CE / PE haven't been resolved yet (pre-ATM-lock or fresh page load),
-        // fold /symbols into the fast 2-s cycle so the moment AtmVwap picks the ATM
-        // the option panels start populating — instead of waiting up to 15 s for the
-        // slow refreshSymbols interval.
-        if (!currentCeSym || !currentPeSym) refreshSymbols();
+        // /api/chart/symbols is a purely in-memory read on the server (no DB, no
+        // external HTTP), so folding it into the 2-s cycle keeps CE/PE trade-count
+        // + P&L chips updating in near-real time. Also picks up the ATM symbol
+        // resolution the moment AtmVwap locks it.
+        refreshSymbols();
         // Only CE + PE panels remain — NIFTY chart was removed; its LTP still shows
         // in the page-header strip via the SSE ticker handler + /symbols poll.
         if (currentCeSym) updatePanel('ce', currentCeSym, 'cePrice', 'ceChg', 'chartCeEmpty', 1);
@@ -543,14 +597,85 @@
     }
     // Welcome-line reload also runs on interval so tab-switch back reflects any user change.
 
+    // ── 2-min bar countdown ───────────────────────────────────────────────
+    // Bars are anchored on 09:15 IST → 09:15/09:17/09:19/…/15:29 boundaries.
+    // Shows mm:ss remaining until the current bar closes. Uses IST wall clock
+    // (recovered from Date.now + machine timezone offset diff) so the countdown
+    // is correct even for viewers outside India.
+    function computeBarCountdown() {
+        // IST is UTC+5:30. Convert now to IST wall-clock seconds since midnight.
+        var now = new Date();
+        var utcMs = now.getTime();
+        var istMs = utcMs + 5.5 * 3600 * 1000;
+        var istDate = new Date(istMs);
+        var h = istDate.getUTCHours(), m = istDate.getUTCMinutes(), s = istDate.getUTCSeconds();
+        var minsSinceOpen = (h * 60 + m) - (9 * 60 + 15);
+        if (minsSinceOpen < 0 || minsSinceOpen >= (15 * 60 + 30) - (9 * 60 + 15)) {
+            return null; // pre-open or post-close
+        }
+        var barsSinceOpen = Math.floor(minsSinceOpen / 2);
+        var nextBarMinutes = (barsSinceOpen + 1) * 2;
+        var remainSec = (nextBarMinutes * 60) - (minsSinceOpen * 60 + s);
+        return Math.max(0, remainSec);
+    }
+    function fmtMmSs(sec) {
+        if (sec == null) return '—:—';
+        var m = Math.floor(sec / 60);
+        var s = sec % 60;
+        return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+    }
+    /** Ensures a "countdown price line" exists on each series and rewrites its axis
+     *  label to the current mm:ss remaining. Uses lineVisible:false so no horizontal
+     *  line is drawn — only the badge on the right price scale, TradingView-style. */
+    function tickCountdown() {
+        var sec = computeBarCountdown();
+        var txt = '⏱ ' + fmtMmSs(sec);
+        // Countdown badge stays amber the entire time — no colour switch on the
+        // final 10 seconds. Operator asked for consistent yellow rendering.
+        var bgColor = '#fbbf24';
+        ['ce', 'pe'].forEach(function(panelKey) {
+            var series = candleSeries[panelKey];
+            if (!series || typeof series.createPriceLine !== 'function') return;
+            var last = lastClosePerPanel[panelKey];
+            if (last == null) return;   // no bars yet — nothing to anchor to
+            var line = countdownPriceLine[panelKey];
+            var needsRecreate = !line || countdownPriceLevel[panelKey] !== last;
+            if (needsRecreate) {
+                if (line) {
+                    try { series.removePriceLine(line); } catch (e) {}
+                }
+                try {
+                    countdownPriceLine[panelKey] = series.createPriceLine({
+                        price: last,
+                        color: bgColor,
+                        lineWidth: 1,
+                        lineStyle: LightweightCharts.LineStyle.Dotted,
+                        lineVisible: false,        // no horizontal line, just the axis badge
+                        axisLabelVisible: true,
+                        title: txt
+                    });
+                    countdownPriceLevel[panelKey] = last;
+                } catch (e) {}
+            } else {
+                // Same price → just update the badge text + colour.
+                try {
+                    line.applyOptions({ title: txt, color: bgColor });
+                } catch (e) {}
+            }
+        });
+    }
+
     document.addEventListener('DOMContentLoaded', function() {
         var yr = document.getElementById('footerYear');
         if (yr) yr.textContent = new Date().getFullYear();
         loadWelcome();
         refreshSymbols();
         pollAll();
-        setInterval(refreshSymbols, 15000);
+        tickCountdown();
+        // refreshSymbols is now folded into pollAll every 2 s (in-memory reads, cheap),
+        // so a separate slower interval isn't needed.
         setInterval(pollAll, 2000);
+        setInterval(tickCountdown, 1000);
     });
 </script>
 

@@ -151,6 +151,11 @@ public class StrategyHistoryController {
             m.put("netPnl",         round(t.getNetPnl()));
             m.put("closeReason",    t.getCloseReason());
             m.put("slHitCount",     t.getSlHitCount() == null ? 0 : t.getSlHitCount());
+            // entryOiBias is only populated for trades fired AGAINST the current OI
+            // bias (CE_SELL when bias=BULLISH, PE_SELL when bias=BEARISH). Everything
+            // else — with-bias, neutral, stale, unknown, historical pre-fix rows —
+            // stays null. Drives the trades-page OI Bias column + effectiveness modal.
+            m.put("entryOiBias",    t.getEntryOiBias());
             trades.add(m);
         }
         Map<String, Object> out = new LinkedHashMap<>();
@@ -192,6 +197,11 @@ public class StrategyHistoryController {
             m.put("netPnl",         round(t.getNetPnl()));
             m.put("closeReason",    t.getCloseReason());
             m.put("slHitCount",     t.getSlHitCount() == null ? 0 : t.getSlHitCount());
+            // entryOiBias is only populated for trades fired AGAINST the current OI
+            // bias (CE_SELL when bias=BULLISH, PE_SELL when bias=BEARISH). Everything
+            // else — with-bias, neutral, stale, unknown, historical pre-fix rows —
+            // stays null. Drives the trades-page OI Bias column + effectiveness modal.
+            m.put("entryOiBias",    t.getEntryOiBias());
             trades.add(m);
         }
         Map<String, Object> out = new LinkedHashMap<>();

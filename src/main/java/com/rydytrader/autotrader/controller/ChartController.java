@@ -4,6 +4,7 @@ import com.rydytrader.autotrader.dto.Candle;
 import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.strategy.AtmVwap;
+import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -27,13 +28,16 @@ public class ChartController {
 
     private final CandleAggregator  candleAggregator;
     private final MarketDataService marketDataService;
+    private final RiskSettingsStore riskSettings;
     private final ObjectProvider<AtmVwap> atmVwapProvider;
 
     public ChartController(CandleAggregator candleAggregator,
                            MarketDataService marketDataService,
+                           RiskSettingsStore riskSettings,
                            ObjectProvider<AtmVwap> atmVwapProvider) {
         this.candleAggregator  = candleAggregator;
         this.marketDataService = marketDataService;
+        this.riskSettings      = riskSettings;
         this.atmVwapProvider   = atmVwapProvider;
     }
 
@@ -80,6 +84,18 @@ public class ChartController {
         // on the corresponding chart. Zero when no position is open on that side.
         out.put("ceSl", strat == null ? 0.0 : round2(strat.getOpenSlLevel(ceSymbol)));
         out.put("peSl", strat == null ? 0.0 : round2(strat.getOpenSlLevel(peSymbol)));
+        // Per-side session stats — trade count vs configured cap + realised+open P&L.
+        // Drives the "(n/max) · P&L +X" chip inside the CE / PE panel headers.
+        Map<String, Object> ceStats = new LinkedHashMap<>();
+        Map<String, Object> peStats = new LinkedHashMap<>();
+        ceStats.put("count",  strat == null ? 0 : strat.getCeTradesToday());
+        ceStats.put("max",    riskSettings.getAtmVwapMaxCeTradesPerDay());
+        ceStats.put("pnl",    strat == null ? 0.0 : round2(strat.getCeSideNetPnlToday()));
+        peStats.put("count",  strat == null ? 0 : strat.getPeTradesToday());
+        peStats.put("max",    riskSettings.getAtmVwapMaxPeTradesPerDay());
+        peStats.put("pnl",    strat == null ? 0.0 : round2(strat.getPeSideNetPnlToday()));
+        out.put("ceStats", ceStats);
+        out.put("peStats", peStats);
         return out;
     }
 
