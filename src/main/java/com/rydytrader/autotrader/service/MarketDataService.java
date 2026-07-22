@@ -118,6 +118,63 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         if (l != null) ltpListeners.add(l);
     }
 
+    /** Symbols for which an alternate feed (typically GDFL) owns the tick stream — Fyers
+     *  ticks for these symbols are dropped entirely at {@link #onTick} ingress (no
+     *  currentTicks update, no LTP fan-out, no exchFeedTime write). Registered by
+     *  {@link com.rydytrader.autotrader.gdfl.GdflService} on successful SubscribeRealtime;
+     *  cleared on day rollover so tomorrow's ATM (which may differ) doesn't inherit
+     *  yesterday's ownership. */
+    private final Set<String> altFeedOwnedSymbols = ConcurrentHashMap.newKeySet();
+
+    /** Marks {@code fyersSymbol} as owned by an alternate feed. Idempotent. */
+    public void addAltFeedOwnedSymbol(String fyersSymbol) {
+        if (fyersSymbol != null && !fyersSymbol.isBlank()) altFeedOwnedSymbols.add(fyersSymbol);
+    }
+
+    /** Releases {@code fyersSymbol} back to Fyers-fed ingress. */
+    public void removeAltFeedOwnedSymbol(String fyersSymbol) {
+        if (fyersSymbol != null) altFeedOwnedSymbols.remove(fyersSymbol);
+    }
+
+    /** Wipes the ownership set — called on day rollover from the alternate-feed service. */
+    public void clearAltFeedOwnedSymbols() {
+        altFeedOwnedSymbols.clear();
+    }
+
+    /** True when Fyers ticks for {@code fyersSymbol} should be dropped in favour of an
+     *  alternate feed's stream (e.g. GDFL). */
+    public boolean isAltFeedOwned(String fyersSymbol) {
+        return fyersSymbol != null && altFeedOwnedSymbols.contains(fyersSymbol);
+    }
+
+    /** Fans an externally-sourced LtpTick to every registered listener. Used by
+     *  alternate feed clients (e.g. {@code GdflDataWebSocket}) so ticks from a
+     *  non-Fyers source flow through the same {@link CandleAggregator} pipeline as
+     *  the native Fyers ticks. Also updates {@code currentTicks} and
+     *  {@code lastExchFeedTimeSec} so downstream code that reads those (chart
+     *  countdown, ticker, LTP getters) sees consistent state regardless of feed. */
+    public void pushLtpTick(LtpTick evt) {
+        if (evt == null || evt.ltp() <= 0) return;
+        String fyersSymbol = evt.fyersSymbol();
+        if (fyersSymbol == null || fyersSymbol.isBlank()) return;
+        TickData tick = currentTicks.computeIfAbsent(fyersSymbol, k -> {
+            TickData t = new TickData();
+            t.setFyersSymbol(k);
+            t.setShortName(deriveShortName(k));
+            return t;
+        });
+        tick.setLtp(evt.ltp());
+        if (evt.atp() > 0) tick.setVwap(evt.atp());
+        String today = LocalDate.now(ZoneId.of("Asia/Kolkata")).toString();
+        tick.setLastTickDate(today);
+        tick.recalcChange();
+        if (evt.exchFeedTimeSec() > 0) lastExchFeedTimeSec.put(fyersSymbol, evt.exchFeedTimeSec());
+        dirty = true;
+        for (var l : ltpListeners) {
+            try { l.accept(evt); } catch (Exception ignored) {}
+        }
+    }
+
     // WS state
     private volatile FyersDataWebSocket wsClient;
     private ScheduledExecutorService scheduler;
@@ -324,6 +381,19 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
     public void onTick(HsmBinaryParser.RawTick raw) {
         String fyersSymbol = raw.fyersSymbol != null ? raw.fyersSymbol : hsmToFyersSymbol.get(raw.hsmToken);
         if (fyersSymbol == null) return;
+        // Alternate-feed ownership — drop Fyers ticks for symbols where GdflService (or
+        // another feed) has taken over. No currentTicks update, no LTP listener fan-out,
+        // no lastExchFeedTime write. OI listeners still fire (OI is instrument-scoped,
+        // not feed-specific).
+        if (altFeedOwnedSymbols.contains(fyersSymbol)) {
+            if (raw.oi > 0 && !oiListeners.isEmpty() && isOptionSymbol(fyersSymbol)) {
+                OiTick evt = new OiTick(fyersSymbol, raw.oi, raw.exchFeedTime);
+                for (var l : oiListeners) {
+                    try { l.accept(evt); } catch (Exception ignored) {}
+                }
+            }
+            return;
+        }
         String today = LocalDate.now(ZoneId.of("Asia/Kolkata")).toString();
         TickData tick = currentTicks.computeIfAbsent(fyersSymbol, k -> {
             TickData t = new TickData();

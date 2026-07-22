@@ -1470,12 +1470,19 @@ public class AtmVwap implements Strategy {
         synchronized (this) {
             if (today.equals(state.dayKey)) return;
             state.dayKey = today;
-            state.tradesToday = 0;
+
+            // Per-day counters + lockouts + audit lists.
+            state.tradesToday       = 0;
+            state.ceTradesToday     = 0;
+            state.peTradesToday     = 0;
             state.consecutiveLosses = 0;
-            state.doneForDay = false;
-            state.dailyLossLockout = false;
+            state.doneForDay        = false;
+            state.dailyLossLockout  = false;
             state.todayClosedTrades.clear();
             if (state.recentEvents != null) state.recentEvents.clear();
+
+            // Unsubscribe symbols behind yesterday's open positions before dropping them
+            // — otherwise the aggregator keeps buffering into a ring nobody reads.
             java.util.Set<String> uniqSymbolsRoll = new java.util.HashSet<>();
             for (Position p : state.openPositions.values()) {
                 if (p != null && p.symbol != null) uniqSymbolsRoll.add(p.symbol);
@@ -1486,6 +1493,25 @@ public class AtmVwap implements Strategy {
             state.openPositions.clear();
             state.symbolRole.clear();
             state.triggerByOption.clear();
+
+            // Yesterday's resolved-ATM block — resolveAtmFromFirstBar will re-populate
+            // at 09:17 from today's first NIFTY 2-min bar close.
+            state.firstBarCloseSymbol = "";
+            state.firstBarClose       = 0;
+            state.atmStrike           = 0;
+            state.ceSymbol            = "";
+            state.peSymbol            = "";
+            state.ceRefLtp            = 0;
+            state.peRefLtp            = 0;
+            state.sessionSetupDayKey  = "";
+
+            // Pre-warm carries strike-scoped subscriptions that warmupIfDue will rebuild
+            // at 09:15 for the new day's baseAtm estimate.
+            state.warmingStrikes.clear();
+            state.warmingCeByStrike.clear();
+            state.warmingPeByStrike.clear();
+            state.preWarmDayKey = "";
+
             saveToDisk();
         }
     }
