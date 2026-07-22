@@ -408,6 +408,12 @@ public class HsmBinaryParser {
         Integer eftRaw = meta.rawValues.get("exch_feed_time");
         if (eftRaw != null) tick.exchFeedTime = eftRaw;
 
+        // last_traded_time — the exchange's timestamp on the actual trade that produced
+        // this LTP. Prefer this over exch_feed_time for candle bucketing (see RawTick
+        // javadoc). Only set on scrips; indices don't carry this field.
+        Integer lttRaw = meta.rawValues.get("last_traded_time");
+        if (lttRaw != null) tick.lastTradedTime = lttRaw;
+
         // OI ships as a raw integer (not a price field — no divisor applied). Index updates
         // ("if" type) don't carry an OI field, so this stays at 0 for indices. Used by the
         // OI bias tracker to compute cumulative ΔCE / ΔPE since 09:15.
@@ -481,8 +487,13 @@ public class HsmBinaryParser {
         public double low;
         public double atp;
         public long volume;
-        public long exchFeedTime; // epoch seconds — when exchange disseminated the update
-        public long oi;           // open interest (raw, no divisor) — non-zero only for option scrips
+        public long exchFeedTime;   // epoch seconds — when Fyers disseminated the update
+        /** Epoch seconds — the exchange's own timestamp on the actual trade that produced
+         *  this LTP. This is what TradingView aligns candle boundaries on; it typically
+         *  leads {@link #exchFeedTime} by 100-800 ms (Fyers's ingest lag). Prefer this
+         *  over {@code exchFeedTime} for bucketing 2-min bars — closer to TradingView. */
+        public long lastTradedTime;
+        public long oi;             // open interest (raw, no divisor) — non-zero only for option scrips
         public int messageNumber;
     }
 }

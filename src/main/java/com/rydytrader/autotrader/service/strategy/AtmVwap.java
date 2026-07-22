@@ -129,6 +129,10 @@ public class AtmVwap implements Strategy {
      *  pattern as {@link #optionOiSubscriberProvider} so the strategy tolerates the
      *  tracker being absent. */
     private final ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> optionOiTrackerProvider;
+    /** Fyers /history reconcile — swaps our WS-aggregated bar OHLC with the exchange-
+     *  authoritative bar before the FSM commits to a fire/no-fire decision. Provider so
+     *  a stripped-down test context without the Fyers client can still boot AtmVwap. */
+    private final ObjectProvider<com.rydytrader.autotrader.service.HistoryReconcileService> historyReconcileProvider;
 
     private final ObjectMapper mapper = new ObjectMapper()
         .findAndRegisterModules()
@@ -157,18 +161,20 @@ public class AtmVwap implements Strategy {
                    ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
                    ObjectProvider<AtmVwapStreamBroker> streamBrokerProvider,
                    ObjectProvider<com.rydytrader.autotrader.service.OptionOiSubscriber> optionOiSubscriberProvider,
-                   ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> optionOiTrackerProvider) {
-        this.candleAggregator          = candleAggregator;
-        this.atmTracker                = atmTracker;
-        this.atmSelector               = atmSelector;
-        this.marketDataService         = marketDataService;
-        this.orderService              = orderService;
-        this.eventService              = eventService;
-        this.riskSettings              = riskSettings;
-        this.tradeRepoProvider         = tradeRepoProvider;
-        this.streamBrokerProvider      = streamBrokerProvider;
+                   ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> optionOiTrackerProvider,
+                   ObjectProvider<com.rydytrader.autotrader.service.HistoryReconcileService> historyReconcileProvider) {
+        this.candleAggregator           = candleAggregator;
+        this.atmTracker                 = atmTracker;
+        this.atmSelector                = atmSelector;
+        this.marketDataService          = marketDataService;
+        this.orderService               = orderService;
+        this.eventService               = eventService;
+        this.riskSettings               = riskSettings;
+        this.tradeRepoProvider          = tradeRepoProvider;
+        this.streamBrokerProvider       = streamBrokerProvider;
         this.optionOiSubscriberProvider = optionOiSubscriberProvider;
-        this.optionOiTrackerProvider   = optionOiTrackerProvider;
+        this.optionOiTrackerProvider    = optionOiTrackerProvider;
+        this.historyReconcileProvider   = historyReconcileProvider;
     }
 
     /** Current OI bias — {@code BULLISH} / {@code BEARISH} / {@code NEUTRAL} / {@code STALE} /
@@ -196,6 +202,18 @@ public class AtmVwap implements Strategy {
             if (sub != null) sub.onAtmSelected(atm);
         } catch (Exception e) {
             log.warn("[AtmVwap] OI subscriber notify failed for ATM={}: {}", atm, e.getMessage());
+        }
+    }
+
+    /** Fires the OI subscriber at 09:15 pre-warm, handing it the ±15 strike window so
+     *  per-strike baselines are taken from the first tick after market open instead of
+     *  waiting for the 09:17 ATM lock. See {@code OptionOiSubscriber#onPreWarm}. */
+    private void notifyOiPreWarm(long baseAtm, java.util.List<com.rydytrader.autotrader.service.OptionOiTracker.StrikeSymbols> window) {
+        try {
+            var sub = optionOiSubscriberProvider == null ? null : optionOiSubscriberProvider.getIfAvailable();
+            if (sub != null) sub.onPreWarm(baseAtm, window);
+        } catch (Exception e) {
+            log.warn("[AtmVwap] OI pre-warm notify failed for baseAtm={}: {}", baseAtm, e.getMessage());
         }
     }
 
@@ -497,6 +515,13 @@ public class AtmVwap implements Strategy {
     // ── Candle close handler ──────────────────────────────────────────────
 
     public void onCandleClose(String symbol, Candle c) {
+        // Reconcile FIRST — this replaces the local WS-aggregated candle with the
+        // exchange-authoritative /history bar and pushes it back into the aggregator's
+        // history ring. Runs regardless of the strategy enable / doneForDay / lockout
+        // state because the /chart page needs to render authoritative OHLC even when
+        // trading is paused. FSM logic below still gates on those flags.
+        Candle authoritative = reconcileBar(symbol, c);
+
         if (!isEnabled()) return;
         Object lock = symbolLocks.computeIfAbsent(symbol, k -> new Object());
         synchronized (lock) {
@@ -506,7 +531,7 @@ public class AtmVwap implements Strategy {
 
             // (1) NIFTY spot: first 2-min close of the day resolves today's ATM strike.
             if (NIFTY_SYMBOL.equals(symbol)) {
-                resolveAtmFromFirstBar(c);
+                resolveAtmFromFirstBar(authoritative);
                 return;
             }
 
@@ -515,7 +540,7 @@ public class AtmVwap implements Strategy {
             boolean isPe = symbol.equals(state.peSymbol);
             if (!isCe && !isPe) return;
 
-            processOptionBar(symbol, c);
+            processOptionBar(symbol, authoritative);
             saveToDisk();
         }
     }
@@ -566,6 +591,7 @@ public class AtmVwap implements Strategy {
         }
 
         List<String> subs = new ArrayList<>();
+        List<com.rydytrader.autotrader.service.OptionOiTracker.StrikeSymbols> oiWindow = new ArrayList<>();
         for (Map.Entry<Long, BalancedAtmSelector.ChainStrike> e : chain.entrySet()) {
             long strike = e.getKey();
             if (strike < lo || strike > hi) continue;
@@ -578,6 +604,7 @@ public class AtmVwap implements Strategy {
             state.warmingPeByStrike.put(strike, pe);
             subs.add(ce);
             subs.add(pe);
+            oiWindow.add(new com.rydytrader.autotrader.service.OptionOiTracker.StrikeSymbols(strike, ce, pe));
         }
 
         if (subs.isEmpty()) {
@@ -594,6 +621,12 @@ public class AtmVwap implements Strategy {
             candleAggregator.subscribe(s, cc -> onCandleClose(s, cc));
             aggregatorSubscribedSymbols.add(sym);
         }
+        // Hand the ±15 window to the OI tracker so per-strike baselines are captured on
+        // the very first WS OI tick (09:15 IST), not on the 09:17 ATM lock. When
+        // resolveAtmFromFirstBar later fires notifyOiWindow(resolvedAtm), the tracker
+        // narrows to ±7 and keeps the 09:15 baselines for strikes that stay in the new
+        // window; outer strikes are dropped and their contribution un-credited.
+        notifyOiPreWarm(baseAtm, oiWindow);
         state.preWarmDayKey = today;
         saveToDisk();
 
@@ -858,6 +891,9 @@ public class AtmVwap implements Strategy {
             if (symbol.equals(p.symbol)) return;
         }
 
+        // Note: {@code c} arrives already reconciled by {@link #onCandleClose}. All FSM
+        // decisions below therefore use exchange-authoritative OHLC without any per-branch
+        // /history calls.
         TriggerCandle trigger = state.triggerByOption.get(symbol);
 
         if (trigger != null) {
@@ -894,6 +930,51 @@ public class AtmVwap implements Strategy {
                 + ", vwap=" + round2(vwap) + ")");
         }
     }
+
+    /** Blocking /history reconcile for {@code bar}. Returns the authoritative bar when
+     *  Fyers has published it (typical ~2-4 s wait), or falls back to {@code bar} with a
+     *  warn event so the FSM still fires when the API is down. Emits an info event when
+     *  the authoritative close differs from the local close by more than 0.05 so drift is
+     *  visible in the operator's event log. */
+    /** Kill-switch for the /history reconcile path. Flip to {@code true} to re-enable
+     *  after evaluating the LTT-only bucketing (the LTT swap eliminates the boundary
+     *  skew that reconcile was mostly there to correct — testing needed to confirm the
+     *  remaining throttle/wick drift is tolerable without reconcile). While disabled,
+     *  the FSM runs on the local WS-aggregated bar and the chart ring keeps the local
+     *  values. All the reconcile machinery stays in place — this is a one-line toggle. */
+    private static final boolean HISTORY_RECONCILE_ENABLED = false;
+
+    private Candle reconcileBar(String symbol, Candle bar) {
+        if (!HISTORY_RECONCILE_ENABLED) return bar;
+        var svc = historyReconcileProvider == null ? null : historyReconcileProvider.getIfAvailable();
+        if (svc == null) return bar;
+        Candle auth;
+        try { auth = svc.fetchAuthoritative(symbol, bar.startMillis()); }
+        catch (Exception e) {
+            log.warn("[AtmVwap] reconcile threw for {} bar {}: {}", symbol, bar.startMillis(), e.getMessage());
+            return bar;
+        }
+        if (auth == null) {
+            event("[WARNING]", "Setup",
+                shortSym(symbol) + " /history reconcile unavailable — using local close "
+                + round2(bar.close()));
+            return bar;
+        }
+        double drift = auth.close() - bar.close();
+        if (Math.abs(drift) > 0.05) {
+            event("[INFO]", "Setup",
+                shortSym(symbol) + " reconciled close " + round2(auth.close())
+                + " (local " + round2(bar.close()) + ", Δ " + round2(drift) + ")");
+        }
+        // Push the authoritative bar back into the aggregator's history ring so the
+        // /chart page (which polls that ring) renders the same OHLC TradingView shows.
+        // Best-effort — a miss just leaves the local bar visible on the chart while the
+        // FSM still uses the authoritative value returned below.
+        try { candleAggregator.updateHistoryEntry(symbol, auth); }
+        catch (Exception e) { log.warn("[AtmVwap] history-ring update failed for {}: {}", symbol, e.getMessage()); }
+        return auth;
+    }
+
 
     private boolean canFireNewEntry() {
         LocalTime now = ZonedDateTime.now(IST).toLocalTime();

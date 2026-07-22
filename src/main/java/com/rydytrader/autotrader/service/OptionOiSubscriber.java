@@ -88,6 +88,29 @@ public class OptionOiSubscriber {
         log.info("[OptionOiSubscriber] booted — waiting for AtmVwap to select today's ATM");
     }
 
+    /** Called by {@code AtmVwap.warmupIfDue} at 09:15 IST — right after pre-warm has
+     *  subscribed the ±15-strike WS symbols. Hands that same window to the tracker so
+     *  per-strike OI baselines are captured from the very first tick (09:15) instead of
+     *  waiting for the 09:17 ATM lock.
+     *
+     *  <p>Does NOT set {@link #lastAtmSubscribed} / {@link #lastDayKey} — those track the
+     *  final post-ATM-lock provisioning path. When {@link #onAtmSelected} fires at 09:17
+     *  it will narrow the window from ±15 down to ±7, and {@code setActiveWindow}
+     *  transparently drops the outer strikes while preserving baselines + latest OI for
+     *  the ones that stay. Also does NOT call {@code subscribeAdditional} — pre-warm has
+     *  already pushed the symbols to the WS.
+     *
+     *  <p>Safe to call multiple times a day; only the first non-empty call per day
+     *  actually captures 09:15 baselines because rolloverIfNewDay + on-disk state means
+     *  a second call would just re-issue the same routing map. */
+    public synchronized void onPreWarm(long baseAtm, List<OptionOiTracker.StrikeSymbols> window) {
+        if (window == null || window.isEmpty()) return;
+        if (marketHolidayService != null && !marketHolidayService.isTradingDay()) return;
+        oiTracker.setActiveWindow(baseAtm, window);
+        log.info("[OptionOiSubscriber] pre-warm OI window baseAtm={} strikes={} — baselines will be taken from first 09:15 tick",
+            baseAtm, window.size());
+    }
+
     /** Called by AtmVwap.resolveAtmFromFirstBar right after the day's ATM is locked.
      *  Idempotent — safe to call multiple times per day (tracker's setActiveWindow is a
      *  no-op when the window hasn't changed). */

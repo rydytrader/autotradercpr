@@ -15,6 +15,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
@@ -28,6 +29,9 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
@@ -73,6 +77,17 @@ public class CandleAggregator {
         .findAndRegisterModules();
     private volatile boolean dirty = false;
 
+    /** Single-threaded executor for firing user close listeners off the WebSocket thread.
+     *  {@link #onLtpTick} runs inline on the WS callback thread — if it also invoked
+     *  {@code AtmVwap.onCandleClose} → {@code saveToDisk} inline, WS tick throughput
+     *  would stall on file I/O. Single-threaded so bar-close events for a given symbol
+     *  fire in order. */
+    private final ExecutorService closeExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "candle-close");
+        t.setDaemon(true);
+        return t;
+    });
+
     public CandleAggregator(MarketDataService marketDataService) {
         this.marketDataService = marketDataService;
     }
@@ -87,6 +102,10 @@ public class CandleAggregator {
         if (!exists) {
             log.info("[CandleAggregator] fresh start — no prior state to restore; history will accumulate from now on");
         }
+        // Push-based tick ingest: fires on every WS snapshot (~4 Hz per symbol) instead
+        // of the 1 Hz sample() poll. sample() stays live as an outside-hours flush + a
+        // wall-clock rollover safety net for symbols whose exchange feed has gone quiet.
+        marketDataService.addLtpListener(this::onLtpTick);
     }
 
     @PreDestroy
@@ -95,6 +114,9 @@ public class CandleAggregator {
         // buckets too. Uncaught exceptions get swallowed by Spring's PreDestroy handler
         // anyway; saveToDisk logs internally.
         saveToDisk();
+        closeExecutor.shutdown();
+        try { closeExecutor.awaitTermination(500, TimeUnit.MILLISECONDS); }
+        catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
     }
 
     /** Subscribe to 2-min candle closes on {@code symbol}. The symbol is also added to the
@@ -118,6 +140,17 @@ public class CandleAggregator {
         bucketBySymbol.remove(symbol);
     }
 
+    /** Runs every second as a safety net alongside the push-based {@link #onLtpTick} path.
+     *  Two remaining jobs:
+     *  <ul>
+     *    <li>Outside market hours: flush any straggler open bucket (a tick landed at
+     *        15:29:58, no more ticks after that; without a poll the last bar never closes).</li>
+     *    <li>During market hours: if wall-clock has advanced past a bucket's end but no
+     *        new tick has arrived (WS feed hiccup, illiquid symbol going quiet), roll it
+     *        forward so the FSM downstream isn't waiting on a stale bar.</li>
+     *  </ul>
+     *  All the intra-bar OHLC/VWAP updates now happen in {@link #onLtpTick} — no more
+     *  1 Hz polling of {@link MarketDataService#getLtp} for high/low tracking. */
     @Scheduled(fixedDelay = 1000, initialDelay = 5000)
     public void sample() {
         ZonedDateTime nowIst = ZonedDateTime.now(IST);
@@ -126,59 +159,47 @@ public class CandleAggregator {
             // outside market hours — flush any straggler buckets
             for (Map.Entry<String, Bucket> e : bucketBySymbol.entrySet()) {
                 Bucket b = e.getValue();
-                if (b.currentBucketMinute >= 0) {
-                    emitClosed(e.getKey(), b);
-                    b.reset();
+                synchronized (b) {
+                    if (b.currentBucketMinute >= 0) {
+                        emitClosed(e.getKey(), b);
+                        b.reset();
+                    }
                 }
             }
             return;
         }
 
-        int minuteOfDay = t.getHour() * 60 + t.getMinute();
-        // Bucket boundaries anchored on 09:15 IST — the true market-open minute — not on
-        // midnight. Otherwise 09:15 (odd) rounds down to the 09:14 even-minute bucket and
-        // the "first 2-min bar" closes at 09:16 after only ~1 minute of data. Anchoring
-        // on 09:15 gives 09:15→09:17, 09:17→09:19, … as the docs promise.
-        int minutesSinceOpen = minuteOfDay - MARKET_OPEN_MINUTE_OF_DAY;
-        int bucketStart      = minutesSinceOpen >= 0
-            ? MARKET_OPEN_MINUTE_OF_DAY + (minutesSinceOpen / BUCKET_MINUTES) * BUCKET_MINUTES
-            : (minuteOfDay / BUCKET_MINUTES) * BUCKET_MINUTES;   // pre-open safety net
-
-        for (String symbol : listenersBySymbol.keySet()) {
-            double ltp;
-            try { ltp = marketDataService.getLtp(symbol); }
-            catch (Exception e) { continue; }
-            if (ltp <= 0) continue;
-
-            Bucket b = bucketBySymbol.computeIfAbsent(symbol, k -> new Bucket());
-
-            // Session VWAP (Fyers ATP). Zero for index symbols and pre-first-tick option
-            // symbols — held at 0 in that case rather than clobbering a previous positive
-            // value with zeros mid-session (WS occasionally re-emits ticks without ATP).
-            double vwap = 0;
-            try { vwap = marketDataService.getVwap(symbol); } catch (Exception ignored) {}
-            if (b.currentBucketMinute < 0) {
-                // First sample for this symbol — open a bucket without emitting anything.
-                b.start(bucketStart, ltp, nowIst);
-                if (vwap > 0) b.vwapLast = vwap;
-                dirty = true;
-                continue;
-            }
-            if (bucketStart != b.currentBucketMinute) {
-                // Rolled over — close current bucket for THIS symbol, fire listeners, start fresh.
+        // In-hours: only close a bucket the wall clock has moved PAST. Ordering matters —
+        // buckets can (and do) sit AHEAD of the wall clock when exchFeedTime rounds up to
+        // the next second or the local system clock trails exchange time by a second or
+        // two. Flushing an ahead-of-wall bucket would emit spurious closes every second
+        // until wall catches up, which fires the FSM (and /history reconcile) repeatedly
+        // for the same bar. Only close when wall has genuinely passed the bucket end.
+        int wallBucketStart = bucketStartMinute(t.getHour() * 60 + t.getMinute());
+        for (Map.Entry<String, Bucket> e : bucketBySymbol.entrySet()) {
+            String symbol = e.getKey();
+            Bucket b = e.getValue();
+            synchronized (b) {
+                if (b.currentBucketMinute < 0) continue;
+                if (wallBucketStart <= b.currentBucketMinute) continue;
                 emitClosed(symbol, b);
-                b.start(bucketStart, ltp, nowIst);
-                if (vwap > 0) b.vwapLast = vwap;
+                b.reset();
                 dirty = true;
-                continue;
             }
-            // Same bucket — update OHLC + latest VWAP.
-            if (ltp > b.highPx) b.highPx = ltp;
-            if (ltp < b.lowPx)  b.lowPx  = ltp;
-            b.closePx = ltp;
-            if (vwap > 0) b.vwapLast = vwap;
-            dirty = true;
         }
+    }
+
+    /** Anchors 2-min bucket boundaries on 09:15 IST — the true market-open minute — not on
+     *  midnight. Otherwise 09:15 (odd) rounds down to the 09:14 even-minute bucket and
+     *  the "first 2-min bar" closes at 09:16 after only ~1 minute of data. Anchoring on
+     *  09:15 gives 09:15→09:17, 09:17→09:19, … as the docs promise. Pre-open ticks
+     *  (before 09:15) fall back to midnight-anchored buckets — harmless because sample()
+     *  gates outside market hours anyway. */
+    private static int bucketStartMinute(int minuteOfDay) {
+        int minutesSinceOpen = minuteOfDay - MARKET_OPEN_MINUTE_OF_DAY;
+        return minutesSinceOpen >= 0
+            ? MARKET_OPEN_MINUTE_OF_DAY + (minutesSinceOpen / BUCKET_MINUTES) * BUCKET_MINUTES
+            : (minuteOfDay / BUCKET_MINUTES) * BUCKET_MINUTES;
     }
 
     // ── Persistence ────────────────────────────────────────────────────────────
@@ -214,32 +235,24 @@ public class CandleAggregator {
                     candles += e.getValue().size();
                 }
             }
-            int buckets = 0;
-            if (s.bucketBySymbol != null) {
-                for (Map.Entry<String, SerBucket> e : s.bucketBySymbol.entrySet()) {
-                    if (e.getKey() == null || e.getValue() == null) continue;
-                    Bucket b = new Bucket();
-                    SerBucket sb = e.getValue();
-                    b.currentBucketMinute  = sb.currentBucketMinute;
-                    b.currentBucketStartMs = sb.currentBucketStartMs;
-                    b.openPx               = sb.openPx;
-                    b.highPx               = sb.highPx;
-                    b.lowPx                = sb.lowPx;
-                    b.closePx              = sb.closePx;
-                    b.vwapLast             = sb.vwapLast;
-                    bucketBySymbol.put(e.getKey(), b);
-                    buckets++;
-                }
-            }
-            log.info("[CandleAggregator] restored {} candles across {} symbols + {} in-progress buckets for {}",
-                candles, historyBySymbol.size(), buckets, today);
+            // In-progress buckets are intentionally NOT restored — persisting them across
+            // JVM lifetimes is what introduced the day-key drift bug (yesterday's H/L
+            // resurrected as today's first-bar close). {@code /history} reconcile fixes
+            // any lost H/L on the next bar close anyway. The SerBucket class is kept for
+            // round-trip compatibility with older state files; if any are present in the
+            // JSON they get silently ignored.
+            log.info("[CandleAggregator] restored {} candles across {} symbols for {}",
+                candles, historyBySymbol.size(), today);
         } catch (IOException e) {
             log.warn("[CandleAggregator] failed to load state: {}", e.getMessage());
         }
     }
 
-    /** Serialise the current state atomically. Rolls a stale dayKey on first save of a
-     *  new day so tomorrow's history doesn't inherit yesterday's leftovers on disk. */
+    /** Serialise the current state atomically. Only closed candles are persisted —
+     *  in-progress buckets are deliberately dropped so a JVM lifetime never inherits an
+     *  earlier session's partial bar (that's what caused the pre-market 24150 ATM
+     *  misfire). Any lost intra-bar H/L is corrected by the {@code /history} reconcile
+     *  on the next bar close. */
     private synchronized void saveToDisk() {
         try {
             String today = LocalDate.now(IST).toString();
@@ -248,19 +261,7 @@ public class CandleAggregator {
             for (Map.Entry<String, Deque<Candle>> e : historyBySymbol.entrySet()) {
                 s.historyBySymbol.put(e.getKey(), new ArrayList<>(e.getValue()));
             }
-            for (Map.Entry<String, Bucket> e : bucketBySymbol.entrySet()) {
-                Bucket b = e.getValue();
-                if (b == null || b.currentBucketMinute < 0) continue;
-                SerBucket sb = new SerBucket();
-                sb.currentBucketMinute  = b.currentBucketMinute;
-                sb.currentBucketStartMs = b.currentBucketStartMs;
-                sb.openPx               = b.openPx;
-                sb.highPx               = b.highPx;
-                sb.lowPx                = b.lowPx;
-                sb.closePx              = b.closePx;
-                sb.vwapLast             = b.vwapLast;
-                s.bucketBySymbol.put(e.getKey(), sb);
-            }
+            // bucketBySymbol intentionally NOT written — see method javadoc.
 
             Path dst = Path.of(STATE_FILE);
             File parent = dst.toFile().getParentFile();
@@ -296,21 +297,147 @@ public class CandleAggregator {
         Candle c = new Candle(
             round(b.openPx), round(b.highPx), round(b.lowPx), round(b.closePx),
             0L, b.currentBucketStartMs, round(b.vwapLast));
-        // Per-symbol candle-close logging is too chatty (one line per symbol every 5 min).
-        // Demoted to debug so it stays available for troubleshooting without spamming INFO.
+        appendHistoryAndFire(symbol, c, false);
+    }
+
+    /** Records a closed candle in the per-symbol ring and fans it out to registered
+     *  listeners. When {@code async} is true, listener callbacks run on {@link #closeExecutor}
+     *  so the caller (the WS thread inside {@link #onLtpTick}) doesn't block on downstream
+     *  {@code saveToDisk} calls; the history-ring update always happens inline so
+     *  {@link #getHistory} reflects the close immediately regardless. */
+    private void appendHistoryAndFire(String symbol, Candle c, boolean async) {
         log.debug("[CandleAggregator] {} {}-min close — o={} h={} l={} c={} startMs={}",
             symbol, BUCKET_MINUTES, c.open(), c.high(), c.low(), c.close(), c.startMillis());
-        // Retain in the per-symbol history ring so the chart page has intraday context.
         Deque<Candle> ring = historyBySymbol.computeIfAbsent(symbol, k -> new ConcurrentLinkedDeque<>());
         ring.addLast(c);
         while (ring.size() > HISTORY_CAP) ring.pollFirst();
         dirty = true;
         CopyOnWriteArrayList<Consumer<Candle>> ls = listenersBySymbol.get(symbol);
         if (ls == null) return;
-        for (Consumer<Candle> l : ls) {
-            try { l.accept(c); }
-            catch (Exception e) { log.warn("[CandleAggregator] {} listener threw: {}", symbol, e.getMessage()); }
+        Runnable fanout = () -> {
+            for (Consumer<Candle> l : ls) {
+                try { l.accept(c); }
+                catch (Exception e) { log.warn("[CandleAggregator] {} listener threw: {}", symbol, e.getMessage()); }
+            }
+        };
+        if (async) closeExecutor.execute(fanout);
+        else       fanout.run();
+    }
+
+    /** Registered as an LTP listener on {@link MarketDataService} in {@link #boot()}. Runs
+     *  inline on the WS callback thread — MUST NOT block. Bucket manipulation is guarded
+     *  by {@code synchronized(b)} so a concurrent {@link #sample()} on a different symbol's
+     *  bucket doesn't matter, and the listener-fanout on close is dispatched to
+     *  {@link #closeExecutor} to keep WS tick throughput off file-I/O paths. */
+    void onLtpTick(MarketDataService.LtpTick t) {
+        if (t == null) return;
+        String symbol = t.fyersSymbol();
+        if (symbol == null) return;
+        // Only aggregate symbols that have a registered close-listener — pruning here
+        // matches the semantic of sample() (which iterates listenersBySymbol.keySet()).
+        if (!listenersBySymbol.containsKey(symbol)) return;
+        double ltp = t.ltp();
+        if (ltp <= 0) return;
+
+        // Bucket the tick by the EXCHANGE's own last-traded time (LTT) when available —
+        // that's the timestamp on the actual trade that produced this LTP, and it's what
+        // TradingView aligns bar boundaries on. Fall back to Fyers' dissemination time
+        // (EFT) — which typically trails LTT by 100-800 ms of ingest lag — and to
+        // wall-clock only when the parser couldn't extract either. This closes the
+        // "boundary skew" gap where a tick TRADED at 09:16:59 arrives locally at
+        // 09:17:00.1 and was previously attributed to the wrong bar, AND reduces the
+        // early-rollover observed with EFT bucketing (Fyers rounds EFT up to the next
+        // second so a 09:16:59.500 print sometimes lands with EFT=09:17:00).
+        //
+        // Freshness guard — a WS reconnect can replay a tick whose timestamp is from
+        // a PREVIOUS trading day (e.g. yesterday 15:29). Its LocalTime alone would pass
+        // the market-hours filter and create a today-dated bucket with yesterday's data,
+        // which the outside-hours flush would later emit as a "close" pre-market.
+        long tickSec = t.lastTradedTimeSec() > 0 ? t.lastTradedTimeSec()
+                     : t.exchFeedTimeSec()   > 0 ? t.exchFeedTimeSec()
+                     : 0L;
+        LocalTime tickTime;
+        String today = LocalDate.now(IST).toString();
+        if (tickSec > 0) {
+            ZonedDateTime tickZdt = Instant.ofEpochSecond(tickSec).atZone(IST);
+            String tickDay = tickZdt.toLocalDate().toString();
+            if (!today.equals(tickDay)) return;
+            tickTime = tickZdt.toLocalTime();
+        } else {
+            tickTime = ZonedDateTime.now(IST).toLocalTime();
         }
+        if (tickTime.isBefore(LocalTime.of(9, 15)) || tickTime.isAfter(LocalTime.of(15, 31))) return;
+        int bucketStart = bucketStartMinute(tickTime.getHour() * 60 + tickTime.getMinute());
+
+        Bucket b = bucketBySymbol.computeIfAbsent(symbol, k -> new Bucket());
+        Candle closed = null;
+        synchronized (b) {
+            if (b.currentBucketMinute < 0) {
+                b.start(bucketStart, ltp, ZonedDateTime.now(IST));
+                if (t.atp() > 0) b.vwapLast = t.atp();
+            } else if (bucketStart != b.currentBucketMinute) {
+                // Snapshot for async fanout OUTSIDE the sync block below.
+                closed = new Candle(
+                    round(b.openPx), round(b.highPx), round(b.lowPx), round(b.closePx),
+                    0L, b.currentBucketStartMs, round(b.vwapLast));
+                b.start(bucketStart, ltp, ZonedDateTime.now(IST));
+                if (t.atp() > 0) b.vwapLast = t.atp();
+            } else {
+                if (ltp > b.highPx) b.highPx = ltp;
+                if (ltp < b.lowPx)  b.lowPx  = ltp;
+                b.closePx = ltp;
+                if (t.atp() > 0) b.vwapLast = t.atp();
+            }
+        }
+        dirty = true;
+        if (closed != null) appendHistoryAndFire(symbol, closed, true);
+    }
+
+    /** Overwrites an existing history-ring entry with an authoritative version — used
+     *  after {@code AtmVwap.reconcileBar} pulls the exchange-published OHLC via Fyers
+     *  {@code /history}, so the /chart page (which polls this ring) shows the same
+     *  values TradingView shows for closed bars. Matches by {@code startMillis}; when no
+     *  entry with that start exists (very recent boot, or ring rolled past the entry),
+     *  logs at debug and returns silently — never appends, so we can't corrupt ordering.
+     *  Preserves the local {@code vwap} field because /history doesn't publish VWAP and
+     *  the aggregator's ATP-derived value is already authoritative session VWAP. */
+    public void updateHistoryEntry(String symbol, Candle authoritative) {
+        if (symbol == null || authoritative == null) return;
+        Deque<Candle> ring = historyBySymbol.get(symbol);
+        if (ring == null || ring.isEmpty()) return;
+        long targetStart = authoritative.startMillis();
+        // Iterate from the tail — the reconciled bar is almost always the most recently
+        // appended entry, so this is O(1) in practice.
+        List<Candle> snapshot = new ArrayList<>(ring);
+        int foundIdx = -1;
+        for (int i = snapshot.size() - 1; i >= 0; i--) {
+            if (snapshot.get(i).startMillis() == targetStart) { foundIdx = i; break; }
+        }
+        if (foundIdx < 0) {
+            log.warn("[CandleAggregator] {} ring-update MISSED — no entry with startMillis={} (ring size {}, last entry startMillis={})",
+                symbol, targetStart, snapshot.size(),
+                snapshot.isEmpty() ? -1 : snapshot.get(snapshot.size() - 1).startMillis());
+            return;
+        }
+        Candle existing = snapshot.get(foundIdx);
+        // Preserve the aggregator's VWAP (Fyers ATP) — /history returns 0 for that field.
+        Candle merged = new Candle(
+            authoritative.open(), authoritative.high(), authoritative.low(), authoritative.close(),
+            authoritative.volume() > 0 ? authoritative.volume() : existing.volume(),
+            existing.startMillis(),
+            existing.vwap());
+        snapshot.set(foundIdx, merged);
+        // Rebuild the ring atomically — ConcurrentLinkedDeque doesn't support in-place
+        // set, and re-adding preserves iteration order for concurrent readers.
+        ring.clear();
+        ring.addAll(snapshot);
+        dirty = true;
+        log.info("[CandleAggregator] {} ring-update APPLIED at index {}/{} startMillis={} — o {}→{} h {}→{} l {}→{} c {}→{}",
+            symbol, foundIdx, snapshot.size() - 1, targetStart,
+            existing.open(),  merged.open(),
+            existing.high(),  merged.high(),
+            existing.low(),   merged.low(),
+            existing.close(), merged.close());
     }
 
     /** Closed 2-min candles for {@code symbol} in chronological order. Empty when the

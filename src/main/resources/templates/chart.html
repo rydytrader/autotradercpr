@@ -87,6 +87,29 @@
         }
         .pnl-positive { color: var(--accent-green, #34d399); }
         .pnl-negative { color: var(--accent-red, #f87171); }
+
+        /* TradingView-style OHLC/VWAP tooltip pinned to top-left of the chart-wrap.
+           Populated by chart.subscribeCrosshairMove; hidden when the cursor leaves. */
+        .chart-ohlc-overlay {
+            position: absolute; top: 10px; left: 14px;
+            font-family: var(--font-mono); font-size: 0.68rem; font-weight: 600;
+            color: var(--text-secondary);
+            background: rgba(0,0,0,0.42);
+            backdrop-filter: blur(6px);
+            padding: 5px 10px; border-radius: 6px;
+            border: 1px solid rgba(128,128,128,0.18);
+            pointer-events: none;
+            z-index: 4;
+            display: none;
+            letter-spacing: 0.02em;
+            white-space: nowrap;
+        }
+        .chart-ohlc-overlay .ov-lab   { color: var(--text-muted); margin-right: 2px; }
+        .chart-ohlc-overlay .ov-up    { color: var(--accent-green, #34d399); }
+        .chart-ohlc-overlay .ov-dn    { color: var(--accent-red, #f87171); }
+        .chart-ohlc-overlay .ov-vwap  { color: #ec4899; }
+        .chart-ohlc-overlay .ov-time  { color: var(--text-muted); margin-left: 8px; }
+        .chart-ohlc-overlay .ov-sep   { margin: 0 8px; opacity: 0.5; }
     </style>
 </head>
 <body style="margin:0;display:flex;flex-direction:column;min-height:100vh;">
@@ -202,6 +225,7 @@
             </div>
             <div class="chart-wrap">
                 <div id="chartCe" style="position:absolute; inset:0;"></div>
+                <div class="chart-ohlc-overlay" id="chartCeOverlay"></div>
                 <div class="chart-empty" id="chartCeEmpty">Waits until first 2-min bar closes and ATM locks (~09:17 IST)…</div>
             </div>
         </div>
@@ -223,6 +247,7 @@
             </div>
             <div class="chart-wrap">
                 <div id="chartPe" style="position:absolute; inset:0;"></div>
+                <div class="chart-ohlc-overlay" id="chartPeOverlay"></div>
                 <div class="chart-empty" id="chartPeEmpty">Waits until first 2-min bar closes and ATM locks (~09:17 IST)…</div>
             </div>
         </div>
@@ -359,6 +384,43 @@
             crosshairMarkerVisible: false,
             priceFormat: { type: 'price', precision: priceDecimals, minMove: minMove }
         });
+
+        // Crosshair-driven OHLC/VWAP tooltip — TradingView convention. Pinned to the
+        // overlay div in the chart-wrap. Fires on every mouse-move, so the handler is
+        // kept lean (map lookups + one innerHTML assignment).
+        var overlayId = 'chart' + panelKey.charAt(0).toUpperCase() + panelKey.slice(1) + 'Overlay';
+        chart.subscribeCrosshairMove(function(param) {
+            var overlay = document.getElementById(overlayId);
+            if (!overlay) return;
+            if (!param || !param.time || !param.point) {
+                overlay.style.display = 'none';
+                return;
+            }
+            var candleData = param.seriesData.get(candleSeries[panelKey]);
+            var vwapData   = param.seriesData.get(vwapSeries[panelKey]);
+            if (!candleData || candleData.open == null) {
+                overlay.style.display = 'none';
+                return;
+            }
+            var o = candleData.open, h = candleData.high, l = candleData.low, c = candleData.close;
+            var cls = c >= o ? 'ov-up' : 'ov-dn';
+            var v   = (vwapData && vwapData.value != null) ? vwapData.value : null;
+            var timeMs = (Number(param.time) - IST_OFFSET_S) * 1000;
+            overlay.innerHTML =
+                '<span class="ov-lab">O</span><span class="' + cls + '">' + fmtPx(o) + '</span>'
+              + '<span class="ov-sep">·</span>'
+              + '<span class="ov-lab">H</span><span class="' + cls + '">' + fmtPx(h) + '</span>'
+              + '<span class="ov-sep">·</span>'
+              + '<span class="ov-lab">L</span><span class="' + cls + '">' + fmtPx(l) + '</span>'
+              + '<span class="ov-sep">·</span>'
+              + '<span class="ov-lab">C</span><span class="' + cls + '">' + fmtPx(c) + '</span>'
+              + (v != null
+                    ? '<span class="ov-sep">·</span>'
+                    + '<span class="ov-lab">VWAP</span><span class="ov-vwap">' + fmtPx(v) + '</span>'
+                    : '')
+              + '<span class="ov-time">' + fmtHhmm(timeMs) + '</span>';
+            overlay.style.display = 'block';
+        });
         return candleSeries[panelKey];
     }
 
@@ -424,6 +486,12 @@
         // sources kept overwriting each other every couple of seconds.
         fetch('/api/chart/candles?symbol=' + encodeURIComponent(symbol)).then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
+            // Refresh the exchange-clock offset every poll — server returns exchangeNowMs
+            // (max exchFeedTime across subscribed symbols). Diff vs Date.now() is applied
+            // to the countdown so it ticks in sync with TradingView.
+            if (d.exchangeNowMs && Number(d.exchangeNowMs) > 0) {
+                exchangeClockOffsetMs = Number(d.exchangeNowMs) - Date.now();
+            }
             var history = d.history || [];
             var current = d.current || null;
             var empty = document.getElementById(emptyElId);
@@ -599,13 +667,18 @@
 
     // ── 2-min bar countdown ───────────────────────────────────────────────
     // Bars are anchored on 09:15 IST → 09:15/09:17/09:19/…/15:29 boundaries.
-    // Shows mm:ss remaining until the current bar closes. Uses IST wall clock
-    // (recovered from Date.now + machine timezone offset diff) so the countdown
-    // is correct even for viewers outside India.
+    // Shows mm:ss remaining until the current bar closes.
+    //
+    // Uses EXCHANGE time as the reference, not the browser's wall clock — /api/chart/candles
+    // returns `exchangeNowMs` (max exchFeedTime across subscribed symbols). Local wall
+    // clock typically trails exchange time by 2-3 seconds, which is exactly the mismatch
+    // TradingView doesn't show. `exchangeClockOffsetMs` = exchangeNowMs - Date.now() at
+    // response time; applied to Date.now() every second below so the countdown ticks
+    // in sync with TradingView regardless of local clock drift.
+    var exchangeClockOffsetMs = 0;
     function computeBarCountdown() {
-        // IST is UTC+5:30. Convert now to IST wall-clock seconds since midnight.
-        var now = new Date();
-        var utcMs = now.getTime();
+        // Exchange-now = browser now + offset picked up from the server on each poll.
+        var utcMs = Date.now() + exchangeClockOffsetMs;
         var istMs = utcMs + 5.5 * 3600 * 1000;
         var istDate = new Date(istMs);
         var h = istDate.getUTCHours(), m = istDate.getUTCMinutes(), s = istDate.getUTCSeconds();

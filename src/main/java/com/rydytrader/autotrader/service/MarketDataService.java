@@ -54,6 +54,34 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
 
     // Tick state
     private final ConcurrentHashMap<String, TickData> currentTicks = new ConcurrentHashMap<>();
+    /** Per-symbol last exchange dissemination timestamp (epoch seconds). Populated from
+     *  every RawTick where the parser could extract {@code exch_feed_time}. Used by
+     *  {@link CandleAggregator} to bucket by exchange time (not local receive time), so a
+     *  tick stamped 09:16:59 that arrives at 09:17:00.1 lands in the 09:15→09:17 bar. */
+    private final ConcurrentHashMap<String, Long> lastExchFeedTimeSec = new ConcurrentHashMap<>();
+
+    /** Last exchange-dissemination timestamp (epoch seconds) observed for {@code fyersSymbol}.
+     *  Returns 0 when no tick has been seen or the parser couldn't extract the timestamp
+     *  (older HSM frames occasionally omit it). Callers should fall back to wall-clock
+     *  time in that case. */
+    public long getLastExchFeedTime(String fyersSymbol) {
+        if (fyersSymbol == null) return 0;
+        Long v = lastExchFeedTimeSec.get(fyersSymbol);
+        return v == null ? 0 : v;
+    }
+
+    /** Max exchange-dissemination timestamp (epoch seconds) across ALL subscribed
+     *  symbols — the best available "exchange now" reference on the server side. Used
+     *  by the chart page to run its 2-min bar countdown on exchange time instead of the
+     *  local wall clock (which typically trails exchange by 2-3 s, making the countdown
+     *  visibly lag TradingView's). Returns 0 if no ticks have arrived yet. */
+    public long getLatestExchFeedTimeSec() {
+        long max = 0;
+        for (Long v : lastExchFeedTimeSec.values()) {
+            if (v != null && v > max) max = v;
+        }
+        return max;
+    }
 
     // SSE emitters
     private final CopyOnWriteArrayList<SseEmitter> emitters = new CopyOnWriteArrayList<>();
@@ -69,6 +97,25 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
      *  block — listeners run inline on the WebSocket callback thread. */
     public void addOiListener(java.util.function.Consumer<OiTick> l) {
         if (l != null) oiListeners.add(l);
+    }
+
+    /** Raw LTP tick — fanned out on every WS snapshot that carries a positive LTP.
+     *  {@code atp} is the session VWAP (Fyers' avg_trade_price), 0 for index symbols and
+     *  pre-first-tick option symbols. {@code exchFeedTimeSec} is the Fyers dissemination
+     *  time in epoch seconds. {@code lastTradedTimeSec} is the exchange's own trade
+     *  timestamp — prefer this for bucket boundary decisions (closer to TradingView).
+     *  Either or both may be 0 if the parser couldn't extract them; consumers should
+     *  fall back {@code LTT → EFT → wall-clock} in that order. */
+    public record LtpTick(String fyersSymbol, double ltp, double atp,
+                          long exchFeedTimeSec, long lastTradedTimeSec) {}
+    private final CopyOnWriteArrayList<java.util.function.Consumer<LtpTick>> ltpListeners = new CopyOnWriteArrayList<>();
+    /** Registers a listener that receives every LTP tick — this is the pub-sub sibling of
+     *  {@link #addOiListener}. Use it instead of polling {@link #getLtp} on a scheduler
+     *  when you need to see every one of Fyers' ~4 snapshots/sec (poll-based sampling
+     *  at 1 Hz drops ~3/4 of them). Callers must not block — listeners run inline on
+     *  the WebSocket callback thread. */
+    public void addLtpListener(java.util.function.Consumer<LtpTick> l) {
+        if (l != null) ltpListeners.add(l);
     }
 
     // WS state
@@ -294,7 +341,19 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         if (raw.atp > 0) tick.setVwap(raw.atp);
         tick.setLastTickDate(today);
         tick.recalcChange();
+        if (raw.exchFeedTime > 0) lastExchFeedTimeSec.put(fyersSymbol, raw.exchFeedTime);
         dirty = true;
+
+        // LTP fan-out — CandleAggregator (and other consumers) receive every WS snapshot
+        // rather than sampling from currentTicks on a 1 Hz poll. Fyers throttles ~4
+        // snapshots/sec per symbol, so this path catches all 4 vs the poll's 1.
+        if (raw.ltp > 0 && !ltpListeners.isEmpty()) {
+            LtpTick evt = new LtpTick(fyersSymbol, raw.ltp, raw.atp,
+                raw.exchFeedTime, raw.lastTradedTime);
+            for (var l : ltpListeners) {
+                try { l.accept(evt); } catch (Exception ignored) {}
+            }
+        }
 
         // OI side channel — options only, positive OI only. Fan out to registered
         // listeners so OptionOiTracker can maintain cumulative-since-baseline aggregates

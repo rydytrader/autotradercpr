@@ -120,6 +120,12 @@ public class ChartController {
         List<Candle> hist = candleAggregator.getHistory(symbol);
         out.put("history", hist);
         out.put("current", candleAggregator.getCurrentBucket(symbol));
+        // Exchange "now" — max exchFeedTime across subscribed symbols. Chart uses this
+        // for the 2-min bar countdown so it ticks in sync with TradingView (which also
+        // runs on exchange time) rather than local wall clock (which typically trails
+        // exchange time by 2-3 seconds). 0 when no ticks have arrived yet.
+        long latestExchSec = marketDataService.getLatestExchFeedTimeSec();
+        out.put("exchangeNowMs", latestExchSec > 0 ? latestExchSec * 1000L : 0L);
         return out;
     }
 }
