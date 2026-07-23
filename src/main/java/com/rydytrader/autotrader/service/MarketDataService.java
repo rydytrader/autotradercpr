@@ -59,6 +59,13 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
      *  {@link CandleAggregator} to bucket by exchange time (not local receive time), so a
      *  tick stamped 09:16:59 that arrives at 09:17:00.1 lands in the 09:15→09:17 bar. */
     private final ConcurrentHashMap<String, Long> lastExchFeedTimeSec = new ConcurrentHashMap<>();
+    /** Latest exchange-dissemination timestamp (epoch seconds) observed from an
+     *  ALTERNATE feed (GDFL). Tracked separately from {@link #lastExchFeedTimeSec} so
+     *  the chart countdown can prefer the alternate feed's clock when available —
+     *  Fyers's exch_feed_time can round up second boundaries in a way that puts our
+     *  countdown 1-2 s out of sync with what the alternate vendor is showing. Updated
+     *  only via {@link #pushLtpTick}. */
+    private volatile long lastAltFeedExchFeedTimeSec = 0;
 
     /** Last exchange-dissemination timestamp (epoch seconds) observed for {@code fyersSymbol}.
      *  Returns 0 when no tick has been seen or the parser couldn't extract the timestamp
@@ -70,12 +77,15 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         return v == null ? 0 : v;
     }
 
-    /** Max exchange-dissemination timestamp (epoch seconds) across ALL subscribed
-     *  symbols — the best available "exchange now" reference on the server side. Used
-     *  by the chart page to run its 2-min bar countdown on exchange time instead of the
-     *  local wall clock (which typically trails exchange by 2-3 s, making the countdown
-     *  visibly lag TradingView's). Returns 0 if no ticks have arrived yet. */
+    /** Latest exchange-dissemination timestamp (epoch seconds) — the best available
+     *  "exchange now" reference on the server side. Used by the chart page to run its
+     *  2-min bar countdown on exchange time instead of the local wall clock. Prefers
+     *  the alternate feed's clock (GDFL {@code ServerTime}) when available — that's
+     *  the same tape TradingView aligns to on the option side. Falls back to the max
+     *  across Fyers-tracked symbols when no alternate feed has landed a tick yet.
+     *  Returns 0 if no ticks have arrived from either feed. */
     public long getLatestExchFeedTimeSec() {
+        if (lastAltFeedExchFeedTimeSec > 0) return lastAltFeedExchFeedTimeSec;
         long max = 0;
         for (Long v : lastExchFeedTimeSec.values()) {
             if (v != null && v > max) max = v;
@@ -187,7 +197,15 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         String today = LocalDate.now(ZoneId.of("Asia/Kolkata")).toString();
         tick.setLastTickDate(today);
         tick.recalcChange();
-        if (evt.exchFeedTimeSec() > 0) lastExchFeedTimeSec.put(fyersSymbol, evt.exchFeedTimeSec());
+        if (evt.exchFeedTimeSec() > 0) {
+            lastExchFeedTimeSec.put(fyersSymbol, evt.exchFeedTimeSec());
+            // Advance the alt-feed clock — chart countdown prefers this over the
+            // Fyers-tracked map because GDFL's ServerTime is what TradingView-style
+            // clients on the option side align to.
+            if (evt.exchFeedTimeSec() > lastAltFeedExchFeedTimeSec) {
+                lastAltFeedExchFeedTimeSec = evt.exchFeedTimeSec();
+            }
+        }
         dirty = true;
         for (var l : ltpListeners) {
             try { l.accept(evt); } catch (Exception ignored) {}
