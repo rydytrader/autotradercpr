@@ -13,6 +13,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
@@ -249,6 +250,23 @@ public class GdflService {
         double atp = root.path("AverageTradedPrice").asDouble(0);
         long   ltt = root.path("LastTradeTime").asLong(0);   // exchange trade time (epoch sec)
         long   svt = root.path("ServerTime").asLong(0);      // GDFL dissemination time (epoch sec)
+
+        // Market-hours gate — drop pre-market / post-market / stale-day ticks BEFORE
+        // they reach MarketDataService. Pre-market frames could otherwise seed
+        // OptionOiTracker with yesterday-EOD baselines and advance the countdown clock
+        // with a pre-09:15 timestamp. Uses ServerTime primarily (populated on every
+        // frame); falls back to LastTradeTime, then wall-clock if neither is set.
+        long tickSec = svt > 0 ? svt : (ltt > 0 ? ltt : System.currentTimeMillis() / 1000);
+        ZonedDateTime tickZdt = Instant.ofEpochSecond(tickSec).atZone(IST);
+        if (!LocalDate.now(IST).equals(tickZdt.toLocalDate())) {
+            log.debug("[Gdfl] dropping stale-day tick for {} (tickDay={})", fyersSym, tickZdt.toLocalDate());
+            return;
+        }
+        LocalTime tickTime = tickZdt.toLocalTime();
+        if (tickTime.isBefore(LocalTime.of(9, 15)) || tickTime.isAfter(LocalTime.of(15, 31))) {
+            log.debug("[Gdfl] dropping out-of-hours tick for {} (tickTime={})", fyersSym, tickTime);
+            return;
+        }
 
         MarketDataService.LtpTick evt = new MarketDataService.LtpTick(
             fyersSym, ltp, atp, svt, ltt);
