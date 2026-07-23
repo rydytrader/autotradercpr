@@ -133,6 +133,11 @@ public class AtmVwap implements Strategy {
      *  authoritative bar before the FSM commits to a fire/no-fire decision. Provider so
      *  a stripped-down test context without the Fyers client can still boot AtmVwap. */
     private final ObjectProvider<com.rydytrader.autotrader.service.HistoryReconcileService> historyReconcileProvider;
+    /** GDFL config — read to skip Fyers WS + aggregator subscribes for option strikes
+     *  when GDFL owns those symbols. Provider so the strategy still boots when the
+     *  GDFL bean is absent (test / simulator contexts, or gdfl.enabled=false setups
+     *  where the properties bean is present but disabled). */
+    private final ObjectProvider<com.rydytrader.autotrader.gdfl.GdflProperties> gdflPropertiesProvider;
 
     private final ObjectMapper mapper = new ObjectMapper()
         .findAndRegisterModules()
@@ -162,7 +167,8 @@ public class AtmVwap implements Strategy {
                    ObjectProvider<AtmVwapStreamBroker> streamBrokerProvider,
                    ObjectProvider<com.rydytrader.autotrader.service.OptionOiSubscriber> optionOiSubscriberProvider,
                    ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> optionOiTrackerProvider,
-                   ObjectProvider<com.rydytrader.autotrader.service.HistoryReconcileService> historyReconcileProvider) {
+                   ObjectProvider<com.rydytrader.autotrader.service.HistoryReconcileService> historyReconcileProvider,
+                   ObjectProvider<com.rydytrader.autotrader.gdfl.GdflProperties> gdflPropertiesProvider) {
         this.candleAggregator           = candleAggregator;
         this.atmTracker                 = atmTracker;
         this.atmSelector                = atmSelector;
@@ -175,6 +181,17 @@ public class AtmVwap implements Strategy {
         this.optionOiSubscriberProvider = optionOiSubscriberProvider;
         this.optionOiTrackerProvider    = optionOiTrackerProvider;
         this.historyReconcileProvider   = historyReconcileProvider;
+        this.gdflPropertiesProvider     = gdflPropertiesProvider;
+    }
+
+    /** Whether an alternate feed (GDFL) is owning tick delivery for the option strikes.
+     *  When true, {@link #warmupIfDue} and {@link #ensureSessionLegsSubscribed} skip
+     *  the Fyers WS subscription for those symbols — GDFL provides the ticks and any
+     *  Fyers-side subscription would be dead weight (ticks would be dropped at
+     *  {@link com.rydytrader.autotrader.service.MarketDataService#onTick} anyway). */
+    private boolean gdflOwnsOptionTicks() {
+        var props = gdflPropertiesProvider == null ? null : gdflPropertiesProvider.getIfAvailable();
+        return props != null && props.isEnabled();
     }
 
     /** Current OI bias — {@code BULLISH} / {@code BEARISH} / {@code NEUTRAL} / {@code STALE} /
@@ -547,14 +564,18 @@ public class AtmVwap implements Strategy {
 
     // ── Session start — pre-warm at 09:15, resolve ATM CE + PE at 09:17 ────
 
-    /** Pre-warm width — ±15 strikes each side (31 strikes total, 62 option symbols).
-     *  Covers ±750 pts of first-2-min NIFTY move so the resolved ATM's CE + PE almost
+    /** Pre-warm width — ±10 strikes each side (21 strikes total, 42 option symbols).
+     *  Covers ±500 pts of first-2-min NIFTY move so the resolved ATM's CE + PE almost
      *  always fall inside the window and their first 09:15–09:17 candle has full OHLC.
-     *  Also matches the {@code OptionOiSubscriber}'s ±15 window, so the OI tracker's
+     *  Also feeds the {@code OptionOiSubscriber}'s window, so the OI tracker's
      *  per-strike baseline can be taken from the first WS OI tick at 09:15 rather than
-     *  waiting for ATM lock at 09:17. Extreme opens beyond ±750 pts still fall back to
-     *  the slow (racy) path with a partial-first-bar warning. */
-    private static final int PRE_WARM_STRIKES_EACH_SIDE = 15;
+     *  waiting for ATM lock at 09:17. Extreme opens beyond ±500 pts still fall back to
+     *  the slow (racy) path with a partial-first-bar warning.
+     *
+     *  <p>Sized at 10 so the total 42-symbol pre-warm fits under GDFL's 50-symbol
+     *  per-key subscription cap when the {@code gdfl-integration} flow subscribes the
+     *  same window for exchange-authoritative OI + LTP. */
+    private static final int PRE_WARM_STRIKES_EACH_SIDE = 10;
     private static final LocalTime MARKET_OPEN_IST      = LocalTime.of(9, 15);
     private static final LocalTime PRE_WARM_CUTOFF_IST  = LocalTime.of(9, 17);
 
@@ -613,15 +634,23 @@ public class AtmVwap implements Strategy {
             return;
         }
 
-        try { marketDataService.subscribeAdditional(subs); }
-        catch (Exception ignored) {}
-        for (String sym : subs) {
-            if (aggregatorSubscribedSymbols.contains(sym)) continue;
-            final String s = sym;
-            candleAggregator.subscribe(s, cc -> onCandleClose(s, cc));
-            aggregatorSubscribedSymbols.add(sym);
+        // When GDFL owns option tick delivery: skip BOTH the Fyers WS subscribe and the
+        // per-strike CandleAggregator subscribe. GDFL will pick up the ±10 window from
+        // oiTracker.activeWindow() and stream LTP + OI directly. The aggregator's
+        // per-symbol listener registration for the resolved ATM CE + PE still happens
+        // via ensureSessionLegsSubscribed at 09:17 (also GDFL-aware) so those two
+        // symbols get candles built from GDFL ticks.
+        if (!gdflOwnsOptionTicks()) {
+            try { marketDataService.subscribeAdditional(subs); }
+            catch (Exception ignored) {}
+            for (String sym : subs) {
+                if (aggregatorSubscribedSymbols.contains(sym)) continue;
+                final String s = sym;
+                candleAggregator.subscribe(s, cc -> onCandleClose(s, cc));
+                aggregatorSubscribedSymbols.add(sym);
+            }
         }
-        // Hand the ±15 window to the OI tracker so per-strike baselines are captured on
+        // Hand the ±10 window to the OI tracker so per-strike baselines are captured on
         // the very first WS OI tick (09:15 IST), not on the 09:17 ATM lock. When
         // resolveAtmFromFirstBar later fires notifyOiWindow(resolvedAtm), the tracker
         // narrows to ±7 and keeps the 09:15 baselines for strikes that stay in the new
@@ -801,11 +830,18 @@ public class AtmVwap implements Strategy {
         if (state.peSymbol != null && !state.peSymbol.isBlank()) legs.add(state.peSymbol);
         if (legs.isEmpty()) return;
         // WS subscribe is safely idempotent (the underlying subscribedHsmTokens set
-        // dedups). Candle-aggregator subscribe is NOT — every call adds another
+        // dedups). Skipped when GDFL owns option ticks — Fyers WS ticks for these
+        // symbols would be dropped at MarketDataService.onTick anyway; the WS
+        // subscription is dead weight in that mode.
+        // Candle-aggregator subscribe is NOT idempotent — every call adds another
         // listener. Guard with aggregatorSubscribedSymbols so we register exactly one
-        // listener per session leg per JVM lifetime.
-        try { marketDataService.subscribeAdditional(legs); }
-        catch (Exception ignored) {}
+        // listener per session leg per JVM lifetime. Aggregator subscription is
+        // ALWAYS needed (regardless of feed) so the aggregator builds candles from
+        // whatever LTP source feeds onLtpTick.
+        if (!gdflOwnsOptionTicks()) {
+            try { marketDataService.subscribeAdditional(legs); }
+            catch (Exception ignored) {}
+        }
         for (String sym : legs) {
             if (aggregatorSubscribedSymbols.contains(sym)) continue;
             final String s = sym;

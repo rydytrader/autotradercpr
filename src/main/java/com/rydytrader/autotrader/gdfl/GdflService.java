@@ -2,6 +2,7 @@ package com.rydytrader.autotrader.gdfl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.rydytrader.autotrader.service.MarketDataService;
+import com.rydytrader.autotrader.service.OptionOiTracker;
 import com.rydytrader.autotrader.service.strategy.AtmVwap;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -60,6 +61,7 @@ public class GdflService {
     private final GdflSymbolMapper   mapper;
     private final MarketDataService  marketDataService;
     private final ObjectProvider<AtmVwap> atmVwapProvider;
+    private final ObjectProvider<OptionOiTracker> oiTrackerProvider;
     private final ScheduledExecutorService executor;
 
     private volatile GdflDataWebSocket wsClient;
@@ -72,11 +74,13 @@ public class GdflService {
     public GdflService(GdflProperties props,
                        GdflSymbolMapper mapper,
                        MarketDataService marketDataService,
-                       ObjectProvider<AtmVwap> atmVwapProvider) {
+                       ObjectProvider<AtmVwap> atmVwapProvider,
+                       ObjectProvider<OptionOiTracker> oiTrackerProvider) {
         this.props             = props;
         this.mapper            = mapper;
         this.marketDataService = marketDataService;
         this.atmVwapProvider   = atmVwapProvider;
+        this.oiTrackerProvider = oiTrackerProvider;
         this.executor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "gdfl-lifecycle");
             t.setDaemon(true);
@@ -165,6 +169,26 @@ public class GdflService {
             // WS must be up + authenticated.
             if (wsClient == null || !wsClient.isAuthenticated()) return;
 
+            // 1) OI-tracker window — populated as early as 09:15 pre-warm by
+            //    OptionOiSubscriber.onPreWarm. Subscribing here (not gated on ATM
+            //    resolution) means every strike's OI baseline is captured from GDFL
+            //    at 09:15, not source-swapped from Fyers at 09:17. Pre-warm ±10 = 42
+            //    symbols, comfortably under GDFL's 50-symbol cap. subscribeOne is
+            //    idempotent — the every-5-s poll doesn't re-send SubscribeRealtime.
+            OptionOiTracker oiTracker = oiTrackerProvider.getIfAvailable();
+            if (oiTracker != null) {
+                for (OptionOiTracker.StrikeSymbols ss : oiTracker.activeWindow()) {
+                    subscribeOne(ss.ceSymbol());
+                    subscribeOne(ss.peSymbol());
+                }
+            }
+
+            // 2) Aggregation legs (LTP + OHLC → CandleAggregator + FSM). Only known
+            //    once AtmVwap resolves the ATM at 09:17. Usually a no-op because the
+            //    aggregation legs are ALREADY inside the pre-warm ±10 window and
+            //    subscribeOne saw them at 09:15 — this block just enforces the
+            //    subscribeSide filter and handles the (rare) drift case where the
+            //    resolved ATM sits outside the pre-warm window.
             AtmVwap atmVwap = atmVwapProvider.getIfAvailable();
             if (atmVwap == null) return;
             String ceFyers = atmVwap.getCeSymbol();
@@ -172,36 +196,34 @@ public class GdflService {
             if (ceFyers == null || ceFyers.isBlank()) return;
             if (peFyers == null || peFyers.isBlank()) return;
 
-            // Filter by subscribeSide — CE / PE / BOTH. Lets the operator route only one
-            // leg through GDFL for side-by-side accuracy testing against TradingView.
             String side = props.getSubscribeSide() == null ? "BOTH"
                 : props.getSubscribeSide().trim().toUpperCase();
-            List<String> fyersLegs = new ArrayList<>();
-            if ("CE".equals(side)   || "BOTH".equals(side)) fyersLegs.add(ceFyers);
-            if ("PE".equals(side)   || "BOTH".equals(side)) fyersLegs.add(peFyers);
-            if (fyersLegs.isEmpty()) {
+            if ("CE".equals(side) || "BOTH".equals(side)) subscribeOne(ceFyers);
+            if ("PE".equals(side) || "BOTH".equals(side)) subscribeOne(peFyers);
+            if (!"CE".equals(side) && !"PE".equals(side) && !"BOTH".equals(side)) {
                 log.warn("[Gdfl] unrecognised gdfl.subscribe-side={} (allowed: CE, PE, BOTH)", side);
-                return;
-            }
-
-            for (String fyersSym : fyersLegs) {
-                String gdflSym = mapper.fyersToGdfl(fyersSym);
-                if (gdflSym == null) {
-                    log.warn("[Gdfl] can't translate {} to GDFL identifier", fyersSym);
-                    continue;
-                }
-                if (subscribedGdflSymbols.contains(gdflSym)) continue;
-                if (wsClient.subscribeSymbol(gdflSym)) {
-                    subscribedGdflSymbols.add(gdflSym);
-                    // Take ownership of this symbol on the Fyers side — from now on
-                    // MarketDataService.onTick drops Fyers ticks for this symbol.
-                    marketDataService.addAltFeedOwnedSymbol(fyersSym);
-                    log.info("[Gdfl] subscribed {} (Fyers={}) — Fyers ticks for this symbol will be dropped",
-                        gdflSym, fyersSym);
-                }
             }
         } catch (Exception e) {
             log.warn("[Gdfl] atm-check loop threw: {}", e.getMessage());
+        }
+    }
+
+    /** Idempotent per-symbol subscribe. Translates the Fyers symbol to GDFL contractwise
+     *  format, sends SubscribeRealtime, and takes altFeed ownership so subsequent Fyers
+     *  ticks for this symbol are dropped at ingress. Silently no-ops on second call for
+     *  the same symbol or when the symbol can't be translated. */
+    private void subscribeOne(String fyersSym) {
+        if (fyersSym == null || fyersSym.isBlank()) return;
+        String gdflSym = mapper.fyersToGdfl(fyersSym);
+        if (gdflSym == null) {
+            log.warn("[Gdfl] can't translate {} to GDFL identifier", fyersSym);
+            return;
+        }
+        if (subscribedGdflSymbols.contains(gdflSym)) return;
+        if (wsClient.subscribeSymbol(gdflSym)) {
+            subscribedGdflSymbols.add(gdflSym);
+            marketDataService.addAltFeedOwnedSymbol(fyersSym);
+            log.info("[Gdfl] subscribed {} (Fyers={})", gdflSym, fyersSym);
         }
     }
 
@@ -231,5 +253,15 @@ public class GdflService {
         MarketDataService.LtpTick evt = new MarketDataService.LtpTick(
             fyersSym, ltp, atp, svt, ltt);
         marketDataService.pushLtpTick(evt);
+
+        // OI side-channel — same tick carries OpenInterest + OpenInterestChange. Fan
+        // out via pushOiTick so OptionOiTracker sees per-strike OI updates from GDFL
+        // (for altFeed-owned symbols, Fyers's OI is dropped in MarketDataService.onTick,
+        // so this is the only source). OpenInterestChange is captured on the OiTick for
+        // future consumers; the tracker itself still computes cumulative-since-baseline
+        // deltas independently, so a zero OpenInterestChange is harmless.
+        long oi       = root.path("OpenInterest").asLong(0);
+        long oiChange = root.path("OpenInterestChange").asLong(0);
+        if (oi > 0) marketDataService.pushOiTick(fyersSym, oi, svt, oiChange);
     }
 }

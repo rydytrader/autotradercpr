@@ -263,6 +263,15 @@ public class OptionOiTracker {
 
     // ── Read API ───────────────────────────────────────────────────────────────
 
+    /** Snapshot of the currently-active ±N strike window (empty pre-ATM-resolution).
+     *  Used by alternate-feed clients (GDFL) to subscribe the same 30 symbols the
+     *  bias tracker watches, so all OI in the tracker's window can be sourced from
+     *  one vendor. */
+    public synchronized List<StrikeSymbols> activeWindow() {
+        return state.windowSymbols == null ? List.of()
+            : new ArrayList<>(state.windowSymbols);
+    }
+
     public synchronized Snapshot snapshot() {
         String bias = state.bias;
         if (isStale()) bias = "STALE";
