@@ -107,7 +107,7 @@
         .chart-ohlc-overlay .ov-lab   { color: var(--text-muted); margin-right: 2px; }
         .chart-ohlc-overlay .ov-up    { color: var(--accent-green, #34d399); }
         .chart-ohlc-overlay .ov-dn    { color: var(--accent-red, #f87171); }
-        .chart-ohlc-overlay .ov-vwap  { color: #ec4899; }
+        .chart-ohlc-overlay .ov-vwap  { color: #fbbf24; }
         .chart-ohlc-overlay .ov-time  { color: var(--text-muted); margin-left: 8px; }
         .chart-ohlc-overlay .ov-sep   { margin: 0 8px; opacity: 0.5; }
     </style>
@@ -329,7 +329,7 @@
         return {
             text:  isDark ? '#94a3b8' : '#475569',
             grid:  'rgba(128,128,128,0.08)',
-            vwap:  '#ec4899',      // pink — distinct against green/red candles + white grid
+            vwap:  '#fbbf24',      // amber — distinct against green/red candles + white grid
             up:    '#34d399',
             down:  '#f87171',
             unchg: '#94a3b8'
@@ -379,8 +379,12 @@
         vwapSeries[panelKey] = chart.addLineSeries({
             color: col.vwap,
             lineWidth: 2,
+            // Show VWAP's last value as a coloured badge on the right price scale (same
+            // treatment as the candlestick's LTP badge) but WITHOUT the horizontal
+            // full-width line — operator finds the line visually noisy against the
+            // main VWAP curve.
             priceLineVisible: false,
-            lastValueVisible: false,
+            lastValueVisible: true,
             crosshairMarkerVisible: false,
             priceFormat: { type: 'price', precision: priceDecimals, minMove: minMove }
         });

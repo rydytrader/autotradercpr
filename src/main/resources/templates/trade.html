@@ -350,7 +350,7 @@
         </div>
 
         <!-- OI Bias — line chart of ΔCE (red) and ΔPE (green) since baseline. -->
-        <div class="section-card fade-in" style="margin:0; order:1;">
+        <div class="section-card fade-in" style="margin:0; order:1; display:flex; flex-direction:column;">
             <div class="section-header">
                 <div class="section-title">
                     <div class="section-title-dot" style="background:#a78bfa;"></div>
@@ -372,12 +372,17 @@
                 <span id="oiStrikeCount" hidden></span>
                 <span id="oiLastTick" hidden></span>
             </div>
-            <div style="padding:0 12px 12px; height:calc(250px - 42px); position:relative;">
-                <canvas id="oiChart"></canvas>
-                <div id="oiEmpty" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-                                          color:var(--text-muted); font-size:0.72rem; font-family:var(--font-mono);">
-                    Waiting for AtmVwap to lock ATM…
+            <div style="flex:1; min-height:250px; display:flex; flex-direction:column;">
+                <div style="padding:0 12px; flex:1; min-height:0; position:relative;">
+                    <canvas id="oiChart"></canvas>
+                    <div id="oiEmpty" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+                                              color:var(--text-muted); font-size:0.72rem; font-family:var(--font-mono);">
+                        Waiting for AtmVwap to lock ATM…
+                    </div>
                 </div>
+                <div id="oiUpdatedAt" style="flex-shrink:0; text-align:right; padding:2px 12px 6px;
+                                              color:var(--text-muted); font-size:0.62rem;
+                                              font-family:var(--font-mono); letter-spacing:0.04em;">—</div>
             </div>
         </div>
     </div>
@@ -1038,6 +1043,18 @@
             };
             if (ceEl) ceEl.textContent = d.cumulativeCeChange != null ? oiSigned(d.cumulativeCeChange) : '—';
             if (peEl) peEl.textContent = d.cumulativePeChange != null ? oiSigned(d.cumulativePeChange) : '—';
+            // Last-update badge in the chart's bottom-right corner. Uses local IST wall
+            // clock at the moment the state landed (server-side sample timestamp is
+            // already exposed via lastSampleAt on d, but the on-poll time is what the
+            // operator experiences).
+            var updatedEl = document.getElementById('oiUpdatedAt');
+            if (updatedEl) {
+                var nowIst = new Date(Date.now() + 5.5 * 3600 * 1000);
+                var hh = String(nowIst.getUTCHours()).padStart(2, '0');
+                var mm = String(nowIst.getUTCMinutes()).padStart(2, '0');
+                var ss = String(nowIst.getUTCSeconds()).padStart(2, '0');
+                updatedEl.textContent = 'updated ' + hh + ':' + mm + ':' + ss;
+            }
         }).catch(function() {});
     }
 
@@ -1114,8 +1131,22 @@
         // ATM…" placeholder covers the canvas.
         pollOiState();
         pollOiHistory();
-        setInterval(pollOiState, 30000);
-        setInterval(pollOiHistory, 60000);
+        // Minute-aligned polls — synced with OptionOiTracker.snapshotForChart which
+        // records a fresh sample at :00 of every minute (cron "0 * 9-15 ..."). Firing
+        // the poll at :01 of each minute (500 ms grace) means the browser always sees
+        // the just-recorded sample. Bias pill + header + chart update in lock-step at
+        // 09:15, 09:16, 09:17, …, on the same beat as the 1-min tracker samples and
+        // the 2-min candle boundaries the chart is aligned to.
+        (function scheduleMinuteAligned() {
+            var now = Date.now();
+            var msPastMinute = now % 60000;
+            var msUntilNextMinute = 60000 - msPastMinute + 500;   // +500 ms grace
+            setTimeout(function tick() {
+                pollOiState();
+                pollOiHistory();
+                setTimeout(tick, 60000);
+            }, msUntilNextMinute);
+        })();
     });
 </script>
 

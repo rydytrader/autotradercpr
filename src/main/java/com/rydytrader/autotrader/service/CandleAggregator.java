@@ -155,8 +155,19 @@ public class CandleAggregator {
     public void sample() {
         ZonedDateTime nowIst = ZonedDateTime.now(IST);
         LocalTime t = nowIst.toLocalTime();
-        if (t.isBefore(LocalTime.of(9, 15)) || t.isAfter(LocalTime.of(15, 31))) {
-            // outside market hours — flush any straggler buckets
+        if (t.isBefore(LocalTime.of(9, 15))) {
+            // Pre-market — DO NOT flush. A bucket may already exist for the 09:15→09:17
+            // slot because Fyers rounds exch_feed_time up to the next second (a print at
+            // 09:14:59.9 lands with exch_feed_time = 09:15:00, opening a legit 09:15
+            // bucket even though wall-clock is still 09:14:xx). Flushing here would emit
+            // that bucket as a "close" event at 09:14:xx, which AtmVwap.onCandleClose
+            // interprets as the first-bar close and resolves ATM three minutes early.
+            // Wait for wall-clock to catch up — in-market-hours flush path handles it.
+            return;
+        }
+        if (t.isAfter(LocalTime.of(15, 31))) {
+            // Post-market — flush the day's last-bar stragglers. Safe to unconditionally
+            // close: no legit forward-dated bucket can exist after market close.
             for (Map.Entry<String, Bucket> e : bucketBySymbol.entrySet()) {
                 Bucket b = e.getValue();
                 synchronized (b) {
