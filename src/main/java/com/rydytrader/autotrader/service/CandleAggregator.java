@@ -381,22 +381,25 @@ public class CandleAggregator {
         if (tickTime.isBefore(LocalTime.of(9, 15)) || tickTime.isAfter(LocalTime.of(15, 31))) return;
         int bucketStart = bucketStartMinute(tickTime.getHour() * 60 + tickTime.getMinute());
 
-        // Stale-bucket guard — reject ticks whose bucketStart is in the past relative to
-        // wall clock. Root cause of the "spurious duplicate 1-tick bar" bug: sample()
-        // flushes bucket X at wall 10:57:00.089 and resets. A late tick arrives at
-        // 10:57:00.772 with LTT/EFT still pointing into bucket X (Fyers keep-alive with
-        // a slightly-stale timestamp, or a WS reconnect replay). Since
-        // currentBucketMinute == -1 after reset, the first-branch code below would
-        // gladly open a fresh "bucket X" and later append a duplicate 1-tick close for
-        // the same startMs to history. Chart then shows the collapsed bar. Rule: if
-        // the tick's bucketStart is strictly behind the current wall bucket-start, drop
-        // the tick — the bar it belongs to has already been finalised.
+        // Stale-bucket handling — a tick whose bucketStart is BEHIND the current wall
+        // bucket (or behind the bucket's own currentBucketMinute) points at a bar that
+        // has already been finalised. Root cause: sample() flushes bucket X at wall
+        // 10:57:00.089 and resets, then a late tick with LTT/EFT still pointing into
+        // bucket X arrives at 10:57:00.772 (Fyers keep-alive with slightly-stale
+        // timestamp). Previously the first-branch code below opened a fresh "bucket X"
+        // for the SAME startMs, appending a duplicate 1-tick bar to history — chart
+        // then rendered the collapsed bar.
+        //
+        // Instead of dropping, merge the tick into the already-closed ring entry:
+        // extend high if ltp is higher, low if ltp is lower. Don't touch open (first
+        // tick set it) or close (per-tick order isn't tracked, so we can't tell if this
+        // late tick is chronologically after the previous close). If no ring entry
+        // matches (e.g. bar is older than HISTORY_CAP), silently drop.
         int wallMin      = ZonedDateTime.now(IST).toLocalTime().getHour() * 60
                          + ZonedDateTime.now(IST).toLocalTime().getMinute();
         int wallBucket   = bucketStartMinute(wallMin);
         if (bucketStart < wallBucket) {
-            log.debug("[CandleAggregator] {} dropping stale tick — bucketStart={} wallBucket={} ltp={}",
-                symbol, bucketStart, wallBucket, ltp);
+            mergeStaleTickIntoRing(symbol, bucketStart, ltp);
             return;
         }
 
@@ -409,10 +412,10 @@ public class CandleAggregator {
                 b.start(bucketStart, ltp, ZonedDateTime.now(IST));
                 if (t.atp() > 0) b.vwapLast = t.atp();
             } else if (bucketStart < b.currentBucketMinute) {
-                // Backward roll — another form of stale tick. currentBucketMinute is
-                // set to a newer bucket than this tick claims. Don't reopen the past.
-                log.debug("[CandleAggregator] {} dropping backward-roll tick — bucketStart={} currentBucketMinute={} ltp={}",
-                    symbol, bucketStart, b.currentBucketMinute, ltp);
+                // Backward roll — another shape of stale tick. currentBucketMinute is
+                // set to a newer bucket than this tick claims. Merge into the past bar
+                // (same rule as the wall-clock stale case) rather than reopening it.
+                mergeStaleTickIntoRing(symbol, bucketStart, ltp);
                 return;
             } else if (bucketStart != b.currentBucketMinute) {
                 // Snapshot for async fanout OUTSIDE the sync block below.
@@ -438,6 +441,42 @@ public class CandleAggregator {
                 closed.open(), closed.high(), closed.low(), closed.close());
             appendHistoryAndFire(symbol, closed, true);
         }
+    }
+
+    /** Extends an already-closed ring entry's high/low with a late tick. Called from
+     *  {@link #onLtpTick} when a tick's bucketStart is behind the current wall bucket
+     *  (or behind the bucket's own currentBucketMinute) — a Fyers keep-alive tick with
+     *  slightly-stale LTT, or a WS reconnect replay. Silently drops the tick if no
+     *  ring entry matches the derived startMs (e.g. bar is older than HISTORY_CAP or
+     *  never existed).
+     *
+     *  <p>Only H and L are extended — O was set by the first tick and C would need
+     *  per-tick trade-time ordering (which we don't track) to know whether the late
+     *  tick truly happened AFTER the previous close. */
+    private void mergeStaleTickIntoRing(String symbol, int bucketStart, double ltp) {
+        Deque<Candle> ring = historyBySymbol.get(symbol);
+        if (ring == null || ring.isEmpty()) return;
+        ZonedDateTime today = ZonedDateTime.now(IST);
+        long targetStart = today.withHour(bucketStart / 60).withMinute(bucketStart % 60)
+            .withSecond(0).withNano(0).toInstant().toEpochMilli();
+        List<Candle> snapshot = new ArrayList<>(ring);
+        int foundIdx = -1;
+        for (int i = snapshot.size() - 1; i >= 0; i--) {
+            if (snapshot.get(i).startMillis() == targetStart) { foundIdx = i; break; }
+        }
+        if (foundIdx < 0) return;   // Ring rolled past it, or never existed. Silently drop.
+        Candle existing = snapshot.get(foundIdx);
+        double newHigh = Math.max(existing.high(), ltp);
+        double newLow  = Math.min(existing.low(),  ltp);
+        if (newHigh == existing.high() && newLow == existing.low()) return;   // no change
+        Candle merged = new Candle(existing.open(), round(newHigh), round(newLow),
+            existing.close(), existing.volume(), existing.startMillis(), existing.vwap());
+        snapshot.set(foundIdx, merged);
+        ring.clear();
+        ring.addAll(snapshot);
+        dirty = true;
+        log.debug("[CandleAggregator] {} late tick merged into closed bar startMs={} — H {}→{} L {}→{}",
+            symbol, targetStart, existing.high(), merged.high(), existing.low(), merged.low());
     }
 
     /** Overwrites an existing history-ring entry with an authoritative version — used
