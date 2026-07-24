@@ -155,10 +155,6 @@ public class AtmVwap implements Strategy {
      *  seeded / invalidated events fired N times. Cleared on day rollover, kill switch,
      *  logout — anywhere the session's option legs are released. */
     private final java.util.Set<String> aggregatorSubscribedSymbols = ConcurrentHashMap.newKeySet();
-    /** Day-key on which the "Trading started" event has already fired. Guards against
-     *  emitting one per NIFTY spot tick — the event fires exactly once per session. */
-    private volatile String tradingStartedDayKey = "";
-
     public AtmVwap(CandleAggregator candleAggregator,
                    AtmTracker atmTracker,
                    BalancedAtmSelector atmSelector,
@@ -246,7 +242,9 @@ public class AtmVwap implements Strategy {
     private void onFirstNiftyTickOfDay(MarketDataService.LtpTick t) {
         if (t == null || !NIFTY_SYMBOL.equals(t.fyersSymbol())) return;
         String today = LocalDate.now(IST).toString();
-        if (today.equals(tradingStartedDayKey)) return;
+        // Persisted across restarts — a mid-day boot won't re-fire the event with the
+        // now-stale "09:15 candle forming" message on the next NIFTY tick.
+        if (today.equals(state.tradingStartedDayKey)) return;
 
         // Prefer LTT (exchange trade time) when populated; fall back to EFT (Fyers
         // dissemination). NIFTY is an index so LTT is usually 0 → EFT is our primary.
@@ -264,7 +262,8 @@ public class AtmVwap implements Strategy {
             .withHour(9).withMinute(15).withSecond(0).withNano(0)
             .toInstant().toEpochMilli();
 
-        tradingStartedDayKey = today;
+        state.tradingStartedDayKey = today;
+        saveToDisk();
         eventAtDisplayTime("[INFO]", "Session",
             "Trading started — 09:15 candle forming (first NIFTY tick @ "
             + tickTime.withNano(0).withSecond(tickTime.getSecond()).toString() + ")",
@@ -1839,6 +1838,10 @@ public class AtmVwap implements Strategy {
         /** YYYY-MM-DD of the last pre-warm run. Same-day short-circuits re-warm; different-day
          *  triggers a fresh warm on the next tick where guards pass. */
         public String preWarmDayKey = "";
+        /** YYYY-MM-DD on which the "Trading started — 09:15 candle forming" event has
+         *  already fired. Persisted so a mid-day restart doesn't re-fire the event on
+         *  the next NIFTY tick with a stale "09:15 candle forming" message. */
+        public String tradingStartedDayKey = "";
     }
 
     /** A 2-min bar that closed below its option's session VWAP. If the very next bar closes
