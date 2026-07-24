@@ -1,7 +1,7 @@
 /**
  * Settings modal — opened from the gear icon in the navbar.
  *
- * Tabs: STRANGLE · PORTFOLIO RISK · CHARGES · USERS · MAINTENANCE.
+ * Tabs: STRANGLE-ADJ · HEDGE · CHARGES · USERS · MAINTENANCE.
  */
 (function() {
     var modalEl = null;
@@ -30,12 +30,21 @@
                     '<div class="sm-grid-2col">' +
                       '<div class="sm-field"><label>Target Premium (₹)</label><input type="number" id="sm-strangleAdjustNiftyTargetPremium" step="1" min="0"><div class="sm-hint">Pick NIFTY CE + PE strikes near this premium. Default 50.</div></div>' +
                       '<div class="sm-field"><label>SL Multiplier</label><input type="number" id="sm-strangleAdjustSlMultiplier" step="0.1" min="1"><div class="sm-hint">SL price = entryPremium × this. Default 2.0 (= 100 % of received premium).</div></div>' +
-                      '<div class="sm-field"><label>Hedge Strikes Away</label><input type="number" id="sm-strangleAdjustHedgeStrikesAway" step="1" min="1"><div class="sm-hint">Deep-OTM hedge distance in strike-steps. Default 10.</div></div>' +
-                      '<div class="sm-field sm-full"><label>Hedge Qty Multiplier</label><input type="number" id="sm-strangleAdjustHedgeQtyMultiplier" step="0.5" min="0"><div class="sm-hint">Hedge qty = base qty × this. Default 2.0.</div></div>' +
                     '</div>' +
                     '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin:18px 0 10px;">Capital</div>' +
                     '<div class="sm-grid-2col">' +
                       '<div class="sm-field sm-full"><label>Initial Capital (₹)</label><input type="number" id="sm-strangleAdjustInitialCapital" step="1000" min="0"><div class="sm-hint">Per-strategy capital baseline for equity curve and return %. Default ₹10L.</div></div>' +
+                    '</div>' +
+                  '</div>' +
+                  '<div class="sm-pane" data-pane="hedge" style="display:none;">' +
+                    '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:10px;">Master toggle</div>' +
+                    '<div class="sm-grid-2col">' +
+                      '<div class="sm-field sm-full"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustHedgeEnabled" style="width:auto;"><span>Enable hedge</span></label><div class="sm-hint">When off, recovery adjustments run as a NAKED sell — no deep-OTM BUY leg is placed. Broker margin will not be relieved. Default on.</div></div>' +
+                    '</div>' +
+                    '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin:18px 0 10px;">Hedge params</div>' +
+                    '<div class="sm-grid-2col">' +
+                      '<div class="sm-field"><label>Hedge Strikes Away</label><input type="number" id="sm-strangleAdjustHedgeStrikesAway" step="1" min="1"><div class="sm-hint">Deep-OTM hedge distance in strike-steps from the new-sell leg. Default 10. Ignored when hedge is disabled.</div></div>' +
+                      '<div class="sm-field"><label>Hedge Qty Multiplier</label><input type="number" id="sm-strangleAdjustHedgeQtyMultiplier" step="0.5" min="0"><div class="sm-hint">Hedge qty = base qty × this. Default 2.0. Ignored when hedge is disabled.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
@@ -138,6 +147,7 @@
         if (!strip) return;
         var html = '';
         html += '<button class="sm-tab" data-tab="strangle-adjust">STRANGLE-ADJ</button>';
+        html += '<button class="sm-tab" data-tab="hedge">HEDGE</button>';
         html += '<button class="sm-tab" data-tab="charges">CHARGES</button>';
         html += '<button class="sm-tab" data-tab="users">USERS</button>';
         html += '<button class="sm-tab" data-tab="maintenance">MAINTENANCE</button>';
@@ -157,6 +167,9 @@
         if (tab === 'strangle-adjust') {
             var cp = modalEl.querySelector('[data-pane="strangle-adjust"]'); if (cp) cp.style.display = '';
             loadStrangleAdjustValues();
+        } else if (tab === 'hedge') {
+            var hp = modalEl.querySelector('[data-pane="hedge"]'); if (hp) hp.style.display = '';
+            loadHedgeValues();
         } else if (tab === 'charges') {
             var pane = modalEl.querySelector('[data-pane="charges"]'); if (pane) pane.style.display = '';
         } else if (tab === 'users') {
@@ -169,6 +182,7 @@
 
     function saveSettings() {
         if (activeTab === 'strangle-adjust') return saveStrangleAdjustTab();
+        if (activeTab === 'hedge')           return saveHedgeTab();
         if (activeTab === 'charges')         return saveChargesTab();
         if (activeTab === 'users')           { showBanner('Use the row buttons to manage users.', 'info'); return; }
         showBanner('No save action for this tab.', 'info');
@@ -184,8 +198,6 @@
             if (g('sm-strangleAdjustSquareOffTime'))       g('sm-strangleAdjustSquareOffTime').value = d.strangleAdjustSquareOffTime || '15:15';
             if (g('sm-strangleAdjustNiftyTargetPremium'))  g('sm-strangleAdjustNiftyTargetPremium').value = d.strangleAdjustNiftyTargetPremium != null ? d.strangleAdjustNiftyTargetPremium : 50;
             if (g('sm-strangleAdjustSlMultiplier'))        g('sm-strangleAdjustSlMultiplier').value = d.strangleAdjustSlMultiplier != null ? d.strangleAdjustSlMultiplier : 2.0;
-            if (g('sm-strangleAdjustHedgeStrikesAway'))    g('sm-strangleAdjustHedgeStrikesAway').value = d.strangleAdjustHedgeStrikesAway != null ? d.strangleAdjustHedgeStrikesAway : 10;
-            if (g('sm-strangleAdjustHedgeQtyMultiplier'))  g('sm-strangleAdjustHedgeQtyMultiplier').value = d.strangleAdjustHedgeQtyMultiplier != null ? d.strangleAdjustHedgeQtyMultiplier : 2.0;
             if (g('sm-strangleAdjustInitialCapital'))      g('sm-strangleAdjustInitialCapital').value = d.strangleAdjustInitialCapital != null ? d.strangleAdjustInitialCapital : 1000000;
         }).catch(function() {});
     }
@@ -199,9 +211,27 @@
             strangleAdjustSquareOffTime:        (g('sm-strangleAdjustSquareOffTime').value || '').trim(),
             strangleAdjustNiftyTargetPremium:   parseFloat(g('sm-strangleAdjustNiftyTargetPremium').value) || 0,
             strangleAdjustSlMultiplier:         parseFloat(g('sm-strangleAdjustSlMultiplier').value) || 2.0,
-            strangleAdjustHedgeStrikesAway:     parseInt(g('sm-strangleAdjustHedgeStrikesAway').value, 10) || 10,
-            strangleAdjustHedgeQtyMultiplier:   parseFloat(g('sm-strangleAdjustHedgeQtyMultiplier').value) || 0,
             strangleAdjustInitialCapital:       parseFloat(g('sm-strangleAdjustInitialCapital').value) || 0
+        };
+        postSettings('/api/settings/risk', body);
+    }
+
+    function loadHedgeValues() {
+        fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
+            if (!d) return;
+            var g = id => document.getElementById(id);
+            if (g('sm-strangleAdjustHedgeEnabled'))        g('sm-strangleAdjustHedgeEnabled').checked = d.strangleAdjustHedgeEnabled !== false;
+            if (g('sm-strangleAdjustHedgeStrikesAway'))    g('sm-strangleAdjustHedgeStrikesAway').value = d.strangleAdjustHedgeStrikesAway != null ? d.strangleAdjustHedgeStrikesAway : 10;
+            if (g('sm-strangleAdjustHedgeQtyMultiplier'))  g('sm-strangleAdjustHedgeQtyMultiplier').value = d.strangleAdjustHedgeQtyMultiplier != null ? d.strangleAdjustHedgeQtyMultiplier : 2.0;
+        }).catch(function() {});
+    }
+
+    function saveHedgeTab() {
+        var g = id => document.getElementById(id);
+        var body = {
+            strangleAdjustHedgeEnabled:         !!g('sm-strangleAdjustHedgeEnabled').checked,
+            strangleAdjustHedgeStrikesAway:     parseInt(g('sm-strangleAdjustHedgeStrikesAway').value, 10) || 10,
+            strangleAdjustHedgeQtyMultiplier:   parseFloat(g('sm-strangleAdjustHedgeQtyMultiplier').value) || 0
         };
         postSettings('/api/settings/risk', body);
     }
@@ -271,6 +301,7 @@
             switchTab('strangle-adjust');
         } else {
             if (activeTab === 'strangle-adjust')     loadStrangleAdjustValues();
+            else if (activeTab === 'hedge')          loadHedgeValues();
             else if (activeTab === 'charges')        loadChargesValues();
             else                                     switchTab('strangle-adjust');
         }

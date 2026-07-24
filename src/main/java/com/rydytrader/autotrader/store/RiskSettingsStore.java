@@ -39,6 +39,11 @@ public class RiskSettingsStore {
         volatile double  strangleAdjustNiftyTargetPremium  = 50.0;
         // SL + adjustment
         volatile double  strangleAdjustSlMultiplier        = 2.0;   // SL price = entryPremium × this
+        // Hedge (BUY leg during recovery adjustment). Master toggle: when false, the
+        // hedge BUY is skipped entirely and the adjustment is a naked SELL. The
+        // strikes-away / qty-multiplier are ignored in that case but persisted so
+        // toggling hedge back on restores the previous values.
+        volatile boolean strangleAdjustHedgeEnabled        = true;
         volatile int     strangleAdjustHedgeStrikesAway    = 10;    // strike-steps OTM from the added-sell leg
         volatile double  strangleAdjustHedgeQtyMultiplier  = 2.0;   // hedge qty = base qty × this
         volatile double  strangleAdjustInitialCapital      = 1_000_000.0;
@@ -390,6 +395,7 @@ public class RiskSettingsStore {
     public String  getStrangleAdjustSquareOffTime()        { return cfg().strangleAdjustSquareOffTime; }
     public double  getStrangleAdjustNiftyTargetPremium()   { return cfg().strangleAdjustNiftyTargetPremium; }
     public double  getStrangleAdjustSlMultiplier()         { return cfg().strangleAdjustSlMultiplier; }
+    public boolean isStrangleAdjustHedgeEnabled()          { return cfg().strangleAdjustHedgeEnabled; }
     public int     getStrangleAdjustHedgeStrikesAway()     { return cfg().strangleAdjustHedgeStrikesAway; }
     public double  getStrangleAdjustHedgeQtyMultiplier()   { return cfg().strangleAdjustHedgeQtyMultiplier; }
     public double  getStrangleAdjustInitialCapital()       { return cfg().strangleAdjustInitialCapital; }
@@ -572,6 +578,7 @@ public class RiskSettingsStore {
     public void setStrangleAdjustSquareOffTime(String v)         { cfg().strangleAdjustSquareOffTime = (v == null || v.isBlank()) ? "15:15" : v.trim(); }
     public void setStrangleAdjustNiftyTargetPremium(double v)    { cfg().strangleAdjustNiftyTargetPremium = Math.max(0, v); }
     public void setStrangleAdjustSlMultiplier(double v)          { cfg().strangleAdjustSlMultiplier = Math.max(0, v); }
+    public void setStrangleAdjustHedgeEnabled(boolean v)         { cfg().strangleAdjustHedgeEnabled = v; }
     public void setStrangleAdjustHedgeStrikesAway(int v)         { cfg().strangleAdjustHedgeStrikesAway = Math.max(1, v); }
     public void setStrangleAdjustHedgeQtyMultiplier(double v)    { cfg().strangleAdjustHedgeQtyMultiplier = Math.max(0, v); }
     public void setStrangleAdjustInitialCapital(double v)        { cfg().strangleAdjustInitialCapital = Math.max(0, v); }
@@ -678,6 +685,7 @@ public class RiskSettingsStore {
     public String  getStrangleAdjustSquareOffTime(String mode)        { return cfgFor(mode).strangleAdjustSquareOffTime; }
     public double  getStrangleAdjustNiftyTargetPremium(String mode)   { return cfgFor(mode).strangleAdjustNiftyTargetPremium; }
     public double  getStrangleAdjustSlMultiplier(String mode)         { return cfgFor(mode).strangleAdjustSlMultiplier; }
+    public boolean isStrangleAdjustHedgeEnabled(String mode)          { return cfgFor(mode).strangleAdjustHedgeEnabled; }
     public int     getStrangleAdjustHedgeStrikesAway(String mode)     { return cfgFor(mode).strangleAdjustHedgeStrikesAway; }
     public double  getStrangleAdjustHedgeQtyMultiplier(String mode)   { return cfgFor(mode).strangleAdjustHedgeQtyMultiplier; }
     public double  getStrangleAdjustInitialCapital(String mode)       { return cfgFor(mode).strangleAdjustInitialCapital; }
@@ -708,6 +716,7 @@ public class RiskSettingsStore {
     public void setStrangleAdjustSquareOffTime(String mode, String v)         { cfgFor(mode).strangleAdjustSquareOffTime = (v == null || v.isBlank()) ? "15:15" : v.trim(); }
     public void setStrangleAdjustNiftyTargetPremium(String mode, double v)    { cfgFor(mode).strangleAdjustNiftyTargetPremium = Math.max(0, v); }
     public void setStrangleAdjustSlMultiplier(String mode, double v)          { cfgFor(mode).strangleAdjustSlMultiplier = Math.max(0, v); }
+    public void setStrangleAdjustHedgeEnabled(String mode, boolean v)         { cfgFor(mode).strangleAdjustHedgeEnabled = v; }
     public void setStrangleAdjustHedgeStrikesAway(String mode, int v)         { cfgFor(mode).strangleAdjustHedgeStrikesAway = Math.max(1, v); }
     public void setStrangleAdjustHedgeQtyMultiplier(String mode, double v)    { cfgFor(mode).strangleAdjustHedgeQtyMultiplier = Math.max(0, v); }
     public void setStrangleAdjustInitialCapital(String mode, double v)        { cfgFor(mode).strangleAdjustInitialCapital = Math.max(0, v); }
@@ -748,6 +757,7 @@ public class RiskSettingsStore {
             upsert("strangleAdjustSquareOffTime",      c.strangleAdjustSquareOffTime);
             upsert("strangleAdjustNiftyTargetPremium",  String.valueOf(c.strangleAdjustNiftyTargetPremium));
             upsert("strangleAdjustSlMultiplier",        String.valueOf(c.strangleAdjustSlMultiplier));
+            upsert("strangleAdjustHedgeEnabled",        String.valueOf(c.strangleAdjustHedgeEnabled));
             upsert("strangleAdjustHedgeStrikesAway",    String.valueOf(c.strangleAdjustHedgeStrikesAway));
             upsert("strangleAdjustHedgeQtyMultiplier",  String.valueOf(c.strangleAdjustHedgeQtyMultiplier));
             upsert("strangleAdjustInitialCapital",      String.valueOf(c.strangleAdjustInitialCapital));
@@ -916,6 +926,7 @@ public class RiskSettingsStore {
                     case "strangleAdjustSquareOffTime"       -> c.strangleAdjustSquareOffTime = v;
                     case "strangleAdjustNiftyTargetPremium"  -> c.strangleAdjustNiftyTargetPremium = Math.max(0, Double.parseDouble(v));
                     case "strangleAdjustSlMultiplier"        -> c.strangleAdjustSlMultiplier = Math.max(0, Double.parseDouble(v));
+                    case "strangleAdjustHedgeEnabled"        -> c.strangleAdjustHedgeEnabled = Boolean.parseBoolean(v);
                     case "strangleAdjustHedgeStrikesAway"    -> c.strangleAdjustHedgeStrikesAway = Math.max(1, Integer.parseInt(v));
                     case "strangleAdjustHedgeQtyMultiplier"  -> c.strangleAdjustHedgeQtyMultiplier = Math.max(0, Double.parseDouble(v));
                     case "strangleAdjustInitialCapital"      -> c.strangleAdjustInitialCapital      = Math.max(0, Double.parseDouble(v));

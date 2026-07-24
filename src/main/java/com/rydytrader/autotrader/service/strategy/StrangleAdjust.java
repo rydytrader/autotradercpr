@@ -480,11 +480,14 @@ public class StrangleAdjust implements Strategy {
             return;
         }
 
-        // Hedge — same side as the new sell, N strikes further OTM.
+        // Hedge — same side as the new sell, N strikes further OTM. Skipped entirely
+        // when the master toggle is off (adjustment then runs as a naked SELL).
+        boolean hedgeEnabled = riskSettings.isStrangleAdjustHedgeEnabled();
         int hedgeStrikesAway = riskSettings.getStrangleAdjustHedgeStrikesAway();
         String direction = "CE".equals(adjustSide) ? "UP" : "DOWN";
-        BalancedAtmSelector.StrikeAtLevel hedgeRow = atmSelector.resolveStrikeNAway(
-            spec.spotSymbol, spec.strikeStep, sellStrike, hedgeStrikesAway, direction);
+        BalancedAtmSelector.StrikeAtLevel hedgeRow = hedgeEnabled
+            ? atmSelector.resolveStrikeNAway(spec.spotSymbol, spec.strikeStep, sellStrike, hedgeStrikesAway, direction)
+            : null;
 
         int baseQty = riskSettings.getStrangleAdjustLotsPerLeg() * (int) spec.lotSize;
         int hedgeQty = (int) Math.round(baseQty * riskSettings.getStrangleAdjustHedgeQtyMultiplier());
@@ -497,15 +500,21 @@ public class StrangleAdjust implements Strategy {
         List<String> subs = new ArrayList<>();
         subs.add(sellSym);
         String hedgeSym = null;
-        if (hedgeRow != null) {
+        if (hedgeEnabled && hedgeRow != null) {
             hedgeSym = "CE".equals(adjustSide) ? hedgeRow.ceSymbol() : hedgeRow.peSymbol();
             if (hedgeSym != null && !hedgeSym.isBlank()) subs.add(hedgeSym);
         }
         try { marketDataService.subscribeAdditional(subs); } catch (Exception ignored) {}
 
-        // Place hedge FIRST (buy) so margin freed before the new sell lands.
+        if (!hedgeEnabled) {
+            event("[INFO]", "STRANGLE ADJUST",
+                "hedge disabled — proceeding with naked adjustment sell on " + adjustSide);
+        }
+
+        // Place hedge FIRST (buy) so margin freed before the new sell lands. Skipped
+        // when the master toggle is off.
         Position hedgePos = null;
-        if (hedgeSym != null && !hedgeSym.isBlank()) {
+        if (hedgeEnabled && hedgeSym != null && !hedgeSym.isBlank()) {
             OrderDTO hOrder = orderService.placeOrder(hedgeSym, hedgeQty, +1, 0, productType);
             if (hOrder != null && hOrder.getId() != null && !hOrder.getId().isEmpty()) {
                 double hLtp = 0;

@@ -39,6 +39,7 @@ public class SettingsController {
         result.put("strangleAdjustSquareOffTime",        riskSettings.getStrangleAdjustSquareOffTime(effectiveMode));
         result.put("strangleAdjustNiftyTargetPremium",   riskSettings.getStrangleAdjustNiftyTargetPremium(effectiveMode));
         result.put("strangleAdjustSlMultiplier",         riskSettings.getStrangleAdjustSlMultiplier(effectiveMode));
+        result.put("strangleAdjustHedgeEnabled",         riskSettings.isStrangleAdjustHedgeEnabled(effectiveMode));
         result.put("strangleAdjustHedgeStrikesAway",     riskSettings.getStrangleAdjustHedgeStrikesAway(effectiveMode));
         result.put("strangleAdjustHedgeQtyMultiplier",   riskSettings.getStrangleAdjustHedgeQtyMultiplier(effectiveMode));
         result.put("strangleAdjustInitialCapital",       riskSettings.getStrangleAdjustInitialCapital(effectiveMode));
@@ -82,6 +83,7 @@ public class SettingsController {
             if (body.containsKey("strangleAdjustSquareOffTime"))        riskSettings.setStrangleAdjustSquareOffTime(effectiveMode, body.get("strangleAdjustSquareOffTime").toString());
             if (body.containsKey("strangleAdjustNiftyTargetPremium"))   riskSettings.setStrangleAdjustNiftyTargetPremium(effectiveMode, Double.parseDouble(body.get("strangleAdjustNiftyTargetPremium").toString()));
             if (body.containsKey("strangleAdjustSlMultiplier"))         riskSettings.setStrangleAdjustSlMultiplier(effectiveMode, Double.parseDouble(body.get("strangleAdjustSlMultiplier").toString()));
+            if (body.containsKey("strangleAdjustHedgeEnabled"))         riskSettings.setStrangleAdjustHedgeEnabled(effectiveMode, Boolean.parseBoolean(body.get("strangleAdjustHedgeEnabled").toString()));
             if (body.containsKey("strangleAdjustHedgeStrikesAway"))     riskSettings.setStrangleAdjustHedgeStrikesAway(effectiveMode, Integer.parseInt(body.get("strangleAdjustHedgeStrikesAway").toString()));
             if (body.containsKey("strangleAdjustHedgeQtyMultiplier"))   riskSettings.setStrangleAdjustHedgeQtyMultiplier(effectiveMode, Double.parseDouble(body.get("strangleAdjustHedgeQtyMultiplier").toString()));
             if (body.containsKey("strangleAdjustInitialCapital"))       riskSettings.setStrangleAdjustInitialCapital(effectiveMode, Double.parseDouble(body.get("strangleAdjustInitialCapital").toString()));
