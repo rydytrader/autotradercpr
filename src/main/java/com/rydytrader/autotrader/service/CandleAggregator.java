@@ -350,31 +350,16 @@ public class CandleAggregator {
         double ltp = t.ltp();
         if (ltp <= 0) return;
 
-        // Bucket the tick by the EXCHANGE's own last-traded time (LTT) when it looks
-        // FRESH — that's the timestamp on the actual trade that produced this LTP and
-        // it closes the boundary-skew gap (a trade at 09:16:59 that arrives locally at
-        // 09:17:00.1 lands in the correct 09:15 bucket). But Fyers also emits keep-alive
-        // ticks for illiquid symbols where LTT points to a trade minutes (or even hours)
-        // ago while LTP + EFT are current. Bucketing THOSE by LTT wrongly attributes
-        // current LTP to an old bucket, either duplicating a closed bar in history or
-        // reopening one that was already flushed.
-        //
-        // Rule: prefer LTT only when it's within 5 s of EFT (both point to the same
-        // ~bar). Otherwise EFT — Fyers dissemination time, always near wall clock.
-        // Same-day guard still applies (a WS-reconnect replayed tick from yesterday
-        // 15:29 must not create a today bucket).
-        long ltt = t.lastTradedTimeSec();
-        long eft = t.exchFeedTimeSec();
-        long tickSec;
-        if (ltt > 0 && eft > 0) {
-            tickSec = Math.abs(ltt - eft) <= 5 ? ltt : eft;
-        } else if (eft > 0) {
-            tickSec = eft;
-        } else if (ltt > 0) {
-            tickSec = ltt;
-        } else {
-            tickSec = 0L;
-        }
+        // Bucket by EFT (Fyers dissemination time — always near wall clock). LTT
+        // (exchange last-traded time) was tried but Fyers emits keep-alive ticks for
+        // illiquid symbols where LTT points to a trade minutes ago while LTP + EFT
+        // are current; bucketing THOSE by LTT wrongly attributed current LTP to an
+        // old bucket, duplicating closed bars in history. EFT-only trades a small
+        // boundary-skew error (a trade at 09:16:59.500 sometimes rounds to
+        // EFT=09:17:00 and lands in the next bucket) for correctness on illiquid
+        // symbols. Same-day guard still applies (WS-reconnect replayed tick from
+        // yesterday must not create a today bucket).
+        long tickSec = t.exchFeedTimeSec() > 0 ? t.exchFeedTimeSec() : 0L;
         LocalTime tickTime;
         String today = LocalDate.now(IST).toString();
         if (tickSec > 0) {
