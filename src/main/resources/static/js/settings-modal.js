@@ -1,7 +1,8 @@
 /**
  * Settings modal — opened from the gear icon in the navbar.
  *
- * Tabs: STRANGLE-ADJ · NIFTY · SENSEX · HEDGE · CHARGES · USERS · MAINTENANCE.
+ * Tabs: GENERAL · NIFTY · SENSEX · HEDGE · CHARGES · USERS · MAINTENANCE.
+ * (data-tab / data-pane keys stay as "strangle-adjust" for stable persistence.)
  */
 (function() {
     var modalEl = null;
@@ -176,7 +177,7 @@
         var strip = document.getElementById('sm-tabstrip');
         if (!strip) return;
         var html = '';
-        html += '<button class="sm-tab" data-tab="strangle-adjust">STRANGLE-ADJ</button>';
+        html += '<button class="sm-tab" data-tab="strangle-adjust">GENERAL</button>';
         html += '<button class="sm-tab" data-tab="nifty">NIFTY</button>';
         html += '<button class="sm-tab" data-tab="sensex">SENSEX</button>';
         html += '<button class="sm-tab" data-tab="hedge">HEDGE</button>';
