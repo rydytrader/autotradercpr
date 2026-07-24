@@ -350,16 +350,21 @@ public class CandleAggregator {
         double ltp = t.ltp();
         if (ltp <= 0) return;
 
-        // Bucket by EFT (Fyers dissemination time — always near wall clock). LTT
-        // (exchange last-traded time) was tried but Fyers emits keep-alive ticks for
-        // illiquid symbols where LTT points to a trade minutes ago while LTP + EFT
-        // are current; bucketing THOSE by LTT wrongly attributed current LTP to an
-        // old bucket, duplicating closed bars in history. EFT-only trades a small
-        // boundary-skew error (a trade at 09:16:59.500 sometimes rounds to
-        // EFT=09:17:00 and lands in the next bucket) for correctness on illiquid
-        // symbols. Same-day guard still applies (WS-reconnect replayed tick from
-        // yesterday must not create a today bucket).
-        long tickSec = t.exchFeedTimeSec() > 0 ? t.exchFeedTimeSec() : 0L;
+        // Bucket the tick by the EXCHANGE's own last-traded time (LTT) when available —
+        // that's the timestamp on the actual trade that produced this LTP, and it's what
+        // TradingView aligns bar boundaries on. Fall back to Fyers/GDFL dissemination time
+        // (EFT) — which typically trails LTT by 100-800 ms of ingest lag — and to
+        // wall-clock only when the parser couldn't extract either. This closes the
+        // "boundary skew" gap where a tick TRADED at 09:16:59 arrives locally at
+        // 09:17:00.1 and was previously attributed to the wrong bar.
+        //
+        // Freshness guard — a WS reconnect can replay a tick whose timestamp is from
+        // a PREVIOUS trading day (e.g. yesterday 15:29). Its LocalTime alone would pass
+        // the market-hours filter and create a today-dated bucket with yesterday's data,
+        // which the outside-hours flush would later emit as a "close" pre-market.
+        long tickSec = t.lastTradedTimeSec() > 0 ? t.lastTradedTimeSec()
+                     : t.exchFeedTimeSec()   > 0 ? t.exchFeedTimeSec()
+                     : 0L;
         LocalTime tickTime;
         String today = LocalDate.now(IST).toString();
         if (tickSec > 0) {
