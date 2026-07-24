@@ -681,21 +681,23 @@ public class AtmVwap implements Strategy {
             return;
         }
 
-        // When GDFL owns option tick delivery: skip BOTH the Fyers WS subscribe and the
-        // per-strike CandleAggregator subscribe. GDFL will pick up the ±10 window from
-        // oiTracker.activeWindow() and stream LTP + OI directly. The aggregator's
-        // per-symbol listener registration for the resolved ATM CE + PE still happens
-        // via ensureSessionLegsSubscribed at 09:17 (also GDFL-aware) so those two
-        // symbols get candles built from GDFL ticks.
+        // When GDFL owns option tick delivery: skip the Fyers WS subscribe (dead weight —
+        // Fyers ticks for altFeed-owned symbols get dropped at MarketDataService.onTick).
+        // BUT still register the per-strike CandleAggregator listener — CandleAggregator
+        // drops ticks for symbols with no registered listener at onLtpTick, so without
+        // this the 09:15 → 09:17 bucket for CE/PE never forms (aggregator subscribe
+        // otherwise wouldn't happen until 09:17 ATM lock, by which point the 09:15
+        // ticks have already been discarded). GDFL pushes LTP via pushLtpTick which
+        // fires the same listener chain, so a registered listener is sufficient.
         if (!gdflOwnsOptionTicks()) {
             try { marketDataService.subscribeAdditional(subs); }
             catch (Exception ignored) {}
-            for (String sym : subs) {
-                if (aggregatorSubscribedSymbols.contains(sym)) continue;
-                final String s = sym;
-                candleAggregator.subscribe(s, cc -> onCandleClose(s, cc));
-                aggregatorSubscribedSymbols.add(sym);
-            }
+        }
+        for (String sym : subs) {
+            if (aggregatorSubscribedSymbols.contains(sym)) continue;
+            final String s = sym;
+            candleAggregator.subscribe(s, cc -> onCandleClose(s, cc));
+            aggregatorSubscribedSymbols.add(sym);
         }
         // Hand the ±10 window to the OI tracker so per-strike baselines are captured on
         // the very first WS OI tick (09:15 IST), not on the 09:17 ATM lock. When
