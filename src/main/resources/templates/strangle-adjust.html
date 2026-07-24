@@ -8,7 +8,6 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/shared.css?v=36">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script>
         (function() {
             const t = localStorage.getItem('traderedge-theme') || 'dark';
@@ -195,13 +194,22 @@
         <div class="section-card" style="margin-bottom:0;grid-column:span 3;">
             <div class="section-header">
                 <div class="section-title"><div class="section-title-dot"></div> Overview</div>
-                <div style="margin-left:auto;display:flex;align-items:center;gap:18px;">
+                <div style="margin-left:auto;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
                     <div id="heroNiftySection"
                          title="NIFTY 50 spot — last known LTP"
                          style="display:flex; align-items:baseline; gap:8px;">
                         <span style="font-family:var(--font-mono); font-size:0.82rem; font-weight:600; color:var(--text-secondary); letter-spacing:0.06em;">NIFTY 50 -</span>
                         <span class="stat-value" id="heroNiftyLtp" style="font-size:1rem;">—</span>
                     </div>
+                    <span style="border-left:1px solid var(--border); height:18px; display:inline-block;"></span>
+                    <div class="kill-switch-wrap" id="killSwitchWrap">
+                        <span class="kill-switch-label" id="killSwitchLabel">Trading ON</span>
+                        <label class="kill-switch">
+                            <input type="checkbox" id="killSwitchToggle" checked onchange="toggleKillSwitch()">
+                            <span class="kill-switch-slider"></span>
+                        </label>
+                    </div>
+                    <button class="squareoff-btn" id="squareOffBtn" onclick="executeSquareOff()" disabled>⬛ Square Off</button>
                 </div>
             </div>
             <div style="padding:20px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px;">
@@ -248,114 +256,39 @@
 
     </div>
 
-    <!-- ── Risk Band — per-leg SL triggers + leg open/closed state ── -->
-    <div class="section-card fade-in" style="margin-bottom:20px;">
+    <!-- ── Live Positions table ─────────────────────────────────────────── -->
+    <div class="section-card fixed-card fade-in" style="margin-bottom:20px;">
         <div class="section-header">
-            <div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Risk Band</div>
-            <div style="margin-left:auto; display:flex; align-items:center; gap:8px;">
-                <span id="paneSlPctBadge"
-                      title="Configured per-leg SL as a multiple of the received premium (from Settings → STRANGLE-ADJ → SL Multiplier)."
-                      style="font-family:var(--font-mono); font-size:0.6rem; font-weight:700;
-                             color:var(--accent-cyan); letter-spacing:0.06em;
-                             background:rgba(125,211,252,0.10); border:1px solid rgba(125,211,252,0.25);
-                             padding:3px 9px; border-radius:999px;">LEG SL · —%</span>
-            </div>
+            <div class="section-title"><div class="section-title-dot"></div> Live Positions</div>
         </div>
-        <div style="padding:16px 22px; display:grid; grid-template-columns:repeat(3, 1fr); gap:20px;">
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <span class="stat-label" style="margin:0;">CE SL Trigger</span>
-                <span class="stat-value" id="paneCeSlTrigger" style="font-size:1rem; color:var(--accent-red, #f87171);">—</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <span class="stat-label" style="margin:0;">PE SL Trigger</span>
-                <span class="stat-value" id="panePeSlTrigger" style="font-size:1rem; color:var(--accent-red, #f87171);">—</span>
-            </div>
-            <div style="display:flex; justify-content:space-between; align-items:center;">
-                <span class="stat-label" style="margin:0;" title="Per-leg open/closed status. When one leg's SL fires, only that leg closes; the other keeps running until its own SL or timed squareoff.">Leg State</span>
-                <span class="stat-value" id="paneLegState" style="font-size:0.9rem;">—</span>
-            </div>
-        </div>
-    </div>
-
-    <!-- ── Leg Cards: CE Short / PE Short / CE Hedge / PE Hedge ──────────── -->
-    <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:20px;" class="fade-in">
-        <div class="section-card leg-card" id="legCardCeShort" data-role="ENTRY_CE" style="margin-bottom:0;">
-            <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-red, #f87171);"></div> CE Short</div>
-                <span class="leg-pill" style="margin-left:auto; font-family:var(--font-mono); font-size:0.62rem; font-weight:700; letter-spacing:0.06em; color:var(--text-muted); background:rgba(128,128,128,0.08); border:1px solid var(--border); padding:3px 10px; border-radius:999px;">IDLE</span>
-            </div>
-            <div class="leg-body" style="padding:14px 20px; display:flex; flex-direction:column; gap:12px;">
-                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Strike</span><span class="stat-value leg-strike" style="font-size:0.9rem;">—</span></div>
-                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Qty</span><span class="stat-value leg-qty" style="font-size:0.9rem;">—</span></div>
-                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Entry / LTP</span><span class="stat-value leg-entry-ltp" style="font-size:0.9rem;">— / —</span></div>
-                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">SL Trigger</span><span class="stat-value leg-sl" style="font-size:0.9rem; color:var(--accent-red, #f87171);">—</span></div>
-                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">MTM</span><span class="stat-value leg-mtm" style="font-size:1rem;">0.00</span></div>
-            </div>
-        </div>
-        <div class="section-card leg-card" id="legCardPeShort" data-role="ENTRY_PE" style="margin-bottom:0;">
-            <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-red, #f87171);"></div> PE Short</div>
-                <span class="leg-pill" style="margin-left:auto; font-family:var(--font-mono); font-size:0.62rem; font-weight:700; letter-spacing:0.06em; color:var(--text-muted); background:rgba(128,128,128,0.08); border:1px solid var(--border); padding:3px 10px; border-radius:999px;">IDLE</span>
-            </div>
-            <div class="leg-body" style="padding:14px 20px; display:flex; flex-direction:column; gap:12px;">
-                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Strike</span><span class="stat-value leg-strike" style="font-size:0.9rem;">—</span></div>
-                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Qty</span><span class="stat-value leg-qty" style="font-size:0.9rem;">—</span></div>
-                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Entry / LTP</span><span class="stat-value leg-entry-ltp" style="font-size:0.9rem;">— / —</span></div>
-                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">SL Trigger</span><span class="stat-value leg-sl" style="font-size:0.9rem; color:var(--accent-red, #f87171);">—</span></div>
-                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">MTM</span><span class="stat-value leg-mtm" style="font-size:1rem;">0.00</span></div>
-            </div>
-        </div>
-        <div class="section-card leg-card" id="legCardCeHedge" data-role="HEDGE_CE" style="margin-bottom:0;">
-            <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green, #34d399);"></div> CE Hedge</div>
-                <span class="leg-pill" style="margin-left:auto; font-family:var(--font-mono); font-size:0.62rem; font-weight:700; letter-spacing:0.06em; color:var(--text-muted); background:rgba(128,128,128,0.08); border:1px solid var(--border); padding:3px 10px; border-radius:999px;">IDLE</span>
-            </div>
-            <div class="leg-body" style="padding:14px 20px; display:flex; flex-direction:column; gap:12px;">
-                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Strike</span><span class="stat-value leg-strike" style="font-size:0.9rem;">—</span></div>
-                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Qty</span><span class="stat-value leg-qty" style="font-size:0.9rem;">—</span></div>
-                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Entry / LTP</span><span class="stat-value leg-entry-ltp" style="font-size:0.9rem;">— / —</span></div>
-                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Type</span><span class="stat-value" style="font-size:0.9rem; color:var(--text-muted);">BUY (protective)</span></div>
-                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">MTM</span><span class="stat-value leg-mtm" style="font-size:1rem;">0.00</span></div>
-            </div>
-        </div>
-        <div class="section-card leg-card" id="legCardPeHedge" data-role="HEDGE_PE" style="margin-bottom:0;">
-            <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green, #34d399);"></div> PE Hedge</div>
-                <span class="leg-pill" style="margin-left:auto; font-family:var(--font-mono); font-size:0.62rem; font-weight:700; letter-spacing:0.06em; color:var(--text-muted); background:rgba(128,128,128,0.08); border:1px solid var(--border); padding:3px 10px; border-radius:999px;">IDLE</span>
-            </div>
-            <div class="leg-body" style="padding:14px 20px; display:flex; flex-direction:column; gap:12px;">
-                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Strike</span><span class="stat-value leg-strike" style="font-size:0.9rem;">—</span></div>
-                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Qty</span><span class="stat-value leg-qty" style="font-size:0.9rem;">—</span></div>
-                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Entry / LTP</span><span class="stat-value leg-entry-ltp" style="font-size:0.9rem;">— / —</span></div>
-                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">Type</span><span class="stat-value" style="font-size:0.9rem; color:var(--text-muted);">BUY (protective)</span></div>
-                <div style="display:flex; justify-content:space-between;"><span class="stat-label" style="margin:0;">MTM</span><span class="stat-value leg-mtm" style="font-size:1rem;">0.00</span></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- ── Compact control bar — Kill Switch + Square Off ── -->
-    <div class="section-card fade-in" style="margin-bottom:20px;">
-        <div class="section-header" style="display:flex; align-items:center; justify-content:flex-end; gap:10px;">
-            <div class="kill-switch-wrap" id="killSwitchWrap">
-                <span class="kill-switch-label" id="killSwitchLabel">Trading ON</span>
-                <label class="kill-switch">
-                    <input type="checkbox" id="killSwitchToggle" checked onchange="toggleKillSwitch()">
-                    <span class="kill-switch-slider"></span>
-                </label>
-            </div>
-            <button class="squareoff-btn" id="squareOffBtn" onclick="executeSquareOff()" disabled>⬛ Square Off</button>
-        </div>
-    </div>
-
-    <!-- ── Side-by-side CE / PE Premium charts (1-min close per leg) ── -->
-    <div class="section-card fade-in" id="splitChartCard" style="margin-bottom:20px;">
-        <div class="section-header">
-            <div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Leg Premiums</div>
-            <span class="section-badge" style="font-size:0.6rem; margin-left:auto;">1-min close per leg • dashed = SL trigger / entry baseline</span>
-        </div>
-        <div style="padding:0; height:400px; display:flex; gap:0;">
-            <div style="flex:1; min-width:0; padding:8px 12px;"><canvas id="straddleChartCe"></canvas></div>
-            <div style="flex:1; min-width:0; padding:8px 12px;"><canvas id="straddleChartPe"></canvas></div>
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Time</th>
+                        <th>Symbol</th>
+                        <th class="text-right">Quantity</th>
+                        <th class="text-center">Side</th>
+                        <th class="text-center">Setup</th>
+                        <th class="text-right">Entry</th>
+                        <th class="text-right">SL</th>
+                        <th class="text-right">LTP</th>
+                        <th class="text-right">P&amp;L</th>
+                        <th class="text-center">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="positionsTableBody">
+                    <tr>
+                        <td colspan="11">
+                            <div class="empty-state">
+                                <div class="empty-icon">◎</div>
+                                No active positions
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </div>
 
@@ -440,7 +373,6 @@
     function pnlClass(v) { return Number(v) >= 0 ? 'pnl-positive' : 'pnl-negative'; }
 
     var lastState = null;
-    var lastDashboardData = null;   // mirrors lastState — kept as a stable name for the chart renderers
     var logFilterValue = '';
 
     // ── Kill switch ────────────────────────────────────────────────────────
@@ -496,13 +428,11 @@
     function applyState(d) {
         if (!d) return;
         lastState = d;
-        lastDashboardData = d;
         renderHeader(d);
         renderStats(d);
         renderPositions(d);
         renderEvents(d);
         renderKillSwitch(d);
-        renderLegSplitCharts(d);
         // Spot LTP for header ticker chip. Strangle payload exposes spotSymbol + spotLtp
         // once today's instrument is resolved; before entry those keys are absent so we
         // leave the chips as their fallback ("—").
@@ -660,97 +590,16 @@
                             : lifecycle === 'IDLE'              ? 'var(--accent-green)'
                             :                                     'var(--text-secondary)';
 
-        // ── Risk Band — per-leg SL triggers + leg-open/closed state ──
-        var ceShort = null, peShort = null;
-        for (var i = 0; i < positions.length; i++) {
-            var p = positions[i];
-            if (!p || !p.role) continue;
-            if ((p.role === 'ENTRY_CE' || p.role === 'ADJUST_CE') && p.isShort) ceShort = p;
-            else if ((p.role === 'ENTRY_PE' || p.role === 'ADJUST_PE') && p.isShort) peShort = p;
-        }
-        document.getElementById('paneCeSlTrigger').textContent = ceShort && ceShort.slLevel > 0 ? fmtRs(ceShort.slLevel) : '—';
-        document.getElementById('panePeSlTrigger').textContent = peShort && peShort.slLevel > 0 ? fmtRs(peShort.slLevel) : '—';
-        var legStateEl = document.getElementById('paneLegState');
-        legStateEl.textContent = (ceShort ? 'CE OPEN' : 'CE —') + ' · ' + (peShort ? 'PE OPEN' : 'PE —');
-        // SL % badge from risk-settings — fallback "—%" if not published in the payload.
-        var slMult = Number((d.strangleAdjust || {}).slMultiplier || 0);
-        var slPct  = slMult > 0 ? Math.round((slMult - 1) * 100) : 0;
-        document.getElementById('paneSlPctBadge').textContent = slPct > 0
-            ? ('LEG SL · ' + slPct + '%')
-            : 'LEG SL · —%';
-
         // Disable squareoff when nothing open
         document.getElementById('squareOffBtn').disabled = positions.length === 0;
     }
 
-    function renderLegCards(d) {
-        var positions = (d.openPositions || []);
-        // Match by role. Strangle roles are ENTRY_CE / ENTRY_PE / HEDGE_CE / HEDGE_PE.
-        // StrangleAdjust may replace an ENTRY_ with ADJUST_ after a repair — treat that
-        // as the current CE/PE short so the card keeps showing something live.
-        function pickByRole(rolePrefix, side) {
-            for (var i = 0; i < positions.length; i++) {
-                var p = positions[i];
-                if (!p || !p.role) continue;
-                if (p.role === rolePrefix + '_' + side) return p;
-            }
-            return null;
-        }
-        function pickShort(side) {
-            return pickByRole('ENTRY', side) || pickByRole('ADJUST', side);
-        }
-        function pickHedge(side) {
-            return pickByRole('HEDGE', side);
-        }
-        var map = {
-            legCardCeShort: pickShort('CE'),
-            legCardPeShort: pickShort('PE'),
-            legCardCeHedge: pickHedge('CE'),
-            legCardPeHedge: pickHedge('PE')
-        };
-        Object.keys(map).forEach(function(cardId) {
-            var card = document.getElementById(cardId);
-            if (!card) return;
-            var p = map[cardId];
-            var pill = card.querySelector('.leg-pill');
-            var strikeEl = card.querySelector('.leg-strike');
-            var qtyEl = card.querySelector('.leg-qty');
-            var entryLtpEl = card.querySelector('.leg-entry-ltp');
-            var slEl = card.querySelector('.leg-sl');
-            var mtmEl = card.querySelector('.leg-mtm');
-            if (!p) {
-                if (pill) { pill.textContent = 'IDLE'; pill.style.color = 'var(--text-muted)'; pill.style.background = 'rgba(128,128,128,0.08)'; pill.style.borderColor = 'var(--border)'; }
-                if (strikeEl) strikeEl.textContent = '—';
-                if (qtyEl) qtyEl.textContent = '—';
-                if (entryLtpEl) entryLtpEl.textContent = '— / —';
-                if (slEl) slEl.textContent = '—';
-                if (mtmEl) { mtmEl.textContent = '0.00'; mtmEl.className = 'stat-value leg-mtm'; mtmEl.style.fontSize = '1rem'; }
-                card.style.opacity = '0.55';
-                return;
-            }
-            card.style.opacity = '1';
-            if (pill) { pill.textContent = 'OPEN'; pill.style.color = 'var(--accent-cyan)'; pill.style.background = 'rgba(125,211,252,0.10)'; pill.style.borderColor = 'rgba(125,211,252,0.35)'; }
-            if (strikeEl) strikeEl.textContent = (p.strike != null ? String(p.strike) : '—') + (p.role && p.role.indexOf('CE') >= 0 ? ' CE' : ' PE');
-            if (qtyEl) qtyEl.textContent = String(p.qty || '—');
-            if (entryLtpEl) entryLtpEl.textContent = fmtRs(p.entryPrice) + ' / ' + fmtRs(p.ltp);
-            if (slEl) slEl.textContent = (p.slLevel && Number(p.slLevel) > 0) ? fmtRs(p.slLevel) : '—';
-            if (mtmEl) {
-                var mtm = Number(p.mtm || 0);
-                mtmEl.textContent = fmtRs(mtm);
-                mtmEl.className = 'stat-value leg-mtm ' + pnlClass(mtm);
-                mtmEl.style.fontSize = '1rem';
-                mtmEl.style.fontWeight = '700';
-            }
-        });
-    }
-
     function renderPositions(d) {
-        renderLegCards(d);
         var positions = (d.openPositions || []).slice();
         var tbody = document.getElementById('positionsTableBody');
-        if (!tbody) return;   // Live Positions table removed — leg cards cover position display now.
+        if (!tbody) return;
         if (positions.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state"><div class="empty-icon">◎</div>No active positions</div></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><div class="empty-icon">◎</div>No active positions</div></td></tr>';
         } else {
             tbody.innerHTML = positions.map(function(p, i) {
                 var pnl = Number(p.mtm || 0);
@@ -771,7 +620,6 @@
                             ? ' <span title="SL moved to breakeven" style="color:#fbbf24;font-size:0.7rem;margin-left:6px;cursor:help;">▲</span>'
                             : '')
                         + '</td>'
-                    + '<td class="text-right pnl-positive">' + fmtLevel(p, p.targetLevel) + '</td>'
                     + '<td class="text-right">' + fmtRs(p.ltp) + '</td>'
                     + '<td class="text-right ' + pnlClass(pnl) + '" style="font-weight:700;">' + fmtRs(pnl) + '</td>'
                     + '<td class="text-center"><button class="squareoff-btn" style="padding:4px 10px;font-size:0.65rem;" onclick="squareOffRow(\'' + escapeHtml(p.symbol).replace(/'/g, "&#39;") + '\')">×</button></td>'
@@ -875,10 +723,10 @@
         for (var r = 0; r < visibleRows.length; r++) {
             var rowSym = visibleRows[r].children[2];  // 3rd column = Symbol
             if (rowSym && rowSym.textContent === symbol) {
-                // Columns: # Time Symbol Qty Side Setup Entry SL Target LTP P&L Action
-                //         0  1    2      3   4    5     6     7  8      9   10  11
-                var ltpCell = visibleRows[r].children[9];
-                var pnlCell = visibleRows[r].children[10];
+                // Columns: # Time Symbol Qty Side Setup Entry SL LTP P&L Action
+                //         0  1    2      3   4    5     6     7  8   9   10
+                var ltpCell = visibleRows[r].children[8];
+                var pnlCell = visibleRows[r].children[9];
                 if (ltpCell) ltpCell.textContent = fmtRs(ltp);
                 if (pnlCell) {
                     pnlCell.textContent = fmtRs(newMtm);
@@ -1068,97 +916,6 @@
         loadWelcome();
     });
 
-    // ── Leg Premium Charts — side-by-side CE + PE 1-min closes with per-leg SL/Entry refs ──
-    var ceChart = null, peChart = null;
-
-    function commonChartOptions(muted) {
-        return {
-            responsive: true,
-            maintainAspectRatio: false,
-            layout: { padding: 0 },
-            plugins: {
-                legend: { display: true, position: 'top', labels: { color: muted, font: { size: 10 }, boxWidth: 14 } },
-                tooltip: { callbacks: { label: function(ctx) {
-                    if (ctx.parsed.y == null) return null;
-                    return ctx.dataset.label + ': ₹' + Number(ctx.parsed.y).toFixed(2);
-                } } }
-            },
-            scales: {
-                x: { offset: false, ticks: { color: muted, font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }, grid: { color: 'rgba(128,128,128,0.08)' } },
-                y: { min: 0, ticks: { color: muted, font: { size: 10 }, callback: function(v) { return '₹' + Number(v).toFixed(2); } }, grid: { color: 'rgba(128,128,128,0.08)' } }
-            }
-        };
-    }
-
-    function initLegChart(canvasId, accentColor) {
-        var el = document.getElementById(canvasId);
-        if (!el || typeof Chart === 'undefined') return null;
-        var ctx = el.getContext('2d');
-        var muted = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim();
-        return new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: [
-                    { label: 'Premium',    data: [], borderColor: accentColor + '0.95)', backgroundColor: accentColor + '0.10)', borderWidth: 2, fill: true, tension: 0.25, pointRadius: 0, pointHoverRadius: 4, pointHitRadius: 8, pointBackgroundColor: accentColor + '0.95)', spanGaps: false, order: 0 },
-                    { label: 'SL Trigger', data: [], borderColor: accentColor + '0.55)', borderWidth: 1.5, borderDash: [6, 4], pointRadius: 0, fill: false, order: 1 },
-                    { label: 'Entry',      data: [], borderColor: 'rgba(251,191,36,0.85)', borderWidth: 1.5, borderDash: [2, 4], pointRadius: 0, fill: false, order: 2 }
-                ]
-            },
-            options: commonChartOptions(muted)
-        });
-    }
-
-    /** Render the per-leg side-by-side Leg Premium charts. */
-    function renderLegSplitCharts(d) {
-        if (!d) return;
-        if (!ceChart) ceChart = initLegChart('straddleChartCe', 'rgba(52,211,153,');   // green CE
-        if (!peChart) peChart = initLegChart('straddleChartPe', 'rgba(248,113,113,');  // red PE
-        if (!ceChart || !peChart) return;
-        var samples = d.combinedPremiumSamples || [];
-        var labels  = samples.map(function(s) { return s.t; });
-        var ceData  = samples.map(function(s) { return s.ce != null ? s.ce : null; });
-        var peData  = samples.map(function(s) { return s.pe != null ? s.pe : null; });
-        // Synthetic "now" point per leg from live LTP.
-        var ceLtp = Number(d.ceLtp || 0);
-        var peLtp = Number(d.peLtp || 0);
-        if (ceLtp > 0 || peLtp > 0) {
-            var now = new Date();
-            var nowLabel = (now.getHours() < 10 ? '0' : '') + now.getHours()
-                         + ':' + (now.getMinutes() < 10 ? '0' : '') + now.getMinutes();
-            if (labels.length > 0 && labels[labels.length - 1] === nowLabel) {
-                if (ceLtp > 0) ceData[ceData.length - 1] = Math.round(ceLtp * 100) / 100;
-                if (peLtp > 0) peData[peData.length - 1] = Math.round(peLtp * 100) / 100;
-            } else {
-                labels.push(nowLabel);
-                ceData.push(ceLtp > 0 ? Math.round(ceLtp * 100) / 100 : null);
-                peData.push(peLtp > 0 ? Math.round(peLtp * 100) / 100 : null);
-            }
-        }
-        function r2(v) { return Math.round(Number(v) * 100) / 100; }
-        var ceEntry = r2(d.ceEntryPremium || 0);
-        var peEntry = r2(d.peEntryPremium || 0);
-        var ceTrig  = r2(d.ceSlTrigger || 0);
-        var peTrig  = r2(d.peSlTrigger || 0);
-        function lineFor(xs, val) { return xs.map(function() { return val > 0 ? val : null; }); }
-        ceChart.data.labels = labels;
-        ceChart.data.datasets[0].data = ceData;
-        ceChart.data.datasets[1].data = lineFor(labels, ceTrig);
-        ceChart.data.datasets[2].data = lineFor(labels, ceEntry);
-        if (ceTrig > 0) ceChart.options.scales.y.max = r2(ceTrig * 1.05);
-        ceChart.options.scales.y.min = 0;
-        ceChart.update('none');
-        peChart.data.labels = labels;
-        peChart.data.datasets[0].data = peData;
-        peChart.data.datasets[1].data = lineFor(labels, peTrig);
-        peChart.data.datasets[2].data = lineFor(labels, peEntry);
-        if (peTrig > 0) peChart.options.scales.y.max = r2(peTrig * 1.05);
-        peChart.options.scales.y.min = 0;
-        peChart.update('none');
-    }
-    // Re-render every 5s alongside the dashboard poll — picks up the synthetic "now"
-    // point even when SSE hasn't pushed a fresh dashboard state.
-    setInterval(function() { renderLegSplitCharts(lastDashboardData); }, 5000);
 </script>
 
 
