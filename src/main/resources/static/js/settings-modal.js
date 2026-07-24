@@ -28,19 +28,10 @@
                     '</div>' +
                     '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin:18px 0 10px;">Strategy params</div>' +
                     '<div class="sm-grid-2col">' +
-                      '<div class="sm-field"><label>NIFTY Target Premium (₹)</label><input type="number" id="sm-strangleAdjustNiftyTargetPremium" step="1" min="0"><div class="sm-hint">Pick CE + PE strikes near this premium. Default 50.</div></div>' +
-                      '<div class="sm-field"><label>SENSEX Target Premium (₹)</label><input type="number" id="sm-strangleAdjustSensexTargetPremium" step="5" min="0"><div class="sm-hint">Default 120 (SENSEX premiums scale with its higher spot).</div></div>' +
+                      '<div class="sm-field"><label>Target Premium (₹)</label><input type="number" id="sm-strangleAdjustNiftyTargetPremium" step="1" min="0"><div class="sm-hint">Pick NIFTY CE + PE strikes near this premium. Default 50.</div></div>' +
                       '<div class="sm-field"><label>SL Multiplier</label><input type="number" id="sm-strangleAdjustSlMultiplier" step="0.1" min="1"><div class="sm-hint">SL price = entryPremium × this. Default 2.0 (= 100 % of received premium).</div></div>' +
                       '<div class="sm-field"><label>Hedge Strikes Away</label><input type="number" id="sm-strangleAdjustHedgeStrikesAway" step="1" min="1"><div class="sm-hint">Deep-OTM hedge distance in strike-steps. Default 10.</div></div>' +
                       '<div class="sm-field sm-full"><label>Hedge Qty Multiplier</label><input type="number" id="sm-strangleAdjustHedgeQtyMultiplier" step="0.5" min="0"><div class="sm-hint">Hedge qty = base qty × this. Default 2.0.</div></div>' +
-                    '</div>' +
-                    '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin:18px 0 10px;">Weekday routing</div>' +
-                    '<div class="sm-grid-2col">' +
-                      '<div class="sm-field"><label>Monday</label><select id="sm-strangleAdjustMondayInstrument"><option value="NIFTY">NIFTY</option><option value="SENSEX">SENSEX</option><option value="DISABLED">DISABLED</option></select></div>' +
-                      '<div class="sm-field"><label>Tuesday</label><select id="sm-strangleAdjustTuesdayInstrument"><option value="NIFTY">NIFTY</option><option value="SENSEX">SENSEX</option><option value="DISABLED">DISABLED</option></select></div>' +
-                      '<div class="sm-field"><label>Wednesday</label><select id="sm-strangleAdjustWednesdayInstrument"><option value="NIFTY">NIFTY</option><option value="SENSEX">SENSEX</option><option value="DISABLED">DISABLED</option></select></div>' +
-                      '<div class="sm-field"><label>Thursday</label><select id="sm-strangleAdjustThursdayInstrument"><option value="NIFTY">NIFTY</option><option value="SENSEX">SENSEX</option><option value="DISABLED">DISABLED</option></select></div>' +
-                      '<div class="sm-field sm-full"><label>Friday</label><select id="sm-strangleAdjustFridayInstrument"><option value="NIFTY">NIFTY</option><option value="SENSEX">SENSEX</option><option value="DISABLED">DISABLED</option></select></div>' +
                     '</div>' +
                     '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin:18px 0 10px;">Capital</div>' +
                     '<div class="sm-grid-2col">' +
@@ -192,15 +183,9 @@
             if (g('sm-strangleAdjustEntryTime'))           g('sm-strangleAdjustEntryTime').value = d.strangleAdjustEntryTime || '09:20';
             if (g('sm-strangleAdjustSquareOffTime'))       g('sm-strangleAdjustSquareOffTime').value = d.strangleAdjustSquareOffTime || '15:15';
             if (g('sm-strangleAdjustNiftyTargetPremium'))  g('sm-strangleAdjustNiftyTargetPremium').value = d.strangleAdjustNiftyTargetPremium != null ? d.strangleAdjustNiftyTargetPremium : 50;
-            if (g('sm-strangleAdjustSensexTargetPremium')) g('sm-strangleAdjustSensexTargetPremium').value = d.strangleAdjustSensexTargetPremium != null ? d.strangleAdjustSensexTargetPremium : 120;
             if (g('sm-strangleAdjustSlMultiplier'))        g('sm-strangleAdjustSlMultiplier').value = d.strangleAdjustSlMultiplier != null ? d.strangleAdjustSlMultiplier : 2.0;
             if (g('sm-strangleAdjustHedgeStrikesAway'))    g('sm-strangleAdjustHedgeStrikesAway').value = d.strangleAdjustHedgeStrikesAway != null ? d.strangleAdjustHedgeStrikesAway : 10;
             if (g('sm-strangleAdjustHedgeQtyMultiplier'))  g('sm-strangleAdjustHedgeQtyMultiplier').value = d.strangleAdjustHedgeQtyMultiplier != null ? d.strangleAdjustHedgeQtyMultiplier : 2.0;
-            if (g('sm-strangleAdjustMondayInstrument'))    g('sm-strangleAdjustMondayInstrument').value = d.strangleAdjustMondayInstrument || 'NIFTY';
-            if (g('sm-strangleAdjustTuesdayInstrument'))   g('sm-strangleAdjustTuesdayInstrument').value = d.strangleAdjustTuesdayInstrument || 'NIFTY';
-            if (g('sm-strangleAdjustWednesdayInstrument')) g('sm-strangleAdjustWednesdayInstrument').value = d.strangleAdjustWednesdayInstrument || 'SENSEX';
-            if (g('sm-strangleAdjustThursdayInstrument'))  g('sm-strangleAdjustThursdayInstrument').value = d.strangleAdjustThursdayInstrument || 'SENSEX';
-            if (g('sm-strangleAdjustFridayInstrument'))    g('sm-strangleAdjustFridayInstrument').value = d.strangleAdjustFridayInstrument || 'DISABLED';
             if (g('sm-strangleAdjustInitialCapital'))      g('sm-strangleAdjustInitialCapital').value = d.strangleAdjustInitialCapital != null ? d.strangleAdjustInitialCapital : 1000000;
         }).catch(function() {});
     }
@@ -213,15 +198,9 @@
             strangleAdjustEntryTime:            (g('sm-strangleAdjustEntryTime').value || '').trim(),
             strangleAdjustSquareOffTime:        (g('sm-strangleAdjustSquareOffTime').value || '').trim(),
             strangleAdjustNiftyTargetPremium:   parseFloat(g('sm-strangleAdjustNiftyTargetPremium').value) || 0,
-            strangleAdjustSensexTargetPremium:  parseFloat(g('sm-strangleAdjustSensexTargetPremium').value) || 0,
             strangleAdjustSlMultiplier:         parseFloat(g('sm-strangleAdjustSlMultiplier').value) || 2.0,
             strangleAdjustHedgeStrikesAway:     parseInt(g('sm-strangleAdjustHedgeStrikesAway').value, 10) || 10,
             strangleAdjustHedgeQtyMultiplier:   parseFloat(g('sm-strangleAdjustHedgeQtyMultiplier').value) || 0,
-            strangleAdjustMondayInstrument:     g('sm-strangleAdjustMondayInstrument').value,
-            strangleAdjustTuesdayInstrument:    g('sm-strangleAdjustTuesdayInstrument').value,
-            strangleAdjustWednesdayInstrument:  g('sm-strangleAdjustWednesdayInstrument').value,
-            strangleAdjustThursdayInstrument:   g('sm-strangleAdjustThursdayInstrument').value,
-            strangleAdjustFridayInstrument:     g('sm-strangleAdjustFridayInstrument').value,
             strangleAdjustInitialCapital:       parseFloat(g('sm-strangleAdjustInitialCapital').value) || 0
         };
         postSettings('/api/settings/risk', body);

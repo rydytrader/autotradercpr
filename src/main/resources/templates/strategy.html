@@ -177,7 +177,7 @@
     <div class="page-header fade-in" style="margin-bottom:18px;">
         <div>
             <div class="page-title">Strategy</div>
-            <div class="page-subtitle">Intraday options-selling strategy — Strangle + Adjustments (NIFTY/SENSEX with recovery)</div>
+            <div class="page-subtitle">Intraday options-selling strategy — Strangle + Adjustments on NIFTY (with recovery)</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -192,10 +192,10 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-purple, #a78bfa);"></span> Strangle + Adjustments · Overview</h2>
         <p class="doc-p">
-            An intraday <strong>weekly options-selling strangle</strong> that rotates between
-            NIFTY and SENSEX by weekday. Every session sells one CE + one PE strike whose
-            LTP is closest to a target premium (₹50 for NIFTY, ₹120 for SENSEX by default).
-            Per-leg SL is 100 % of the received premium.
+            An intraday <strong>weekly NIFTY options-selling strangle</strong>. Every session
+            sells one CE + one PE strike whose LTP is closest to the target premium (default
+            ₹50). Per-leg SL is 100 % of the received premium. Instrument and schedule are
+            hard-coded: NIFTY, every trading day.
         </p>
         <p class="doc-p">
             If one leg hits SL, the strategy runs a <strong>recovery adjustment</strong>:
@@ -211,21 +211,13 @@
         </p>
     </div>
 
-    <!-- ── Instrument rotation ── -->
+    <!-- ── Instrument (hard-coded) ── -->
     <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-amber, #fbbf24);"></span> Instrument rotation</h2>
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-amber, #fbbf24);"></span> Instrument</h2>
         <p class="doc-p">
-            Settings-configurable per weekday. Each day picks one of <code>NIFTY</code>,
-            <code>SENSEX</code>, or <code>DISABLED</code>. Defaults:
-        </p>
-        <ul class="doc-list">
-            <li><strong>Monday, Tuesday</strong> → NIFTY (spot <code>NSE:NIFTY50-INDEX</code>, lot 65, strike step 50).</li>
-            <li><strong>Wednesday, Thursday</strong> → SENSEX (spot <code>BSE:SENSEX-INDEX</code>, lot 20, strike step 100).</li>
-            <li><strong>Friday</strong> → DISABLED (no trading).</li>
-        </ul>
-        <p class="doc-p">
-            The instrument chosen for the day is locked at 09:20 entry and persisted. A
-            mid-session restart keeps the same instrument.
+            <strong>NIFTY only, every trading day.</strong> Spot <code>NSE:NIFTY50-INDEX</code>,
+            lot 65, strike step 50. Weekday routing and multi-instrument support have been
+            removed — the strategy is locked to a single instrument.
         </p>
     </div>
 
@@ -233,9 +225,9 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-purple, #a78bfa);"></span> Entry (09:20 IST)</h2>
         <ul class="doc-list">
-            <li>Fetch today's option chain from the resolved spot symbol (NIFTY or SENSEX).</li>
+            <li>Fetch today's NIFTY option chain.</li>
             <li>Pick the <strong>CE strike whose LTP is closest to the target premium</strong>
-                (₹50 for NIFTY, ₹120 for SENSEX). SELL 1 × lots.</li>
+                (default ₹50). SELL 1 × lots.</li>
             <li>Pick the <strong>PE strike whose LTP is closest to the target premium</strong>. SELL 1 × lots.</li>
             <li>SL price for each leg = <code>entryPremium × slMultiplier</code> (default 2.0
                 — SL triggers when the option's premium reaches 2× the received premium, i.e.
@@ -256,8 +248,8 @@
             <li>Close the SL-hit leg at market.</li>
             <li><strong>BUY hedge FIRST</strong> — deep-OTM on the adjustment side,
                 <code>hedgeStrikesAway</code> strike-steps further OTM from the strike about
-                to be sold (default 10 steps = 500 pts for NIFTY, 1000 pts for SENSEX).
-                Qty = base × <code>hedgeQtyMultiplier</code> (default 2×) for margin relief.</li>
+                to be sold (default 10 steps = 500 pts on NIFTY). Qty = base ×
+                <code>hedgeQtyMultiplier</code> (default 2×) for margin relief.</li>
             <li><strong>SELL new leg</strong> at the strike whose current LTP is closest to
                 the target premium.</li>
             <li>The hedge + new sell together form a <strong>defined-risk vertical spread</strong>

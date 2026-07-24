@@ -34,19 +34,13 @@ public class RiskSettingsStore {
         volatile String  strangleAdjustOrderType          = "INTRADAY";     // INTRADAY | OVERNIGHT
         volatile String  strangleAdjustEntryTime          = "09:20";        // HH:mm IST — entry fires at/after this time
         volatile String  strangleAdjustSquareOffTime      = "15:15";        // HH:mm IST — hard flatten
-        // Per-instrument target premium (₹). NIFTY ~₹50; SENSEX ~₹120.
+        // Target premium (₹). NIFTY-only after the strategy was locked to a single
+        // instrument. Kept the field name as -Nifty- to match all downstream call sites.
         volatile double  strangleAdjustNiftyTargetPremium  = 50.0;
-        volatile double  strangleAdjustSensexTargetPremium = 120.0;
         // SL + adjustment
         volatile double  strangleAdjustSlMultiplier        = 2.0;   // SL price = entryPremium × this
         volatile int     strangleAdjustHedgeStrikesAway    = 10;    // strike-steps OTM from the added-sell leg
         volatile double  strangleAdjustHedgeQtyMultiplier  = 2.0;   // hedge qty = base qty × this
-        // Weekday routing (values: "NIFTY", "SENSEX", "DISABLED")
-        volatile String  strangleAdjustMondayInstrument    = "NIFTY";
-        volatile String  strangleAdjustTuesdayInstrument   = "NIFTY";
-        volatile String  strangleAdjustWednesdayInstrument = "SENSEX";
-        volatile String  strangleAdjustThursdayInstrument  = "SENSEX";
-        volatile String  strangleAdjustFridayInstrument    = "DISABLED";
         volatile double  strangleAdjustInitialCapital      = 1_000_000.0;
 
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
@@ -395,15 +389,9 @@ public class RiskSettingsStore {
     public String  getStrangleAdjustEntryTime()            { return cfg().strangleAdjustEntryTime; }
     public String  getStrangleAdjustSquareOffTime()        { return cfg().strangleAdjustSquareOffTime; }
     public double  getStrangleAdjustNiftyTargetPremium()   { return cfg().strangleAdjustNiftyTargetPremium; }
-    public double  getStrangleAdjustSensexTargetPremium()  { return cfg().strangleAdjustSensexTargetPremium; }
     public double  getStrangleAdjustSlMultiplier()         { return cfg().strangleAdjustSlMultiplier; }
     public int     getStrangleAdjustHedgeStrikesAway()     { return cfg().strangleAdjustHedgeStrikesAway; }
     public double  getStrangleAdjustHedgeQtyMultiplier()   { return cfg().strangleAdjustHedgeQtyMultiplier; }
-    public String  getStrangleAdjustMondayInstrument()     { return cfg().strangleAdjustMondayInstrument; }
-    public String  getStrangleAdjustTuesdayInstrument()    { return cfg().strangleAdjustTuesdayInstrument; }
-    public String  getStrangleAdjustWednesdayInstrument()  { return cfg().strangleAdjustWednesdayInstrument; }
-    public String  getStrangleAdjustThursdayInstrument()   { return cfg().strangleAdjustThursdayInstrument; }
-    public String  getStrangleAdjustFridayInstrument()     { return cfg().strangleAdjustFridayInstrument; }
     public double  getStrangleAdjustInitialCapital()       { return cfg().strangleAdjustInitialCapital; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
@@ -583,26 +571,11 @@ public class RiskSettingsStore {
     public void setStrangleAdjustEntryTime(String v)             { cfg().strangleAdjustEntryTime = (v == null || v.isBlank()) ? "09:20" : v.trim(); }
     public void setStrangleAdjustSquareOffTime(String v)         { cfg().strangleAdjustSquareOffTime = (v == null || v.isBlank()) ? "15:15" : v.trim(); }
     public void setStrangleAdjustNiftyTargetPremium(double v)    { cfg().strangleAdjustNiftyTargetPremium = Math.max(0, v); }
-    public void setStrangleAdjustSensexTargetPremium(double v)   { cfg().strangleAdjustSensexTargetPremium = Math.max(0, v); }
     public void setStrangleAdjustSlMultiplier(double v)          { cfg().strangleAdjustSlMultiplier = Math.max(0, v); }
     public void setStrangleAdjustHedgeStrikesAway(int v)         { cfg().strangleAdjustHedgeStrikesAway = Math.max(1, v); }
     public void setStrangleAdjustHedgeQtyMultiplier(double v)    { cfg().strangleAdjustHedgeQtyMultiplier = Math.max(0, v); }
-    public void setStrangleAdjustMondayInstrument(String v)      { cfg().strangleAdjustMondayInstrument = normalizeStrangleAdjustInstrument(v); }
-    public void setStrangleAdjustTuesdayInstrument(String v)     { cfg().strangleAdjustTuesdayInstrument = normalizeStrangleAdjustInstrument(v); }
-    public void setStrangleAdjustWednesdayInstrument(String v)   { cfg().strangleAdjustWednesdayInstrument = normalizeStrangleAdjustInstrument(v); }
-    public void setStrangleAdjustThursdayInstrument(String v)    { cfg().strangleAdjustThursdayInstrument = normalizeStrangleAdjustInstrument(v); }
-    public void setStrangleAdjustFridayInstrument(String v)      { cfg().strangleAdjustFridayInstrument = normalizeStrangleAdjustInstrument(v); }
     public void setStrangleAdjustInitialCapital(double v)        { cfg().strangleAdjustInitialCapital = Math.max(0, v); }
 
-    /** Clamps values to the valid enum set. Blank/unknown → DISABLED. */
-    private static String normalizeStrangleAdjustInstrument(String v) {
-        if (v == null) return "DISABLED";
-        String u = v.trim().toUpperCase();
-        return switch (u) {
-            case "NIFTY", "SENSEX", "DISABLED" -> u;
-            default -> "DISABLED";
-        };
-    }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setSttRate(double v)         { cfg().sttRate = v; }
@@ -704,15 +677,9 @@ public class RiskSettingsStore {
     public String  getStrangleAdjustEntryTime(String mode)            { return cfgFor(mode).strangleAdjustEntryTime; }
     public String  getStrangleAdjustSquareOffTime(String mode)        { return cfgFor(mode).strangleAdjustSquareOffTime; }
     public double  getStrangleAdjustNiftyTargetPremium(String mode)   { return cfgFor(mode).strangleAdjustNiftyTargetPremium; }
-    public double  getStrangleAdjustSensexTargetPremium(String mode)  { return cfgFor(mode).strangleAdjustSensexTargetPremium; }
     public double  getStrangleAdjustSlMultiplier(String mode)         { return cfgFor(mode).strangleAdjustSlMultiplier; }
     public int     getStrangleAdjustHedgeStrikesAway(String mode)     { return cfgFor(mode).strangleAdjustHedgeStrikesAway; }
     public double  getStrangleAdjustHedgeQtyMultiplier(String mode)   { return cfgFor(mode).strangleAdjustHedgeQtyMultiplier; }
-    public String  getStrangleAdjustMondayInstrument(String mode)     { return cfgFor(mode).strangleAdjustMondayInstrument; }
-    public String  getStrangleAdjustTuesdayInstrument(String mode)    { return cfgFor(mode).strangleAdjustTuesdayInstrument; }
-    public String  getStrangleAdjustWednesdayInstrument(String mode)  { return cfgFor(mode).strangleAdjustWednesdayInstrument; }
-    public String  getStrangleAdjustThursdayInstrument(String mode)   { return cfgFor(mode).strangleAdjustThursdayInstrument; }
-    public String  getStrangleAdjustFridayInstrument(String mode)     { return cfgFor(mode).strangleAdjustFridayInstrument; }
     public double  getStrangleAdjustInitialCapital(String mode)       { return cfgFor(mode).strangleAdjustInitialCapital; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
@@ -740,15 +707,9 @@ public class RiskSettingsStore {
     public void setStrangleAdjustEntryTime(String mode, String v)             { cfgFor(mode).strangleAdjustEntryTime = (v == null || v.isBlank()) ? "09:20" : v.trim(); }
     public void setStrangleAdjustSquareOffTime(String mode, String v)         { cfgFor(mode).strangleAdjustSquareOffTime = (v == null || v.isBlank()) ? "15:15" : v.trim(); }
     public void setStrangleAdjustNiftyTargetPremium(String mode, double v)    { cfgFor(mode).strangleAdjustNiftyTargetPremium = Math.max(0, v); }
-    public void setStrangleAdjustSensexTargetPremium(String mode, double v)   { cfgFor(mode).strangleAdjustSensexTargetPremium = Math.max(0, v); }
     public void setStrangleAdjustSlMultiplier(String mode, double v)          { cfgFor(mode).strangleAdjustSlMultiplier = Math.max(0, v); }
     public void setStrangleAdjustHedgeStrikesAway(String mode, int v)         { cfgFor(mode).strangleAdjustHedgeStrikesAway = Math.max(1, v); }
     public void setStrangleAdjustHedgeQtyMultiplier(String mode, double v)    { cfgFor(mode).strangleAdjustHedgeQtyMultiplier = Math.max(0, v); }
-    public void setStrangleAdjustMondayInstrument(String mode, String v)      { cfgFor(mode).strangleAdjustMondayInstrument = normalizeStrangleAdjustInstrument(v); }
-    public void setStrangleAdjustTuesdayInstrument(String mode, String v)     { cfgFor(mode).strangleAdjustTuesdayInstrument = normalizeStrangleAdjustInstrument(v); }
-    public void setStrangleAdjustWednesdayInstrument(String mode, String v)   { cfgFor(mode).strangleAdjustWednesdayInstrument = normalizeStrangleAdjustInstrument(v); }
-    public void setStrangleAdjustThursdayInstrument(String mode, String v)    { cfgFor(mode).strangleAdjustThursdayInstrument = normalizeStrangleAdjustInstrument(v); }
-    public void setStrangleAdjustFridayInstrument(String mode, String v)      { cfgFor(mode).strangleAdjustFridayInstrument = normalizeStrangleAdjustInstrument(v); }
     public void setStrangleAdjustInitialCapital(String mode, double v)        { cfgFor(mode).strangleAdjustInitialCapital = Math.max(0, v); }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
     public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
@@ -786,15 +747,9 @@ public class RiskSettingsStore {
             upsert("strangleAdjustEntryTime",          c.strangleAdjustEntryTime);
             upsert("strangleAdjustSquareOffTime",      c.strangleAdjustSquareOffTime);
             upsert("strangleAdjustNiftyTargetPremium",  String.valueOf(c.strangleAdjustNiftyTargetPremium));
-            upsert("strangleAdjustSensexTargetPremium", String.valueOf(c.strangleAdjustSensexTargetPremium));
             upsert("strangleAdjustSlMultiplier",        String.valueOf(c.strangleAdjustSlMultiplier));
             upsert("strangleAdjustHedgeStrikesAway",    String.valueOf(c.strangleAdjustHedgeStrikesAway));
             upsert("strangleAdjustHedgeQtyMultiplier",  String.valueOf(c.strangleAdjustHedgeQtyMultiplier));
-            upsert("strangleAdjustMondayInstrument",    c.strangleAdjustMondayInstrument);
-            upsert("strangleAdjustTuesdayInstrument",   c.strangleAdjustTuesdayInstrument);
-            upsert("strangleAdjustWednesdayInstrument", c.strangleAdjustWednesdayInstrument);
-            upsert("strangleAdjustThursdayInstrument",  c.strangleAdjustThursdayInstrument);
-            upsert("strangleAdjustFridayInstrument",    c.strangleAdjustFridayInstrument);
             upsert("strangleAdjustInitialCapital",      String.valueOf(c.strangleAdjustInitialCapital));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
@@ -960,19 +915,15 @@ public class RiskSettingsStore {
                     case "strangleAdjustEntryTime"           -> c.strangleAdjustEntryTime = v;
                     case "strangleAdjustSquareOffTime"       -> c.strangleAdjustSquareOffTime = v;
                     case "strangleAdjustNiftyTargetPremium"  -> c.strangleAdjustNiftyTargetPremium = Math.max(0, Double.parseDouble(v));
-                    case "strangleAdjustSensexTargetPremium" -> c.strangleAdjustSensexTargetPremium = Math.max(0, Double.parseDouble(v));
                     case "strangleAdjustSlMultiplier"        -> c.strangleAdjustSlMultiplier = Math.max(0, Double.parseDouble(v));
                     case "strangleAdjustHedgeStrikesAway"    -> c.strangleAdjustHedgeStrikesAway = Math.max(1, Integer.parseInt(v));
                     case "strangleAdjustHedgeQtyMultiplier"  -> c.strangleAdjustHedgeQtyMultiplier = Math.max(0, Double.parseDouble(v));
-                    case "strangleAdjustMondayInstrument"    -> c.strangleAdjustMondayInstrument    = normalizeStrangleAdjustInstrument(v);
-                    case "strangleAdjustTuesdayInstrument"   -> c.strangleAdjustTuesdayInstrument   = normalizeStrangleAdjustInstrument(v);
-                    case "strangleAdjustWednesdayInstrument" -> c.strangleAdjustWednesdayInstrument = normalizeStrangleAdjustInstrument(v);
-                    case "strangleAdjustThursdayInstrument"  -> c.strangleAdjustThursdayInstrument  = normalizeStrangleAdjustInstrument(v);
-                    case "strangleAdjustFridayInstrument"    -> c.strangleAdjustFridayInstrument    = normalizeStrangleAdjustInstrument(v);
                     case "strangleAdjustInitialCapital"      -> c.strangleAdjustInitialCapital      = Math.max(0, Double.parseDouble(v));
-                    // ── Retired Strangle (simple) keys — silently consumed on load so an
-                    //    older strategy-settings row doesn't break boot after the strategy
-                    //    was removed. Discarded — no field to set.
+                    // ── Retired keys — silently consumed on load so older strategy-settings
+                    //    rows don't break boot. Discarded — no field to set. Covers the
+                    //    original Strangle (simple) strategy and the StrangleAdjust weekday
+                    //    routing + SENSEX target premium that were removed once the strategy
+                    //    was locked to NIFTY-only every day.
                     case "strangleEnabled",
                          "strangleLotsPerLeg",
                          "strangleOrderType",
@@ -981,7 +932,13 @@ public class RiskSettingsStore {
                          "strangleShortPremium",
                          "strangleHedgePremium",
                          "strangleSlMultiplier",
-                         "strangleInitialCapital" -> {}
+                         "strangleInitialCapital",
+                         "strangleAdjustSensexTargetPremium",
+                         "strangleAdjustMondayInstrument",
+                         "strangleAdjustTuesdayInstrument",
+                         "strangleAdjustWednesdayInstrument",
+                         "strangleAdjustThursdayInstrument",
+                         "strangleAdjustFridayInstrument" -> {}
                     // ── Legacy AtmVwap-era keys — silently consumed ────────────────
                     case "atmVwapEnabled",
                          "atmVwapLotsPerLeg",

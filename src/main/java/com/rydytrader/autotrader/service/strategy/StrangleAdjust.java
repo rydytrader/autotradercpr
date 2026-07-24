@@ -21,7 +21,6 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
@@ -33,13 +32,13 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * NIFTY / SENSEX intraday neutral-to-directional strangleAdjust recovery.
+ * NIFTY intraday neutral-to-directional strangleAdjust recovery. Runs every trading
+ * day (instrument + weekday routing were removed once the strategy was locked to
+ * NIFTY-only).
  *
- * <p><b>Entry (default 09:20 IST)</b> — resolve today's instrument via the weekday
- * routing setting (Mon/Tue = NIFTY, Wed/Thu = SENSEX, Fri = DISABLED by default),
- * then SELL the CE and PE strikes whose current LTP is closest to the instrument's
- * target premium (₹50 for NIFTY, ₹120 for SENSEX by default). Each leg's SL price is
- * {@code entryPremium × slMultiplier} (default 2.0 = 100 % of received premium).
+ * <p><b>Entry (default 09:20 IST)</b> — SELL the NIFTY CE and PE strikes whose
+ * current LTP is closest to the target premium (default ₹50). Each leg's SL price
+ * is {@code entryPremium × slMultiplier} (default 2.0 = 100 % of received premium).
  *
  * <p><b>Adjustment (on either leg's SL hit)</b> — close the SL-hit leg, then on the
  * OPPOSITE side (a) BUY a deep-OTM hedge (default 10 strike-steps OTM, 2× base qty)
@@ -66,10 +65,10 @@ public class StrangleAdjust implements Strategy {
     private static final double OPTION_TICK_SIZE = 0.05;
     private static final int    RECENT_EVENTS_LIMIT = 60;
 
-    /** Per-instrument contract specs. Change rarely at the exchange level — hardcoded. */
+    /** Per-instrument contract specs. Change rarely at the exchange level — hardcoded.
+     *  NIFTY-only after the strategy was locked to a single instrument. */
     public enum InstrumentSpec {
-        NIFTY ("NSE:NIFTY50-INDEX", 65L,  50L),
-        SENSEX("BSE:SENSEX-INDEX",  20L, 100L);
+        NIFTY ("NSE:NIFTY50-INDEX", 65L,  50L);
 
         public final String spotSymbol;
         public final long   lotSize;
@@ -217,7 +216,7 @@ public class StrangleAdjust implements Strategy {
     @Override public String displayName() { return "Strangle + Adjustments"; }
     @Override public double initialCapital() { return riskSettings.getStrangleAdjustInitialCapital(); }
     @Override public String description() {
-        return "NIFTY / SENSEX intraday ATM strangle with 100 %-SL recovery adjustment";
+        return "NIFTY intraday ATM strangle with 100 %-SL recovery adjustment";
     }
     @Override public String currentState() {
         if (state.openPositions.isEmpty()) return state.entered ? "DONE_FOR_DAY" : "IDLE";
@@ -334,30 +333,10 @@ public class StrangleAdjust implements Strategy {
         }
     }
 
-    // ── Weekday routing ─────────────────────────────────────────────────────
-
-    /** Resolve today's instrument from the weekday routing settings. Returns null if
-     *  today is DISABLED or the value is unknown. */
-    private InstrumentSpec todaysInstrument() {
-        DayOfWeek dow = ZonedDateTime.now(IST).getDayOfWeek();
-        String setting = switch (dow) {
-            case MONDAY    -> riskSettings.getStrangleAdjustMondayInstrument();
-            case TUESDAY   -> riskSettings.getStrangleAdjustTuesdayInstrument();
-            case WEDNESDAY -> riskSettings.getStrangleAdjustWednesdayInstrument();
-            case THURSDAY  -> riskSettings.getStrangleAdjustThursdayInstrument();
-            case FRIDAY    -> riskSettings.getStrangleAdjustFridayInstrument();
-            default        -> "DISABLED";   // Sat / Sun — no trading anyway
-        };
-        if (setting == null || setting.isBlank() || "DISABLED".equalsIgnoreCase(setting)) return null;
-        try { return InstrumentSpec.valueOf(setting.trim().toUpperCase()); }
-        catch (Exception e) { return null; }
-    }
-
-    private double targetPremiumFor(InstrumentSpec spec) {
-        return spec == InstrumentSpec.NIFTY
-            ? riskSettings.getStrangleAdjustNiftyTargetPremium()
-            : riskSettings.getStrangleAdjustSensexTargetPremium();
-    }
+    // ── Instrument ──────────────────────────────────────────────────────────
+    //
+    // Hard-coded NIFTY, every trading day. Weekday routing + SENSEX/DISABLED
+    // options were removed once the strategy was locked to NIFTY-only.
 
     // ── Entry ───────────────────────────────────────────────────────────────
 
@@ -375,16 +354,8 @@ public class StrangleAdjust implements Strategy {
         catch (Exception e) { entryAt = LocalTime.of(9, 20); }
         if (now.isBefore(entryAt)) return;
 
-        InstrumentSpec spec = todaysInstrument();
-        if (spec == null) {
-            event("[INFO]", "StrangleAdjust",
-                "today (" + ZonedDateTime.now(IST).getDayOfWeek() + ") is DISABLED, no entry");
-            state.entered = true;    // idempotent — don't retry all day
-            saveToDisk();
-            return;
-        }
-
-        double targetPremium = targetPremiumFor(spec);
+        InstrumentSpec spec = InstrumentSpec.NIFTY;
+        double targetPremium = riskSettings.getStrangleAdjustNiftyTargetPremium();
         BalancedAtmSelector.StrikeAtLevel ceRow =
             atmSelector.resolveStrikeByTargetPremium(spec.spotSymbol, "CE", targetPremium);
         BalancedAtmSelector.StrikeAtLevel peRow =
@@ -491,7 +462,7 @@ public class StrangleAdjust implements Strategy {
             event("[ERROR]", "STRANGLE ADJUST", "no instrument recorded for adjustment");
             return;
         }
-        double targetPremium = targetPremiumFor(spec);
+        double targetPremium = riskSettings.getStrangleAdjustNiftyTargetPremium();
 
         BalancedAtmSelector.StrikeAtLevel sellRow =
             atmSelector.resolveStrikeByTargetPremium(spec.spotSymbol, adjustSide, targetPremium);
@@ -912,7 +883,6 @@ public class StrangleAdjust implements Strategy {
         str.put("originalPeStrike", state.originalPeStrike);
         str.put("ceAdjusted",       state.ceAdjusted);
         str.put("peAdjusted",       state.peAdjusted);
-        str.put("weekdayInstrument", weekdayInstrumentPreview());
         m.put("strangleAdjust", str);
 
         // Open positions
@@ -956,16 +926,6 @@ public class StrangleAdjust implements Strategy {
             } catch (Exception ignored) {}
         }
         return m;
-    }
-
-    private Map<String, String> weekdayInstrumentPreview() {
-        Map<String, String> pv = new LinkedHashMap<>();
-        pv.put("MONDAY",    riskSettings.getStrangleAdjustMondayInstrument());
-        pv.put("TUESDAY",   riskSettings.getStrangleAdjustTuesdayInstrument());
-        pv.put("WEDNESDAY", riskSettings.getStrangleAdjustWednesdayInstrument());
-        pv.put("THURSDAY",  riskSettings.getStrangleAdjustThursdayInstrument());
-        pv.put("FRIDAY",    riskSettings.getStrangleAdjustFridayInstrument());
-        return pv;
     }
 
     // ── State + persistence ────────────────────────────────────────────────
