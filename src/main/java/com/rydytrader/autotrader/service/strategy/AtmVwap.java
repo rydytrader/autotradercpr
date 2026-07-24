@@ -1037,7 +1037,7 @@ public class AtmVwap implements Strategy {
      *  remaining throttle/wick drift is tolerable without reconcile). While disabled,
      *  the FSM runs on the local WS-aggregated bar and the chart ring keeps the local
      *  values. All the reconcile machinery stays in place — this is a one-line toggle. */
-    private static final boolean HISTORY_RECONCILE_ENABLED = false;
+    private static final boolean HISTORY_RECONCILE_ENABLED = true;
 
     private Candle reconcileBar(String symbol, Candle bar) {
         if (!HISTORY_RECONCILE_ENABLED) return bar;
