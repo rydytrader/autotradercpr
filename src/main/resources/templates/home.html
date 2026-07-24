@@ -140,13 +140,6 @@
     <div class="section-card fade-in" style="margin-bottom:16px;">
         <div style="padding:14px 22px; display:flex; gap:24px; flex-wrap:wrap; align-items:center;">
             <div style="display:flex; align-items:center; gap:12px;">
-                <span class="ah-stat-label" style="font-weight:700;">Strategy</span>
-                <div class="pill-row" id="strategyPills">
-                    <button class="scope-pill active" data-strategy="all"             title="All closed strategy cycles.">All</button>
-                    <button class="scope-pill"        data-strategy="strangle-adjust" title="NIFTY strangle with recovery adjustments.">Strangle + Adj</button>
-                </div>
-            </div>
-            <div style="display:flex; align-items:center; gap:12px;">
                 <span class="ah-stat-label" style="font-weight:700;">Period</span>
                 <div class="pill-row" id="periodPills">
                     <button class="scope-pill active" data-period="today"  title="Just today's session(s).">Today</button>
@@ -438,12 +431,11 @@
 
     // ── Selectors ────────────────────────────────────────────────────────────
     var currentPeriod   = 'today';
-    // Manual trading was retired; all rows are algo. Kept as a constant so
-    // the /api/analytics/* URL parameter format stays stable.
-    var currentStrategy = (function() {
-        try { var v = localStorage.getItem('ah.strategyId'); return v || 'all'; }
-        catch (e) { return 'all'; }
-    })();
+    // Single-strategy build — no strategy picker on the page. "all" hits the
+    // multi-strategy branch which sums initialCapital across every registered
+    // strategy and works fine when there's only one. Kept as a constant so the
+    // /api/analytics/* URL parameter format stays stable.
+    var currentStrategy = 'all';
     var currentIncludeAdjustments = false;   // Options Terminal removed — always off
     var lastEquityRenderMs = 0;
     var EQUITY_REFRESH_MS = 900000; // 15 minutes — the curve doesn't change tick-to-tick
@@ -467,21 +459,8 @@
         clearPicker(false);
         loadSummary(true);
     });
-    // Strategy picker — All / Strangle / Strangle + Adj. Selection persists in localStorage
-    // so returning to Home keeps the operator's chosen scope.
-    (function() {
-        var strip = document.getElementById('strategyPills');
-        if (!strip) return;
-        // Highlight the persisted selection on load.
-        strip.querySelectorAll('.scope-pill').forEach(function(b) {
-            b.classList.toggle('active', b.getAttribute('data-strategy') === currentStrategy);
-        });
-    })();
-    bindPills('strategyPills', function(btn) {
-        currentStrategy = btn.getAttribute('data-strategy') || 'all';
-        try { localStorage.setItem('ah.strategyId', currentStrategy); } catch (e) {}
-        loadSummary(true);
-    });
+    // Strategy picker removed — single-strategy build. currentStrategy is
+    // hard-coded to "all" above and never changes.
 
     // ── Month/Year picker ────────────────────────────────────────────────────
     // Populate the year dropdown from current calendar year going back 5 years. Could be
