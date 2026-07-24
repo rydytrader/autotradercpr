@@ -1902,22 +1902,13 @@ public class AtmVwap implements Strategy {
         event(severity, source, message);
     }
 
+    /** Default event emitter — anchors display to the CURRENT 2-min bar's OPEN.
+     *  Every event log entry renders as "HH:MM" (bar-aligned) rather than the
+     *  wall-clock "HH:MM:SS". For an event that must be anchored to a SPECIFIC
+     *  bar boundary that isn't the current one, call {@link #eventAtDisplayTime}
+     *  directly with the desired {@code displayMs}. Pure wall-clock events are
+     *  no longer emitted from this class. */
     private void event(String severity, String source, String message) {
-        eventAtDisplayTime(severity, source, message, 0L);
-    }
-
-    /** Emit an event tagged with the CURRENT 2-min bar's OPEN time — the bar the event
-     *  fell into. Uniform rule for all candle-anchored events:
-     *  <ul>
-     *    <li>Bar-close events (ATM lock, trigger seed/promote/invalidate, AUTO ENTRY,
-     *        Exit-via-timed-squareoff): fire just AFTER a bar closes, so currentBarStartMs
-     *        returns the NEW bar's open = old bar's close (e.g. 09:17 for the ATM lock
-     *        that fires when the 09:15→09:17 bar closes).</li>
-     *    <li>Mid-bar tick events (SL_HIT): fire during a bar, currentBarStartMs returns
-     *        that bar's open (e.g. 09:27 for an SL tick at 09:27:54).</li>
-     *  </ul>
-     *  Same operator-facing display in both cases: "HH:MM" aligned to the 2-min grid. */
-    private void eventOnCurrentBar(String severity, String source, String message) {
         eventAtDisplayTime(severity, source, message, currentBarStartMs());
     }
 
