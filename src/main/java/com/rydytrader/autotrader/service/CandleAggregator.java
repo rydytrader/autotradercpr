@@ -238,13 +238,35 @@ public class CandleAggregator {
                 log.info("[CandleAggregator] discarding stale state.json — dayKey={} today={}", s.dayKey, today);
                 return;
             }
-            int candles = 0;
+            // Filter + dedupe on load so a file corrupted by a prior stale-tick
+            // reopen bug (or a prior-session bar that leaked past the dayKey guard)
+            // self-cleans on restart. Rules:
+            //   1. Drop bars whose startMillis maps to a different IST date than today.
+            //   2. Keep the FIRST occurrence per startMillis; drop later duplicates
+            //      (the spurious 1-tick reopen artifacts).
+            long todayStartUtcMs = LocalDate.now(IST).atStartOfDay(IST).toInstant().toEpochMilli();
+            long tomorrowStartUtcMs = todayStartUtcMs + 24L * 60 * 60 * 1000;
+            int candles = 0, droppedStale = 0, droppedDupe = 0;
             if (s.historyBySymbol != null) {
                 for (Map.Entry<String, List<Candle>> e : s.historyBySymbol.entrySet()) {
                     if (e.getKey() == null || e.getValue() == null || e.getValue().isEmpty()) continue;
-                    historyBySymbol.put(e.getKey(), new ConcurrentLinkedDeque<>(e.getValue()));
-                    candles += e.getValue().size();
+                    java.util.Set<Long> seenStartMs = new java.util.HashSet<>();
+                    List<Candle> kept = new ArrayList<>(e.getValue().size());
+                    for (Candle c : e.getValue()) {
+                        long sm = c.startMillis();
+                        if (sm < todayStartUtcMs || sm >= tomorrowStartUtcMs) { droppedStale++; continue; }
+                        if (!seenStartMs.add(sm)) { droppedDupe++; continue; }
+                        kept.add(c);
+                    }
+                    if (!kept.isEmpty()) {
+                        historyBySymbol.put(e.getKey(), new ConcurrentLinkedDeque<>(kept));
+                        candles += kept.size();
+                    }
                 }
+            }
+            if (droppedStale > 0 || droppedDupe > 0) {
+                log.info("[CandleAggregator] load cleanup — dropped {} stale (non-today) + {} duplicate (same startMs) bar(s)",
+                    droppedStale, droppedDupe);
             }
             // In-progress buckets are intentionally NOT restored — persisting them across
             // JVM lifetimes is what introduced the day-key drift bug (yesterday's H/L
@@ -308,7 +330,7 @@ public class CandleAggregator {
         Candle c = new Candle(
             round(b.openPx), round(b.highPx), round(b.lowPx), round(b.closePx),
             0L, b.currentBucketStartMs, round(b.vwapLast));
-        log.info("[CandleAggregator] {} 2-min bar closed (flush) — ticks={} startMs={} O={} H={} L={} C={}",
+        log.debug("[CandleAggregator] {} 2-min bar closed (flush) — ticks={} startMs={} O={} H={} L={} C={}",
             symbol, b.tickCount, b.currentBucketStartMs,
             c.open(), c.high(), c.low(), c.close());
         appendHistoryAndFire(symbol, c, false);
@@ -401,7 +423,7 @@ public class CandleAggregator {
                          + ZonedDateTime.now(IST).toLocalTime().getMinute();
         int wallBucket   = bucketStartMinute(wallMin);
         if (bucketStart < wallBucket) {
-            log.debug("[CandleAggregator] {} dropping stale tick — bucketStart={} wallBucket={} ltp={}",
+            log.info("[CandleAggregator] {} STALE TICK dropped — bucketStart={} wallBucket={} ltp={}",
                 symbol, bucketStart, wallBucket, ltp);
             return;
         }
@@ -417,7 +439,7 @@ public class CandleAggregator {
             } else if (bucketStart < b.currentBucketMinute) {
                 // Backward roll — another shape of stale tick. Same reasoning: drop
                 // rather than merge, to preserve trigger-candle invariant.
-                log.debug("[CandleAggregator] {} dropping backward-roll tick — bucketStart={} currentBucketMinute={} ltp={}",
+                log.info("[CandleAggregator] {} STALE TICK dropped (backward-roll) — bucketStart={} currentBucketMinute={} ltp={}",
                     symbol, bucketStart, b.currentBucketMinute, ltp);
                 return;
             } else if (bucketStart != b.currentBucketMinute) {
@@ -439,7 +461,7 @@ public class CandleAggregator {
         }
         dirty = true;
         if (closed != null) {
-            log.info("[CandleAggregator] {} 2-min bar closed — ticks={} startMs={} O={} H={} L={} C={}",
+            log.debug("[CandleAggregator] {} 2-min bar closed — ticks={} startMs={} O={} H={} L={} C={}",
                 symbol, closedTicks, closedStartMs,
                 closed.open(), closed.high(), closed.low(), closed.close());
             appendHistoryAndFire(symbol, closed, true);
