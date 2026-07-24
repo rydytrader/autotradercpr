@@ -762,19 +762,16 @@ public class AnalyticsService {
     }
 
     /** 2-way split by strategy ID. Bins map strategy_id → display label:
-     *  "strangle" → "Strangle", "strangle-adjust" → "Strangle + Adj".
-     *  Historic rows (e.g. "atmvwap", "camarilla") are dropped. */
+     *  "strangle-adjust" → "Strangle + Adj". Historic rows (e.g. "strangle",
+     *  "atmvwap", "camarilla") are dropped. */
     private Map<String, Map<String, Object>> splitByStrategy(List<Trade> trades) {
         Map<String, List<Trade>> bins = new LinkedHashMap<>();
-        bins.put("Strangle",       new ArrayList<>());
         bins.put("Strangle + Adj", new ArrayList<>());
         for (Trade t : trades) {
             if (!isClosedStraddle(t)) continue;
             String sid = t.strategyId() == null ? "" : t.strategyId();
-            switch (sid) {
-                case "strangle"        -> bins.get("Strangle").add(t);
-                case "strangle-adjust" -> bins.get("Strangle + Adj").add(t);
-                default                 -> { /* legacy / unknown — dropped */ }
+            if ("strangle-adjust".equals(sid)) {
+                bins.get("Strangle + Adj").add(t);
             }
         }
         return summariseBins(bins);
@@ -875,7 +872,7 @@ public class AnalyticsService {
             }
             if (openedAt == Long.MAX_VALUE) openedAt = closedAt;
             out.add(new Trade(
-                strategyId == null ? "strangle" : strategyId,
+                strategyId == null ? "strangle-adjust" : strategyId,
                 sessionDate,
                 closedAt,
                 round2(gross), round2(charges), round2(net),

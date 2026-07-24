@@ -206,7 +206,7 @@ public class BalancedAtmSelector {
     }
 
     /** Pick the strike whose LTP on the requested side is closest to {@code targetPremium}.
-     *  Used by the Strangle strategy to find "the CE strike currently priced at ~₹50" (and
+     *  Used by StrangleAdjust to find "the CE strike currently priced at ~₹50" (and
      *  the mirrored PE side). Skips strikes whose side is unquoted (0 LTP or blank symbol).
      *  Returns null when the chain is empty or nothing quotes on the requested side. */
     public StrikeAtLevel resolveStrikeByTargetPremium(String spotSymbol, String side, double targetPremium) {

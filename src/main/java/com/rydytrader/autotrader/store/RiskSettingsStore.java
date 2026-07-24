@@ -49,17 +49,6 @@ public class RiskSettingsStore {
         volatile String  strangleAdjustFridayInstrument    = "DISABLED";
         volatile double  strangleAdjustInitialCapital      = 1_000_000.0;
 
-        // ── Strangle (simple SENSEX iron condor) strategy settings ────────────
-        volatile boolean strangleEnabled       = true;
-        volatile int     strangleLotsPerLeg    = 1;
-        volatile String  strangleOrderType     = "INTRADAY";
-        volatile String  strangleEntryTime     = "09:20";
-        volatile String  strangleSquareOffTime = "15:15";
-        volatile double  strangleShortPremium  = 50.0;
-        volatile double  strangleHedgePremium  = 5.0;
-        volatile double  strangleSlMultiplier  = 2.0;
-        volatile double  strangleInitialCapital = 1_000_000.0;
-
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
         // Charges rates (regulatory — rarely change)
@@ -416,16 +405,6 @@ public class RiskSettingsStore {
     public String  getStrangleAdjustThursdayInstrument()   { return cfg().strangleAdjustThursdayInstrument; }
     public String  getStrangleAdjustFridayInstrument()     { return cfg().strangleAdjustFridayInstrument; }
     public double  getStrangleAdjustInitialCapital()       { return cfg().strangleAdjustInitialCapital; }
-    // ── Strangle (simple) ────────────────────────────────────────────────
-    public boolean isStrangleEnabled()             { return cfg().strangleEnabled; }
-    public int     getStrangleLotsPerLeg()         { return cfg().strangleLotsPerLeg; }
-    public String  getStrangleOrderType()          { return cfg().strangleOrderType; }
-    public String  getStrangleEntryTime()          { return cfg().strangleEntryTime; }
-    public String  getStrangleSquareOffTime()      { return cfg().strangleSquareOffTime; }
-    public double  getStrangleShortPremium()       { return cfg().strangleShortPremium; }
-    public double  getStrangleHedgePremium()       { return cfg().strangleHedgePremium; }
-    public double  getStrangleSlMultiplier()       { return cfg().strangleSlMultiplier; }
-    public double  getStrangleInitialCapital()     { return cfg().strangleInitialCapital; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getSttRate()         { return cfg().sttRate; }
@@ -624,17 +603,6 @@ public class RiskSettingsStore {
             default -> "DISABLED";
         };
     }
-    // ── Strangle (simple) setters ────────────────────────────────────────
-    public void setStrangleEnabled(boolean v)          { cfg().strangleEnabled = v; }
-    public void setStrangleLotsPerLeg(int v)           { cfg().strangleLotsPerLeg = Math.max(1, v); }
-    public void setStrangleOrderType(String v)         { cfg().strangleOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
-    public void setStrangleEntryTime(String v)         { cfg().strangleEntryTime = (v == null || v.isBlank()) ? "09:20" : v.trim(); }
-    public void setStrangleSquareOffTime(String v)     { cfg().strangleSquareOffTime = (v == null || v.isBlank()) ? "15:15" : v.trim(); }
-    public void setStrangleShortPremium(double v)      { cfg().strangleShortPremium = Math.max(0, v); }
-    public void setStrangleHedgePremium(double v)      { cfg().strangleHedgePremium = Math.max(0, v); }
-    public void setStrangleSlMultiplier(double v)      { cfg().strangleSlMultiplier = Math.max(1.0, v); }
-    public void setStrangleInitialCapital(double v)    { cfg().strangleInitialCapital = Math.max(0, v); }
-
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setSttRate(double v)         { cfg().sttRate = v; }
@@ -746,15 +714,6 @@ public class RiskSettingsStore {
     public String  getStrangleAdjustThursdayInstrument(String mode)   { return cfgFor(mode).strangleAdjustThursdayInstrument; }
     public String  getStrangleAdjustFridayInstrument(String mode)     { return cfgFor(mode).strangleAdjustFridayInstrument; }
     public double  getStrangleAdjustInitialCapital(String mode)       { return cfgFor(mode).strangleAdjustInitialCapital; }
-    public boolean isStrangleEnabled(String mode)             { return cfgFor(mode).strangleEnabled; }
-    public int     getStrangleLotsPerLeg(String mode)         { return cfgFor(mode).strangleLotsPerLeg; }
-    public String  getStrangleOrderType(String mode)          { return cfgFor(mode).strangleOrderType; }
-    public String  getStrangleEntryTime(String mode)          { return cfgFor(mode).strangleEntryTime; }
-    public String  getStrangleSquareOffTime(String mode)      { return cfgFor(mode).strangleSquareOffTime; }
-    public double  getStrangleShortPremium(String mode)       { return cfgFor(mode).strangleShortPremium; }
-    public double  getStrangleHedgePremium(String mode)       { return cfgFor(mode).strangleHedgePremium; }
-    public double  getStrangleSlMultiplier(String mode)       { return cfgFor(mode).strangleSlMultiplier; }
-    public double  getStrangleInitialCapital(String mode)     { return cfgFor(mode).strangleInitialCapital; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
     public double getSttRate(String mode)         { return cfgFor(mode).sttRate; }
@@ -791,15 +750,6 @@ public class RiskSettingsStore {
     public void setStrangleAdjustThursdayInstrument(String mode, String v)    { cfgFor(mode).strangleAdjustThursdayInstrument = normalizeStrangleAdjustInstrument(v); }
     public void setStrangleAdjustFridayInstrument(String mode, String v)      { cfgFor(mode).strangleAdjustFridayInstrument = normalizeStrangleAdjustInstrument(v); }
     public void setStrangleAdjustInitialCapital(String mode, double v)        { cfgFor(mode).strangleAdjustInitialCapital = Math.max(0, v); }
-    public void setStrangleEnabled(String mode, boolean v)          { cfgFor(mode).strangleEnabled = v; }
-    public void setStrangleLotsPerLeg(String mode, int v)           { cfgFor(mode).strangleLotsPerLeg = Math.max(1, v); }
-    public void setStrangleOrderType(String mode, String v)         { cfgFor(mode).strangleOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
-    public void setStrangleEntryTime(String mode, String v)         { cfgFor(mode).strangleEntryTime = (v == null || v.isBlank()) ? "09:20" : v.trim(); }
-    public void setStrangleSquareOffTime(String mode, String v)     { cfgFor(mode).strangleSquareOffTime = (v == null || v.isBlank()) ? "15:15" : v.trim(); }
-    public void setStrangleShortPremium(String mode, double v)      { cfgFor(mode).strangleShortPremium = Math.max(0, v); }
-    public void setStrangleHedgePremium(String mode, double v)      { cfgFor(mode).strangleHedgePremium = Math.max(0, v); }
-    public void setStrangleSlMultiplier(String mode, double v)      { cfgFor(mode).strangleSlMultiplier = Math.max(1.0, v); }
-    public void setStrangleInitialCapital(String mode, double v)    { cfgFor(mode).strangleInitialCapital = Math.max(0, v); }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
     public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
     public void setSttRate(String mode, double v)         { cfgFor(mode).sttRate = v; }
@@ -846,15 +796,6 @@ public class RiskSettingsStore {
             upsert("strangleAdjustThursdayInstrument",  c.strangleAdjustThursdayInstrument);
             upsert("strangleAdjustFridayInstrument",    c.strangleAdjustFridayInstrument);
             upsert("strangleAdjustInitialCapital",      String.valueOf(c.strangleAdjustInitialCapital));
-            upsert("strangleEnabled",       String.valueOf(c.strangleEnabled));
-            upsert("strangleLotsPerLeg",    String.valueOf(c.strangleLotsPerLeg));
-            upsert("strangleOrderType",     c.strangleOrderType);
-            upsert("strangleEntryTime",     c.strangleEntryTime);
-            upsert("strangleSquareOffTime", c.strangleSquareOffTime);
-            upsert("strangleShortPremium",  String.valueOf(c.strangleShortPremium));
-            upsert("strangleHedgePremium",  String.valueOf(c.strangleHedgePremium));
-            upsert("strangleSlMultiplier",  String.valueOf(c.strangleSlMultiplier));
-            upsert("strangleInitialCapital", String.valueOf(c.strangleInitialCapital));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("sttRate", String.valueOf(c.sttRate));
@@ -1029,16 +970,18 @@ public class RiskSettingsStore {
                     case "strangleAdjustThursdayInstrument"  -> c.strangleAdjustThursdayInstrument  = normalizeStrangleAdjustInstrument(v);
                     case "strangleAdjustFridayInstrument"    -> c.strangleAdjustFridayInstrument    = normalizeStrangleAdjustInstrument(v);
                     case "strangleAdjustInitialCapital"      -> c.strangleAdjustInitialCapital      = Math.max(0, Double.parseDouble(v));
-                    // ── Strangle (simple) — active load cases ─────────────────────
-                    case "strangleEnabled"       -> c.strangleEnabled = Boolean.parseBoolean(v);
-                    case "strangleLotsPerLeg"    -> c.strangleLotsPerLeg = Math.max(1, Integer.parseInt(v));
-                    case "strangleOrderType"     -> c.strangleOrderType = v;
-                    case "strangleEntryTime"     -> c.strangleEntryTime = v;
-                    case "strangleSquareOffTime" -> c.strangleSquareOffTime = v;
-                    case "strangleShortPremium"  -> c.strangleShortPremium = Math.max(0, Double.parseDouble(v));
-                    case "strangleHedgePremium"  -> c.strangleHedgePremium = Math.max(0, Double.parseDouble(v));
-                    case "strangleSlMultiplier"  -> c.strangleSlMultiplier = Math.max(1.0, Double.parseDouble(v));
-                    case "strangleInitialCapital" -> c.strangleInitialCapital = Math.max(0, Double.parseDouble(v));
+                    // ── Retired Strangle (simple) keys — silently consumed on load so an
+                    //    older strategy-settings row doesn't break boot after the strategy
+                    //    was removed. Discarded — no field to set.
+                    case "strangleEnabled",
+                         "strangleLotsPerLeg",
+                         "strangleOrderType",
+                         "strangleEntryTime",
+                         "strangleSquareOffTime",
+                         "strangleShortPremium",
+                         "strangleHedgePremium",
+                         "strangleSlMultiplier",
+                         "strangleInitialCapital" -> {}
                     // ── Legacy AtmVwap-era keys — silently consumed ────────────────
                     case "atmVwapEnabled",
                          "atmVwapLotsPerLeg",

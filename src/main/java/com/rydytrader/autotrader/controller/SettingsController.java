@@ -48,16 +48,6 @@ public class SettingsController {
         result.put("strangleAdjustThursdayInstrument",   riskSettings.getStrangleAdjustThursdayInstrument(effectiveMode));
         result.put("strangleAdjustFridayInstrument",     riskSettings.getStrangleAdjustFridayInstrument(effectiveMode));
         result.put("strangleAdjustInitialCapital",       riskSettings.getStrangleAdjustInitialCapital(effectiveMode));
-        // Strangle (simple)
-        result.put("strangleEnabled",         riskSettings.isStrangleEnabled(effectiveMode));
-        result.put("strangleLotsPerLeg",      riskSettings.getStrangleLotsPerLeg(effectiveMode));
-        result.put("strangleOrderType",       riskSettings.getStrangleOrderType(effectiveMode));
-        result.put("strangleEntryTime",       riskSettings.getStrangleEntryTime(effectiveMode));
-        result.put("strangleSquareOffTime",   riskSettings.getStrangleSquareOffTime(effectiveMode));
-        result.put("strangleShortPremium",    riskSettings.getStrangleShortPremium(effectiveMode));
-        result.put("strangleHedgePremium",    riskSettings.getStrangleHedgePremium(effectiveMode));
-        result.put("strangleSlMultiplier",    riskSettings.getStrangleSlMultiplier(effectiveMode));
-        result.put("strangleInitialCapital",  riskSettings.getStrangleInitialCapital(effectiveMode));
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
         result.put("maxRiskPerDayPct",    riskSettings.getMaxRiskPerDayPct(effectiveMode));
@@ -107,16 +97,6 @@ public class SettingsController {
             if (body.containsKey("strangleAdjustThursdayInstrument"))   riskSettings.setStrangleAdjustThursdayInstrument(effectiveMode, body.get("strangleAdjustThursdayInstrument").toString());
             if (body.containsKey("strangleAdjustFridayInstrument"))     riskSettings.setStrangleAdjustFridayInstrument(effectiveMode, body.get("strangleAdjustFridayInstrument").toString());
             if (body.containsKey("strangleAdjustInitialCapital"))       riskSettings.setStrangleAdjustInitialCapital(effectiveMode, Double.parseDouble(body.get("strangleAdjustInitialCapital").toString()));
-            // Strangle (simple)
-            if (body.containsKey("strangleEnabled"))        riskSettings.setStrangleEnabled(effectiveMode, Boolean.parseBoolean(body.get("strangleEnabled").toString()));
-            if (body.containsKey("strangleLotsPerLeg"))     riskSettings.setStrangleLotsPerLeg(effectiveMode, Integer.parseInt(body.get("strangleLotsPerLeg").toString()));
-            if (body.containsKey("strangleOrderType"))      riskSettings.setStrangleOrderType(effectiveMode, body.get("strangleOrderType").toString());
-            if (body.containsKey("strangleEntryTime"))      riskSettings.setStrangleEntryTime(effectiveMode, body.get("strangleEntryTime").toString());
-            if (body.containsKey("strangleSquareOffTime"))  riskSettings.setStrangleSquareOffTime(effectiveMode, body.get("strangleSquareOffTime").toString());
-            if (body.containsKey("strangleShortPremium"))   riskSettings.setStrangleShortPremium(effectiveMode, Double.parseDouble(body.get("strangleShortPremium").toString()));
-            if (body.containsKey("strangleHedgePremium"))   riskSettings.setStrangleHedgePremium(effectiveMode, Double.parseDouble(body.get("strangleHedgePremium").toString()));
-            if (body.containsKey("strangleSlMultiplier"))   riskSettings.setStrangleSlMultiplier(effectiveMode, Double.parseDouble(body.get("strangleSlMultiplier").toString()));
-            if (body.containsKey("strangleInitialCapital")) riskSettings.setStrangleInitialCapital(effectiveMode, Double.parseDouble(body.get("strangleInitialCapital").toString()));
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
             if (body.containsKey("maxRiskPerDayPct"))  riskSettings.setMaxRiskPerDayPct(effectiveMode, Double.parseDouble(body.get("maxRiskPerDayPct").toString()));

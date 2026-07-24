@@ -206,11 +206,6 @@ public class ViewController {
         return "strategy";
     }
 
-    @GetMapping("/strangle")
-    public String strangle() {
-        return "strangle";
-    }
-
     @GetMapping("/strangle-adjust")
     public String strangleAdjust() {
         return "strangle-adjust";

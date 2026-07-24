@@ -47,25 +47,6 @@
                       '<div class="sm-field sm-full"><label>Initial Capital (₹)</label><input type="number" id="sm-strangleAdjustInitialCapital" step="1000" min="0"><div class="sm-hint">Per-strategy capital baseline for equity curve and return %. Default ₹10L.</div></div>' +
                     '</div>' +
                   '</div>' +
-                  '<div class="sm-pane" data-pane="strangle" style="display:none;">' +
-                    '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:10px;">Sizing &amp; timing</div>' +
-                    '<div class="sm-grid-2col">' +
-                      '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-strangleLotsPerLeg" step="1" min="1"><div class="sm-hint">Multiplied by SENSEX lot size (20).</div></div>' +
-                      '<div class="sm-field"><label>Order Type</label><select id="sm-strangleOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select></div>' +
-                      '<div class="sm-field"><label>Entry Time (HH:mm IST)</label><input type="time" id="sm-strangleEntryTime" step="60"><div class="sm-hint">Fires once at/after this time. Default 09:20.</div></div>' +
-                      '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-strangleSquareOffTime" step="60"><div class="sm-hint">Flatten all legs at market. Default 15:15.</div></div>' +
-                    '</div>' +
-                    '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin:18px 0 10px;">Strategy params</div>' +
-                    '<div class="sm-grid-2col">' +
-                      '<div class="sm-field"><label>Short Premium (₹)</label><input type="number" id="sm-strangleShortPremium" step="1" min="0"><div class="sm-hint">Pick SENSEX CE + PE strikes near this premium. Default 50.</div></div>' +
-                      '<div class="sm-field"><label>Hedge Premium (₹)</label><input type="number" id="sm-strangleHedgePremium" step="0.5" min="0"><div class="sm-hint">Deep-OTM hedge target premium (BUY). Default 5.</div></div>' +
-                      '<div class="sm-field sm-full"><label>SL Multiplier</label><input type="number" id="sm-strangleSlMultiplier" step="0.1" min="1"><div class="sm-hint">SL price = entryPremium × this. Default 2.0 (= 100 % of received premium). No adjustment on SL hit.</div></div>' +
-                    '</div>' +
-                    '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin:18px 0 10px;">Capital</div>' +
-                    '<div class="sm-grid-2col">' +
-                      '<div class="sm-field sm-full"><label>Initial Capital (₹)</label><input type="number" id="sm-strangleInitialCapital" step="1000" min="0"><div class="sm-hint">Per-strategy capital baseline for equity curve and return %. Default ₹10L.</div></div>' +
-                    '</div>' +
-                  '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
                     '<div class="sm-grid-2col">' +
                       '<div class="sm-field"><label>Brokerage per Order (₹)</label><input type="number" id="sm-brokeragePerOrder" step="1" min="0"><div class="sm-hint">Flat per-order brokerage.</div></div>' +
@@ -165,7 +146,6 @@
         var strip = document.getElementById('sm-tabstrip');
         if (!strip) return;
         var html = '';
-        html += '<button class="sm-tab" data-tab="strangle">STRANGLE</button>';
         html += '<button class="sm-tab" data-tab="strangle-adjust">STRANGLE-ADJ</button>';
         html += '<button class="sm-tab" data-tab="charges">CHARGES</button>';
         html += '<button class="sm-tab" data-tab="users">USERS</button>';
@@ -186,9 +166,6 @@
         if (tab === 'strangle-adjust') {
             var cp = modalEl.querySelector('[data-pane="strangle-adjust"]'); if (cp) cp.style.display = '';
             loadStrangleAdjustValues();
-        } else if (tab === 'strangle') {
-            var sp = modalEl.querySelector('[data-pane="strangle"]'); if (sp) sp.style.display = '';
-            loadStrangleValues();
         } else if (tab === 'charges') {
             var pane = modalEl.querySelector('[data-pane="charges"]'); if (pane) pane.style.display = '';
         } else if (tab === 'users') {
@@ -201,7 +178,6 @@
 
     function saveSettings() {
         if (activeTab === 'strangle-adjust') return saveStrangleAdjustTab();
-        if (activeTab === 'strangle')        return saveStrangleTab();
         if (activeTab === 'charges')         return saveChargesTab();
         if (activeTab === 'users')           { showBanner('Use the row buttons to manage users.', 'info'); return; }
         showBanner('No save action for this tab.', 'info');
@@ -247,36 +223,6 @@
             strangleAdjustThursdayInstrument:   g('sm-strangleAdjustThursdayInstrument').value,
             strangleAdjustFridayInstrument:     g('sm-strangleAdjustFridayInstrument').value,
             strangleAdjustInitialCapital:       parseFloat(g('sm-strangleAdjustInitialCapital').value) || 0
-        };
-        postSettings('/api/settings/risk', body);
-    }
-
-    function loadStrangleValues() {
-        fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
-            if (!d) return;
-            var g = id => document.getElementById(id);
-            if (g('sm-strangleLotsPerLeg'))     g('sm-strangleLotsPerLeg').value = d.strangleLotsPerLeg != null ? d.strangleLotsPerLeg : 1;
-            if (g('sm-strangleOrderType'))      g('sm-strangleOrderType').value = d.strangleOrderType || 'INTRADAY';
-            if (g('sm-strangleEntryTime'))      g('sm-strangleEntryTime').value = d.strangleEntryTime || '09:20';
-            if (g('sm-strangleSquareOffTime'))  g('sm-strangleSquareOffTime').value = d.strangleSquareOffTime || '15:15';
-            if (g('sm-strangleShortPremium'))   g('sm-strangleShortPremium').value = d.strangleShortPremium != null ? d.strangleShortPremium : 50;
-            if (g('sm-strangleHedgePremium'))   g('sm-strangleHedgePremium').value = d.strangleHedgePremium != null ? d.strangleHedgePremium : 5;
-            if (g('sm-strangleSlMultiplier'))   g('sm-strangleSlMultiplier').value = d.strangleSlMultiplier != null ? d.strangleSlMultiplier : 2.0;
-            if (g('sm-strangleInitialCapital')) g('sm-strangleInitialCapital').value = d.strangleInitialCapital != null ? d.strangleInitialCapital : 1000000;
-        }).catch(function() {});
-    }
-
-    function saveStrangleTab() {
-        var g = id => document.getElementById(id);
-        var body = {
-            strangleLotsPerLeg:     parseInt(g('sm-strangleLotsPerLeg').value, 10) || 1,
-            strangleOrderType:      g('sm-strangleOrderType').value,
-            strangleEntryTime:      (g('sm-strangleEntryTime').value || '').trim(),
-            strangleSquareOffTime:  (g('sm-strangleSquareOffTime').value || '').trim(),
-            strangleShortPremium:   parseFloat(g('sm-strangleShortPremium').value) || 0,
-            strangleHedgePremium:   parseFloat(g('sm-strangleHedgePremium').value) || 0,
-            strangleSlMultiplier:   parseFloat(g('sm-strangleSlMultiplier').value) || 2.0,
-            strangleInitialCapital: parseFloat(g('sm-strangleInitialCapital').value) || 0
         };
         postSettings('/api/settings/risk', body);
     }
@@ -346,7 +292,6 @@
             switchTab('strangle-adjust');
         } else {
             if (activeTab === 'strangle-adjust')     loadStrangleAdjustValues();
-            else if (activeTab === 'strangle')       loadStrangleValues();
             else if (activeTab === 'charges')        loadChargesValues();
             else                                     switchTab('strangle-adjust');
         }

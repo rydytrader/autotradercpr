@@ -8,13 +8,13 @@ import java.util.Map;
  * Straddle/Strangle code was stripped so {@code AnalyticsService} and the portfolio
  * kill-switch can call generic methods on the singleton strategy without coupling.
  *
- * <p>Strangle is the only implementation; the interface is here to keep that boundary clean
- * and to ease future extension.
+ * <p>{@code StrangleAdjust} is the only implementation; the interface is here to keep that
+ * boundary clean and to ease future extension.
  */
 public interface Strategy {
 
-    /** Stable identifier (e.g. {@code "strangle"}) used as the {@code strategy_id} column on
-     *  persisted trade and session rows. */
+    /** Stable identifier (e.g. {@code "strangle-adjust"}) used as the {@code strategy_id}
+     *  column on persisted trade and session rows. */
     String id();
 
     /** Human-readable name shown in the UI. */
@@ -56,7 +56,8 @@ public interface Strategy {
      *  stamp). Used by the analytics live overlay. Default 0. */
     default double liveChargesToday() { return 0; }
 
-    /** Scheduler entry point — invoked on the slow loop (~5 s) by `StrangleScheduler`. */
+    /** Scheduler entry point — invoked on the slow loop (~5 s) by the per-strategy scheduler
+     *  (e.g. {@code StrangleAdjustScheduler}). */
     default void tick() {}
 
     /** Fast-path check — invoked on the fast loop (~500 ms) for low-latency exits. */

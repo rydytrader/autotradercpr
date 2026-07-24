@@ -95,14 +95,6 @@
         <span style="font-size:1.75rem;line-height:1;">◉</span>
         <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">HOME</span>
     </a>
-    <a href="/strangle" class="nav-icon" title="Strangle" data-nav-key="strangle"
-       style="display:flex;flex-direction:column;align-items:center;justify-content:center;
-              width:78px;padding:14px 6px 10px;gap:6px;
-              border-radius:14px;text-decoration:none;color:var(--text-secondary);
-              border:1px solid transparent;background:transparent;cursor:pointer;">
-        <span style="font-size:1.75rem;line-height:1;">⬡</span>
-        <span style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;">STRANGLE</span>
-    </a>
     <a href="/strangle-adjust" class="nav-icon" title="Strangle + Adj" data-nav-key="strangle-adjust"
        style="display:flex;flex-direction:column;align-items:center;justify-content:center;
               width:78px;padding:14px 6px 10px;gap:6px;
@@ -150,8 +142,7 @@
             <div style="display:flex; align-items:center; gap:12px;">
                 <span class="ah-stat-label" style="font-weight:700;">Strategy</span>
                 <div class="pill-row" id="strategyPills">
-                    <button class="scope-pill active" data-strategy="all"             title="Combined P&L across both strategies (per-day sum).">All</button>
-                    <button class="scope-pill"        data-strategy="strangle"        title="Simple Strangle — SENSEX iron condor, no adjustments.">Strangle</button>
+                    <button class="scope-pill active" data-strategy="all"             title="All closed strategy cycles.">All</button>
                     <button class="scope-pill"        data-strategy="strangle-adjust" title="Strangle with recovery adjustments (NIFTY / SENSEX rotation).">Strangle + Adj</button>
                 </div>
             </div>
@@ -348,7 +339,7 @@
         <div class="section-card fade-in" style="margin:0;">
             <div class="section-header">
                 <div class="section-title"><div class="section-title-dot" style="background:#f472b6;"></div> By Strategy</div>
-                <span class="section-badge" style="font-size:0.58rem;margin-left:auto;">Strangle · Strangle-Adj</span>
+                <span class="section-badge" style="font-size:0.58rem;margin-left:auto;">Strangle-Adj</span>
             </div>
             <div id="ahBreakdownByStrategy" style="padding:14px 18px;"></div>
         </div>
