@@ -196,10 +196,11 @@
                 <div class="section-title"><div class="section-title-dot"></div> Overview</div>
                 <div style="margin-left:auto;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
                     <div id="heroNiftySection"
-                         title="NIFTY 50 spot — last known LTP"
+                         title="NIFTY 50 spot — LTP + change vs previous close, updated live from the ticker SSE"
                          style="display:flex; align-items:baseline; gap:8px;">
                         <span style="font-family:var(--font-mono); font-size:0.82rem; font-weight:600; color:var(--text-secondary); letter-spacing:0.06em;">NIFTY 50 -</span>
                         <span class="stat-value" id="heroNiftyLtp" style="font-size:1rem;">—</span>
+                        <span id="heroNiftyChange" style="font-family:var(--font-mono); font-size:0.72rem; font-weight:600; color:var(--text-muted);"></span>
                     </div>
                     <span style="border-left:1px solid var(--border); height:18px; display:inline-block;"></span>
                     <div class="kill-switch-wrap" id="killSwitchWrap">
@@ -478,6 +479,12 @@
     function setVixHeader(lp, ch, chp) {
         setTickerHeader('hdrVix', 'hdrVixChg', lp, ch, chp);
     }
+    /** Update the Overview hero's NIFTY 50 chip with the latest LTP + change + %.
+     *  Reuses setTickerHeader so number formatting + colouring match the rest of
+     *  the page. Called from the ticker SSE handler on every NIFTY tick. */
+    function setNiftyHero(lp, ch, chp) {
+        setTickerHeader('heroNiftyLtp', 'heroNiftyChange', lp, ch, chp);
+    }
     // Shared: writes LTP + change into the given pair of DOM elements. Blank
     // cells when LTP is 0 or when both change values are 0 (pre-market before
     // Fyers has published prev_close).
@@ -511,6 +518,8 @@
                     var shrt = t.symbol || '';
                     if (full === 'NSE:INDIAVIX-INDEX' || shrt === 'India VIX' || shrt === 'INDIA VIX') {
                         setVixHeader(t.lp, t.ch, t.chp);
+                    } else if (full === 'NSE:NIFTY50-INDEX' || shrt === 'NIFTY 50' || shrt === 'NIFTY') {
+                        setNiftyHero(t.lp, t.ch, t.chp);
                     }
                 }
             } catch (e) {}
@@ -563,8 +572,14 @@
         var positions = d.openPositions || [];
 
         // ── Overview hero — NIFTY chip + Net Day P&L + Realised / Open MTM / Risk / State ──
+        // NIFTY LTP + change are fed continuously by the ticker SSE (setNiftyHero).
+        // On initial page load before the first NIFTY tick arrives, fall back to the
+        // strategy state's spotLtp so the chip isn't blank; change info stays "—" until
+        // the first tick.
         var niftyEl = document.getElementById('heroNiftyLtp');
-        if (niftyEl) niftyEl.textContent = d.spotLtp != null && Number(d.spotLtp) > 0 ? fmtRs(d.spotLtp) : '—';
+        if (niftyEl && (niftyEl.textContent === '—' || niftyEl.textContent === '')) {
+            if (d.spotLtp != null && Number(d.spotLtp) > 0) niftyEl.textContent = fmtRs(d.spotLtp);
+        }
 
         var closed  = (d.todayClosedTrades || []).reduce(function(a, b) { return a + Number(b.netPnl || 0); }, 0);
         var openMtm = positions.reduce(function(a, p) { return a + Number(p.mtm || 0); }, 0);
