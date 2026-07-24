@@ -381,6 +381,25 @@ public class CandleAggregator {
         if (tickTime.isBefore(LocalTime.of(9, 15)) || tickTime.isAfter(LocalTime.of(15, 31))) return;
         int bucketStart = bucketStartMinute(tickTime.getHour() * 60 + tickTime.getMinute());
 
+        // Stale-bucket guard — reject ticks whose bucketStart is in the past relative to
+        // wall clock. Root cause of the "spurious duplicate 1-tick bar" bug: sample()
+        // flushes bucket X at wall 10:57:00.089 and resets. A late tick arrives at
+        // 10:57:00.772 with LTT/EFT still pointing into bucket X (Fyers keep-alive with
+        // a slightly-stale timestamp, or a WS reconnect replay). Since
+        // currentBucketMinute == -1 after reset, the first-branch code below would
+        // gladly open a fresh "bucket X" and later append a duplicate 1-tick close for
+        // the same startMs to history. Chart then shows the collapsed bar. Rule: if
+        // the tick's bucketStart is strictly behind the current wall bucket-start, drop
+        // the tick — the bar it belongs to has already been finalised.
+        int wallMin      = ZonedDateTime.now(IST).toLocalTime().getHour() * 60
+                         + ZonedDateTime.now(IST).toLocalTime().getMinute();
+        int wallBucket   = bucketStartMinute(wallMin);
+        if (bucketStart < wallBucket) {
+            log.debug("[CandleAggregator] {} dropping stale tick — bucketStart={} wallBucket={} ltp={}",
+                symbol, bucketStart, wallBucket, ltp);
+            return;
+        }
+
         Bucket b = bucketBySymbol.computeIfAbsent(symbol, k -> new Bucket());
         Candle closed = null;
         int closedTicks = 0;
@@ -389,6 +408,12 @@ public class CandleAggregator {
             if (b.currentBucketMinute < 0) {
                 b.start(bucketStart, ltp, ZonedDateTime.now(IST));
                 if (t.atp() > 0) b.vwapLast = t.atp();
+            } else if (bucketStart < b.currentBucketMinute) {
+                // Backward roll — another form of stale tick. currentBucketMinute is
+                // set to a newer bucket than this tick claims. Don't reopen the past.
+                log.debug("[CandleAggregator] {} dropping backward-roll tick — bucketStart={} currentBucketMinute={} ltp={}",
+                    symbol, bucketStart, b.currentBucketMinute, ltp);
+                return;
             } else if (bucketStart != b.currentBucketMinute) {
                 // Snapshot for async fanout OUTSIDE the sync block below.
                 closed = new Candle(
