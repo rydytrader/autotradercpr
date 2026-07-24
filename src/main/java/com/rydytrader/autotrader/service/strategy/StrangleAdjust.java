@@ -66,9 +66,11 @@ public class StrangleAdjust implements Strategy {
     private static final int    RECENT_EVENTS_LIMIT = 60;
 
     /** Per-instrument contract specs. Change rarely at the exchange level — hardcoded.
-     *  NIFTY-only after the strategy was locked to a single instrument. */
+     *  Weekday routing (which days each runs on) + target premium + SL multiplier are
+     *  operator-configurable per index in Settings → NIFTY / SENSEX tabs. */
     public enum InstrumentSpec {
-        NIFTY ("NSE:NIFTY50-INDEX", 65L,  50L);
+        NIFTY ("NSE:NIFTY50-INDEX", 65L, 50L),
+        SENSEX("BSE:SENSEX-INDEX",  20L, 100L);
 
         public final String spotSymbol;
         public final long   lotSize;
@@ -333,10 +335,46 @@ public class StrangleAdjust implements Strategy {
         }
     }
 
-    // ── Instrument ──────────────────────────────────────────────────────────
+    // ── Instrument routing ──────────────────────────────────────────────────
     //
-    // Hard-coded NIFTY, every trading day. Weekday routing + SENSEX/DISABLED
-    // options were removed once the strategy was locked to NIFTY-only.
+    // Per-index weekday checkboxes (Settings → NIFTY / SENSEX tabs). Rule:
+    //   1. If today's day is checked on the NIFTY tab, run NIFTY.
+    //   2. Else if today's day is checked on the SENSEX tab, run SENSEX.
+    //   3. Else no entry (both tabs off for today).
+    // NIFTY wins ties when both indices are enabled for the same day.
+    private InstrumentSpec todaysInstrument() {
+        java.time.DayOfWeek dow = ZonedDateTime.now(IST).getDayOfWeek();
+        boolean nifty  = switch (dow) {
+            case MONDAY    -> riskSettings.isStrangleAdjustNiftyMonday();
+            case TUESDAY   -> riskSettings.isStrangleAdjustNiftyTuesday();
+            case WEDNESDAY -> riskSettings.isStrangleAdjustNiftyWednesday();
+            case THURSDAY  -> riskSettings.isStrangleAdjustNiftyThursday();
+            case FRIDAY    -> riskSettings.isStrangleAdjustNiftyFriday();
+            default        -> false;
+        };
+        if (nifty) return InstrumentSpec.NIFTY;
+        boolean sensex = switch (dow) {
+            case MONDAY    -> riskSettings.isStrangleAdjustSensexMonday();
+            case TUESDAY   -> riskSettings.isStrangleAdjustSensexTuesday();
+            case WEDNESDAY -> riskSettings.isStrangleAdjustSensexWednesday();
+            case THURSDAY  -> riskSettings.isStrangleAdjustSensexThursday();
+            case FRIDAY    -> riskSettings.isStrangleAdjustSensexFriday();
+            default        -> false;
+        };
+        return sensex ? InstrumentSpec.SENSEX : null;
+    }
+
+    private double targetPremiumFor(InstrumentSpec spec) {
+        return spec == InstrumentSpec.NIFTY
+            ? riskSettings.getStrangleAdjustNiftyTargetPremium()
+            : riskSettings.getStrangleAdjustSensexTargetPremium();
+    }
+
+    private double slMultiplierFor(InstrumentSpec spec) {
+        return Math.max(1.0, spec == InstrumentSpec.NIFTY
+            ? riskSettings.getStrangleAdjustNiftySlMultiplier()
+            : riskSettings.getStrangleAdjustSensexSlMultiplier());
+    }
 
     // ── Entry ───────────────────────────────────────────────────────────────
 
@@ -354,8 +392,15 @@ public class StrangleAdjust implements Strategy {
         catch (Exception e) { entryAt = LocalTime.of(9, 20); }
         if (now.isBefore(entryAt)) return;
 
-        InstrumentSpec spec = InstrumentSpec.NIFTY;
-        double targetPremium = riskSettings.getStrangleAdjustNiftyTargetPremium();
+        InstrumentSpec spec = todaysInstrument();
+        if (spec == null) {
+            event("[INFO]", "StrangleAdjust",
+                "today (" + ZonedDateTime.now(IST).getDayOfWeek() + ") — neither NIFTY nor SENSEX enabled, no entry");
+            state.entered = true;    // idempotent — don't retry the day
+            saveToDisk();
+            return;
+        }
+        double targetPremium = targetPremiumFor(spec);
         BalancedAtmSelector.StrikeAtLevel ceRow =
             atmSelector.resolveStrikeByTargetPremium(spec.spotSymbol, "CE", targetPremium);
         BalancedAtmSelector.StrikeAtLevel peRow =
@@ -370,7 +415,7 @@ public class StrangleAdjust implements Strategy {
 
         int qty = riskSettings.getStrangleAdjustLotsPerLeg() * (int) spec.lotSize;
         String productType = riskSettings.getStrangleAdjustOrderType();
-        double slMult = Math.max(1.0, riskSettings.getStrangleAdjustSlMultiplier());
+        double slMult = slMultiplierFor(spec);
 
         String ceSym = ceRow.ceSymbol();
         String peSym = peRow.peSymbol();
@@ -466,7 +511,7 @@ public class StrangleAdjust implements Strategy {
             event("[ERROR]", "STRANGLE ADJUST", "no instrument recorded for adjustment");
             return;
         }
-        double targetPremium = riskSettings.getStrangleAdjustNiftyTargetPremium();
+        double targetPremium = targetPremiumFor(spec);
 
         BalancedAtmSelector.StrikeAtLevel sellRow =
             atmSelector.resolveStrikeByTargetPremium(spec.spotSymbol, adjustSide, targetPremium);
@@ -547,8 +592,8 @@ public class StrangleAdjust implements Strategy {
             }
         }
 
-        // New opposite-side sell.
-        double slMult = Math.max(1.0, riskSettings.getStrangleAdjustSlMultiplier());
+        // New opposite-side sell — SL sized per active-instrument multiplier.
+        double slMult = slMultiplierFor(spec);
         Position sellPos = firePosition(spec, adjustSide, sellStrike, sellSym, baseQty,
             ActiveSetup.STRANGLE, "ADJUST_" + adjustSide, productType, slMult, sellRef);
 
@@ -585,8 +630,13 @@ public class StrangleAdjust implements Strategy {
                 double oldEntry = p.entryPrice;
                 p.entryPrice = round2(fillPrice);
                 if (p.isShort && p.slLevel > 0 && p.originalSlLevel > 0) {
-                    // Rescale SL to the actual fill price, preserving the SL multiplier.
-                    double mult = Math.max(1.0, riskSettings.getStrangleAdjustSlMultiplier());
+                    // Rescale SL to the actual fill price, preserving the per-instrument
+                    // SL multiplier. Fallback to NIFTY multiplier if the leg's instrument
+                    // tag is missing (defensive — every persisted position has one).
+                    InstrumentSpec ps;
+                    try { ps = InstrumentSpec.valueOf(p.instrument); }
+                    catch (Exception e) { ps = InstrumentSpec.NIFTY; }
+                    double mult = slMultiplierFor(ps);
                     p.slLevel = p.entryPrice * mult;
                     p.originalSlLevel = p.slLevel;
                 }
@@ -899,7 +949,16 @@ public class StrangleAdjust implements Strategy {
         str.put("originalPeStrike", state.originalPeStrike);
         str.put("ceAdjusted",       state.ceAdjusted);
         str.put("peAdjusted",       state.peAdjusted);
-        str.put("slMultiplier",     riskSettings.getStrangleAdjustSlMultiplier());
+        // SL multiplier for the ACTIVE instrument (if any), so the trade page's
+        // display / badge doesn't need to know about NIFTY vs SENSEX plumbing.
+        double activeSlMult = riskSettings.getStrangleAdjustNiftySlMultiplier();   // sane default
+        try {
+            InstrumentSpec activeSpec = state.todaysInstrument != null && !state.todaysInstrument.isBlank()
+                ? InstrumentSpec.valueOf(state.todaysInstrument)
+                : todaysInstrument();
+            if (activeSpec != null) activeSlMult = slMultiplierFor(activeSpec);
+        } catch (Exception ignored) {}
+        str.put("slMultiplier",     activeSlMult);
         m.put("strangleAdjust", str);
 
         // Open positions

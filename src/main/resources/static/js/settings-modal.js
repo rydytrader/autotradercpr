@@ -1,7 +1,7 @@
 /**
  * Settings modal — opened from the gear icon in the navbar.
  *
- * Tabs: STRANGLE-ADJ · HEDGE · CHARGES · USERS · MAINTENANCE.
+ * Tabs: STRANGLE-ADJ · NIFTY · SENSEX · HEDGE · CHARGES · USERS · MAINTENANCE.
  */
 (function() {
     var modalEl = null;
@@ -26,14 +26,44 @@
                       '<div class="sm-field"><label>Entry Time (HH:mm IST)</label><input type="time" id="sm-strangleAdjustEntryTime" step="60"><div class="sm-hint">Strangle fires once at/after this time. Default 09:20.</div></div>' +
                       '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-strangleAdjustSquareOffTime" step="60"><div class="sm-hint">Flatten all legs at market. Default 15:15.</div></div>' +
                     '</div>' +
-                    '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin:18px 0 10px;">Strategy params</div>' +
-                    '<div class="sm-grid-2col">' +
-                      '<div class="sm-field"><label>Target Premium (₹)</label><input type="number" id="sm-strangleAdjustNiftyTargetPremium" step="1" min="0"><div class="sm-hint">Pick NIFTY CE + PE strikes near this premium. Default 50.</div></div>' +
-                      '<div class="sm-field"><label>SL Multiplier</label><input type="number" id="sm-strangleAdjustSlMultiplier" step="0.1" min="1"><div class="sm-hint">SL price = entryPremium × this. Default 2.0 (= 100 % of received premium).</div></div>' +
-                    '</div>' +
                     '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin:18px 0 10px;">Capital</div>' +
                     '<div class="sm-grid-2col">' +
                       '<div class="sm-field sm-full"><label>Initial Capital (₹)</label><input type="number" id="sm-strangleAdjustInitialCapital" step="1000" min="0"><div class="sm-hint">Per-strategy capital baseline for equity curve and return %. Default ₹10L.</div></div>' +
+                    '</div>' +
+                    '<div class="sm-hint" style="margin-top:14px;">Target Premium + SL Multiplier are configured per index — see <b>NIFTY</b> / <b>SENSEX</b> tabs.</div>' +
+                  '</div>' +
+                  // ── NIFTY tab ────────────────────────────────────────────────
+                  '<div class="sm-pane" data-pane="nifty" style="display:none;">' +
+                    '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:10px;">Weekdays</div>' +
+                    '<div class="sm-hint" style="margin:0 0 12px;">Days the strategy will run NIFTY. NIFTY wins ties if a day is also enabled on the SENSEX tab.</div>' +
+                    '<div class="sm-grid-2col">' +
+                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustNiftyMonday"    style="width:auto;"><span>Monday</span></label></div>' +
+                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustNiftyTuesday"   style="width:auto;"><span>Tuesday</span></label></div>' +
+                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustNiftyWednesday" style="width:auto;"><span>Wednesday</span></label></div>' +
+                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustNiftyThursday"  style="width:auto;"><span>Thursday</span></label></div>' +
+                      '<div class="sm-field sm-full"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustNiftyFriday"    style="width:auto;"><span>Friday</span></label></div>' +
+                    '</div>' +
+                    '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin:18px 0 10px;">NIFTY params</div>' +
+                    '<div class="sm-grid-2col">' +
+                      '<div class="sm-field"><label>Target Premium (₹)</label><input type="number" id="sm-strangleAdjustNiftyTargetPremium" step="1" min="0"><div class="sm-hint">Pick NIFTY CE + PE strikes near this premium. Default 50.</div></div>' +
+                      '<div class="sm-field"><label>SL Multiplier</label><input type="number" id="sm-strangleAdjustNiftySlMultiplier" step="0.1" min="1"><div class="sm-hint">SL price = entryPremium × this. Default 2.0 (= 100 % of received premium).</div></div>' +
+                    '</div>' +
+                  '</div>' +
+                  // ── SENSEX tab ────────────────────────────────────────────────
+                  '<div class="sm-pane" data-pane="sensex" style="display:none;">' +
+                    '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:10px;">Weekdays</div>' +
+                    '<div class="sm-hint" style="margin:0 0 12px;">Days the strategy will run SENSEX. Ignored on a day where NIFTY is also enabled (NIFTY takes priority).</div>' +
+                    '<div class="sm-grid-2col">' +
+                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustSensexMonday"    style="width:auto;"><span>Monday</span></label></div>' +
+                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustSensexTuesday"   style="width:auto;"><span>Tuesday</span></label></div>' +
+                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustSensexWednesday" style="width:auto;"><span>Wednesday</span></label></div>' +
+                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustSensexThursday"  style="width:auto;"><span>Thursday</span></label></div>' +
+                      '<div class="sm-field sm-full"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustSensexFriday"    style="width:auto;"><span>Friday</span></label></div>' +
+                    '</div>' +
+                    '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin:18px 0 10px;">SENSEX params</div>' +
+                    '<div class="sm-grid-2col">' +
+                      '<div class="sm-field"><label>Target Premium (₹)</label><input type="number" id="sm-strangleAdjustSensexTargetPremium" step="5" min="0"><div class="sm-hint">Pick SENSEX CE + PE strikes near this premium. Default 120.</div></div>' +
+                      '<div class="sm-field"><label>SL Multiplier</label><input type="number" id="sm-strangleAdjustSensexSlMultiplier" step="0.1" min="1"><div class="sm-hint">SL price = entryPremium × this. Default 2.0.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="hedge" style="display:none;">' +
@@ -147,6 +177,8 @@
         if (!strip) return;
         var html = '';
         html += '<button class="sm-tab" data-tab="strangle-adjust">STRANGLE-ADJ</button>';
+        html += '<button class="sm-tab" data-tab="nifty">NIFTY</button>';
+        html += '<button class="sm-tab" data-tab="sensex">SENSEX</button>';
         html += '<button class="sm-tab" data-tab="hedge">HEDGE</button>';
         html += '<button class="sm-tab" data-tab="charges">CHARGES</button>';
         html += '<button class="sm-tab" data-tab="users">USERS</button>';
@@ -167,6 +199,12 @@
         if (tab === 'strangle-adjust') {
             var cp = modalEl.querySelector('[data-pane="strangle-adjust"]'); if (cp) cp.style.display = '';
             loadStrangleAdjustValues();
+        } else if (tab === 'nifty') {
+            var np = modalEl.querySelector('[data-pane="nifty"]'); if (np) np.style.display = '';
+            loadNiftyValues();
+        } else if (tab === 'sensex') {
+            var xp = modalEl.querySelector('[data-pane="sensex"]'); if (xp) xp.style.display = '';
+            loadSensexValues();
         } else if (tab === 'hedge') {
             var hp = modalEl.querySelector('[data-pane="hedge"]'); if (hp) hp.style.display = '';
             loadHedgeValues();
@@ -182,6 +220,8 @@
 
     function saveSettings() {
         if (activeTab === 'strangle-adjust') return saveStrangleAdjustTab();
+        if (activeTab === 'nifty')           return saveNiftyTab();
+        if (activeTab === 'sensex')          return saveSensexTab();
         if (activeTab === 'hedge')           return saveHedgeTab();
         if (activeTab === 'charges')         return saveChargesTab();
         if (activeTab === 'users')           { showBanner('Use the row buttons to manage users.', 'info'); return; }
@@ -192,26 +232,78 @@
         fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
             var g = id => document.getElementById(id);
-            if (g('sm-strangleAdjustLotsPerLeg'))          g('sm-strangleAdjustLotsPerLeg').value = d.strangleAdjustLotsPerLeg != null ? d.strangleAdjustLotsPerLeg : 1;
-            if (g('sm-strangleAdjustOrderType'))           g('sm-strangleAdjustOrderType').value = d.strangleAdjustOrderType || 'INTRADAY';
-            if (g('sm-strangleAdjustEntryTime'))           g('sm-strangleAdjustEntryTime').value = d.strangleAdjustEntryTime || '09:20';
-            if (g('sm-strangleAdjustSquareOffTime'))       g('sm-strangleAdjustSquareOffTime').value = d.strangleAdjustSquareOffTime || '15:15';
-            if (g('sm-strangleAdjustNiftyTargetPremium'))  g('sm-strangleAdjustNiftyTargetPremium').value = d.strangleAdjustNiftyTargetPremium != null ? d.strangleAdjustNiftyTargetPremium : 50;
-            if (g('sm-strangleAdjustSlMultiplier'))        g('sm-strangleAdjustSlMultiplier').value = d.strangleAdjustSlMultiplier != null ? d.strangleAdjustSlMultiplier : 2.0;
-            if (g('sm-strangleAdjustInitialCapital'))      g('sm-strangleAdjustInitialCapital').value = d.strangleAdjustInitialCapital != null ? d.strangleAdjustInitialCapital : 1000000;
+            if (g('sm-strangleAdjustLotsPerLeg'))     g('sm-strangleAdjustLotsPerLeg').value = d.strangleAdjustLotsPerLeg != null ? d.strangleAdjustLotsPerLeg : 1;
+            if (g('sm-strangleAdjustOrderType'))      g('sm-strangleAdjustOrderType').value = d.strangleAdjustOrderType || 'INTRADAY';
+            if (g('sm-strangleAdjustEntryTime'))      g('sm-strangleAdjustEntryTime').value = d.strangleAdjustEntryTime || '09:20';
+            if (g('sm-strangleAdjustSquareOffTime'))  g('sm-strangleAdjustSquareOffTime').value = d.strangleAdjustSquareOffTime || '15:15';
+            if (g('sm-strangleAdjustInitialCapital')) g('sm-strangleAdjustInitialCapital').value = d.strangleAdjustInitialCapital != null ? d.strangleAdjustInitialCapital : 1000000;
         }).catch(function() {});
     }
 
     function saveStrangleAdjustTab() {
         var g = id => document.getElementById(id);
         var body = {
-            strangleAdjustLotsPerLeg:           parseInt(g('sm-strangleAdjustLotsPerLeg').value, 10) || 1,
-            strangleAdjustOrderType:            g('sm-strangleAdjustOrderType').value,
-            strangleAdjustEntryTime:            (g('sm-strangleAdjustEntryTime').value || '').trim(),
-            strangleAdjustSquareOffTime:        (g('sm-strangleAdjustSquareOffTime').value || '').trim(),
-            strangleAdjustNiftyTargetPremium:   parseFloat(g('sm-strangleAdjustNiftyTargetPremium').value) || 0,
-            strangleAdjustSlMultiplier:         parseFloat(g('sm-strangleAdjustSlMultiplier').value) || 2.0,
-            strangleAdjustInitialCapital:       parseFloat(g('sm-strangleAdjustInitialCapital').value) || 0
+            strangleAdjustLotsPerLeg:     parseInt(g('sm-strangleAdjustLotsPerLeg').value, 10) || 1,
+            strangleAdjustOrderType:      g('sm-strangleAdjustOrderType').value,
+            strangleAdjustEntryTime:      (g('sm-strangleAdjustEntryTime').value || '').trim(),
+            strangleAdjustSquareOffTime:  (g('sm-strangleAdjustSquareOffTime').value || '').trim(),
+            strangleAdjustInitialCapital: parseFloat(g('sm-strangleAdjustInitialCapital').value) || 0
+        };
+        postSettings('/api/settings/risk', body);
+    }
+
+    function loadNiftyValues() {
+        fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
+            if (!d) return;
+            var g = id => document.getElementById(id);
+            if (g('sm-strangleAdjustNiftyMonday'))         g('sm-strangleAdjustNiftyMonday').checked    = d.strangleAdjustNiftyMonday    !== false;
+            if (g('sm-strangleAdjustNiftyTuesday'))        g('sm-strangleAdjustNiftyTuesday').checked   = d.strangleAdjustNiftyTuesday   !== false;
+            if (g('sm-strangleAdjustNiftyWednesday'))      g('sm-strangleAdjustNiftyWednesday').checked = !!d.strangleAdjustNiftyWednesday;
+            if (g('sm-strangleAdjustNiftyThursday'))       g('sm-strangleAdjustNiftyThursday').checked  = !!d.strangleAdjustNiftyThursday;
+            if (g('sm-strangleAdjustNiftyFriday'))         g('sm-strangleAdjustNiftyFriday').checked    = !!d.strangleAdjustNiftyFriday;
+            if (g('sm-strangleAdjustNiftyTargetPremium')) g('sm-strangleAdjustNiftyTargetPremium').value = d.strangleAdjustNiftyTargetPremium != null ? d.strangleAdjustNiftyTargetPremium : 50;
+            if (g('sm-strangleAdjustNiftySlMultiplier'))  g('sm-strangleAdjustNiftySlMultiplier').value  = d.strangleAdjustNiftySlMultiplier  != null ? d.strangleAdjustNiftySlMultiplier  : 2.0;
+        }).catch(function() {});
+    }
+
+    function saveNiftyTab() {
+        var g = id => document.getElementById(id);
+        var body = {
+            strangleAdjustNiftyMonday:        !!g('sm-strangleAdjustNiftyMonday').checked,
+            strangleAdjustNiftyTuesday:       !!g('sm-strangleAdjustNiftyTuesday').checked,
+            strangleAdjustNiftyWednesday:     !!g('sm-strangleAdjustNiftyWednesday').checked,
+            strangleAdjustNiftyThursday:      !!g('sm-strangleAdjustNiftyThursday').checked,
+            strangleAdjustNiftyFriday:        !!g('sm-strangleAdjustNiftyFriday').checked,
+            strangleAdjustNiftyTargetPremium: parseFloat(g('sm-strangleAdjustNiftyTargetPremium').value) || 0,
+            strangleAdjustNiftySlMultiplier:  parseFloat(g('sm-strangleAdjustNiftySlMultiplier').value)  || 2.0
+        };
+        postSettings('/api/settings/risk', body);
+    }
+
+    function loadSensexValues() {
+        fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
+            if (!d) return;
+            var g = id => document.getElementById(id);
+            if (g('sm-strangleAdjustSensexMonday'))         g('sm-strangleAdjustSensexMonday').checked    = !!d.strangleAdjustSensexMonday;
+            if (g('sm-strangleAdjustSensexTuesday'))        g('sm-strangleAdjustSensexTuesday').checked   = !!d.strangleAdjustSensexTuesday;
+            if (g('sm-strangleAdjustSensexWednesday'))      g('sm-strangleAdjustSensexWednesday').checked = d.strangleAdjustSensexWednesday !== false;
+            if (g('sm-strangleAdjustSensexThursday'))       g('sm-strangleAdjustSensexThursday').checked  = d.strangleAdjustSensexThursday  !== false;
+            if (g('sm-strangleAdjustSensexFriday'))         g('sm-strangleAdjustSensexFriday').checked    = !!d.strangleAdjustSensexFriday;
+            if (g('sm-strangleAdjustSensexTargetPremium')) g('sm-strangleAdjustSensexTargetPremium').value = d.strangleAdjustSensexTargetPremium != null ? d.strangleAdjustSensexTargetPremium : 120;
+            if (g('sm-strangleAdjustSensexSlMultiplier'))  g('sm-strangleAdjustSensexSlMultiplier').value  = d.strangleAdjustSensexSlMultiplier  != null ? d.strangleAdjustSensexSlMultiplier  : 2.0;
+        }).catch(function() {});
+    }
+
+    function saveSensexTab() {
+        var g = id => document.getElementById(id);
+        var body = {
+            strangleAdjustSensexMonday:        !!g('sm-strangleAdjustSensexMonday').checked,
+            strangleAdjustSensexTuesday:       !!g('sm-strangleAdjustSensexTuesday').checked,
+            strangleAdjustSensexWednesday:     !!g('sm-strangleAdjustSensexWednesday').checked,
+            strangleAdjustSensexThursday:      !!g('sm-strangleAdjustSensexThursday').checked,
+            strangleAdjustSensexFriday:        !!g('sm-strangleAdjustSensexFriday').checked,
+            strangleAdjustSensexTargetPremium: parseFloat(g('sm-strangleAdjustSensexTargetPremium').value) || 0,
+            strangleAdjustSensexSlMultiplier:  parseFloat(g('sm-strangleAdjustSensexSlMultiplier').value)  || 2.0
         };
         postSettings('/api/settings/risk', body);
     }
@@ -301,6 +393,8 @@
             switchTab('strangle-adjust');
         } else {
             if (activeTab === 'strangle-adjust')     loadStrangleAdjustValues();
+            else if (activeTab === 'nifty')          loadNiftyValues();
+            else if (activeTab === 'sensex')         loadSensexValues();
             else if (activeTab === 'hedge')          loadHedgeValues();
             else if (activeTab === 'charges')        loadChargesValues();
             else                                     switchTab('strangle-adjust');

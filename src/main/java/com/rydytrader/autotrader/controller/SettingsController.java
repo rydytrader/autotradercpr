@@ -37,8 +37,22 @@ public class SettingsController {
         result.put("strangleAdjustOrderType",            riskSettings.getStrangleAdjustOrderType(effectiveMode));
         result.put("strangleAdjustEntryTime",            riskSettings.getStrangleAdjustEntryTime(effectiveMode));
         result.put("strangleAdjustSquareOffTime",        riskSettings.getStrangleAdjustSquareOffTime(effectiveMode));
+        // NIFTY tab
+        result.put("strangleAdjustNiftyMonday",          riskSettings.isStrangleAdjustNiftyMonday(effectiveMode));
+        result.put("strangleAdjustNiftyTuesday",         riskSettings.isStrangleAdjustNiftyTuesday(effectiveMode));
+        result.put("strangleAdjustNiftyWednesday",       riskSettings.isStrangleAdjustNiftyWednesday(effectiveMode));
+        result.put("strangleAdjustNiftyThursday",        riskSettings.isStrangleAdjustNiftyThursday(effectiveMode));
+        result.put("strangleAdjustNiftyFriday",          riskSettings.isStrangleAdjustNiftyFriday(effectiveMode));
         result.put("strangleAdjustNiftyTargetPremium",   riskSettings.getStrangleAdjustNiftyTargetPremium(effectiveMode));
-        result.put("strangleAdjustSlMultiplier",         riskSettings.getStrangleAdjustSlMultiplier(effectiveMode));
+        result.put("strangleAdjustNiftySlMultiplier",    riskSettings.getStrangleAdjustNiftySlMultiplier(effectiveMode));
+        // SENSEX tab
+        result.put("strangleAdjustSensexMonday",         riskSettings.isStrangleAdjustSensexMonday(effectiveMode));
+        result.put("strangleAdjustSensexTuesday",        riskSettings.isStrangleAdjustSensexTuesday(effectiveMode));
+        result.put("strangleAdjustSensexWednesday",      riskSettings.isStrangleAdjustSensexWednesday(effectiveMode));
+        result.put("strangleAdjustSensexThursday",       riskSettings.isStrangleAdjustSensexThursday(effectiveMode));
+        result.put("strangleAdjustSensexFriday",         riskSettings.isStrangleAdjustSensexFriday(effectiveMode));
+        result.put("strangleAdjustSensexTargetPremium",  riskSettings.getStrangleAdjustSensexTargetPremium(effectiveMode));
+        result.put("strangleAdjustSensexSlMultiplier",   riskSettings.getStrangleAdjustSensexSlMultiplier(effectiveMode));
         result.put("strangleAdjustHedgeEnabled",         riskSettings.isStrangleAdjustHedgeEnabled(effectiveMode));
         result.put("strangleAdjustHedgeStrikesAway",     riskSettings.getStrangleAdjustHedgeStrikesAway(effectiveMode));
         result.put("strangleAdjustHedgeQtyMultiplier",   riskSettings.getStrangleAdjustHedgeQtyMultiplier(effectiveMode));
@@ -81,8 +95,22 @@ public class SettingsController {
             if (body.containsKey("strangleAdjustOrderType"))            riskSettings.setStrangleAdjustOrderType(effectiveMode, body.get("strangleAdjustOrderType").toString());
             if (body.containsKey("strangleAdjustEntryTime"))            riskSettings.setStrangleAdjustEntryTime(effectiveMode, body.get("strangleAdjustEntryTime").toString());
             if (body.containsKey("strangleAdjustSquareOffTime"))        riskSettings.setStrangleAdjustSquareOffTime(effectiveMode, body.get("strangleAdjustSquareOffTime").toString());
+            // NIFTY tab
+            if (body.containsKey("strangleAdjustNiftyMonday"))          riskSettings.setStrangleAdjustNiftyMonday(effectiveMode, Boolean.parseBoolean(body.get("strangleAdjustNiftyMonday").toString()));
+            if (body.containsKey("strangleAdjustNiftyTuesday"))         riskSettings.setStrangleAdjustNiftyTuesday(effectiveMode, Boolean.parseBoolean(body.get("strangleAdjustNiftyTuesday").toString()));
+            if (body.containsKey("strangleAdjustNiftyWednesday"))       riskSettings.setStrangleAdjustNiftyWednesday(effectiveMode, Boolean.parseBoolean(body.get("strangleAdjustNiftyWednesday").toString()));
+            if (body.containsKey("strangleAdjustNiftyThursday"))        riskSettings.setStrangleAdjustNiftyThursday(effectiveMode, Boolean.parseBoolean(body.get("strangleAdjustNiftyThursday").toString()));
+            if (body.containsKey("strangleAdjustNiftyFriday"))          riskSettings.setStrangleAdjustNiftyFriday(effectiveMode, Boolean.parseBoolean(body.get("strangleAdjustNiftyFriday").toString()));
             if (body.containsKey("strangleAdjustNiftyTargetPremium"))   riskSettings.setStrangleAdjustNiftyTargetPremium(effectiveMode, Double.parseDouble(body.get("strangleAdjustNiftyTargetPremium").toString()));
-            if (body.containsKey("strangleAdjustSlMultiplier"))         riskSettings.setStrangleAdjustSlMultiplier(effectiveMode, Double.parseDouble(body.get("strangleAdjustSlMultiplier").toString()));
+            if (body.containsKey("strangleAdjustNiftySlMultiplier"))    riskSettings.setStrangleAdjustNiftySlMultiplier(effectiveMode, Double.parseDouble(body.get("strangleAdjustNiftySlMultiplier").toString()));
+            // SENSEX tab
+            if (body.containsKey("strangleAdjustSensexMonday"))         riskSettings.setStrangleAdjustSensexMonday(effectiveMode, Boolean.parseBoolean(body.get("strangleAdjustSensexMonday").toString()));
+            if (body.containsKey("strangleAdjustSensexTuesday"))        riskSettings.setStrangleAdjustSensexTuesday(effectiveMode, Boolean.parseBoolean(body.get("strangleAdjustSensexTuesday").toString()));
+            if (body.containsKey("strangleAdjustSensexWednesday"))      riskSettings.setStrangleAdjustSensexWednesday(effectiveMode, Boolean.parseBoolean(body.get("strangleAdjustSensexWednesday").toString()));
+            if (body.containsKey("strangleAdjustSensexThursday"))       riskSettings.setStrangleAdjustSensexThursday(effectiveMode, Boolean.parseBoolean(body.get("strangleAdjustSensexThursday").toString()));
+            if (body.containsKey("strangleAdjustSensexFriday"))         riskSettings.setStrangleAdjustSensexFriday(effectiveMode, Boolean.parseBoolean(body.get("strangleAdjustSensexFriday").toString()));
+            if (body.containsKey("strangleAdjustSensexTargetPremium"))  riskSettings.setStrangleAdjustSensexTargetPremium(effectiveMode, Double.parseDouble(body.get("strangleAdjustSensexTargetPremium").toString()));
+            if (body.containsKey("strangleAdjustSensexSlMultiplier"))   riskSettings.setStrangleAdjustSensexSlMultiplier(effectiveMode, Double.parseDouble(body.get("strangleAdjustSensexSlMultiplier").toString()));
             if (body.containsKey("strangleAdjustHedgeEnabled"))         riskSettings.setStrangleAdjustHedgeEnabled(effectiveMode, Boolean.parseBoolean(body.get("strangleAdjustHedgeEnabled").toString()));
             if (body.containsKey("strangleAdjustHedgeStrikesAway"))     riskSettings.setStrangleAdjustHedgeStrikesAway(effectiveMode, Integer.parseInt(body.get("strangleAdjustHedgeStrikesAway").toString()));
             if (body.containsKey("strangleAdjustHedgeQtyMultiplier"))   riskSettings.setStrangleAdjustHedgeQtyMultiplier(effectiveMode, Double.parseDouble(body.get("strangleAdjustHedgeQtyMultiplier").toString()));
