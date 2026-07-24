@@ -239,6 +239,11 @@
                         <div class="stat-label">State</div>
                         <div class="stat-value" id="heroStatePill" style="font-size:0.95rem; margin-top:4px;">—</div>
                     </div>
+                    <div style="text-align:center;"
+                         title="NON-DIRECTIONAL = original CE + PE shorts alive (theta-harvesting strangle). DIRECTIONAL = one leg has hit SL and been recovered with a new short + hedge on the opposite side; the position now leans bullish or bearish. Adjustments are one-shot per session.">
+                        <div class="stat-label">Phase</div>
+                        <div class="stat-value" id="heroPhasePill" style="font-size:0.95rem; margin-top:4px;">—</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -589,6 +594,21 @@
                             : lifecycle === 'DONE_FOR_DAY'      ? 'var(--text-muted)'
                             : lifecycle === 'IDLE'              ? 'var(--accent-green)'
                             :                                     'var(--text-secondary)';
+
+        // Phase pill — NON-DIRECTIONAL / DIRECTIONAL from ceAdjusted / peAdjusted flags.
+        //   ceAdjusted = CE side hit SL and got recovered with a new PE + hedge → 2 puts short → BULLISH tilt.
+        //   peAdjusted = PE side hit SL and got recovered with a new CE + hedge → 2 calls short → BEARISH tilt.
+        //   both false = both original shorts alive = THETA · Neutral.
+        //   Adjustments are one-shot per session, so both-true is unreachable.
+        var phaseEl = document.getElementById('heroPhasePill');
+        var sa = d.strangleAdjust || {};
+        var ceAdj = !!sa.ceAdjusted, peAdj = !!sa.peAdjusted;
+        var phaseText, phaseColor;
+        if (ceAdj && !peAdj)      { phaseText = 'DIRECTIONAL · Bullish'; phaseColor = 'var(--accent-green, #34d399)'; }
+        else if (peAdj && !ceAdj) { phaseText = 'DIRECTIONAL · Bearish'; phaseColor = 'var(--accent-red, #f87171)'; }
+        else                       { phaseText = 'THETA · Neutral';       phaseColor = 'var(--accent-cyan)'; }
+        phaseEl.textContent = phaseText;
+        phaseEl.style.color = phaseColor;
 
         // Disable squareoff when nothing open
         document.getElementById('squareOffBtn').disabled = positions.length === 0;

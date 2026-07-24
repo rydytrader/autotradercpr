@@ -447,14 +447,18 @@ public class StrangleAdjust implements Strategy {
         String role = pos.role == null ? "" : pos.role;
         closePosition(pos, "SL_HIT");
 
-        // Adjustment fires only on the two initial legs, once per side.
+        // Adjustment fires only on the two initial legs, and at most ONCE PER SESSION
+        // (not once per side). After the first recovery adjustment fires — regardless
+        // of which side triggered it — the other original leg's SL still closes it via
+        // the tick-based SL monitor, but no second adjustment is placed. Position rides
+        // to timed squareoff. This keeps the maximum leg count bounded and prevents the
+        // strategy from spiralling into a double iron-condor structure.
         boolean isEntry = "ENTRY_CE".equals(role) || "ENTRY_PE".equals(role);
         if (!isEntry) return;
+        if (state.ceAdjusted || state.peAdjusted) return;
 
         String slHitSide = "ENTRY_CE".equals(role) ? "CE" : "PE";
         String adjustSide = "CE".equals(slHitSide) ? "PE" : "CE";
-        if ("CE".equals(adjustSide) && state.ceAdjusted) return;
-        if ("PE".equals(adjustSide) && state.peAdjusted) return;
 
         InstrumentSpec spec;
         try { spec = InstrumentSpec.valueOf(state.todaysInstrument); }
