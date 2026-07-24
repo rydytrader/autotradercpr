@@ -192,22 +192,37 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-purple, #a78bfa);"></span> Strangle + Adjustments · Overview</h2>
         <p class="doc-p">
-            An intraday <strong>weekly NIFTY options-selling strangle</strong>. Every session
-            sells one CE + one PE strike whose LTP is closest to the target premium (default
-            ₹50). Per-leg SL is 100 % of the received premium. Instrument and schedule are
-            hard-coded: NIFTY, every trading day.
+            An intraday <strong>weekly NIFTY options-selling strangle</strong> that starts
+            <strong>DELTA-neutral</strong> and — if one side breaks — pivots into a
+            <strong>DIRECTIONAL</strong> bet on the OPPOSITE side. Two phases, one adjustment
+            per session, timed squareoff.
         </p>
+        <ul class="doc-list">
+            <li><strong>Phase 1 — DELTA · Neutral (theta harvesting)</strong>: sell one CE +
+                one PE at the strikes whose LTP is closest to the target premium (default
+                ₹50). The two shorts have near-equal-and-opposite deltas, so net exposure
+                starts flat and the position bleeds theta while price stays inside the
+                strikes.</li>
+            <li><strong>Phase 2 — DIRECTIONAL</strong>: triggered when one leg hits its
+                100 %-of-premium SL.
+                <ul>
+                    <li><strong>CE SL → DIRECTIONAL Bullish</strong>: close the CE. On the
+                        PE side, BUY a deep-OTM PE hedge, then SELL a new PE (~₹50 premium).
+                        Position is now <strong>2 puts short</strong> + 1 PE hedge — a
+                        bullish tilt (price staying UP makes both puts expire worthless).</li>
+                    <li><strong>PE SL → DIRECTIONAL Bearish</strong>: symmetric — close the
+                        PE, BUY a deep-OTM CE hedge, SELL a new CE (~₹50). Position is
+                        <strong>2 calls short</strong> + 1 CE hedge — bearish tilt.</li>
+                </ul>
+            </li>
+        </ul>
         <p class="doc-p">
-            If one leg hits SL, the strategy runs a <strong>recovery adjustment</strong>:
-            close the SL-hit leg, then on the OPPOSITE side (a) BUY a deep-OTM hedge and
-            (b) SELL a new leg at the target premium. Hedge + new sell form a defined-risk
-            bear-call or bull-put spread — the hedge caps loss and unlocks broker margin.
-        </p>
-        <p class="doc-p">
-            <strong>One-shot rule</strong>: if the adjustment leg's own SL fires, close it and
-            stop — no further recovery cycles. The other side (original short + hedge, if any)
-            rides to timed squareoff at 15:15 IST. Analytics treats each session day as
-            <strong>one trade</strong> (not one row per leg).
+            <strong>One adjustment per session, total.</strong> Once the recovery has fired
+            on either side, no further adjustments happen — even if the other original leg
+            later hits SL. The tick-based SL monitor still closes that leg; it just doesn't
+            trigger another recovery cycle. All open legs (shorts + hedges) ride to the
+            timed squareoff at 15:15 IST. Analytics treats each session day as
+            <strong>one trade</strong>, not one row per leg.
         </p>
     </div>
 
@@ -236,29 +251,32 @@
         </ul>
     </div>
 
-    <!-- ── Adjustment (SL recovery) ── -->
+    <!-- ── Adjustment (SL recovery — the DELTA-neutral → DIRECTIONAL pivot) ── -->
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-red, #f87171);"></span> Adjustment (SL recovery)</h2>
         <p class="doc-p">
-            Triggered when either <strong>initial</strong> leg hits its 100 % SL. The
-            adjustment side is the OPPOSITE of the SL-hit side (CE SL → new PE + PE hedge;
-            PE SL → new CE + CE hedge).
+            Triggered when either <strong>initial</strong> leg hits its 100 %-of-premium SL.
+            The recovery adds a new short + hedge on the OPPOSITE side, converting the
+            position from delta-neutral into a directional bet.
         </p>
         <ul class="doc-list">
             <li>Close the SL-hit leg at market.</li>
-            <li><strong>BUY hedge FIRST</strong> — deep-OTM on the adjustment side,
-                <code>hedgeStrikesAway</code> strike-steps further OTM from the strike about
-                to be sold (default 10 steps = 500 pts on NIFTY). Qty = base ×
-                <code>hedgeQtyMultiplier</code> (default 2×) for margin relief.</li>
+            <li><strong>BUY hedge FIRST</strong> — same side as the new sell,
+                <code>hedgeStrikesAway</code> strike-steps further OTM from the new-sell
+                strike (default 10 = 500 pts on NIFTY). Qty = base ×
+                <code>hedgeQtyMultiplier</code> (default 2×) for margin relief. Toggle in
+                Settings → HEDGE; when off, the recovery is a naked sell (no margin relief).</li>
             <li><strong>SELL new leg</strong> at the strike whose current LTP is closest to
                 the target premium.</li>
-            <li>The hedge + new sell together form a <strong>defined-risk vertical spread</strong>
-                (bear call or bull put): max loss is bounded by strike difference − net credit.</li>
+            <li>Result: the surviving original short + new short form the directional bias
+                (2 puts short → bullish, or 2 calls short → bearish). The hedge caps the
+                new short's loss into a defined-risk vertical spread.</li>
         </ul>
         <p class="doc-p">
-            <strong>One-shot</strong>: if the adjustment leg's own SL fires, close it and
-            stop. No further recovery cycles. The remaining shorts and hedges continue
-            managed until squareoff.
+            <strong>One adjustment per session</strong>. After the first recovery fires
+            (regardless of which side), no more adjustments happen. If the other original
+            leg later hits SL, the tick-based SL monitor just closes it — no second
+            recovery cycle. Remaining legs ride to timed squareoff.
         </p>
     </div>
 
@@ -285,11 +303,11 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-green);"></span> Session windows</h2>
         <p class="doc-p">
-            Both configurable in Settings → STRANGLE:
+            Both configurable in Settings → STRANGLE-ADJ:
         </p>
         <ul class="doc-list">
             <li><strong>Entry Time</strong> (default <code>09:20</code>) — strangle fires once
-                at/after this time on eligible weekdays.</li>
+                at/after this time every trading day.</li>
             <li><strong>Squareoff Time</strong> (default <code>15:15</code>) — every remaining
                 open leg is flattened at market.</li>
         </ul>
@@ -300,14 +318,10 @@
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-cyan);"></span> Analytics — day-as-one-trade</h2>
         <p class="doc-p">
             Each session day rolls up to one row for the Home hero metrics, equity curve,
-            By-Instrument breakdown, and By-Day-of-Week breakdown. So a day with 5 legs
-            (2 initial + 2 adjust + 1 hedge) but a net profit counts as
-            <strong>1 win</strong>, not 5. The Trade Log page still shows every individual
-            leg for detail.
-        </p>
-        <p class="doc-p">
-            <strong>By Instrument</strong> bins P&amp;L into NIFTY-day vs SENSEX-day totals
-            (natural for the weekday rotation). <strong>By Day</strong> bins Mon–Fri.
+            and breakdowns. So a day with up to 5 legs (2 initial + 1 adjust sell + 1
+            hedge, and later the SL close of the other original leg) but a net-positive
+            P&amp;L counts as <strong>1 win</strong>, not several. The Trade Log page still
+            shows every individual leg for detail.
         </p>
     </div>
 
@@ -315,7 +329,7 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-amber, #fbbf24);"></span> What's NOT in this strategy</h2>
         <ul class="doc-list">
-            <li>No recursive adjustment — one recovery per side per session, then stop.</li>
+            <li>No recursive adjustment — one recovery per <em>session</em>, then stop.</li>
             <li>No target orders — exits are SL, adjustment SL, or timed squareoff only.</li>
             <li>No VWAP / bar-close FSM / trigger candles / ATR.</li>
             <li>No re-entry after squareoff. Next day starts fresh at 09:20.</li>
