@@ -181,7 +181,7 @@
     <div class="section-card fade-in" style="margin-bottom:20px;">
         <div class="section-header">
             <div class="section-title"><div class="section-title-dot"></div> Overview</div>
-            <span class="section-badge" id="ahSessionCount" style="margin-left:auto;">— trades</span>
+            <span class="section-badge" id="ahSessionCount" style="margin-left:auto;">— sessions</span>
         </div>
         <div style="padding:20px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px;">
             <div>
@@ -236,7 +236,7 @@
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;" title="Per trade, not per day.">Wins / Losses</span>
+                    <span class="stat-label" style="margin:0;" title="Per session (one session per trading day).">Wins / Losses</span>
                     <span style="font-family:var(--font-mono); font-size:0.95rem; font-weight:700;">
                         <span class="pnl-positive" id="ahWins">0</span>
                         <span style="color:var(--text-muted);"> / </span>
@@ -244,11 +244,11 @@
                     </span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;" title="Average winning trade net P&L vs average losing trade.">Avg Win / Loss</span>
+                    <span class="stat-label" style="margin:0;" title="Average winning session net P&L vs average losing session.">Avg Win / Loss</span>
                     <span class="stat-value" id="ahAvgWinLoss" style="font-size:0.85rem;">— / —</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;" title="Single best and single worst trade in scope.">Best / Worst</span>
+                    <span class="stat-label" style="margin:0;" title="Single best and single worst session in scope.">Best / Worst</span>
                     <span class="stat-value" id="ahBestWorst" style="font-size:0.85rem;">— / —</span>
                 </div>
             </div>
@@ -286,7 +286,7 @@
                     <span class="stat-value" id="ahTotalCharges" style="font-size:1rem;">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Avg per Trade</span>
+                    <span class="stat-label" style="margin:0;">Avg per Session</span>
                     <span class="stat-value" id="ahAvgCharges" style="font-size:1rem; color:var(--text-muted);">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -305,7 +305,7 @@
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;">Expectancy<sup style="display:inline-block; width:11px; height:11px; border-radius:50%; border:1px solid var(--text-muted); color:var(--text-muted); font-size:0.52rem; font-weight:500; font-style:italic; text-transform:lowercase; line-height:9px; text-align:center; cursor:help; font-family:serif; margin-left:4px; vertical-align:super;"
-                              title="Expectancy = (Win Rate × Avg Win) − (Loss Rate × Avg Loss).&#10;Average ₹ profit per trade across wins and losses combined.&#10;>0 strategy makes money over time · =0 break-even · <0 it bleeds.">i</sup></span>
+                              title="Expectancy = (Win Rate × Avg Win) − (Loss Rate × Avg Loss).&#10;Average ₹ profit per session across wins and losses combined.&#10;>0 strategy makes money over time · =0 break-even · <0 it bleeds.">i</sup></span>
                     <span class="stat-value" id="ahExpectancy" style="font-size:1rem;">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -664,7 +664,7 @@
             var scEl = document.getElementById('ahSessionCount');
             if (scEl) {
                 var n = d.straddleCount || 0;
-                scEl.textContent = n + ' trade' + (n === 1 ? '' : 's');
+                scEl.textContent = n + ' session' + (n === 1 ? '' : 's');
             }
 
             // ── HERO STRIP ─────────────────────────────────────────────────
@@ -676,7 +676,7 @@
                 subEl.textContent = 'Started ' + fmtRs(cap.startingCapital)
                     + ' • ' + sign + fmtRs(cap.totalReturn)
                     + ' (' + fmtPct(cap.totalReturnPct) + ')'
-                    + ' • ' + cyclesN + ' trade' + (cyclesN === 1 ? '' : 's');
+                    + ' • ' + cyclesN + ' session' + (cyclesN === 1 ? '' : 's');
             }
             setVal('ahTotalReturn',  fmtRs(cap.totalReturn), cap.totalReturn);
             setVal('ahWinRate',      (perf.winRate != null ? perf.winRate.toFixed(1) : '0') + '%',
@@ -775,7 +775,7 @@
                 var wr = Number(g.winRate || 0);
                 return '<div style="display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:baseline;padding:8px 0;border-top:1px solid rgba(128,128,128,0.10);font-family:var(--font-mono);font-size:0.74rem;">'
                     + '<span style="color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;">' + k + '</span>'
-                    + '<span style="color:var(--text-muted);">' + g.trades + ' trade' + (g.trades === 1 ? '' : 's') + '</span>'
+                    + '<span style="color:var(--text-muted);">' + g.trades + ' session' + (g.trades === 1 ? '' : 's') + '</span>'
                     + '<span style="color:var(--text-muted);">WR ' + wr.toFixed(0) + '%</span>'
                     + '<span class="' + pnlClass + '" style="font-weight:700;">' + fmtRs(net) + '</span>'
                     + '</div>';
