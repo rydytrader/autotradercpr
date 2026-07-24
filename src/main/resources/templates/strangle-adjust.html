@@ -514,11 +514,13 @@
                 if (!arr || !arr.length) return;
                 for (var i = 0; i < arr.length; i++) {
                     var t = arr[i];
-                    var full = t.fyers || t.fullSymbol || '';
-                    var shrt = t.symbol || '';
-                    if (full === 'NSE:INDIAVIX-INDEX' || shrt === 'India VIX' || shrt === 'INDIA VIX') {
+                    var full = String(t.fyers || t.fullSymbol || '');
+                    var shrt = String(t.symbol || '').toUpperCase();
+                    if (full === 'NSE:INDIAVIX-INDEX' || shrt === 'INDIA VIX') {
                         setVixHeader(t.lp, t.ch, t.chp);
                     } else if (full === 'NSE:NIFTY50-INDEX' || shrt === 'NIFTY 50' || shrt === 'NIFTY') {
+                        // MarketTickerController publishes short_name "Nifty 50" (mixed case) —
+                        // upper-cased above so the comparison matches regardless of vendor casing.
                         setNiftyHero(t.lp, t.ch, t.chp);
                     }
                 }
