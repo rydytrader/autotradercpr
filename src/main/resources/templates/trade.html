@@ -1149,12 +1149,14 @@
         checkConnection();
         setInterval(checkConnection, 5000);
         loadWelcome();
-        // OI bias polling — trend pill on 30 s, chart on 60 s. Baseline builds after
-        // AtmVwap locks the day's ATM (~09:17 IST); before that, the "Waiting for
-        // ATM…" placeholder covers the canvas.
+        // OI bias polling — trend pill on 2 s (near-real-time ΔCE / ΔPE), chart on
+        // 60 s (backend records one snapshotForChart sample per minute, faster
+        // polling returns the same series). Baseline builds after AtmVwap locks
+        // the day's ATM (~09:17 IST); before that, the "Waiting for ATM…"
+        // placeholder covers the canvas.
         pollOiState();
         pollOiHistory();
-        setInterval(pollOiState, 30000);
+        setInterval(pollOiState, 2000);
         setInterval(pollOiHistory, 60000);
     });
 </script>
