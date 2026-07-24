@@ -155,6 +155,9 @@ public class AtmVwap implements Strategy {
      *  seeded / invalidated events fired N times. Cleared on day rollover, kill switch,
      *  logout — anywhere the session's option legs are released. */
     private final java.util.Set<String> aggregatorSubscribedSymbols = ConcurrentHashMap.newKeySet();
+    /** Day-key on which the "Trading started" event has already fired. Guards against
+     *  emitting one per NIFTY spot tick — the event fires exactly once per session. */
+    private volatile String tradingStartedDayKey = "";
 
     public AtmVwap(CandleAggregator candleAggregator,
                    AtmTracker atmTracker,
@@ -234,6 +237,40 @@ public class AtmVwap implements Strategy {
         }
     }
 
+    /** Fires on every LTP tick from the {@link MarketDataService} listener chain — most
+     *  are filtered out. The one we care about: the very first NIFTY spot tick of the
+     *  trading day that arrives with an in-hours (>= 09:15) timestamp. Emits a
+     *  once-per-day "Trading started" event anchored to the 09:15 bar OPEN so the
+     *  operator's event log has a clear session-start marker. Subsequent ticks are
+     *  cheap no-ops via {@link #tradingStartedDayKey}. */
+    private void onFirstNiftyTickOfDay(MarketDataService.LtpTick t) {
+        if (t == null || !NIFTY_SYMBOL.equals(t.fyersSymbol())) return;
+        String today = LocalDate.now(IST).toString();
+        if (today.equals(tradingStartedDayKey)) return;
+
+        // Prefer LTT (exchange trade time) when populated; fall back to EFT (Fyers
+        // dissemination). NIFTY is an index so LTT is usually 0 → EFT is our primary.
+        long tickSec = t.lastTradedTimeSec() > 0 ? t.lastTradedTimeSec() : t.exchFeedTimeSec();
+        if (tickSec <= 0) return;
+        java.time.Instant instant = java.time.Instant.ofEpochSecond(tickSec);
+        ZonedDateTime tickZdt = instant.atZone(IST);
+        if (!today.equals(tickZdt.toLocalDate().toString())) return;
+        LocalTime tickTime = tickZdt.toLocalTime();
+        if (tickTime.isBefore(MARKET_OPEN_IST)) return;
+
+        // Compute today's 09:15 IST epoch — that's the bar open we anchor the display
+        // time to (user sees "09:15  INFO  [Session] Trading started …").
+        long marketOpenMs = ZonedDateTime.now(IST)
+            .withHour(9).withMinute(15).withSecond(0).withNano(0)
+            .toInstant().toEpochMilli();
+
+        tradingStartedDayKey = today;
+        eventAtDisplayTime("[INFO]", "Session",
+            "Trading started — 09:15 candle forming (first NIFTY tick @ "
+            + tickTime.withNano(0).withSecond(tickTime.getSecond()).toString() + ")",
+            marketOpenMs);
+    }
+
     /** Push the latest dashboard state to every SSE-connected browser. No-op when no clients. */
     private void publishStream() {
         try {
@@ -257,6 +294,11 @@ public class AtmVwap implements Strategy {
         try { marketDataService.subscribeAdditional(java.util.List.of(NIFTY_SYMBOL)); }
         catch (Exception ignored) {}
         log.info("[AtmVwap] boot — NIFTY spot subscribed: {}", NIFTY_SYMBOL);
+
+        // Trading-started marker — fires exactly once per day, on the first NIFTY spot
+        // tick received after 09:15 IST. Anchors the operator's mental timeline to the
+        // 09:15 open of the first 2-min bar.
+        marketDataService.addLtpListener(this::onFirstNiftyTickOfDay);
 
         atmTracker.setListener(this::onAtmChange);
 
@@ -514,9 +556,14 @@ public class AtmVwap implements Strategy {
             try { ltp = marketDataService.getLtp(p.symbol); } catch (Exception ignored) {}
             if (ltp <= 0) continue;
             if (p.slLevel > 0 && ltp >= p.slLevel) {
-                event("[WARNING]", "Exit",
+                // Anchor to the CURRENT bar's OPEN (the bar the SL tick fell into).
+                // e.g. SL at 09:27:54 → display "09:27" (bar starting 09:27, closing 09:29).
+                // Wall-clock time appended in the message for post-mortem precision.
+                String wallClock = ZonedDateTime.now(IST).toLocalTime().withNano(0).toString();
+                eventAtDisplayTime("[WARNING]", "Exit",
                     shortSym(p.symbol) + " SL_HIT @ " + round2(ltp)
-                    + " (sl=" + round2(p.slLevel) + ")");
+                    + " (sl=" + round2(p.slLevel) + ") @ " + wallClock,
+                    currentBarStartMs());
                 closePosition(p, "SL_HIT");
             }
         }
@@ -784,9 +831,14 @@ public class AtmVwap implements Strategy {
             state.peRefLtp            = safeLtp(pe);
             state.sessionSetupDayKey  = today;
             trimWarmingSet();
-            event("[INFO]", "Setup",
+            // ATM lock is special-cased to display the bar CLOSE (bar start + 2 min)
+            // rather than the bar OPEN — the "lock" conceptually happens AT the boundary
+            // when the first NIFTY bar closes, not inside the bar itself. Shows "09:17"
+            // for the first bar closing, not "09:15".
+            eventAtDisplayTime("[INFO]", "Setup",
                 "NIFTY ATM Resolved (pre-warm HIT) — CE " + strike + " (" + shortSym(ce)
-                + ") | PE " + strike + " (" + shortSym(pe) + ")");
+                + ") | PE " + strike + " (" + shortSym(pe) + ")",
+                c.startMillis() + 2 * 60 * 1000L);
             saveToDisk();
             notifyOiWindow(state.atmStrike);
             return;
@@ -817,9 +869,12 @@ public class AtmVwap implements Strategy {
 
         ensureSessionLegsSubscribed();
         trimWarmingSet();  // drop the useless pre-warm (its ATM guess was wrong)
-        event("[INFO]", "Setup",
+        // Same special-case as the fast path above — display bar CLOSE (09:17), not
+        // bar OPEN (09:15), for the ATM lock event.
+        eventAtDisplayTime("[INFO]", "Setup",
             "NIFTY ATM Resolved — CE " + state.atmStrike + " (" + shortSym(state.ceSymbol)
-            + ") | PE " + state.atmStrike + " (" + shortSym(state.peSymbol) + ")");
+            + ") | PE " + state.atmStrike + " (" + shortSym(state.peSymbol) + ")",
+            c.startMillis() + 2 * 60 * 1000L);
         saveToDisk();
         notifyOiWindow(state.atmStrike);
     }
@@ -944,15 +999,17 @@ public class AtmVwap implements Strategy {
             //     If THIS bar also closes below VWAP, it's promoted to the new trigger.
             if (c.close() < vwap) {
                 state.triggerByOption.put(symbol, TriggerCandle.of(c));
-                event("[INFO]", "Setup",
+                eventAtDisplayTime("[INFO]", "Setup",
                     shortSym(symbol) + " trigger promoted @ close " + round2(c.close())
                     + " (high=" + round2(c.high()) + ", low=" + round2(c.low())
-                    + ", vwap=" + round2(vwap) + ")");
+                    + ", vwap=" + round2(vwap) + ")",
+                    c.startMillis());
             } else {
                 state.triggerByOption.remove(symbol);
-                event("[INFO]", "Setup",
+                eventAtDisplayTime("[INFO]", "Setup",
                     shortSym(symbol) + " trigger invalidated (no follow-through, close "
-                    + round2(c.close()) + " ≥ VWAP " + round2(vwap) + ")");
+                    + round2(c.close()) + " ≥ VWAP " + round2(vwap) + ")",
+                    c.startMillis());
             }
             return;
         }
@@ -960,10 +1017,11 @@ public class AtmVwap implements Strategy {
         // S0 — no active trigger. Seed a fresh one if this bar closes below VWAP.
         if (c.close() < vwap) {
             state.triggerByOption.put(symbol, TriggerCandle.of(c));
-            event("[INFO]", "Setup",
+            eventAtDisplayTime("[INFO]", "Setup",
                 shortSym(symbol) + " trigger seeded @ close " + round2(c.close())
                 + " (high=" + round2(c.high()) + ", low=" + round2(c.low())
-                + ", vwap=" + round2(vwap) + ")");
+                + ", vwap=" + round2(vwap) + ")",
+                c.startMillis());
         }
     }
 
@@ -1172,6 +1230,9 @@ public class AtmVwap implements Strategy {
         p.entryPrice      = entryLtp;
         p.entryOrderId    = order.getId();
         p.openMillis      = System.currentTimeMillis();
+        // Record the confirmation candle's bar start — the bar whose close met the fire
+        // gate. UI shows the CLOSE time (start + 2 min) as the "entry candle time".
+        p.entryCandleMs   = entryCandle == null ? 0 : entryCandle.startMillis();
         p.slLevel         = slLevel;
         p.originalSlLevel = slLevel;
         p.targetLevel     = 0;              // no target
@@ -1194,11 +1255,12 @@ public class AtmVwap implements Strategy {
         state.openPositions.put(posKey(p), p);
         state.tradesToday++;
         if (isCeLeg) state.ceTradesToday++; else state.peTradesToday++;
-        event("[SUCCESS]", "AUTO ENTRY",
+        eventAtDisplayTime("[SUCCESS]", "AUTO ENTRY",
             "sell " + shortSym(symbol) + " ×" + (qty / LOT_SIZE) + "L "
             + "@ " + round2(entryLtp) + " (SL " + round2(slLevel)
             + ", " + (isCeLeg ? "CE " + state.ceTradesToday + "/" + maxCe
-                              : "PE " + state.peTradesToday + "/" + maxPe) + ")");
+                              : "PE " + state.peTradesToday + "/" + maxPe) + ")",
+            entryCandle == null ? 0 : entryCandle.startMillis());
         saveToDisk();
     }
 
@@ -1289,12 +1351,14 @@ public class AtmVwap implements Strategy {
         double net     = gross - charges;
 
         long closedAtMillis = System.currentTimeMillis();
+        long exitCandleMs   = currentBarStartMs();
         String dbStrategyId = (p.setup == ActiveSetup.MANUAL) ? MANUAL_STRATEGY_ID : STRATEGY_ID;
         String setupName    = p.setup == null ? "MANUAL" : p.setup.name();
         persistTradeRow(dbStrategyId, p.symbol, setupName, reason, p.qty,
             gross, charges, net,
             "SL_HIT".equals(reason) ? 1 : 0,
-            closedAtMillis, p.openMillis, p.entryOiBias, p.entryPrice, exitPrice);
+            closedAtMillis, p.openMillis, p.entryOiBias, p.entryPrice, exitPrice,
+            p.entryCandleMs, exitCandleMs);
 
         Map<String, Object> cycle = new LinkedHashMap<>();
         cycle.put("strategyId",     dbStrategyId);
@@ -1310,13 +1374,16 @@ public class AtmVwap implements Strategy {
         cycle.put("closeReason",    reason);
         cycle.put("closedAtMillis", closedAtMillis);
         cycle.put("openedAtMillis", p.openMillis);
+        cycle.put("entryCandleMs",  p.entryCandleMs);
+        cycle.put("exitCandleMs",   exitCandleMs);
         cycle.put("entryOiBias",    p.entryOiBias);
         state.todayClosedTrades.add(cycle);
         while (state.todayClosedTrades.size() > 100) state.todayClosedTrades.remove(0);
 
         if (net < 0) state.consecutiveLosses++; else state.consecutiveLosses = 0;
-        event(net >= 0 ? "[SUCCESS]" : "[WARNING]", "Exit",
-            shortSym(symbol) + " closed (" + reason + ") net=" + round2(net) + " gross=" + round2(gross));
+        eventAtDisplayTime(net >= 0 ? "[SUCCESS]" : "[WARNING]", "Exit",
+            shortSym(symbol) + " closed (" + reason + ") net=" + round2(net) + " gross=" + round2(gross),
+            exitCandleMs);
 
         state.openPositions.remove(posKey(p));
 
@@ -1341,7 +1408,8 @@ public class AtmVwap implements Strategy {
     private void persistTradeRow(String strategyId, String symbol, String setup, String reason, int qty,
                                  double gross, double charges, double net, int slHits,
                                  long closedAtMillis, long openedAtMillis, String entryOiBias,
-                                 double entryPrice, double exitPrice) {
+                                 double entryPrice, double exitPrice,
+                                 long entryCandleMs, long exitCandleMs) {
         try {
             StrategyTradeRepository repo = tradeRepoProvider == null ? null : tradeRepoProvider.getIfAvailable();
             if (repo == null) return;
@@ -1363,10 +1431,28 @@ public class AtmVwap implements Strategy {
             row.setSlHitCount(slHits);
             row.setEntryPrice(entryPrice > 0 ? round2(entryPrice) : null);
             row.setExitPrice(exitPrice   > 0 ? round2(exitPrice)  : null);
+            row.setEntryCandleMs(entryCandleMs > 0 ? entryCandleMs : null);
+            row.setExitCandleMs (exitCandleMs  > 0 ? exitCandleMs  : null);
             repo.save(row);
         } catch (Exception e) {
             log.warn("[AtmVwap] persist trade failed: {}", e.getMessage());
         }
+    }
+
+    /** Start-of-bar epoch millis for the current wall-clock 2-min bucket, anchored on
+     *  09:15 IST. Used at exit time to tag which bar the exit fell into. Off-market
+     *  hours the returned bucket is still math-correct — no callers use it then. */
+    private long currentBarStartMs() {
+        ZonedDateTime nowIst = ZonedDateTime.now(IST);
+        LocalTime t = nowIst.toLocalTime();
+        int minuteOfDay = t.getHour() * 60 + t.getMinute();
+        int marketOpen  = 9 * 60 + 15;
+        int minutesSinceOpen = minuteOfDay - marketOpen;
+        int bucketMinute = minutesSinceOpen >= 0
+            ? marketOpen + (minutesSinceOpen / 2) * 2
+            : (minuteOfDay / 2) * 2;
+        return nowIst.withHour(bucketMinute / 60).withMinute(bucketMinute % 60)
+            .withSecond(0).withNano(0).toInstant().toEpochMilli();
     }
 
     private static String instrumentFromSymbol(String symbol) {
@@ -1675,6 +1761,7 @@ public class AtmVwap implements Strategy {
             row.put("breakevenMoved", p.breakevenMoved);
             row.put("isShort",        p.isShort);
             row.put("openMillis",     p.openMillis);
+            row.put("entryCandleMs",  p.entryCandleMs);
             row.put("triggerSymbol", p.triggerSymbol == null ? "" : p.triggerSymbol);
             row.put("entryFutures",  round2(p.entryFutures));
             row.put("targetFutures", round2(p.targetFutures));
@@ -1779,6 +1866,11 @@ public class AtmVwap implements Strategy {
         public double     entryPrice;
         public String     entryOrderId = "";
         public long       openMillis;
+        /** Start-of-bar epoch millis for the 2-min candle that TRIGGERED this fire — the
+         *  confirmation bar whose close met {@code close < trigger.low}. UI renders as
+         *  the bar CLOSE time (start + 2 min). 0 for MANUAL fires and legacy state-file
+         *  positions that predate this field. */
+        public long       entryCandleMs;
         public double     targetLevel;
         public double     slLevel;
         public double     originalSlLevel;
@@ -1811,8 +1903,33 @@ public class AtmVwap implements Strategy {
     }
 
     private void event(String severity, String source, String message) {
+        eventAtDisplayTime(severity, source, message, 0L);
+    }
+
+    /** Emit an event tagged with the CURRENT 2-min bar's OPEN time — the bar the event
+     *  fell into. Uniform rule for all candle-anchored events:
+     *  <ul>
+     *    <li>Bar-close events (ATM lock, trigger seed/promote/invalidate, AUTO ENTRY,
+     *        Exit-via-timed-squareoff): fire just AFTER a bar closes, so currentBarStartMs
+     *        returns the NEW bar's open = old bar's close (e.g. 09:17 for the ATM lock
+     *        that fires when the 09:15→09:17 bar closes).</li>
+     *    <li>Mid-bar tick events (SL_HIT): fire during a bar, currentBarStartMs returns
+     *        that bar's open (e.g. 09:27 for an SL tick at 09:27:54).</li>
+     *  </ul>
+     *  Same operator-facing display in both cases: "HH:MM" aligned to the 2-min grid. */
+    private void eventOnCurrentBar(String severity, String source, String message) {
+        eventAtDisplayTime(severity, source, message, currentBarStartMs());
+    }
+
+    /** Emit an event whose displayed time is EXACTLY {@code displayMs}. Used when the
+     *  caller wants to anchor to a SPECIFIC bar boundary that isn't the current one
+     *  (e.g. "Trading started — 09:15" pinned to 09:15 even if the first tick arrived
+     *  a few seconds later). Pass 0 for pure wall-clock events. */
+    private void eventAtDisplayTime(String severity, String source, String message, long displayMs) {
         Map<String, Object> e = new LinkedHashMap<>();
-        e.put("ts",       System.currentTimeMillis());
+        long wallTs = System.currentTimeMillis();
+        e.put("ts",       wallTs);
+        if (displayMs > 0) e.put("barMs", displayMs);
         e.put("severity", severity);
         e.put("source",   source);
         e.put("message",  message);

@@ -296,6 +296,7 @@
                     <tr>
                         <th>#</th>
                         <th>Time</th>
+                        <th class="text-center">In Bar</th>
                         <th>Symbol</th>
                         <th class="text-right">Quantity</th>
                         <th class="text-center">Side</th>
@@ -309,7 +310,7 @@
                 </thead>
                 <tbody id="positionsTableBody">
                     <tr>
-                        <td colspan="11">
+                        <td colspan="12">
                             <div class="empty-state">
                                 <div class="empty-icon">◎</div>
                                 No active positions
@@ -431,6 +432,15 @@
         if (!ms) return '—';
         var d = new Date(Number(ms));
         return d.toTimeString().slice(0, 8);
+    }
+    /** Candle START epoch → its OPEN time in IST "HH:MM" (Fyers/TV canonical). The
+     *  entry candle for a fire on the 09:19→09:21 confirmation bar renders as "09:19"
+     *  — the bar identifier operators recognise. Legacy positions from a state file
+     *  predating entryCandleMs render "—". */
+    function fmtBarClose(candleMs) {
+        if (!candleMs || Number(candleMs) <= 0) return '—';
+        var d = new Date(Number(candleMs) + 5.5 * 3600 * 1000);
+        return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
     }
     function escapeHtml(s) {
         if (s == null) return '';
@@ -689,6 +699,7 @@
                 return '<tr>'
                     + '<td>' + (i + 1) + '</td>'
                     + '<td>' + fmtTime(p.openMillis) + '</td>'
+                    + '<td class="text-center">' + fmtBarClose(p.entryCandleMs) + '</td>'
                     + '<td>' + escapeHtml(p.symbol) + '</td>'
                     + '<td class="text-right">' + escapeHtml(String(p.qty)) + '</td>'
                     + '<td class="text-center">'
@@ -767,13 +778,30 @@
         body.innerHTML = events.map(function(e) {
             var sev = String(e.severity || '').replace(/[\[\]]/g, '');
             var src = normalizeEventSource(String(e.source || 'Strategy').replace(/[\[\]]/g, ''));
+            // Candle-driven events (ATM lock, trigger seed/promote/invalidate, AUTO
+            // ENTRY, Exit) carry `barMs` — the bar CLOSE epoch. Prefer it so an event
+            // firing at wall-clock 09:17:03 renders as "09:17" aligned with the bar
+            // boundary. Non-candle events (SL_HIT ticks, kill switch, connect status)
+            // don't carry barMs and fall back to the full HH:MM:SS wall-clock stamp.
+            var timeLabel = e.barMs && Number(e.barMs) > 0
+                ? fmtBarCloseMs(Number(e.barMs))
+                : fmtTime(e.ts);
             return '<div class="event-row">'
-                + '<span style="color:var(--text-muted);">' + fmtTime(e.ts) + '</span>'
+                + '<span style="color:var(--text-muted);">' + timeLabel + '</span>'
                 + '<span class="sev-' + sev + '">' + escapeHtml(sev) + '</span>'
                 + '<span class="event-src">[' + escapeHtml(src) + ']</span>'
                 + '<span class="event-msg">' + escapeHtml(shortenSymbolInText(e.message)) + '</span>'
                 + '</div>';
         }).join('');
+    }
+
+    /** Formats a bar-anchored epoch (ms) as "HH:MM" in IST — the value is already the
+     *  bar OPEN time (Fyers/TV canonical candle identifier). A trigger seeded on the
+     *  09:17→09:19 bar renders as "09:17"; an SL_HIT mid-bar at 09:27:54 renders as
+     *  "09:27" (the current bar the tick fell into). */
+    function fmtBarCloseMs(ms) {
+        var d = new Date(Number(ms) + 5.5 * 3600 * 1000);
+        return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
     }
 
     function filterLogs() {
@@ -989,6 +1017,12 @@
     // ΔPE (green) since baseline.
     var oiChart = null;
     var oiThresholdPct = 40;
+    /** Exchange - browser clock skew in ms. Updated on each /api/atmvwap/oi/state poll
+     *  from the exchangeNowMs field. Positive = exchange is AHEAD of browser (typical
+     *  when local clock hasn't NTP-synced recently). Used to align the minute-boundary
+     *  poll schedule + the "updated HH:MM:SS" badge on the OI chart to exchange time
+     *  instead of browser wall-clock. */
+    var oiExchangeClockOffsetMs = 0;
 
     function oiPnlClass(v) { return v > 0 ? 'pnl-positive' : (v < 0 ? 'pnl-negative' : ''); }
     function oiInFmt(v) {
@@ -1009,6 +1043,12 @@
         if (document.visibilityState !== 'visible') return;
         fetch('/api/atmvwap/oi/state').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
+            // Refresh exchange-clock offset (server → browser) on every poll so the
+            // minute-aligned scheduler + "updated" badge track exchange time even if the
+            // browser's clock drifts. exchangeNowMs is 0 pre-first-tick — leave offset 0.
+            if (d.exchangeNowMs && Number(d.exchangeNowMs) > 0) {
+                oiExchangeClockOffsetMs = Number(d.exchangeNowMs) - Date.now();
+            }
             var pill = document.getElementById('oiTrendPill');
             var atmEl = document.getElementById('oiAtm');
             var strikeEl = document.getElementById('oiStrikeCount');
@@ -1043,16 +1083,16 @@
             };
             if (ceEl) ceEl.textContent = d.cumulativeCeChange != null ? oiSigned(d.cumulativeCeChange) : '—';
             if (peEl) peEl.textContent = d.cumulativePeChange != null ? oiSigned(d.cumulativePeChange) : '—';
-            // Last-update badge in the chart's bottom-right corner. Uses local IST wall
-            // clock at the moment the state landed (server-side sample timestamp is
-            // already exposed via lastSampleAt on d, but the on-poll time is what the
-            // operator experiences).
+            // Last-update badge — displays EXCHANGE time (browser time + skew offset)
+            // so it aligns with actual 1-min bar boundaries rather than showing a
+            // browser-clock-drifted value.
             var updatedEl = document.getElementById('oiUpdatedAt');
             if (updatedEl) {
-                var nowIst = new Date(Date.now() + 5.5 * 3600 * 1000);
-                var hh = String(nowIst.getUTCHours()).padStart(2, '0');
-                var mm = String(nowIst.getUTCMinutes()).padStart(2, '0');
-                var ss = String(nowIst.getUTCSeconds()).padStart(2, '0');
+                var exchNow = Date.now() + oiExchangeClockOffsetMs;
+                var d2 = new Date(exchNow + 5.5 * 3600 * 1000);
+                var hh = String(d2.getUTCHours()).padStart(2, '0');
+                var mm = String(d2.getUTCMinutes()).padStart(2, '0');
+                var ss = String(d2.getUTCSeconds()).padStart(2, '0');
                 updatedEl.textContent = 'updated ' + hh + ':' + mm + ':' + ss;
             }
         }).catch(function() {});
@@ -1132,19 +1172,24 @@
         pollOiState();
         pollOiHistory();
         // Minute-aligned polls — synced with OptionOiTracker.snapshotForChart which
-        // records a fresh sample at :00 of every minute (cron "0 * 9-15 ..."). Firing
-        // the poll at :01 of each minute (500 ms grace) means the browser always sees
-        // the just-recorded sample. Bias pill + header + chart update in lock-step at
-        // 09:15, 09:16, 09:17, …, on the same beat as the 1-min tracker samples and
-        // the 2-min candle boundaries the chart is aligned to.
+        // records a fresh sample at :00 of every EXCHANGE minute (cron "0 * 9-15 ...").
+        // Uses EXCHANGE time (browser time + oiExchangeClockOffsetMs) for boundary
+        // detection so if the browser clock drifts 2-3 s behind exchange, the poll
+        // still fires just after the exchange minute boundary — not 2-3 s early where
+        // the sample wouldn't be recorded yet.
         (function scheduleMinuteAligned() {
-            var now = Date.now();
-            var msPastMinute = now % 60000;
+            var exchNow = Date.now() + oiExchangeClockOffsetMs;
+            var msPastMinute = exchNow % 60000;
             var msUntilNextMinute = 60000 - msPastMinute + 500;   // +500 ms grace
             setTimeout(function tick() {
                 pollOiState();
                 pollOiHistory();
-                setTimeout(tick, 60000);
+                // Re-align each tick — the offset can drift as the browser's clock
+                // adjusts (NTP sync, sleep/wake, etc). Recomputing every minute keeps
+                // the schedule locked to exchange time indefinitely.
+                var next = Date.now() + oiExchangeClockOffsetMs;
+                var delay = 60000 - (next % 60000) + 500;
+                setTimeout(tick, delay);
             }, msUntilNextMinute);
         })();
     });

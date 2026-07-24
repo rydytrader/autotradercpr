@@ -7,6 +7,9 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/shared.css?v=5">
+    <!-- TradingView Lightweight Charts — loaded here (not lazy) because the historical
+         chart modal opens instantly on cell-icon click; a lazy load would visibly stall. -->
+    <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
     <script>
         (function() {
             const t = localStorage.getItem('traderedge-theme') || 'dark';
@@ -45,6 +48,24 @@
         .cal-day-pnl { font-family:var(--font-mono); font-size:1rem; font-weight:700; line-height:1; }
         .cal-day.profit .cal-day-pnl { color:var(--accent-green); }
         .cal-day.loss   .cal-day-pnl { color:var(--accent-red, #f87171); }
+        /* Chart-icon button pinned to the top-right of the day cell — separate click
+           target from the cell itself (which opens the trades modal). Only rendered
+           for days with a stored chart snapshot. */
+        .cal-chart-btn {
+            position:absolute; top:6px; right:6px;
+            width:22px; height:22px; padding:0;
+            display:inline-flex; align-items:center; justify-content:center;
+            font-family:var(--font-mono); font-size:0.85rem; line-height:1;
+            color:var(--text-muted); background:transparent;
+            border:1px solid var(--border); border-radius:5px;
+            cursor:pointer; transition:color 0.15s, border-color 0.15s, background 0.15s;
+        }
+        .cal-chart-btn:hover {
+            color:var(--accent-cyan, #7dd3fc);
+            border-color:rgba(125,211,252,0.45);
+            background:rgba(125,211,252,0.10);
+        }
+        .cal-day { position:relative; }
         .cal-day-meta { font-family:var(--font-mono); font-size:0.6rem; color:var(--text-muted); letter-spacing:0.04em; margin-top:3px; }
         .cal-holiday-tag { font-family:var(--font-mono); font-size:0.58rem; font-weight:700; color:var(--accent-amber, #fbbf24); letter-spacing:0.04em; text-transform:uppercase; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         /* Left sidebar nav icons */
@@ -295,6 +316,7 @@
 <script src="/js/ticker.js?v=4"></script>
 <script src="/js/settings-modal.js?v=73"></script>
 <script src="/js/option-chain-modal.js?v=27"></script>
+<script src="/js/historical-chart-modal.js?v=1"></script>
 <script>
 (function(){
     const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -317,6 +339,10 @@
     let analyticsByDate = {};
     const includeAdjustments = false;   // Options Terminal removed — always off.
     let NSE_HOLIDAYS = {}; // {date: name}
+    // Dates for which a historical chart snapshot exists on disk. Populated once on
+    // page load from /api/chart/historical/dates. Cells with a matching date get the
+    // ↗ chart icon → HistoricalChartModal.open(date).
+    let chartAvailableDates = {};
 
     function fmtMoney(n) {
         if (n == null) return '₹0.00';
@@ -353,6 +379,17 @@
         return sign + '₹' + abs.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
     function pad2(n) { return n < 10 ? '0' + n : String(n); }
+
+    /** Fetches the list of dates with a stored historical-chart snapshot, then
+     *  re-renders the current view so cells pick up the ↗ chart icon. */
+    function loadChartAvailableDates() {
+        fetch('/api/chart/historical/dates').then(function(r) { return r.json(); }).then(function(d) {
+            chartAvailableDates = {};
+            (d && d.dates || []).forEach(function(day) { chartAvailableDates[day] = true; });
+            // Re-render whichever view is currently shown so the icons appear.
+            if (typeof renderMonthGrid === 'function') try { renderMonthGrid(); } catch (e) {}
+        }).catch(function() {});
+    }
 
     function loadAll() {
         // The bot is now multi-instance — there's no single "short-straddle" strategy. Fetch
@@ -706,8 +743,15 @@
             }
 
             const click = hasPnl ? 'onclick="openDayModal(\'' + dateStr + '\')"' : '';
+            // Chart icon — only when a historical chart snapshot exists for this date
+            // (populated by HistoricalChartStore's 15:32 save). Click bubbles are stopped
+            // so opening the chart modal doesn't ALSO open the trades modal underneath.
+            const chartIcon = chartAvailableDates[dateStr]
+                ? '<button class="cal-chart-btn" title="View chart" '
+                + '  onclick="event.stopPropagation(); HistoricalChartModal.open(\'' + dateStr + '\')">↗</button>'
+                : '';
             html += '<div class="' + cls + '" ' + click + '>' +
-                '<div class="cal-day-num">' + d + '</div>' + body +
+                '<div class="cal-day-num">' + d + '</div>' + body + chartIcon +
             '</div>';
         }
         document.getElementById('calDayGrid').innerHTML = html;
@@ -908,6 +952,14 @@
                       : 'trade-pill-reason-manual';
             return '<span class="trade-pill ' + cls + '">' + r + '</span>';
         };
+        /** Candle START epoch → its OPEN time in IST "HH:MM" (Fyers/TV canonical). A
+         *  bar starting at 09:19 renders as "09:19" — the identifier operators use for
+         *  the candle. Legacy rows (pre entry_candle_ms) render "—". */
+        const fmtBarClose = ms => {
+            if (!ms || Number(ms) <= 0) return '—';
+            const d = new Date(Number(ms) + 5.5 * 3600 * 1000);
+            return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
+        };
         let body = '';
         rows.forEach((t, i) => {
             const n   = Number(t.netPnl || 0);
@@ -917,6 +969,8 @@
                     '<td style="padding:8px 10px;color:var(--text-muted);">#' + (i + 1) + '</td>' +
                     '<td style="padding:8px 10px;color:var(--text-primary);">' + (t.symbol || t.shortCode || '—') + '</td>' +
                     '<td style="padding:8px 10px;">' + fmtTime(t.closedAtMillis) + '</td>' +
+                    '<td style="padding:8px 10px;text-align:center;">' + fmtBarClose(t.entryCandleMs) + '</td>' +
+                    '<td style="padding:8px 10px;text-align:center;">' + fmtBarClose(t.exitCandleMs)  + '</td>' +
                     '<td style="padding:8px 10px;">' + setupPill(t.setup) + '</td>' +
                     '<td style="padding:8px 10px;">' + reasonPill(t.closeReason) + '</td>' +
                     '<td style="padding:8px 10px;text-align:right;color:var(--text-muted);">' + (t.qty || 0) + '</td>' +
@@ -928,11 +982,13 @@
         wrap.innerHTML =
             '<div class="stat-label" style="margin-bottom:8px;">' + pluralLabel + '</div>' +
             '<div style="overflow-x:auto;max-width:100%;">' +
-            '<table style="width:100%;min-width:840px;border-collapse:collapse;font-family:var(--font-mono);font-size:0.74rem;table-layout:auto;white-space:nowrap;">' +
+            '<table style="width:100%;min-width:960px;border-collapse:collapse;font-family:var(--font-mono);font-size:0.74rem;table-layout:auto;white-space:nowrap;">' +
                 '<thead><tr style="color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;">' +
                     '<th style="padding:6px 10px;text-align:left;">#</th>' +
                     '<th style="padding:6px 10px;text-align:left;">' + singularLabel.toUpperCase() + '</th>' +
                     '<th style="padding:6px 10px;text-align:left;">CLOSED</th>' +
+                    '<th style="padding:6px 10px;text-align:center;">IN BAR</th>' +
+                    '<th style="padding:6px 10px;text-align:center;">OUT BAR</th>' +
                     '<th style="padding:6px 10px;text-align:left;">SETUP</th>' +
                     '<th style="padding:6px 10px;text-align:left;">REASON</th>' +
                     '<th style="padding:6px 10px;text-align:right;">QTY</th>' +
@@ -970,6 +1026,7 @@
             });
         }
         loadAll();
+        loadChartAvailableDates();
         // Populate Welcome header from /api/user/me. Same pattern as home / short-straddle.
         fetch('/api/user/me').then(function(r){ return r.json(); }).then(function(u){
             if (!u || !u.email) return;

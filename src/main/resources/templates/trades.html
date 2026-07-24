@@ -234,6 +234,8 @@
                     <tr>
                         <th>#</th>
                         <th>Time</th>
+                        <th class="text-center">In Bar</th>
+                        <th class="text-center">Out Bar</th>
                         <th>Symbol</th>
                         <th class="text-center">Setup</th>
                         <th class="text-center">OI Bias</th>
@@ -413,7 +415,7 @@
 
         var tbody = document.getElementById('tradesTableBody');
         if (trades.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state"><div class="empty-icon">◎</div>No trades in this range</div></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="14"><div class="empty-state"><div class="empty-icon">◎</div>No trades in this range</div></td></tr>';
             return;
         }
         var showDate = currentRange !== 'today';
@@ -427,6 +429,8 @@
             return '<tr>'
                 + '<td>' + (i + 1) + '</td>'
                 + '<td>' + timeCell + '</td>'
+                + '<td class="text-center">' + fmtBarClose(t.entryCandleMs) + '</td>'
+                + '<td class="text-center">' + fmtBarClose(t.exitCandleMs) + '</td>'
                 + '<td>' + escapeHtml(t.symbol || '—') + '</td>'
                 + '<td class="text-center">' + setupPill(t.setup) + '</td>'
                 + '<td class="text-center">' + biasPill(t.entryOiBias) + '</td>'
@@ -439,6 +443,17 @@
                 + '<td class="text-right ' + pnlClass(t.netPnl) + '" style="font-weight:700;">' + fmtRs(t.netPnl) + '</td>'
             + '</tr>';
         }).join('');
+    }
+
+    /** Formats a candle START epoch (ms) as its OPEN time in IST — "HH:MM". Fyers/TV
+     *  canonical: a bar with start 09:19 IS the "09:19 candle" (covers 09:19→09:21).
+     *  This is what the operator identifies the trigger / confirmation / current bar
+     *  by. Empty / null renders as "—" for legacy trade rows that predate
+     *  entry_candle_ms / exit_candle_ms. */
+    function fmtBarClose(candleMs) {
+        if (!candleMs || Number(candleMs) <= 0) return '—';
+        var d = new Date(Number(candleMs) + 5.5 * 3600 * 1000);
+        return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
     }
 
     function applyState(d) {

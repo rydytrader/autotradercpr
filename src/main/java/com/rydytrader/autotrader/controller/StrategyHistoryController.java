@@ -156,6 +156,11 @@ public class StrategyHistoryController {
             // else — with-bias, neutral, stale, unknown, historical pre-fix rows —
             // stays null. Drives the trades-page OI Bias column + effectiveness modal.
             m.put("entryOiBias",    t.getEntryOiBias());
+            // Bar-anchored entry / exit timestamps — start-of-bar epoch millis for the
+            // 2-min candle that triggered entry, and the candle the exit fell into.
+            // UI renders as bar CLOSE time (start + 2 min). Null for legacy rows.
+            m.put("entryCandleMs",  t.getEntryCandleMs());
+            m.put("exitCandleMs",   t.getExitCandleMs());
             trades.add(m);
         }
         Map<String, Object> out = new LinkedHashMap<>();
@@ -202,6 +207,11 @@ public class StrategyHistoryController {
             // else — with-bias, neutral, stale, unknown, historical pre-fix rows —
             // stays null. Drives the trades-page OI Bias column + effectiveness modal.
             m.put("entryOiBias",    t.getEntryOiBias());
+            // Bar-anchored entry / exit timestamps — start-of-bar epoch millis for the
+            // 2-min candle that triggered entry, and the candle the exit fell into.
+            // UI renders as bar CLOSE time (start + 2 min). Null for legacy rows.
+            m.put("entryCandleMs",  t.getEntryCandleMs());
+            m.put("exitCandleMs",   t.getExitCandleMs());
             trades.add(m);
         }
         Map<String, Object> out = new LinkedHashMap<>();

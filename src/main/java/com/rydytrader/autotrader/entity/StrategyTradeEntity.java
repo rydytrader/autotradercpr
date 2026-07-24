@@ -118,6 +118,23 @@ public class StrategyTradeEntity {
     @Column(name = "sl_hit_count")
     private Integer slHitCount;
 
+    /** Start-of-bar epoch millis for the 2-min candle that TRIGGERED the entry (the
+     *  confirmation bar whose close met the fire gate). Distinct from
+     *  {@link #openedAtMillis} which is the wall-clock instant the order was PLACED —
+     *  those two differ by up to ~2 min because the FSM decision is made at bar close
+     *  but the order is placed a moment later. UI renders as the bar's CLOSE time
+     *  (start + 2 min = "09:21"). Nullable — legacy rows persisted before this column
+     *  existed load without exploding the primitive setter. */
+    @Column(name = "entry_candle_ms")
+    private Long entryCandleMs;
+
+    /** Start-of-bar epoch millis for the 2-min candle DURING WHICH the exit fired —
+     *  the wall-clock bucket the SL-hit tick fell into (or the manual/timed-squareoff
+     *  moment's 2-min bucket). UI renders as the bar's CLOSE time. Nullable — legacy
+     *  rows load with null. */
+    @Column(name = "exit_candle_ms")
+    private Long exitCandleMs;
+
     public StrategyTradeEntity() {}
 
     public Long getId() { return id; }
@@ -157,4 +174,8 @@ public class StrategyTradeEntity {
     public void setCloseReason(String v) { this.closeReason = v; }
     public Integer getSlHitCount() { return slHitCount; }
     public void setSlHitCount(Integer v) { this.slHitCount = v; }
+    public Long getEntryCandleMs() { return entryCandleMs; }
+    public void setEntryCandleMs(Long v) { this.entryCandleMs = v; }
+    public Long getExitCandleMs()  { return exitCandleMs; }
+    public void setExitCandleMs(Long v)  { this.exitCandleMs = v; }
 }

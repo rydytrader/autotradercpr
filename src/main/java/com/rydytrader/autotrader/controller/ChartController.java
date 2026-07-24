@@ -2,10 +2,12 @@ package com.rydytrader.autotrader.controller;
 
 import com.rydytrader.autotrader.dto.Candle;
 import com.rydytrader.autotrader.service.CandleAggregator;
+import com.rydytrader.autotrader.service.HistoricalChartStore;
 import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.strategy.AtmVwap;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -30,15 +32,18 @@ public class ChartController {
     private final MarketDataService marketDataService;
     private final RiskSettingsStore riskSettings;
     private final ObjectProvider<AtmVwap> atmVwapProvider;
+    private final HistoricalChartStore historicalChartStore;
 
     public ChartController(CandleAggregator candleAggregator,
                            MarketDataService marketDataService,
                            RiskSettingsStore riskSettings,
-                           ObjectProvider<AtmVwap> atmVwapProvider) {
-        this.candleAggregator  = candleAggregator;
-        this.marketDataService = marketDataService;
-        this.riskSettings      = riskSettings;
-        this.atmVwapProvider   = atmVwapProvider;
+                           ObjectProvider<AtmVwap> atmVwapProvider,
+                           HistoricalChartStore historicalChartStore) {
+        this.candleAggregator     = candleAggregator;
+        this.marketDataService    = marketDataService;
+        this.riskSettings         = riskSettings;
+        this.atmVwapProvider      = atmVwapProvider;
+        this.historicalChartStore = historicalChartStore;
     }
 
     /** Compact tick block for a single symbol. Reads directly from the in-memory tick
@@ -127,5 +132,25 @@ public class ChartController {
         long latestExchSec = marketDataService.getLatestExchFeedTimeSec();
         out.put("exchangeNowMs", latestExchSec > 0 ? latestExchSec * 1000L : 0L);
         return out;
+    }
+
+    /** Dates for which a historical chart snapshot exists (newest first). Populated by
+     *  {@link HistoricalChartStore}'s 15:32 scheduled save. The calendar page uses this
+     *  to decide which day cells get a "chart" icon. */
+    @GetMapping("/historical/dates")
+    public Map<String, Object> historicalDates() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("dates", historicalChartStore.listAvailableDates());
+        return out;
+    }
+
+    /** Full snapshot for a given date (NIFTY spot + ATM CE + ATM PE candles). Returns
+     *  404 when no snapshot exists for the requested date. */
+    @GetMapping("/historical")
+    public ResponseEntity<HistoricalChartStore.DailySnapshot> historicalSnapshot(
+            @RequestParam String date) {
+        return historicalChartStore.loadDailySnapshot(date)
+            .map(ResponseEntity::ok)
+            .orElseGet(() -> ResponseEntity.notFound().build());
     }
 }
