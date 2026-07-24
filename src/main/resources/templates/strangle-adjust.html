@@ -257,6 +257,9 @@
             <div style="padding:20px 22px; text-align:center; flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;">
                 <div class="stat-value" id="marketClock" style="font-size:2rem;">—</div>
                 <div class="stat-sub" id="marketClockSub" style="margin-top:8px;">Checking…</div>
+                <div id="marketClockPlan"
+                     title="Which index the strategy would fire today, at what DTE, and the fetched expiry date. Empty when no DTE checkbox on either tab matches today."
+                     style="margin-top:10px; font-family:var(--font-mono); font-size:0.72rem; letter-spacing:0.04em; color:var(--text-muted);">—</div>
             </div>
         </div>
 
@@ -627,8 +630,37 @@
         phaseEl.textContent = phaseText;
         phaseEl.style.color = phaseColor;
 
+        // Market Clock plan line — "NIFTY · DTE 1 · Exp 28 Jul" or "— · Off".
+        var planEl = document.getElementById('marketClockPlan');
+        if (planEl) {
+            var inst    = sa.plannedInstrument;
+            var pDte    = sa.plannedDte;
+            var pExpIso = sa.plannedExpiryDate;
+            if (inst && pDte != null && pDte >= 0) {
+                planEl.textContent = inst + ' · DTE ' + pDte + (pExpIso ? ' · Exp ' + fmtShortDate(pExpIso) : '');
+                planEl.style.color = 'var(--text-secondary)';
+            } else {
+                planEl.textContent = 'No trade today';
+                planEl.style.color = 'var(--text-muted)';
+            }
+        }
+
         // Disable squareoff when nothing open
         document.getElementById('squareOffBtn').disabled = positions.length === 0;
+    }
+
+    /** ISO "2026-07-28" → "28 Jul". Falls back to the input on parse failure. */
+    function fmtShortDate(iso) {
+        if (!iso) return '';
+        try {
+            var parts = String(iso).split('-');
+            if (parts.length !== 3) return iso;
+            var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            var m = parseInt(parts[1], 10) - 1;
+            var d = parseInt(parts[2], 10);
+            if (isNaN(m) || isNaN(d) || m < 0 || m > 11) return iso;
+            return d + ' ' + months[m];
+        } catch (e) { return iso; }
     }
 
     function renderPositions(d) {

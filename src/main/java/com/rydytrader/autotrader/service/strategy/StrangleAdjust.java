@@ -984,6 +984,42 @@ public class StrangleAdjust implements Strategy {
             if (activeSpec != null) activeSlMult = slMultiplierFor(activeSpec);
         } catch (Exception ignored) {}
         str.put("slMultiplier",     activeSlMult);
+
+        // Today's routing preview — what todaysInstrument() would return right now,
+        // plus the DTE and expiry for both indices. Feeds the Market Clock card so
+        // the operator can see "NIFTY · DTE 1 · Exp 28 Jul" before entry fires.
+        //
+        // - plannedInstrument: "NIFTY" | "SENSEX" | null (matches todaysInstrument()).
+        // - plannedDte: today's DTE for whichever index would fire (matches instrument);
+        //               -1 when both indices are off for today.
+        // - plannedExpiryDate: ISO date of the resolved (holiday-rolled) expiry.
+        // - niftyDte / sensexDte: raw per-index DTE numbers regardless of settings.
+        // - niftyExpiry / sensexExpiry: raw per-index expiry dates.
+        try {
+            LocalDate today = LocalDate.now(IST);
+            LocalDate niftyExp  = atmSelector.resolveNextExpiry(InstrumentSpec.NIFTY.spotSymbol);
+            LocalDate sensexExp = atmSelector.resolveNextExpiry(InstrumentSpec.SENSEX.spotSymbol);
+            int niftyDte  = niftyExp  != null ? tradingDaysBetween(today, niftyExp)  : -1;
+            int sensexDte = sensexExp != null ? tradingDaysBetween(today, sensexExp) : -1;
+            InstrumentSpec planned = null;
+            int plannedDte = -1;
+            LocalDate plannedExp = null;
+            if (niftyDte >= 0 && riskSettings.isStrangleAdjustNiftyDteEnabled(niftyDte)) {
+                planned = InstrumentSpec.NIFTY; plannedDte = niftyDte; plannedExp = niftyExp;
+            } else if (sensexDte >= 0 && riskSettings.isStrangleAdjustSensexDteEnabled(sensexDte)) {
+                planned = InstrumentSpec.SENSEX; plannedDte = sensexDte; plannedExp = sensexExp;
+            }
+            str.put("plannedInstrument", planned == null ? null : planned.name());
+            str.put("plannedDte",        plannedDte);
+            str.put("plannedExpiryDate", plannedExp == null ? null : plannedExp.toString());
+            str.put("niftyDte",          niftyDte);
+            str.put("niftyExpiry",       niftyExp  == null ? null : niftyExp.toString());
+            str.put("sensexDte",         sensexDte);
+            str.put("sensexExpiry",      sensexExp == null ? null : sensexExp.toString());
+        } catch (Exception e) {
+            log.warn("[StrangleAdjust] planned-instrument preview failed: {}", e.getMessage());
+        }
+
         m.put("strangleAdjust", str);
 
         // Open positions
