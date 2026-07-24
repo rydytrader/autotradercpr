@@ -8,6 +8,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/shared.css?v=36">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script>
         (function() {
             const t = localStorage.getItem('traderedge-theme') || 'dark';
@@ -332,72 +333,29 @@
         </div>
     </div>
 
-    <!-- ── Live Positions table ─────────────────────────────────────────── -->
-    <div class="section-card fixed-card fade-in">
-        <div class="section-header">
-            <div class="section-title" style="display:flex; align-items:center; gap:18px; flex-wrap:wrap;">
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <div class="section-title-dot"></div>
-                    Live Positions
-                </div>
-                <!-- Vertical separator after the section title — visually delineates the
-                     market-stats cluster from the title. -->
-                <span style="border-left:1px solid var(--border); height:18px; display:inline-block;"></span>
-                <div style="display:flex; gap:14px; align-items:center; font-family:var(--font-mono); font-size:0.72rem; font-weight:normal; flex-wrap:wrap;">
-                    <!-- NIFTY cluster: LTP + change + 5m ATR. Amber label.
-                         Legacy 'Fut' IDs retained for back-compat with the JS. -->
-                    <span style="color:#fbbf24;">NIFTY <span id="hdrFut" style="color:var(--text-primary);font-weight:700;cursor:help;">—</span>
-                        <span id="hdrFutChg" style="margin-left:4px;font-weight:600;"></span></span>
-                    <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
-                    <!-- VIX -->
-                    <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
-                        <span id="hdrVixChg" style="margin-left:4px;font-weight:600;"></span></span>
-                    <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
-                    <!-- Strangle legs — picked at entry (~09:20) by target premium -->
-                    <span style="color:var(--text-muted);" title="Original CE short (near target premium)">CE <span id="hdrH5Ce" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                    <span style="color:var(--text-muted);" title="Original PE short (near target premium)">PE <span id="hdrL5Pe" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                </div>
+    <!-- ── Compact control bar — Kill Switch + Square Off ── -->
+    <div class="section-card fade-in" style="margin-bottom:20px;">
+        <div class="section-header" style="display:flex; align-items:center; justify-content:flex-end; gap:10px;">
+            <div class="kill-switch-wrap" id="killSwitchWrap">
+                <span class="kill-switch-label" id="killSwitchLabel">Trading ON</span>
+                <label class="kill-switch">
+                    <input type="checkbox" id="killSwitchToggle" checked onchange="toggleKillSwitch()">
+                    <span class="kill-switch-slider"></span>
+                </label>
             </div>
-            <div style="display:flex; gap:10px; align-items:center;">
-                <div class="kill-switch-wrap" id="killSwitchWrap">
-                    <span class="kill-switch-label" id="killSwitchLabel">Trading ON</span>
-                    <label class="kill-switch">
-                        <input type="checkbox" id="killSwitchToggle" checked onchange="toggleKillSwitch()">
-                        <span class="kill-switch-slider"></span>
-                    </label>
-                </div>
-                <button class="squareoff-btn" id="squareOffBtn" onclick="executeSquareOff()" disabled>⬛ Square Off</button>
-            </div>
+            <button class="squareoff-btn" id="squareOffBtn" onclick="executeSquareOff()" disabled>⬛ Square Off</button>
         </div>
-        <div class="table-wrap">
-            <table class="data-table">
-                <thead>
-                    <tr>
-                        <th>#</th>
-                        <th>Time</th>
-                        <th>Symbol</th>
-                        <th class="text-right">Quantity</th>
-                        <th class="text-center">Side</th>
-                        <th class="text-center">Setup</th>
-                        <th class="text-right">Entry</th>
-                        <th class="text-right">SL</th>
-                        <th class="text-right">Target</th>
-                        <th class="text-right">LTP</th>
-                        <th class="text-right">P&amp;L</th>
-                        <th class="text-center">Action</th>
-                    </tr>
-                </thead>
-                <tbody id="positionsTableBody">
-                    <tr>
-                        <td colspan="12">
-                            <div class="empty-state">
-                                <div class="empty-icon">◎</div>
-                                No active positions
-                            </div>
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
+    </div>
+
+    <!-- ── Side-by-side CE / PE Premium charts (1-min close per leg) ── -->
+    <div class="section-card fade-in" id="splitChartCard" style="margin-bottom:20px;">
+        <div class="section-header">
+            <div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Leg Premiums</div>
+            <span class="section-badge" style="font-size:0.6rem; margin-left:auto;">1-min close per leg • dashed = SL trigger / entry baseline</span>
+        </div>
+        <div style="padding:0; height:400px; display:flex; gap:0;">
+            <div style="flex:1; min-width:0; padding:8px 12px;"><canvas id="straddleChartCe"></canvas></div>
+            <div style="flex:1; min-width:0; padding:8px 12px;"><canvas id="straddleChartPe"></canvas></div>
         </div>
     </div>
 
@@ -482,6 +440,7 @@
     function pnlClass(v) { return Number(v) >= 0 ? 'pnl-positive' : 'pnl-negative'; }
 
     var lastState = null;
+    var lastDashboardData = null;   // mirrors lastState — kept as a stable name for the chart renderers
     var logFilterValue = '';
 
     // ── Kill switch ────────────────────────────────────────────────────────
@@ -537,11 +496,13 @@
     function applyState(d) {
         if (!d) return;
         lastState = d;
+        lastDashboardData = d;
         renderHeader(d);
         renderStats(d);
         renderPositions(d);
         renderEvents(d);
         renderKillSwitch(d);
+        renderLegSplitCharts(d);
         // Spot LTP for header ticker chip. Strangle payload exposes spotSymbol + spotLtp
         // once today's instrument is resolved; before entry those keys are absent so we
         // leave the chips as their fallback ("—").
@@ -787,6 +748,7 @@
         renderLegCards(d);
         var positions = (d.openPositions || []).slice();
         var tbody = document.getElementById('positionsTableBody');
+        if (!tbody) return;   // Live Positions table removed — leg cards cover position display now.
         if (positions.length === 0) {
             tbody.innerHTML = '<tr><td colspan="12"><div class="empty-state"><div class="empty-icon">◎</div>No active positions</div></td></tr>';
         } else {
@@ -1105,6 +1067,98 @@
         setInterval(checkConnection, 5000);
         loadWelcome();
     });
+
+    // ── Leg Premium Charts — side-by-side CE + PE 1-min closes with per-leg SL/Entry refs ──
+    var ceChart = null, peChart = null;
+
+    function commonChartOptions(muted) {
+        return {
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: { padding: 0 },
+            plugins: {
+                legend: { display: true, position: 'top', labels: { color: muted, font: { size: 10 }, boxWidth: 14 } },
+                tooltip: { callbacks: { label: function(ctx) {
+                    if (ctx.parsed.y == null) return null;
+                    return ctx.dataset.label + ': ₹' + Number(ctx.parsed.y).toFixed(2);
+                } } }
+            },
+            scales: {
+                x: { offset: false, ticks: { color: muted, font: { size: 10 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 }, grid: { color: 'rgba(128,128,128,0.08)' } },
+                y: { min: 0, ticks: { color: muted, font: { size: 10 }, callback: function(v) { return '₹' + Number(v).toFixed(2); } }, grid: { color: 'rgba(128,128,128,0.08)' } }
+            }
+        };
+    }
+
+    function initLegChart(canvasId, accentColor) {
+        var el = document.getElementById(canvasId);
+        if (!el || typeof Chart === 'undefined') return null;
+        var ctx = el.getContext('2d');
+        var muted = getComputedStyle(document.documentElement).getPropertyValue('--text-muted').trim();
+        return new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'Premium',    data: [], borderColor: accentColor + '0.95)', backgroundColor: accentColor + '0.10)', borderWidth: 2, fill: true, tension: 0.25, pointRadius: 0, pointHoverRadius: 4, pointHitRadius: 8, pointBackgroundColor: accentColor + '0.95)', spanGaps: false, order: 0 },
+                    { label: 'SL Trigger', data: [], borderColor: accentColor + '0.55)', borderWidth: 1.5, borderDash: [6, 4], pointRadius: 0, fill: false, order: 1 },
+                    { label: 'Entry',      data: [], borderColor: 'rgba(251,191,36,0.85)', borderWidth: 1.5, borderDash: [2, 4], pointRadius: 0, fill: false, order: 2 }
+                ]
+            },
+            options: commonChartOptions(muted)
+        });
+    }
+
+    /** Render the per-leg side-by-side Leg Premium charts. */
+    function renderLegSplitCharts(d) {
+        if (!d) return;
+        if (!ceChart) ceChart = initLegChart('straddleChartCe', 'rgba(52,211,153,');   // green CE
+        if (!peChart) peChart = initLegChart('straddleChartPe', 'rgba(248,113,113,');  // red PE
+        if (!ceChart || !peChart) return;
+        var samples = d.combinedPremiumSamples || [];
+        var labels  = samples.map(function(s) { return s.t; });
+        var ceData  = samples.map(function(s) { return s.ce != null ? s.ce : null; });
+        var peData  = samples.map(function(s) { return s.pe != null ? s.pe : null; });
+        // Synthetic "now" point per leg from live LTP.
+        var ceLtp = Number(d.ceLtp || 0);
+        var peLtp = Number(d.peLtp || 0);
+        if (ceLtp > 0 || peLtp > 0) {
+            var now = new Date();
+            var nowLabel = (now.getHours() < 10 ? '0' : '') + now.getHours()
+                         + ':' + (now.getMinutes() < 10 ? '0' : '') + now.getMinutes();
+            if (labels.length > 0 && labels[labels.length - 1] === nowLabel) {
+                if (ceLtp > 0) ceData[ceData.length - 1] = Math.round(ceLtp * 100) / 100;
+                if (peLtp > 0) peData[peData.length - 1] = Math.round(peLtp * 100) / 100;
+            } else {
+                labels.push(nowLabel);
+                ceData.push(ceLtp > 0 ? Math.round(ceLtp * 100) / 100 : null);
+                peData.push(peLtp > 0 ? Math.round(peLtp * 100) / 100 : null);
+            }
+        }
+        function r2(v) { return Math.round(Number(v) * 100) / 100; }
+        var ceEntry = r2(d.ceEntryPremium || 0);
+        var peEntry = r2(d.peEntryPremium || 0);
+        var ceTrig  = r2(d.ceSlTrigger || 0);
+        var peTrig  = r2(d.peSlTrigger || 0);
+        function lineFor(xs, val) { return xs.map(function() { return val > 0 ? val : null; }); }
+        ceChart.data.labels = labels;
+        ceChart.data.datasets[0].data = ceData;
+        ceChart.data.datasets[1].data = lineFor(labels, ceTrig);
+        ceChart.data.datasets[2].data = lineFor(labels, ceEntry);
+        if (ceTrig > 0) ceChart.options.scales.y.max = r2(ceTrig * 1.05);
+        ceChart.options.scales.y.min = 0;
+        ceChart.update('none');
+        peChart.data.labels = labels;
+        peChart.data.datasets[0].data = peData;
+        peChart.data.datasets[1].data = lineFor(labels, peTrig);
+        peChart.data.datasets[2].data = lineFor(labels, peEntry);
+        if (peTrig > 0) peChart.options.scales.y.max = r2(peTrig * 1.05);
+        peChart.options.scales.y.min = 0;
+        peChart.update('none');
+    }
+    // Re-render every 5s alongside the dashboard poll — picks up the synthetic "now"
+    // point even when SSE hasn't pushed a fresh dashboard state.
+    setInterval(function() { renderLegSplitCharts(lastDashboardData); }, 5000);
 </script>
 
 

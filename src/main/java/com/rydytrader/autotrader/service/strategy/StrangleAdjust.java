@@ -812,6 +812,7 @@ public class StrangleAdjust implements Strategy {
         state.consecutiveLosses = 0;
         state.todayClosedTrades.clear();
         if (state.recentEvents != null) state.recentEvents.clear();
+        if (state.combinedPremiumSamples != null) state.combinedPremiumSamples.clear();
         // Session-scoped flags always reset — even if a position was carried across midnight
         // (unusual), the strategy should re-evaluate today's instrument fresh.
         state.entered          = false;
@@ -937,7 +938,58 @@ public class StrangleAdjust implements Strategy {
                 m.put("spotSymbol", sp.spotSymbol);
             } catch (Exception ignored) {}
         }
+
+        // Chart payload — feeds the trade page's Leg Premium canvases.
+        //   combinedPremiumSamples: [{t:"HH:mm", ce, pe}, ...] session-scoped.
+        //   ceLtp / peLtp:          current live LTP of each short leg (for the synthetic "now" point).
+        //   ceEntryPremium / peEntryPremium: entry price of each short leg (dashed baseline).
+        //   ceSlTrigger / peSlTrigger:       per-leg SL trigger price (dashed ceiling).
+        Position ceShort = null, peShort = null;
+        for (Position p : state.openPositions.values()) {
+            if (p == null || !p.isShort) continue;
+            if ("ENTRY_CE".equals(p.role) || "ADJUST_CE".equals(p.role)) ceShort = p;
+            else if ("ENTRY_PE".equals(p.role) || "ADJUST_PE".equals(p.role)) peShort = p;
+        }
+        m.put("combinedPremiumSamples", new ArrayList<>(state.combinedPremiumSamples));
+        m.put("ceLtp",           ceShort != null ? round2(safeLtp(ceShort.symbol)) : 0.0);
+        m.put("peLtp",           peShort != null ? round2(safeLtp(peShort.symbol)) : 0.0);
+        m.put("ceEntryPremium",  ceShort != null ? round2(ceShort.entryPrice) : 0.0);
+        m.put("peEntryPremium",  peShort != null ? round2(peShort.entryPrice) : 0.0);
+        m.put("ceSlTrigger",     ceShort != null ? round2(ceShort.slLevel)    : 0.0);
+        m.put("peSlTrigger",     peShort != null ? round2(peShort.slLevel)    : 0.0);
         return m;
+    }
+
+    // ── Leg-premium sampler — 1-min ring fed to the trade page's Leg Premium chart ─────
+    private static final int PREMIUM_SAMPLES_LIMIT = 400;
+
+    /** Snapshot the current CE + PE short-leg LTPs into the sample ring every minute
+     *  during market hours. Skipped outside 09:15–15:30 IST and when neither leg is open —
+     *  no point recording flat zeros. */
+    @Scheduled(cron = "0 * 9-15 * * MON-FRI", zone = "Asia/Kolkata")
+    public synchronized void sampleLegPremiums() {
+        LocalTime now = ZonedDateTime.now(IST).toLocalTime();
+        if (now.isBefore(LocalTime.of(9, 15)) || now.isAfter(LocalTime.of(15, 30))) return;
+        rolloverIfNewDay();
+        Position ceShort = null, peShort = null;
+        for (Position p : state.openPositions.values()) {
+            if (p == null || !p.isShort) continue;
+            if ("ENTRY_CE".equals(p.role) || "ADJUST_CE".equals(p.role)) ceShort = p;
+            else if ("ENTRY_PE".equals(p.role) || "ADJUST_PE".equals(p.role)) peShort = p;
+        }
+        if (ceShort == null && peShort == null) return;   // pre-entry / all closed — no data to record
+        Double ce = ceShort != null ? round2(safeLtp(ceShort.symbol)) : null;
+        Double pe = peShort != null ? round2(safeLtp(peShort.symbol)) : null;
+        if ((ce == null || ce <= 0) && (pe == null || pe <= 0)) return;
+        Map<String, Object> sample = new LinkedHashMap<>();
+        sample.put("t",  String.format("%02d:%02d", now.getHour(), now.getMinute()));
+        sample.put("ce", ce != null && ce > 0 ? ce : null);
+        sample.put("pe", pe != null && pe > 0 ? pe : null);
+        state.combinedPremiumSamples.add(sample);
+        while (state.combinedPremiumSamples.size() > PREMIUM_SAMPLES_LIMIT) {
+            state.combinedPremiumSamples.remove(0);
+        }
+        saveToDisk();
     }
 
     // ── State + persistence ────────────────────────────────────────────────
@@ -950,6 +1002,12 @@ public class StrangleAdjust implements Strategy {
         public Map<String, Position> openPositions   = new ConcurrentHashMap<>();
         public List<Map<String, Object>> todayClosedTrades = new ArrayList<>();
         public List<Map<String, Object>> recentEvents      = new ArrayList<>();
+        /** 1-minute samples of the two short-leg premiums during the session.
+         *  Feeds the trade page's Leg Premium chart. Each entry:
+         *  {@code {"t":"HH:mm", "ce":double|null, "pe":double|null}}.
+         *  Sampler skips when both legs are absent. Ring is capped at ~400
+         *  entries (~6.5 hours of session) and cleared on day rollover. */
+        public List<Map<String, Object>> combinedPremiumSamples = new ArrayList<>();
 
         /** Set at 09:20 entry (or the DISABLED short-circuit). Idempotent guard. */
         public boolean entered;
