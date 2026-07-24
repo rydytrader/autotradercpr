@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
@@ -287,6 +288,81 @@ public class BalancedAtmSelector {
     private static class ChainRow {
         double ce, pe;
         String ceSym = "", peSym = "";
+    }
+
+    /** Dynamic next-weekly-expiry lookup for the given spot symbol. Pulls a fresh
+     *  Fyers option chain (defaults to the nearest expiry when {@code expiryTs}
+     *  is empty), takes any strike's symbol, and parses the expiry date out of it.
+     *  Handles NIFTY, SENSEX (BSE), and any other index whose option symbols
+     *  encode the underlying name followed by {@code YY{M/MMM}DD}.
+     *
+     *  <p>Returns null on any failure (chain unavailable, no parseable symbol,
+     *  bad token). Caller should handle null by skipping DTE-gated entries.
+     *
+     *  <p>No caching — the strategy calls this at most a handful of times per
+     *  session (entryIfDue on the slow scheduler tick). If the pattern changes,
+     *  wrap in a per-day cache. */
+    public LocalDate resolveNextExpiry(String spotSymbol) {
+        if (spotSymbol == null || spotSymbol.isBlank()) return null;
+        NavigableMap<Long, ChainRow> chain = fetchChain(spotSymbol);
+        if (chain == null || chain.isEmpty()) return null;
+        String underlying = spotSymbol.contains("SENSEX") ? "SENSEX"
+                          : spotSymbol.contains("NIFTY")  ? "NIFTY"
+                          : null;
+        if (underlying == null) return null;
+        for (ChainRow r : chain.values()) {
+            String sym = (r.ceSym != null && !r.ceSym.isEmpty()) ? r.ceSym : r.peSym;
+            if (sym == null || sym.isEmpty()) continue;
+            LocalDate d = parseExpiryDate(sym, underlying);
+            if (d != null) return d;
+        }
+        return null;
+    }
+
+    /** Symbol-agnostic Fyers expiry parser. Handles both weekly ({@code YY{1-9,O,N,D}DD})
+     *  and monthly ({@code YY{JAN..DEC}}) formats. For monthly, returns the last
+     *  Tuesday of the month (SEBI's current weekly + monthly expiry weekday for both
+     *  NIFTY and SENSEX). Returns null on parse failure. */
+    static LocalDate parseExpiryDate(String sym, String underlying) {
+        if (sym == null || underlying == null) return null;
+        int idx = sym.indexOf(underlying);
+        if (idx < 0) return null;
+        String tail = sym.substring(idx + underlying.length());
+        if (tail.length() < 5) return null;
+        try {
+            int yr = Integer.parseInt(tail.substring(0, 2));
+            int yearFull = 2000 + yr;
+            // Monthly format first (3-letter month abbrev).
+            String maybeMonth = tail.substring(2, Math.min(5, tail.length()));
+            Integer monthIdx = MONTH_ABBREVS.get(maybeMonth);
+            if (monthIdx != null) return lastTuesdayOfMonth(yearFull, monthIdx);
+            // Weekly — 1-char month + 2-char day.
+            char mc = tail.charAt(2);
+            int m;
+            if (mc >= '1' && mc <= '9') m = mc - '0';
+            else if (mc == 'O') m = 10;
+            else if (mc == 'N') m = 11;
+            else if (mc == 'D') m = 12;
+            else return null;
+            int day = Integer.parseInt(tail.substring(3, 5));
+            return LocalDate.of(yearFull, m, day);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static final Map<String, Integer> MONTH_ABBREVS = Map.ofEntries(
+        Map.entry("JAN", 1),  Map.entry("FEB", 2),  Map.entry("MAR", 3),
+        Map.entry("APR", 4),  Map.entry("MAY", 5),  Map.entry("JUN", 6),
+        Map.entry("JUL", 7),  Map.entry("AUG", 8),  Map.entry("SEP", 9),
+        Map.entry("OCT", 10), Map.entry("NOV", 11), Map.entry("DEC", 12)
+    );
+
+    private static LocalDate lastTuesdayOfMonth(int year, int month) {
+        LocalDate d = LocalDate.of(year, month, 1).withDayOfMonth(
+            LocalDate.of(year, month, 1).lengthOfMonth());
+        while (d.getDayOfWeek() != java.time.DayOfWeek.TUESDAY) d = d.minusDays(1);
+        return d;
     }
 
     private NavigableMap<Long, ChainRow> fetchChain() {

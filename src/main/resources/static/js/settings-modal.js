@@ -35,14 +35,14 @@
                   '</div>' +
                   // ── NIFTY tab ────────────────────────────────────────────────
                   '<div class="sm-pane" data-pane="nifty" style="display:none;">' +
-                    '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:10px;">Weekdays</div>' +
-                    '<div class="sm-hint" style="margin:0 0 12px;">Days the strategy will run NIFTY. NIFTY wins ties if a day is also enabled on the SENSEX tab.</div>' +
+                    '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:10px;">DTE window</div>' +
+                    '<div class="sm-hint" style="margin:0 0 12px;">Days-to-expiry values that trigger NIFTY entry. Expiry is fetched from Fyers option chain and shifted back on holidays. DTE 0 = expiry today. NIFTY wins ties if SENSEX also matches today\'s DTE.</div>' +
                     '<div class="sm-grid-2col">' +
-                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustNiftyMonday"    style="width:auto;"><span>Monday</span></label></div>' +
-                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustNiftyTuesday"   style="width:auto;"><span>Tuesday</span></label></div>' +
-                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustNiftyWednesday" style="width:auto;"><span>Wednesday</span></label></div>' +
-                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustNiftyThursday"  style="width:auto;"><span>Thursday</span></label></div>' +
-                      '<div class="sm-field sm-full"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustNiftyFriday"    style="width:auto;"><span>Friday</span></label></div>' +
+                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustNiftyDte0" style="width:auto;"><span>DTE 0 (expiry day)</span></label></div>' +
+                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustNiftyDte1" style="width:auto;"><span>DTE 1</span></label></div>' +
+                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustNiftyDte2" style="width:auto;"><span>DTE 2</span></label></div>' +
+                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustNiftyDte3" style="width:auto;"><span>DTE 3</span></label></div>' +
+                      '<div class="sm-field sm-full"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustNiftyDte4" style="width:auto;"><span>DTE 4</span></label></div>' +
                     '</div>' +
                     '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin:18px 0 10px;">NIFTY params</div>' +
                     '<div class="sm-grid-2col">' +
@@ -52,14 +52,14 @@
                   '</div>' +
                   // ── SENSEX tab ────────────────────────────────────────────────
                   '<div class="sm-pane" data-pane="sensex" style="display:none;">' +
-                    '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:10px;">Weekdays</div>' +
-                    '<div class="sm-hint" style="margin:0 0 12px;">Days the strategy will run SENSEX. Ignored on a day where NIFTY is also enabled (NIFTY takes priority).</div>' +
+                    '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin-bottom:10px;">DTE window</div>' +
+                    '<div class="sm-hint" style="margin:0 0 12px;">Days-to-expiry values that trigger SENSEX entry (same semantics as NIFTY tab). Ignored on any day where NIFTY\'s DTE window also matches (NIFTY has priority).</div>' +
                     '<div class="sm-grid-2col">' +
-                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustSensexMonday"    style="width:auto;"><span>Monday</span></label></div>' +
-                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustSensexTuesday"   style="width:auto;"><span>Tuesday</span></label></div>' +
-                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustSensexWednesday" style="width:auto;"><span>Wednesday</span></label></div>' +
-                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustSensexThursday"  style="width:auto;"><span>Thursday</span></label></div>' +
-                      '<div class="sm-field sm-full"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustSensexFriday"    style="width:auto;"><span>Friday</span></label></div>' +
+                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustSensexDte0" style="width:auto;"><span>DTE 0 (expiry day)</span></label></div>' +
+                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustSensexDte1" style="width:auto;"><span>DTE 1</span></label></div>' +
+                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustSensexDte2" style="width:auto;"><span>DTE 2</span></label></div>' +
+                      '<div class="sm-field"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustSensexDte3" style="width:auto;"><span>DTE 3</span></label></div>' +
+                      '<div class="sm-field sm-full"><label style="display:flex;align-items:center;gap:10px;"><input type="checkbox" id="sm-strangleAdjustSensexDte4" style="width:auto;"><span>DTE 4</span></label></div>' +
                     '</div>' +
                     '<div class="sm-section-title" style="font-family:var(--font-mono);font-size:0.68rem;color:var(--accent-cyan);letter-spacing:0.12em;text-transform:uppercase;margin:18px 0 10px;">SENSEX params</div>' +
                     '<div class="sm-grid-2col">' +
@@ -257,11 +257,11 @@
         fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
             var g = id => document.getElementById(id);
-            if (g('sm-strangleAdjustNiftyMonday'))         g('sm-strangleAdjustNiftyMonday').checked    = d.strangleAdjustNiftyMonday    !== false;
-            if (g('sm-strangleAdjustNiftyTuesday'))        g('sm-strangleAdjustNiftyTuesday').checked   = d.strangleAdjustNiftyTuesday   !== false;
-            if (g('sm-strangleAdjustNiftyWednesday'))      g('sm-strangleAdjustNiftyWednesday').checked = !!d.strangleAdjustNiftyWednesday;
-            if (g('sm-strangleAdjustNiftyThursday'))       g('sm-strangleAdjustNiftyThursday').checked  = !!d.strangleAdjustNiftyThursday;
-            if (g('sm-strangleAdjustNiftyFriday'))         g('sm-strangleAdjustNiftyFriday').checked    = !!d.strangleAdjustNiftyFriday;
+            if (g('sm-strangleAdjustNiftyDte0')) g('sm-strangleAdjustNiftyDte0').checked = d.strangleAdjustNiftyDte0 !== false;
+            if (g('sm-strangleAdjustNiftyDte1')) g('sm-strangleAdjustNiftyDte1').checked = d.strangleAdjustNiftyDte1 !== false;
+            if (g('sm-strangleAdjustNiftyDte2')) g('sm-strangleAdjustNiftyDte2').checked = !!d.strangleAdjustNiftyDte2;
+            if (g('sm-strangleAdjustNiftyDte3')) g('sm-strangleAdjustNiftyDte3').checked = !!d.strangleAdjustNiftyDte3;
+            if (g('sm-strangleAdjustNiftyDte4')) g('sm-strangleAdjustNiftyDte4').checked = !!d.strangleAdjustNiftyDte4;
             if (g('sm-strangleAdjustNiftyTargetPremium')) g('sm-strangleAdjustNiftyTargetPremium').value = d.strangleAdjustNiftyTargetPremium != null ? d.strangleAdjustNiftyTargetPremium : 50;
             if (g('sm-strangleAdjustNiftySlMultiplier'))  g('sm-strangleAdjustNiftySlMultiplier').value  = d.strangleAdjustNiftySlMultiplier  != null ? d.strangleAdjustNiftySlMultiplier  : 2.0;
         }).catch(function() {});
@@ -270,11 +270,11 @@
     function saveNiftyTab() {
         var g = id => document.getElementById(id);
         var body = {
-            strangleAdjustNiftyMonday:        !!g('sm-strangleAdjustNiftyMonday').checked,
-            strangleAdjustNiftyTuesday:       !!g('sm-strangleAdjustNiftyTuesday').checked,
-            strangleAdjustNiftyWednesday:     !!g('sm-strangleAdjustNiftyWednesday').checked,
-            strangleAdjustNiftyThursday:      !!g('sm-strangleAdjustNiftyThursday').checked,
-            strangleAdjustNiftyFriday:        !!g('sm-strangleAdjustNiftyFriday').checked,
+            strangleAdjustNiftyDte0:          !!g('sm-strangleAdjustNiftyDte0').checked,
+            strangleAdjustNiftyDte1:          !!g('sm-strangleAdjustNiftyDte1').checked,
+            strangleAdjustNiftyDte2:          !!g('sm-strangleAdjustNiftyDte2').checked,
+            strangleAdjustNiftyDte3:          !!g('sm-strangleAdjustNiftyDte3').checked,
+            strangleAdjustNiftyDte4:          !!g('sm-strangleAdjustNiftyDte4').checked,
             strangleAdjustNiftyTargetPremium: parseFloat(g('sm-strangleAdjustNiftyTargetPremium').value) || 0,
             strangleAdjustNiftySlMultiplier:  parseFloat(g('sm-strangleAdjustNiftySlMultiplier').value)  || 2.0
         };
@@ -285,11 +285,11 @@
         fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
             var g = id => document.getElementById(id);
-            if (g('sm-strangleAdjustSensexMonday'))         g('sm-strangleAdjustSensexMonday').checked    = !!d.strangleAdjustSensexMonday;
-            if (g('sm-strangleAdjustSensexTuesday'))        g('sm-strangleAdjustSensexTuesday').checked   = !!d.strangleAdjustSensexTuesday;
-            if (g('sm-strangleAdjustSensexWednesday'))      g('sm-strangleAdjustSensexWednesday').checked = d.strangleAdjustSensexWednesday !== false;
-            if (g('sm-strangleAdjustSensexThursday'))       g('sm-strangleAdjustSensexThursday').checked  = d.strangleAdjustSensexThursday  !== false;
-            if (g('sm-strangleAdjustSensexFriday'))         g('sm-strangleAdjustSensexFriday').checked    = !!d.strangleAdjustSensexFriday;
+            if (g('sm-strangleAdjustSensexDte0')) g('sm-strangleAdjustSensexDte0').checked = d.strangleAdjustSensexDte0 !== false;
+            if (g('sm-strangleAdjustSensexDte1')) g('sm-strangleAdjustSensexDte1').checked = d.strangleAdjustSensexDte1 !== false;
+            if (g('sm-strangleAdjustSensexDte2')) g('sm-strangleAdjustSensexDte2').checked = !!d.strangleAdjustSensexDte2;
+            if (g('sm-strangleAdjustSensexDte3')) g('sm-strangleAdjustSensexDte3').checked = !!d.strangleAdjustSensexDte3;
+            if (g('sm-strangleAdjustSensexDte4')) g('sm-strangleAdjustSensexDte4').checked = !!d.strangleAdjustSensexDte4;
             if (g('sm-strangleAdjustSensexTargetPremium')) g('sm-strangleAdjustSensexTargetPremium').value = d.strangleAdjustSensexTargetPremium != null ? d.strangleAdjustSensexTargetPremium : 120;
             if (g('sm-strangleAdjustSensexSlMultiplier'))  g('sm-strangleAdjustSensexSlMultiplier').value  = d.strangleAdjustSensexSlMultiplier  != null ? d.strangleAdjustSensexSlMultiplier  : 2.0;
         }).catch(function() {});
@@ -298,11 +298,11 @@
     function saveSensexTab() {
         var g = id => document.getElementById(id);
         var body = {
-            strangleAdjustSensexMonday:        !!g('sm-strangleAdjustSensexMonday').checked,
-            strangleAdjustSensexTuesday:       !!g('sm-strangleAdjustSensexTuesday').checked,
-            strangleAdjustSensexWednesday:     !!g('sm-strangleAdjustSensexWednesday').checked,
-            strangleAdjustSensexThursday:      !!g('sm-strangleAdjustSensexThursday').checked,
-            strangleAdjustSensexFriday:        !!g('sm-strangleAdjustSensexFriday').checked,
+            strangleAdjustSensexDte0:          !!g('sm-strangleAdjustSensexDte0').checked,
+            strangleAdjustSensexDte1:          !!g('sm-strangleAdjustSensexDte1').checked,
+            strangleAdjustSensexDte2:          !!g('sm-strangleAdjustSensexDte2').checked,
+            strangleAdjustSensexDte3:          !!g('sm-strangleAdjustSensexDte3').checked,
+            strangleAdjustSensexDte4:          !!g('sm-strangleAdjustSensexDte4').checked,
             strangleAdjustSensexTargetPremium: parseFloat(g('sm-strangleAdjustSensexTargetPremium').value) || 0,
             strangleAdjustSensexSlMultiplier:  parseFloat(g('sm-strangleAdjustSensexSlMultiplier').value)  || 2.0
         };

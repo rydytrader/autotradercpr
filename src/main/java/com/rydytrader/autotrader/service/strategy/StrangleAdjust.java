@@ -6,6 +6,7 @@ import com.rydytrader.autotrader.dto.OrderDTO;
 import com.rydytrader.autotrader.entity.StrategyTradeEntity;
 import com.rydytrader.autotrader.repository.StrategyTradeRepository;
 import com.rydytrader.autotrader.service.MarketDataService;
+import com.rydytrader.autotrader.service.MarketHolidayService;
 import com.rydytrader.autotrader.service.OrderService;
 import com.rydytrader.autotrader.service.StrangleAdjustStreamBroker;
 import com.rydytrader.autotrader.service.EventService;
@@ -97,11 +98,12 @@ public class StrangleAdjust implements Strategy {
         return setup + "|" + (p.symbol == null ? "" : p.symbol);
     }
 
-    private final BalancedAtmSelector   atmSelector;
-    private final MarketDataService     marketDataService;
-    private final OrderService          orderService;
-    private final EventService          eventService;
-    private final RiskSettingsStore     riskSettings;
+    private final BalancedAtmSelector    atmSelector;
+    private final MarketDataService      marketDataService;
+    private final OrderService           orderService;
+    private final EventService           eventService;
+    private final RiskSettingsStore      riskSettings;
+    private final MarketHolidayService   marketHolidayService;
     private final ObjectProvider<StrategyTradeRepository> tradeRepoProvider;
     private final ObjectProvider<StrangleAdjustStreamBroker>    streamBrokerProvider;
 
@@ -117,6 +119,7 @@ public class StrangleAdjust implements Strategy {
                     OrderService orderService,
                     EventService eventService,
                     RiskSettingsStore riskSettings,
+                    MarketHolidayService marketHolidayService,
                     ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
                     ObjectProvider<StrangleAdjustStreamBroker> streamBrokerProvider) {
         this.atmSelector          = atmSelector;
@@ -124,6 +127,7 @@ public class StrangleAdjust implements Strategy {
         this.orderService         = orderService;
         this.eventService         = eventService;
         this.riskSettings         = riskSettings;
+        this.marketHolidayService = marketHolidayService;
         this.tradeRepoProvider    = tradeRepoProvider;
         this.streamBrokerProvider = streamBrokerProvider;
     }
@@ -335,33 +339,54 @@ public class StrangleAdjust implements Strategy {
         }
     }
 
-    // ── Instrument routing ──────────────────────────────────────────────────
+    // ── Instrument routing (DTE-based, dynamic expiry) ─────────────────────
     //
-    // Per-index weekday checkboxes (Settings → NIFTY / SENSEX tabs). Rule:
-    //   1. If today's day is checked on the NIFTY tab, run NIFTY.
-    //   2. Else if today's day is checked on the SENSEX tab, run SENSEX.
-    //   3. Else no entry (both tabs off for today).
-    // NIFTY wins ties when both indices are enabled for the same day.
+    // For each index, fetch the actual next weekly expiry from Fyers (option
+    // chain symbol → expiry date) so we account for SEBI-driven weekday shifts
+    // and rolled-forward holiday expiries. Then compute today's DTE as the
+    // number of TRADING days between today and that expiry (0 = expiry today,
+    // 1 = one trading day before, ...). If today's DTE is checked on the
+    // NIFTY tab → NIFTY. Else check SENSEX. Else no entry.
+    // NIFTY wins ties (both indices matching today's DTE checkbox).
     private InstrumentSpec todaysInstrument() {
-        java.time.DayOfWeek dow = ZonedDateTime.now(IST).getDayOfWeek();
-        boolean nifty  = switch (dow) {
-            case MONDAY    -> riskSettings.isStrangleAdjustNiftyMonday();
-            case TUESDAY   -> riskSettings.isStrangleAdjustNiftyTuesday();
-            case WEDNESDAY -> riskSettings.isStrangleAdjustNiftyWednesday();
-            case THURSDAY  -> riskSettings.isStrangleAdjustNiftyThursday();
-            case FRIDAY    -> riskSettings.isStrangleAdjustNiftyFriday();
-            default        -> false;
-        };
-        if (nifty) return InstrumentSpec.NIFTY;
-        boolean sensex = switch (dow) {
-            case MONDAY    -> riskSettings.isStrangleAdjustSensexMonday();
-            case TUESDAY   -> riskSettings.isStrangleAdjustSensexTuesday();
-            case WEDNESDAY -> riskSettings.isStrangleAdjustSensexWednesday();
-            case THURSDAY  -> riskSettings.isStrangleAdjustSensexThursday();
-            case FRIDAY    -> riskSettings.isStrangleAdjustSensexFriday();
-            default        -> false;
-        };
-        return sensex ? InstrumentSpec.SENSEX : null;
+        LocalDate today = LocalDate.now(IST);
+        LocalDate niftyExpiry = atmSelector.resolveNextExpiry(InstrumentSpec.NIFTY.spotSymbol);
+        if (niftyExpiry != null) {
+            int dte = tradingDaysBetween(today, niftyExpiry);
+            if (dte >= 0 && riskSettings.isStrangleAdjustNiftyDteEnabled(dte)) return InstrumentSpec.NIFTY;
+        }
+        LocalDate sensexExpiry = atmSelector.resolveNextExpiry(InstrumentSpec.SENSEX.spotSymbol);
+        if (sensexExpiry != null) {
+            int dte = tradingDaysBetween(today, sensexExpiry);
+            if (dte >= 0 && riskSettings.isStrangleAdjustSensexDteEnabled(dte)) return InstrumentSpec.SENSEX;
+        }
+        return null;
+    }
+
+    /** Trading days between {@code from} (exclusive) and {@code to} (inclusive if
+     *  it's a trading day). Skips weekends + NSE holidays via MarketHolidayService.
+     *  Rolls {@code to} backward to the previous trading day if it lands on a
+     *  holiday (Indian option expiries shift like this). Returns 0 when the
+     *  rolled expiry equals today, and a negative value when the rolled expiry
+     *  is already past — the caller treats that as "no entry today". */
+    private int tradingDaysBetween(LocalDate from, LocalDate to) {
+        // Roll expiry back if it lands on a holiday / weekend.
+        LocalDate expiry = to;
+        int safety = 10;
+        while (safety-- > 0 && !isTradingDay(expiry)) expiry = expiry.minusDays(1);
+        if (expiry.isBefore(from)) return -1;
+        if (expiry.isEqual(from)) return 0;
+        int dte = 0;
+        LocalDate d = from;
+        while (d.isBefore(expiry)) {
+            d = d.plusDays(1);
+            if (isTradingDay(d)) dte++;
+        }
+        return dte;
+    }
+
+    private boolean isTradingDay(LocalDate d) {
+        return marketHolidayService == null || marketHolidayService.isTradingDay(d);
     }
 
     private double targetPremiumFor(InstrumentSpec spec) {

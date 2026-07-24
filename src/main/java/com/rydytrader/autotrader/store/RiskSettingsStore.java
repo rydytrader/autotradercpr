@@ -35,25 +35,28 @@ public class RiskSettingsStore {
         volatile String  strangleAdjustEntryTime          = "09:20";        // HH:mm IST — entry fires at/after this time
         volatile String  strangleAdjustSquareOffTime      = "15:15";        // HH:mm IST — hard flatten
 
-        // ── NIFTY tab (weekdays + target premium + SL multiplier) ─────────────
-        // Default: NIFTY runs Mon+Tue. Operator can flip any day on/off from the
-        // NIFTY tab in Settings. If neither NIFTY nor SENSEX is enabled for
-        // today, no entry fires. If both are enabled for today, NIFTY wins.
-        volatile boolean strangleAdjustNiftyMonday        = true;
-        volatile boolean strangleAdjustNiftyTuesday       = true;
-        volatile boolean strangleAdjustNiftyWednesday     = false;
-        volatile boolean strangleAdjustNiftyThursday      = false;
-        volatile boolean strangleAdjustNiftyFriday        = false;
+        // ── NIFTY tab (DTE window + target premium + SL multiplier) ───────────
+        // DTE = trading days until the NEXT weekly expiry (0 = expiry today,
+        // 1 = one trading day before, …). Weekends + NSE holidays are skipped;
+        // if the calendar expiry day falls on a holiday it rolls back to the
+        // previous trading day BEFORE the DTE is computed. Checkbox array
+        // lists which DTE values trigger entry. Default: 0 + 1.
+        // If both NIFTY and SENSEX match for today, NIFTY wins.
+        volatile boolean strangleAdjustNiftyDte0          = true;
+        volatile boolean strangleAdjustNiftyDte1          = true;
+        volatile boolean strangleAdjustNiftyDte2          = false;
+        volatile boolean strangleAdjustNiftyDte3          = false;
+        volatile boolean strangleAdjustNiftyDte4          = false;
         volatile double  strangleAdjustNiftyTargetPremium = 50.0;
         volatile double  strangleAdjustNiftySlMultiplier  = 2.0;    // SL price = entryPremium × this
 
-        // ── SENSEX tab (weekdays + target premium + SL multiplier) ────────────
-        // Default: SENSEX runs Wed+Thu.
-        volatile boolean strangleAdjustSensexMonday        = false;
-        volatile boolean strangleAdjustSensexTuesday       = false;
-        volatile boolean strangleAdjustSensexWednesday     = true;
-        volatile boolean strangleAdjustSensexThursday      = true;
-        volatile boolean strangleAdjustSensexFriday        = false;
+        // ── SENSEX tab (DTE window + target premium + SL multiplier) ──────────
+        // Same DTE semantics as NIFTY. Default: 0 + 1.
+        volatile boolean strangleAdjustSensexDte0          = true;
+        volatile boolean strangleAdjustSensexDte1          = true;
+        volatile boolean strangleAdjustSensexDte2          = false;
+        volatile boolean strangleAdjustSensexDte3          = false;
+        volatile boolean strangleAdjustSensexDte4          = false;
         volatile double  strangleAdjustSensexTargetPremium = 120.0;
         volatile double  strangleAdjustSensexSlMultiplier  = 2.0;
         // Hedge (BUY leg during recovery adjustment). Master toggle: when false, the
@@ -411,21 +414,42 @@ public class RiskSettingsStore {
     public String  getStrangleAdjustEntryTime()            { return cfg().strangleAdjustEntryTime; }
     public String  getStrangleAdjustSquareOffTime()        { return cfg().strangleAdjustSquareOffTime; }
     // NIFTY tab
-    public boolean isStrangleAdjustNiftyMonday()           { return cfg().strangleAdjustNiftyMonday; }
-    public boolean isStrangleAdjustNiftyTuesday()          { return cfg().strangleAdjustNiftyTuesday; }
-    public boolean isStrangleAdjustNiftyWednesday()        { return cfg().strangleAdjustNiftyWednesday; }
-    public boolean isStrangleAdjustNiftyThursday()         { return cfg().strangleAdjustNiftyThursday; }
-    public boolean isStrangleAdjustNiftyFriday()           { return cfg().strangleAdjustNiftyFriday; }
+    public boolean isStrangleAdjustNiftyDte0()             { return cfg().strangleAdjustNiftyDte0; }
+    public boolean isStrangleAdjustNiftyDte1()             { return cfg().strangleAdjustNiftyDte1; }
+    public boolean isStrangleAdjustNiftyDte2()             { return cfg().strangleAdjustNiftyDte2; }
+    public boolean isStrangleAdjustNiftyDte3()             { return cfg().strangleAdjustNiftyDte3; }
+    public boolean isStrangleAdjustNiftyDte4()             { return cfg().strangleAdjustNiftyDte4; }
     public double  getStrangleAdjustNiftyTargetPremium()   { return cfg().strangleAdjustNiftyTargetPremium; }
     public double  getStrangleAdjustNiftySlMultiplier()    { return cfg().strangleAdjustNiftySlMultiplier; }
     // SENSEX tab
-    public boolean isStrangleAdjustSensexMonday()          { return cfg().strangleAdjustSensexMonday; }
-    public boolean isStrangleAdjustSensexTuesday()         { return cfg().strangleAdjustSensexTuesday; }
-    public boolean isStrangleAdjustSensexWednesday()       { return cfg().strangleAdjustSensexWednesday; }
-    public boolean isStrangleAdjustSensexThursday()        { return cfg().strangleAdjustSensexThursday; }
-    public boolean isStrangleAdjustSensexFriday()          { return cfg().strangleAdjustSensexFriday; }
+    public boolean isStrangleAdjustSensexDte0()            { return cfg().strangleAdjustSensexDte0; }
+    public boolean isStrangleAdjustSensexDte1()            { return cfg().strangleAdjustSensexDte1; }
+    public boolean isStrangleAdjustSensexDte2()            { return cfg().strangleAdjustSensexDte2; }
+    public boolean isStrangleAdjustSensexDte3()            { return cfg().strangleAdjustSensexDte3; }
+    public boolean isStrangleAdjustSensexDte4()            { return cfg().strangleAdjustSensexDte4; }
     public double  getStrangleAdjustSensexTargetPremium()  { return cfg().strangleAdjustSensexTargetPremium; }
     public double  getStrangleAdjustSensexSlMultiplier()   { return cfg().strangleAdjustSensexSlMultiplier; }
+    /** Returns true if the NIFTY tab has the given DTE checkbox enabled. Values 0..4. */
+    public boolean isStrangleAdjustNiftyDteEnabled(int dte) {
+        return switch (dte) {
+            case 0 -> cfg().strangleAdjustNiftyDte0;
+            case 1 -> cfg().strangleAdjustNiftyDte1;
+            case 2 -> cfg().strangleAdjustNiftyDte2;
+            case 3 -> cfg().strangleAdjustNiftyDte3;
+            case 4 -> cfg().strangleAdjustNiftyDte4;
+            default -> false;
+        };
+    }
+    public boolean isStrangleAdjustSensexDteEnabled(int dte) {
+        return switch (dte) {
+            case 0 -> cfg().strangleAdjustSensexDte0;
+            case 1 -> cfg().strangleAdjustSensexDte1;
+            case 2 -> cfg().strangleAdjustSensexDte2;
+            case 3 -> cfg().strangleAdjustSensexDte3;
+            case 4 -> cfg().strangleAdjustSensexDte4;
+            default -> false;
+        };
+    }
     public boolean isStrangleAdjustHedgeEnabled()          { return cfg().strangleAdjustHedgeEnabled; }
     public int     getStrangleAdjustHedgeStrikesAway()     { return cfg().strangleAdjustHedgeStrikesAway; }
     public double  getStrangleAdjustHedgeQtyMultiplier()   { return cfg().strangleAdjustHedgeQtyMultiplier; }
@@ -608,19 +632,19 @@ public class RiskSettingsStore {
     public void setStrangleAdjustEntryTime(String v)             { cfg().strangleAdjustEntryTime = (v == null || v.isBlank()) ? "09:20" : v.trim(); }
     public void setStrangleAdjustSquareOffTime(String v)         { cfg().strangleAdjustSquareOffTime = (v == null || v.isBlank()) ? "15:15" : v.trim(); }
     // NIFTY tab setters
-    public void setStrangleAdjustNiftyMonday(boolean v)          { cfg().strangleAdjustNiftyMonday    = v; }
-    public void setStrangleAdjustNiftyTuesday(boolean v)         { cfg().strangleAdjustNiftyTuesday   = v; }
-    public void setStrangleAdjustNiftyWednesday(boolean v)       { cfg().strangleAdjustNiftyWednesday = v; }
-    public void setStrangleAdjustNiftyThursday(boolean v)        { cfg().strangleAdjustNiftyThursday  = v; }
-    public void setStrangleAdjustNiftyFriday(boolean v)          { cfg().strangleAdjustNiftyFriday    = v; }
+    public void setStrangleAdjustNiftyDte0(boolean v)            { cfg().strangleAdjustNiftyDte0 = v; }
+    public void setStrangleAdjustNiftyDte1(boolean v)            { cfg().strangleAdjustNiftyDte1 = v; }
+    public void setStrangleAdjustNiftyDte2(boolean v)            { cfg().strangleAdjustNiftyDte2 = v; }
+    public void setStrangleAdjustNiftyDte3(boolean v)            { cfg().strangleAdjustNiftyDte3 = v; }
+    public void setStrangleAdjustNiftyDte4(boolean v)            { cfg().strangleAdjustNiftyDte4 = v; }
     public void setStrangleAdjustNiftyTargetPremium(double v)    { cfg().strangleAdjustNiftyTargetPremium = Math.max(0, v); }
     public void setStrangleAdjustNiftySlMultiplier(double v)     { cfg().strangleAdjustNiftySlMultiplier  = Math.max(1.0, v); }
     // SENSEX tab setters
-    public void setStrangleAdjustSensexMonday(boolean v)         { cfg().strangleAdjustSensexMonday    = v; }
-    public void setStrangleAdjustSensexTuesday(boolean v)        { cfg().strangleAdjustSensexTuesday   = v; }
-    public void setStrangleAdjustSensexWednesday(boolean v)      { cfg().strangleAdjustSensexWednesday = v; }
-    public void setStrangleAdjustSensexThursday(boolean v)       { cfg().strangleAdjustSensexThursday  = v; }
-    public void setStrangleAdjustSensexFriday(boolean v)         { cfg().strangleAdjustSensexFriday    = v; }
+    public void setStrangleAdjustSensexDte0(boolean v)           { cfg().strangleAdjustSensexDte0 = v; }
+    public void setStrangleAdjustSensexDte1(boolean v)           { cfg().strangleAdjustSensexDte1 = v; }
+    public void setStrangleAdjustSensexDte2(boolean v)           { cfg().strangleAdjustSensexDte2 = v; }
+    public void setStrangleAdjustSensexDte3(boolean v)           { cfg().strangleAdjustSensexDte3 = v; }
+    public void setStrangleAdjustSensexDte4(boolean v)           { cfg().strangleAdjustSensexDte4 = v; }
     public void setStrangleAdjustSensexTargetPremium(double v)   { cfg().strangleAdjustSensexTargetPremium = Math.max(0, v); }
     public void setStrangleAdjustSensexSlMultiplier(double v)    { cfg().strangleAdjustSensexSlMultiplier  = Math.max(1.0, v); }
     public void setStrangleAdjustHedgeEnabled(boolean v)         { cfg().strangleAdjustHedgeEnabled = v; }
@@ -728,18 +752,18 @@ public class RiskSettingsStore {
     public String  getStrangleAdjustOrderType(String mode)            { return cfgFor(mode).strangleAdjustOrderType; }
     public String  getStrangleAdjustEntryTime(String mode)            { return cfgFor(mode).strangleAdjustEntryTime; }
     public String  getStrangleAdjustSquareOffTime(String mode)        { return cfgFor(mode).strangleAdjustSquareOffTime; }
-    public boolean isStrangleAdjustNiftyMonday(String mode)           { return cfgFor(mode).strangleAdjustNiftyMonday; }
-    public boolean isStrangleAdjustNiftyTuesday(String mode)          { return cfgFor(mode).strangleAdjustNiftyTuesday; }
-    public boolean isStrangleAdjustNiftyWednesday(String mode)        { return cfgFor(mode).strangleAdjustNiftyWednesday; }
-    public boolean isStrangleAdjustNiftyThursday(String mode)         { return cfgFor(mode).strangleAdjustNiftyThursday; }
-    public boolean isStrangleAdjustNiftyFriday(String mode)           { return cfgFor(mode).strangleAdjustNiftyFriday; }
+    public boolean isStrangleAdjustNiftyDte0(String mode)             { return cfgFor(mode).strangleAdjustNiftyDte0; }
+    public boolean isStrangleAdjustNiftyDte1(String mode)             { return cfgFor(mode).strangleAdjustNiftyDte1; }
+    public boolean isStrangleAdjustNiftyDte2(String mode)             { return cfgFor(mode).strangleAdjustNiftyDte2; }
+    public boolean isStrangleAdjustNiftyDte3(String mode)             { return cfgFor(mode).strangleAdjustNiftyDte3; }
+    public boolean isStrangleAdjustNiftyDte4(String mode)             { return cfgFor(mode).strangleAdjustNiftyDte4; }
     public double  getStrangleAdjustNiftyTargetPremium(String mode)   { return cfgFor(mode).strangleAdjustNiftyTargetPremium; }
     public double  getStrangleAdjustNiftySlMultiplier(String mode)    { return cfgFor(mode).strangleAdjustNiftySlMultiplier; }
-    public boolean isStrangleAdjustSensexMonday(String mode)          { return cfgFor(mode).strangleAdjustSensexMonday; }
-    public boolean isStrangleAdjustSensexTuesday(String mode)         { return cfgFor(mode).strangleAdjustSensexTuesday; }
-    public boolean isStrangleAdjustSensexWednesday(String mode)       { return cfgFor(mode).strangleAdjustSensexWednesday; }
-    public boolean isStrangleAdjustSensexThursday(String mode)        { return cfgFor(mode).strangleAdjustSensexThursday; }
-    public boolean isStrangleAdjustSensexFriday(String mode)          { return cfgFor(mode).strangleAdjustSensexFriday; }
+    public boolean isStrangleAdjustSensexDte0(String mode)            { return cfgFor(mode).strangleAdjustSensexDte0; }
+    public boolean isStrangleAdjustSensexDte1(String mode)            { return cfgFor(mode).strangleAdjustSensexDte1; }
+    public boolean isStrangleAdjustSensexDte2(String mode)            { return cfgFor(mode).strangleAdjustSensexDte2; }
+    public boolean isStrangleAdjustSensexDte3(String mode)            { return cfgFor(mode).strangleAdjustSensexDte3; }
+    public boolean isStrangleAdjustSensexDte4(String mode)            { return cfgFor(mode).strangleAdjustSensexDte4; }
     public double  getStrangleAdjustSensexTargetPremium(String mode)  { return cfgFor(mode).strangleAdjustSensexTargetPremium; }
     public double  getStrangleAdjustSensexSlMultiplier(String mode)   { return cfgFor(mode).strangleAdjustSensexSlMultiplier; }
     public boolean isStrangleAdjustHedgeEnabled(String mode)          { return cfgFor(mode).strangleAdjustHedgeEnabled; }
@@ -771,18 +795,18 @@ public class RiskSettingsStore {
     public void setStrangleAdjustOrderType(String mode, String v)             { cfgFor(mode).strangleAdjustOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
     public void setStrangleAdjustEntryTime(String mode, String v)             { cfgFor(mode).strangleAdjustEntryTime = (v == null || v.isBlank()) ? "09:20" : v.trim(); }
     public void setStrangleAdjustSquareOffTime(String mode, String v)         { cfgFor(mode).strangleAdjustSquareOffTime = (v == null || v.isBlank()) ? "15:15" : v.trim(); }
-    public void setStrangleAdjustNiftyMonday(String mode, boolean v)          { cfgFor(mode).strangleAdjustNiftyMonday    = v; }
-    public void setStrangleAdjustNiftyTuesday(String mode, boolean v)         { cfgFor(mode).strangleAdjustNiftyTuesday   = v; }
-    public void setStrangleAdjustNiftyWednesday(String mode, boolean v)       { cfgFor(mode).strangleAdjustNiftyWednesday = v; }
-    public void setStrangleAdjustNiftyThursday(String mode, boolean v)        { cfgFor(mode).strangleAdjustNiftyThursday  = v; }
-    public void setStrangleAdjustNiftyFriday(String mode, boolean v)          { cfgFor(mode).strangleAdjustNiftyFriday    = v; }
+    public void setStrangleAdjustNiftyDte0(String mode, boolean v)            { cfgFor(mode).strangleAdjustNiftyDte0 = v; }
+    public void setStrangleAdjustNiftyDte1(String mode, boolean v)            { cfgFor(mode).strangleAdjustNiftyDte1 = v; }
+    public void setStrangleAdjustNiftyDte2(String mode, boolean v)            { cfgFor(mode).strangleAdjustNiftyDte2 = v; }
+    public void setStrangleAdjustNiftyDte3(String mode, boolean v)            { cfgFor(mode).strangleAdjustNiftyDte3 = v; }
+    public void setStrangleAdjustNiftyDte4(String mode, boolean v)            { cfgFor(mode).strangleAdjustNiftyDte4 = v; }
     public void setStrangleAdjustNiftyTargetPremium(String mode, double v)    { cfgFor(mode).strangleAdjustNiftyTargetPremium = Math.max(0, v); }
     public void setStrangleAdjustNiftySlMultiplier(String mode, double v)     { cfgFor(mode).strangleAdjustNiftySlMultiplier  = Math.max(1.0, v); }
-    public void setStrangleAdjustSensexMonday(String mode, boolean v)         { cfgFor(mode).strangleAdjustSensexMonday    = v; }
-    public void setStrangleAdjustSensexTuesday(String mode, boolean v)        { cfgFor(mode).strangleAdjustSensexTuesday   = v; }
-    public void setStrangleAdjustSensexWednesday(String mode, boolean v)      { cfgFor(mode).strangleAdjustSensexWednesday = v; }
-    public void setStrangleAdjustSensexThursday(String mode, boolean v)       { cfgFor(mode).strangleAdjustSensexThursday  = v; }
-    public void setStrangleAdjustSensexFriday(String mode, boolean v)         { cfgFor(mode).strangleAdjustSensexFriday    = v; }
+    public void setStrangleAdjustSensexDte0(String mode, boolean v)           { cfgFor(mode).strangleAdjustSensexDte0 = v; }
+    public void setStrangleAdjustSensexDte1(String mode, boolean v)           { cfgFor(mode).strangleAdjustSensexDte1 = v; }
+    public void setStrangleAdjustSensexDte2(String mode, boolean v)           { cfgFor(mode).strangleAdjustSensexDte2 = v; }
+    public void setStrangleAdjustSensexDte3(String mode, boolean v)           { cfgFor(mode).strangleAdjustSensexDte3 = v; }
+    public void setStrangleAdjustSensexDte4(String mode, boolean v)           { cfgFor(mode).strangleAdjustSensexDte4 = v; }
     public void setStrangleAdjustSensexTargetPremium(String mode, double v)   { cfgFor(mode).strangleAdjustSensexTargetPremium = Math.max(0, v); }
     public void setStrangleAdjustSensexSlMultiplier(String mode, double v)    { cfgFor(mode).strangleAdjustSensexSlMultiplier  = Math.max(1.0, v); }
     public void setStrangleAdjustHedgeEnabled(String mode, boolean v)         { cfgFor(mode).strangleAdjustHedgeEnabled = v; }
@@ -824,18 +848,18 @@ public class RiskSettingsStore {
             upsert("strangleAdjustOrderType",          c.strangleAdjustOrderType);
             upsert("strangleAdjustEntryTime",          c.strangleAdjustEntryTime);
             upsert("strangleAdjustSquareOffTime",      c.strangleAdjustSquareOffTime);
-            upsert("strangleAdjustNiftyMonday",         String.valueOf(c.strangleAdjustNiftyMonday));
-            upsert("strangleAdjustNiftyTuesday",        String.valueOf(c.strangleAdjustNiftyTuesday));
-            upsert("strangleAdjustNiftyWednesday",      String.valueOf(c.strangleAdjustNiftyWednesday));
-            upsert("strangleAdjustNiftyThursday",       String.valueOf(c.strangleAdjustNiftyThursday));
-            upsert("strangleAdjustNiftyFriday",         String.valueOf(c.strangleAdjustNiftyFriday));
+            upsert("strangleAdjustNiftyDte0",           String.valueOf(c.strangleAdjustNiftyDte0));
+            upsert("strangleAdjustNiftyDte1",           String.valueOf(c.strangleAdjustNiftyDte1));
+            upsert("strangleAdjustNiftyDte2",           String.valueOf(c.strangleAdjustNiftyDte2));
+            upsert("strangleAdjustNiftyDte3",           String.valueOf(c.strangleAdjustNiftyDte3));
+            upsert("strangleAdjustNiftyDte4",           String.valueOf(c.strangleAdjustNiftyDte4));
             upsert("strangleAdjustNiftyTargetPremium",  String.valueOf(c.strangleAdjustNiftyTargetPremium));
             upsert("strangleAdjustNiftySlMultiplier",   String.valueOf(c.strangleAdjustNiftySlMultiplier));
-            upsert("strangleAdjustSensexMonday",        String.valueOf(c.strangleAdjustSensexMonday));
-            upsert("strangleAdjustSensexTuesday",       String.valueOf(c.strangleAdjustSensexTuesday));
-            upsert("strangleAdjustSensexWednesday",     String.valueOf(c.strangleAdjustSensexWednesday));
-            upsert("strangleAdjustSensexThursday",      String.valueOf(c.strangleAdjustSensexThursday));
-            upsert("strangleAdjustSensexFriday",        String.valueOf(c.strangleAdjustSensexFriday));
+            upsert("strangleAdjustSensexDte0",          String.valueOf(c.strangleAdjustSensexDte0));
+            upsert("strangleAdjustSensexDte1",          String.valueOf(c.strangleAdjustSensexDte1));
+            upsert("strangleAdjustSensexDte2",          String.valueOf(c.strangleAdjustSensexDte2));
+            upsert("strangleAdjustSensexDte3",          String.valueOf(c.strangleAdjustSensexDte3));
+            upsert("strangleAdjustSensexDte4",          String.valueOf(c.strangleAdjustSensexDte4));
             upsert("strangleAdjustSensexTargetPremium", String.valueOf(c.strangleAdjustSensexTargetPremium));
             upsert("strangleAdjustSensexSlMultiplier",  String.valueOf(c.strangleAdjustSensexSlMultiplier));
             upsert("strangleAdjustHedgeEnabled",        String.valueOf(c.strangleAdjustHedgeEnabled));
@@ -1005,20 +1029,20 @@ public class RiskSettingsStore {
                     case "strangleAdjustOrderType"           -> c.strangleAdjustOrderType = v;
                     case "strangleAdjustEntryTime"           -> c.strangleAdjustEntryTime = v;
                     case "strangleAdjustSquareOffTime"       -> c.strangleAdjustSquareOffTime = v;
-                    // NIFTY tab
-                    case "strangleAdjustNiftyMonday"         -> c.strangleAdjustNiftyMonday    = Boolean.parseBoolean(v);
-                    case "strangleAdjustNiftyTuesday"        -> c.strangleAdjustNiftyTuesday   = Boolean.parseBoolean(v);
-                    case "strangleAdjustNiftyWednesday"      -> c.strangleAdjustNiftyWednesday = Boolean.parseBoolean(v);
-                    case "strangleAdjustNiftyThursday"       -> c.strangleAdjustNiftyThursday  = Boolean.parseBoolean(v);
-                    case "strangleAdjustNiftyFriday"         -> c.strangleAdjustNiftyFriday    = Boolean.parseBoolean(v);
+                    // NIFTY tab (DTE checkboxes)
+                    case "strangleAdjustNiftyDte0"           -> c.strangleAdjustNiftyDte0 = Boolean.parseBoolean(v);
+                    case "strangleAdjustNiftyDte1"           -> c.strangleAdjustNiftyDte1 = Boolean.parseBoolean(v);
+                    case "strangleAdjustNiftyDte2"           -> c.strangleAdjustNiftyDte2 = Boolean.parseBoolean(v);
+                    case "strangleAdjustNiftyDte3"           -> c.strangleAdjustNiftyDte3 = Boolean.parseBoolean(v);
+                    case "strangleAdjustNiftyDte4"           -> c.strangleAdjustNiftyDte4 = Boolean.parseBoolean(v);
                     case "strangleAdjustNiftyTargetPremium"  -> c.strangleAdjustNiftyTargetPremium = Math.max(0, Double.parseDouble(v));
                     case "strangleAdjustNiftySlMultiplier"   -> c.strangleAdjustNiftySlMultiplier  = Math.max(1.0, Double.parseDouble(v));
-                    // SENSEX tab
-                    case "strangleAdjustSensexMonday"        -> c.strangleAdjustSensexMonday    = Boolean.parseBoolean(v);
-                    case "strangleAdjustSensexTuesday"       -> c.strangleAdjustSensexTuesday   = Boolean.parseBoolean(v);
-                    case "strangleAdjustSensexWednesday"     -> c.strangleAdjustSensexWednesday = Boolean.parseBoolean(v);
-                    case "strangleAdjustSensexThursday"      -> c.strangleAdjustSensexThursday  = Boolean.parseBoolean(v);
-                    case "strangleAdjustSensexFriday"        -> c.strangleAdjustSensexFriday    = Boolean.parseBoolean(v);
+                    // SENSEX tab (DTE checkboxes)
+                    case "strangleAdjustSensexDte0"          -> c.strangleAdjustSensexDte0 = Boolean.parseBoolean(v);
+                    case "strangleAdjustSensexDte1"          -> c.strangleAdjustSensexDte1 = Boolean.parseBoolean(v);
+                    case "strangleAdjustSensexDte2"          -> c.strangleAdjustSensexDte2 = Boolean.parseBoolean(v);
+                    case "strangleAdjustSensexDte3"          -> c.strangleAdjustSensexDte3 = Boolean.parseBoolean(v);
+                    case "strangleAdjustSensexDte4"          -> c.strangleAdjustSensexDte4 = Boolean.parseBoolean(v);
                     case "strangleAdjustSensexTargetPremium" -> c.strangleAdjustSensexTargetPremium = Math.max(0, Double.parseDouble(v));
                     case "strangleAdjustSensexSlMultiplier"  -> c.strangleAdjustSensexSlMultiplier  = Math.max(1.0, Double.parseDouble(v));
 
@@ -1040,6 +1064,16 @@ public class RiskSettingsStore {
                          "strangleSlMultiplier",
                          "strangleInitialCapital",
                          "strangleAdjustSlMultiplier",
+                         "strangleAdjustNiftyMonday",
+                         "strangleAdjustNiftyTuesday",
+                         "strangleAdjustNiftyWednesday",
+                         "strangleAdjustNiftyThursday",
+                         "strangleAdjustNiftyFriday",
+                         "strangleAdjustSensexMonday",
+                         "strangleAdjustSensexTuesday",
+                         "strangleAdjustSensexWednesday",
+                         "strangleAdjustSensexThursday",
+                         "strangleAdjustSensexFriday",
                          "strangleAdjustMondayInstrument",
                          "strangleAdjustTuesdayInstrument",
                          "strangleAdjustWednesdayInstrument",
