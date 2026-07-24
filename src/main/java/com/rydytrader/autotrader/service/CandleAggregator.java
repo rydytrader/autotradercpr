@@ -308,6 +308,9 @@ public class CandleAggregator {
         Candle c = new Candle(
             round(b.openPx), round(b.highPx), round(b.lowPx), round(b.closePx),
             0L, b.currentBucketStartMs, round(b.vwapLast));
+        log.info("[CandleAggregator] {} 2-min bar closed (flush) — ticks={} startMs={} O={} H={} L={} C={}",
+            symbol, b.tickCount, b.currentBucketStartMs,
+            c.open(), c.high(), c.low(), c.close());
         appendHistoryAndFire(symbol, c, false);
     }
 
@@ -380,6 +383,8 @@ public class CandleAggregator {
 
         Bucket b = bucketBySymbol.computeIfAbsent(symbol, k -> new Bucket());
         Candle closed = null;
+        int closedTicks = 0;
+        long closedStartMs = 0;
         synchronized (b) {
             if (b.currentBucketMinute < 0) {
                 b.start(bucketStart, ltp, ZonedDateTime.now(IST));
@@ -389,6 +394,8 @@ public class CandleAggregator {
                 closed = new Candle(
                     round(b.openPx), round(b.highPx), round(b.lowPx), round(b.closePx),
                     0L, b.currentBucketStartMs, round(b.vwapLast));
+                closedTicks   = b.tickCount;
+                closedStartMs = b.currentBucketStartMs;
                 b.start(bucketStart, ltp, ZonedDateTime.now(IST));
                 if (t.atp() > 0) b.vwapLast = t.atp();
             } else {
@@ -396,10 +403,16 @@ public class CandleAggregator {
                 if (ltp < b.lowPx)  b.lowPx  = ltp;
                 b.closePx = ltp;
                 if (t.atp() > 0) b.vwapLast = t.atp();
+                b.tickCount++;
             }
         }
         dirty = true;
-        if (closed != null) appendHistoryAndFire(symbol, closed, true);
+        if (closed != null) {
+            log.info("[CandleAggregator] {} 2-min bar closed — ticks={} startMs={} O={} H={} L={} C={}",
+                symbol, closedTicks, closedStartMs,
+                closed.open(), closed.high(), closed.low(), closed.close());
+            appendHistoryAndFire(symbol, closed, true);
+        }
     }
 
     /** Overwrites an existing history-ring entry with an authoritative version — used
@@ -488,6 +501,10 @@ public class CandleAggregator {
          *  the overlay curve stays continuous (VWAP is cumulative-since-open, not
          *  per-bar). */
         double vwapLast = 0;
+        /** Diagnostic — number of ticks that landed in this bucket. Logged at close so
+         *  operator can spot collapsed O=H=L=C bars caused by low tick rate (GDFL
+         *  throttle or genuinely quiet market window). */
+        int tickCount = 0;
 
         void start(int bucketStart, double ltp, ZonedDateTime nowIst) {
             currentBucketMinute  = bucketStart;
@@ -500,6 +517,7 @@ public class CandleAggregator {
             highPx  = ltp;
             lowPx   = ltp;
             closePx = ltp;
+            tickCount = 1;   // start() is called ON the first tick of the bucket
             // vwapLast intentionally NOT reset — VWAP is a running session metric.
         }
 
@@ -508,6 +526,7 @@ public class CandleAggregator {
             currentBucketStartMs = 0;
             openPx = highPx = lowPx = closePx = 0;
             vwapLast = 0;
+            tickCount = 0;
         }
     }
 }
