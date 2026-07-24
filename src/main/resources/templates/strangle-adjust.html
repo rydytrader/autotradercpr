@@ -187,53 +187,93 @@
         </div>
     </div>
 
-    <!-- ── Four hero stat cards (Open Positions / Net Day P&L / Exposed Risk / Market Clock) ── -->
-    <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:20px;" class="fade-in">
+    <!-- ── Top row: Overview (span 3) + Market Clock (span 1) ── -->
+    <div style="display:grid;grid-template-columns:repeat(4, 1fr);gap:16px;margin-bottom:20px;" class="fade-in">
 
-        <!-- Open Positions -->
-        <div class="section-card" style="margin-bottom:0;">
-            <div style="padding:20px 22px; text-align:center;">
-                <div class="stat-label" style="margin-bottom:8px;">Open Positions</div>
-                <div class="stat-value" id="statCount" style="font-size:2rem; color:var(--accent-cyan);">0</div>
-                <div class="stat-sub" style="margin-top:8px;">
-                    Side: <span id="statSide">—</span>
-                    <span style="color:var(--border); margin:0 6px;">|</span>
-                    <span style="color:var(--text-muted);" id="statNotional">Premium: ₹0</span>
+        <!-- HERO: Net Day P&L + side stats -->
+        <div class="section-card" style="margin-bottom:0;grid-column:span 3;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot"></div> Overview</div>
+                <div style="margin-left:auto;display:flex;align-items:center;gap:18px;">
+                    <div id="heroNiftySection"
+                         title="NIFTY 50 spot — last known LTP"
+                         style="display:flex; align-items:baseline; gap:8px;">
+                        <span style="font-family:var(--font-mono); font-size:0.82rem; font-weight:600; color:var(--text-secondary); letter-spacing:0.06em;">NIFTY 50 -</span>
+                        <span class="stat-value" id="heroNiftyLtp" style="font-size:1rem;">—</span>
+                    </div>
                 </div>
             </div>
-        </div>
-
-        <!-- Net Day P&L -->
-        <div class="section-card" style="margin-bottom:0;">
-            <div style="padding:20px 22px; text-align:center;">
-                <div class="stat-label" style="margin-bottom:8px;">Net Day P&amp;L</div>
-                <div class="stat-value" id="statPnl" style="font-size:2rem;">—</div>
-                <div class="stat-sub" id="statPnlSub" style="margin-top:8px;">Realized + Unrealized</div>
-            </div>
-        </div>
-
-        <!-- Exposed Risk -->
-        <div class="section-card" style="margin-bottom:0;">
-            <div style="padding:20px 22px; text-align:center;">
-                <div class="stat-label" style="margin-bottom:8px;">Exposed Risk</div>
-                <div class="stat-value" id="exposedRiskVal" style="font-size:2rem; color:#f6ad55;">₹0</div>
-                <div class="stat-sub" style="margin-top:8px;">
-                    Consumed: <span id="consumedRiskVal" style="color:#fc8181;">₹0</span>
-                    <span style="color:var(--text-muted); margin-left:6px;">Budget:</span>
-                    <span id="riskBudgetVal" style="color:#68d391;">—</span>
+            <div style="padding:20px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px;">
+                <div>
+                    <div class="stat-label" style="margin-bottom:6px;">Net Day P&amp;L</div>
+                    <div class="stat-value" id="netDayPnl" style="font-size:2.2rem;">0.00</div>
+                    <div class="stat-sub" id="netDayPnlSub" style="margin-top:6px;">Realized + Open MTM</div>
+                </div>
+                <div style="display:flex; gap:32px; flex-wrap:wrap;">
+                    <div style="text-align:center;">
+                        <div class="stat-label">Realised</div>
+                        <div class="stat-value" id="heroRealised" style="font-size:1.1rem; margin-top:4px;">0.00</div>
+                    </div>
+                    <div style="text-align:center;">
+                        <div class="stat-label">Open MTM</div>
+                        <div class="stat-value" id="heroOpenMtm" style="font-size:1.1rem; margin-top:4px;">0.00</div>
+                    </div>
+                    <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
+                        <div class="stat-label" title="Worst-case loss for the currently OPEN legs if each hits SL. Closed legs are excluded — their loss has already been realised (see Consumed Risk).">Active Risk</div>
+                        <div class="stat-value" id="heroRisk" style="font-size:1.1rem; margin-top:4px;">—</div>
+                    </div>
+                    <div style="text-align:center;">
+                        <div class="stat-label" title="Realised LOSS from legs already closed today (frozen at SL hit / squareoff). A closed leg in profit is not consumed risk — shows as —.">Consumed Risk</div>
+                        <div class="stat-value" id="heroConsumedRisk" style="font-size:1.1rem; margin-top:4px;">—</div>
+                    </div>
+                    <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
+                        <div class="stat-label">State</div>
+                        <div class="stat-value" id="heroStatePill" style="font-size:0.95rem; margin-top:4px;">—</div>
+                    </div>
                 </div>
             </div>
         </div>
 
         <!-- Market Clock -->
-        <div class="section-card" style="margin-bottom:0;">
-            <div style="padding:20px 22px; text-align:center;">
-                <div class="stat-label" style="margin-bottom:8px;">Market Clock</div>
+        <div class="section-card" style="margin-bottom:0; display:flex; flex-direction:column;">
+            <div class="section-header">
+                <div class="section-title"><div class="section-title-dot"></div> Market Clock</div>
+            </div>
+            <div style="padding:20px 22px; text-align:center; flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;">
                 <div class="stat-value" id="marketClock" style="font-size:2rem;">—</div>
                 <div class="stat-sub" id="marketClockSub" style="margin-top:8px;">Checking…</div>
             </div>
         </div>
 
+    </div>
+
+    <!-- ── Risk Band — per-leg SL triggers + leg open/closed state ── -->
+    <div class="section-card fade-in" style="margin-bottom:20px;">
+        <div class="section-header">
+            <div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan);"></div> Risk Band</div>
+            <div style="margin-left:auto; display:flex; align-items:center; gap:8px;">
+                <span id="paneSlPctBadge"
+                      title="Configured per-leg SL as a multiple of the received premium (from Settings → STRANGLE-ADJ → SL Multiplier)."
+                      style="font-family:var(--font-mono); font-size:0.6rem; font-weight:700;
+                             color:var(--accent-cyan); letter-spacing:0.06em;
+                             background:rgba(125,211,252,0.10); border:1px solid rgba(125,211,252,0.25);
+                             padding:3px 9px; border-radius:999px;">LEG SL · —%</span>
+            </div>
+        </div>
+        <div style="padding:16px 22px; display:grid; grid-template-columns:repeat(3, 1fr); gap:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span class="stat-label" style="margin:0;">CE SL Trigger</span>
+                <span class="stat-value" id="paneCeSlTrigger" style="font-size:1rem; color:var(--accent-red, #f87171);">—</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span class="stat-label" style="margin:0;">PE SL Trigger</span>
+                <span class="stat-value" id="panePeSlTrigger" style="font-size:1rem; color:var(--accent-red, #f87171);">—</span>
+            </div>
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span class="stat-label" style="margin:0;" title="Per-leg open/closed status. When one leg's SL fires, only that leg closes; the other keeps running until its own SL or timed squareoff.">Leg State</span>
+                <span class="stat-value" id="paneLegState" style="font-size:0.9rem;">—</span>
+            </div>
+        </div>
     </div>
 
     <!-- ── Leg Cards: CE Short / PE Short / CE Hedge / PE Hedge ──────────── -->
@@ -626,50 +666,57 @@
     function renderStats(d) {
         var positions = d.openPositions || [];
 
-        // ── Open Positions card: count + side + notional ──
-        var sides = new Set();
-        var notional = 0;
-        positions.forEach(function(p) {
-            if (/CE$/.test(p.symbol)) sides.add('CE');
-            else if (/PE$/.test(p.symbol)) sides.add('PE');
-            notional += Number(p.entryPrice || 0) * Number(p.qty || 0);
-        });
-        var sideLabel = positions.length === 0 ? '—'
-            : (sides.has('CE') && sides.has('PE') ? 'CE+PE'
-                : sides.has('CE') ? 'CE'
-                : sides.has('PE') ? 'PE' : '—');
-        document.getElementById('statCount').textContent = positions.length;
-        document.getElementById('statSide').textContent = sideLabel;
-        document.getElementById('statNotional').textContent = 'Premium: ' + fmtRs(notional);
+        // ── Overview hero — NIFTY chip + Net Day P&L + Realised / Open MTM / Risk / State ──
+        var niftyEl = document.getElementById('heroNiftyLtp');
+        if (niftyEl) niftyEl.textContent = d.spotLtp != null && Number(d.spotLtp) > 0 ? fmtRs(d.spotLtp) : '—';
 
-        // ── Net Day P&L card ──
-        var closed = (d.todayClosedTrades || []).reduce(function(a, b) { return a + Number(b.netPnl || 0); }, 0);
+        var closed  = (d.todayClosedTrades || []).reduce(function(a, b) { return a + Number(b.netPnl || 0); }, 0);
         var openMtm = positions.reduce(function(a, p) { return a + Number(p.mtm || 0); }, 0);
-        var net = closed + openMtm;
-        var statPnlEl = document.getElementById('statPnl');
-        statPnlEl.textContent = fmtRs(net);
-        statPnlEl.className = 'stat-value ' + pnlClass(net);
+        var net     = closed + openMtm;
+        var pnlEl = document.getElementById('netDayPnl');
+        pnlEl.textContent = fmtRs(net);
+        pnlEl.className   = 'stat-value ' + pnlClass(net);
 
-        // ── Exposed Risk card (replaces the section-header badges) ──
+        var realEl = document.getElementById('heroRealised');
+        realEl.textContent = fmtRs(closed);
+        realEl.className   = 'stat-value ' + pnlClass(closed);
+        var openEl = document.getElementById('heroOpenMtm');
+        openEl.textContent = fmtRs(openMtm);
+        openEl.className   = 'stat-value ' + pnlClass(openMtm);
+
         var risk = d.risk || { exposedRisk: 0, consumedRisk: 0, dailyRiskBudget: 0 };
         var exposed  = Number(risk.exposedRisk || 0);
         var consumed = Number(risk.consumedRisk || 0);
-        var budget   = Number(risk.dailyRiskBudget || 0);
-        document.getElementById('exposedRiskVal').textContent  = fmtRs(exposed);
-        document.getElementById('consumedRiskVal').textContent = fmtRs(consumed);
-        var budgetEl = document.getElementById('riskBudgetVal');
-        var used = exposed + consumed;
-        budgetEl.textContent = budget > 0
-            ? (fmtRs(used) + ' / ' + fmtRs(budget))
-            : fmtRs(used);
-        if (budget > 0) {
-            var pct = used / budget;
-            if (pct >= 1)        budgetEl.style.color = '#fc8181';
-            else if (pct >= 0.8) budgetEl.style.color = '#f6ad55';
-            else                 budgetEl.style.color = '#68d391';
-        } else {
-            budgetEl.style.color = 'var(--text-muted)';
+        document.getElementById('heroRisk').textContent         = exposed  > 0 ? fmtRs(exposed)  : '—';
+        document.getElementById('heroConsumedRisk').textContent = consumed > 0 ? fmtRs(consumed) : '—';
+
+        // State pill — colour-coded lifecycle.
+        var stateEl = document.getElementById('heroStatePill');
+        var lifecycle = String(d.lifecycle || '—');
+        stateEl.textContent = lifecycle;
+        stateEl.style.color = lifecycle.startsWith('OPEN')     ? 'var(--accent-cyan)'
+                            : lifecycle === 'DONE_FOR_DAY'      ? 'var(--text-muted)'
+                            : lifecycle === 'IDLE'              ? 'var(--accent-green)'
+                            :                                     'var(--text-secondary)';
+
+        // ── Risk Band — per-leg SL triggers + leg-open/closed state ──
+        var ceShort = null, peShort = null;
+        for (var i = 0; i < positions.length; i++) {
+            var p = positions[i];
+            if (!p || !p.role) continue;
+            if ((p.role === 'ENTRY_CE' || p.role === 'ADJUST_CE') && p.isShort) ceShort = p;
+            else if ((p.role === 'ENTRY_PE' || p.role === 'ADJUST_PE') && p.isShort) peShort = p;
         }
+        document.getElementById('paneCeSlTrigger').textContent = ceShort && ceShort.slLevel > 0 ? fmtRs(ceShort.slLevel) : '—';
+        document.getElementById('panePeSlTrigger').textContent = peShort && peShort.slLevel > 0 ? fmtRs(peShort.slLevel) : '—';
+        var legStateEl = document.getElementById('paneLegState');
+        legStateEl.textContent = (ceShort ? 'CE OPEN' : 'CE —') + ' · ' + (peShort ? 'PE OPEN' : 'PE —');
+        // SL % badge from risk-settings — fallback "—%" if not published in the payload.
+        var slMult = Number((d.strangleAdjust || {}).slMultiplier || 0);
+        var slPct  = slMult > 0 ? Math.round((slMult - 1) * 100) : 0;
+        document.getElementById('paneSlPctBadge').textContent = slPct > 0
+            ? ('LEG SL · ' + slPct + '%')
+            : 'LEG SL · —%';
 
         // Disable squareoff when nothing open
         document.getElementById('squareOffBtn').disabled = positions.length === 0;

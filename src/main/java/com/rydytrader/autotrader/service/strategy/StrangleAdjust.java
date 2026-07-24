@@ -887,11 +887,14 @@ public class StrangleAdjust implements Strategy {
         m.put("todaysInstrument",  state.todaysInstrument);
 
         // StrangleAdjust-specific block: today's original strikes + adjustment flags.
+        // slMultiplier exposed so the trade page's Risk Band badge can render
+        // "LEG SL · N%" without a second /api/settings/risk round-trip.
         Map<String, Object> str = new LinkedHashMap<>();
         str.put("originalCeStrike", state.originalCeStrike);
         str.put("originalPeStrike", state.originalPeStrike);
         str.put("ceAdjusted",       state.ceAdjusted);
         str.put("peAdjusted",       state.peAdjusted);
+        str.put("slMultiplier",     riskSettings.getStrangleAdjustSlMultiplier());
         m.put("strangleAdjust", str);
 
         // Open positions
