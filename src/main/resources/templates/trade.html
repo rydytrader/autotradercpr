@@ -1017,13 +1017,6 @@
     // ΔPE (green) since baseline.
     var oiChart = null;
     var oiThresholdPct = 40;
-    /** Exchange - browser clock skew in ms. Updated on each /api/atmvwap/oi/state poll
-     *  from the exchangeNowMs field. Positive = exchange is AHEAD of browser (typical
-     *  when local clock hasn't NTP-synced recently). Used to align the minute-boundary
-     *  poll schedule + the "updated HH:MM:SS" badge on the OI chart to exchange time
-     *  instead of browser wall-clock. */
-    var oiExchangeClockOffsetMs = 0;
-
     function oiPnlClass(v) { return v > 0 ? 'pnl-positive' : (v < 0 ? 'pnl-negative' : ''); }
     function oiInFmt(v) {
         // Indian-style number grouping — matches the header ΔCE / ΔPE convention.
@@ -1043,12 +1036,6 @@
         if (document.visibilityState !== 'visible') return;
         fetch('/api/atmvwap/oi/state').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
-            // Refresh exchange-clock offset (server → browser) on every poll so the
-            // minute-aligned scheduler + "updated" badge track exchange time even if the
-            // browser's clock drifts. exchangeNowMs is 0 pre-first-tick — leave offset 0.
-            if (d.exchangeNowMs && Number(d.exchangeNowMs) > 0) {
-                oiExchangeClockOffsetMs = Number(d.exchangeNowMs) - Date.now();
-            }
             var pill = document.getElementById('oiTrendPill');
             var atmEl = document.getElementById('oiAtm');
             var strikeEl = document.getElementById('oiStrikeCount');
@@ -1083,16 +1070,12 @@
             };
             if (ceEl) ceEl.textContent = d.cumulativeCeChange != null ? oiSigned(d.cumulativeCeChange) : '—';
             if (peEl) peEl.textContent = d.cumulativePeChange != null ? oiSigned(d.cumulativePeChange) : '—';
-            // Last-update badge — displays EXCHANGE time (browser time + skew offset)
-            // so it aligns with actual 1-min bar boundaries rather than showing a
-            // browser-clock-drifted value.
             var updatedEl = document.getElementById('oiUpdatedAt');
             if (updatedEl) {
-                var exchNow = Date.now() + oiExchangeClockOffsetMs;
-                var d2 = new Date(exchNow + 5.5 * 3600 * 1000);
-                var hh = String(d2.getUTCHours()).padStart(2, '0');
-                var mm = String(d2.getUTCMinutes()).padStart(2, '0');
-                var ss = String(d2.getUTCSeconds()).padStart(2, '0');
+                var d2 = new Date();
+                var hh = String(d2.getHours()).padStart(2, '0');
+                var mm = String(d2.getMinutes()).padStart(2, '0');
+                var ss = String(d2.getSeconds()).padStart(2, '0');
                 updatedEl.textContent = 'updated ' + hh + ':' + mm + ':' + ss;
             }
         }).catch(function() {});
@@ -1171,27 +1154,8 @@
         // ATM…" placeholder covers the canvas.
         pollOiState();
         pollOiHistory();
-        // Minute-aligned polls — synced with OptionOiTracker.snapshotForChart which
-        // records a fresh sample at :00 of every EXCHANGE minute (cron "0 * 9-15 ...").
-        // Uses EXCHANGE time (browser time + oiExchangeClockOffsetMs) for boundary
-        // detection so if the browser clock drifts 2-3 s behind exchange, the poll
-        // still fires just after the exchange minute boundary — not 2-3 s early where
-        // the sample wouldn't be recorded yet.
-        (function scheduleMinuteAligned() {
-            var exchNow = Date.now() + oiExchangeClockOffsetMs;
-            var msPastMinute = exchNow % 60000;
-            var msUntilNextMinute = 60000 - msPastMinute + 500;   // +500 ms grace
-            setTimeout(function tick() {
-                pollOiState();
-                pollOiHistory();
-                // Re-align each tick — the offset can drift as the browser's clock
-                // adjusts (NTP sync, sleep/wake, etc). Recomputing every minute keeps
-                // the schedule locked to exchange time indefinitely.
-                var next = Date.now() + oiExchangeClockOffsetMs;
-                var delay = 60000 - (next % 60000) + 500;
-                setTimeout(tick, delay);
-            }, msUntilNextMinute);
-        })();
+        setInterval(pollOiState, 30000);
+        setInterval(pollOiHistory, 60000);
     });
 </script>
 
