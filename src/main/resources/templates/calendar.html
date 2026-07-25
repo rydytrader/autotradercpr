@@ -1054,9 +1054,16 @@ function checkConnection() {
         const label = document.getElementById('connectionStatus');
         var status  = d.status  || 'DISCONNECTED';
         var gdfl    = d.gdfl    || 'DISABLED';
-        var overall = d.overall || status;
-        // Combined label — always show both vendors. GDFL DISABLED (kill switch
-        // off) hides its chip so the display isn't cluttered.
+        // Overall — prefer the backend's composite. If missing (pre-upgrade server),
+        // derive from the Fyers status string the old way: green when it contains
+        // 'WS CONNECTED', yellow for any transitional state, else red.
+        var overall = d.overall;
+        if (!overall) {
+            if (status.indexOf('WS CONNECTED') >= 0) overall = 'CONNECTED';
+            else if (status.indexOf('CONNECTING') >= 0 || status.indexOf('RECONNECTING') >= 0
+                     || status === 'POLLING' || status === 'SYNCING') overall = 'SYNCING';
+            else overall = 'DISCONNECTED';
+        }
         var text = status + (gdfl === 'DISABLED' ? '' : ' · GDFL ' + gdfl);
         if (overall === 'CONNECTED') {
             dot.className = 'status-dot connected'; label.textContent = text; label.style.color = 'var(--accent-green)';
