@@ -64,19 +64,30 @@ public class OptionOiSubscriber {
     private final MarketDataService    marketDataService;
     private final OptionOiTracker      oiTracker;
     private final MarketHolidayService marketHolidayService;
+    private final org.springframework.beans.factory.ObjectProvider<com.rydytrader.autotrader.gdfl.GdflProperties> gdflPropertiesProvider;
 
     public OptionOiSubscriber(FyersClientRouter fyersClient,
                               TokenStore        tokenStore,
                               FyersProperties   fyersProperties,
                               MarketDataService marketDataService,
                               OptionOiTracker   oiTracker,
-                              MarketHolidayService marketHolidayService) {
+                              MarketHolidayService marketHolidayService,
+                              org.springframework.beans.factory.ObjectProvider<com.rydytrader.autotrader.gdfl.GdflProperties> gdflPropertiesProvider) {
         this.fyersClient          = fyersClient;
         this.tokenStore           = tokenStore;
         this.fyersProperties      = fyersProperties;
         this.marketDataService    = marketDataService;
         this.oiTracker            = oiTracker;
         this.marketHolidayService = marketHolidayService;
+        this.gdflPropertiesProvider = gdflPropertiesProvider;
+    }
+
+    /** True when the alternate feed (GDFL) is enabled and owns the option-tick
+     *  stream. In that mode Fyers-side WS subscribes for CE/PE are dead weight
+     *  — MarketDataService.onTick drops those ticks at ingress. */
+    private boolean gdflOwnsOptionTicks() {
+        var props = gdflPropertiesProvider == null ? null : gdflPropertiesProvider.getIfAvailable();
+        return props != null && props.isEnabled();
     }
 
     @PostConstruct
@@ -147,18 +158,24 @@ public class OptionOiSubscriber {
         }
 
         List<String> newSymbols = oiTracker.setActiveWindow(atm, window);
-        // Always push the FULL window at MarketDataService — subscribeAdditional dedups
-        // internally, so this is a no-op for already-subscribed symbols but is essential
-        // after a mid-day restart: the tracker's routing map is restored from disk (so
-        // newSymbols comes back empty), but the fresh MarketDataService WS has never
-        // subscribed these option legs. Relying only on newSymbols starved the OI feed
-        // post-restart → ΔCE / ΔPE frozen.
+        // Push the FULL window at Fyers MarketDataService — but ONLY when GDFL
+        // isn't the option-side feed. In GDFL mode these strikes are altFeed-owned
+        // (GdflService.subscribeOne marks them at subscribe time), so a Fyers WS
+        // subscribe here would be dead weight — ticks would be dropped at
+        // MarketDataService.onTick's altFeedOwnedSymbols guard.
+        //
+        // subscribeAdditional dedups internally, so in Fyers-only mode this is a
+        // no-op for already-subscribed symbols but essential after a mid-day
+        // restart (the tracker's routing map is restored from disk so
+        // newSymbols comes back empty, but the fresh MarketDataService WS has
+        // never subscribed these option legs — relying on newSymbols alone
+        // starved the OI feed post-restart → ΔCE / ΔPE frozen).
         List<String> allSymbols = new ArrayList<>();
         for (OptionOiTracker.StrikeSymbols ss : window) {
             if (ss.ceSymbol() != null && !ss.ceSymbol().isBlank()) allSymbols.add(ss.ceSymbol());
             if (ss.peSymbol() != null && !ss.peSymbol().isBlank()) allSymbols.add(ss.peSymbol());
         }
-        if (!allSymbols.isEmpty()) {
+        if (!allSymbols.isEmpty() && !gdflOwnsOptionTicks()) {
             marketDataService.subscribeAdditional(allSymbols);
         }
         lastAtmSubscribed = atm;

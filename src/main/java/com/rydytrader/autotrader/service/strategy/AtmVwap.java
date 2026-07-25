@@ -752,8 +752,14 @@ public class AtmVwap implements Strategy {
             if (pe != null && !pe.isBlank()) subs.add(pe);
         }
         if (subs.isEmpty()) return;
-        try { marketDataService.subscribeAdditional(subs); }
-        catch (Exception ignored) {}
+        // In GDFL mode CE/PE ticks are altFeed-owned; a Fyers WS subscribe would
+        // be dead weight (ticks dropped at MarketDataService.onTick). Aggregator
+        // listeners still register unconditionally so GDFL's pushLtpTick fans
+        // out into the same bucketing pipeline.
+        if (!gdflOwnsOptionTicks()) {
+            try { marketDataService.subscribeAdditional(subs); }
+            catch (Exception ignored) {}
+        }
         for (String sym : subs) {
             if (aggregatorSubscribedSymbols.contains(sym)) continue;
             final String s = sym;
@@ -1219,8 +1225,14 @@ public class AtmVwap implements Strategy {
             event("[ERROR]", "AUTO ENTRY", "entry order rejected for " + shortSym(symbol));
             return;
         }
-        try { marketDataService.subscribeAdditional(java.util.Collections.singletonList(symbol)); }
-        catch (Exception ignored) {}
+        // Only subscribe on Fyers WS when GDFL isn't the option-side feed. In
+        // GDFL mode this symbol is already altFeed-owned via the OI-window /
+        // aggregation-leg subscribe path; a Fyers WS subscribe would be dead
+        // weight (ticks dropped at MarketDataService.onTick).
+        if (!gdflOwnsOptionTicks()) {
+            try { marketDataService.subscribeAdditional(java.util.Collections.singletonList(symbol)); }
+            catch (Exception ignored) {}
+        }
 
         // SL is tick-based inside fastSlCheck — no broker SL order is placed.
         // Tag the setup by which leg fired so analytics can split CE vs PE performance.
