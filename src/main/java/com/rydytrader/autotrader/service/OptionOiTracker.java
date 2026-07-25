@@ -275,6 +275,8 @@ public class OptionOiTracker {
     public synchronized Snapshot snapshot() {
         String bias = state.bias;
         if (isStale()) bias = "STALE";
+        double pcr       = computePcr(state.cumulativeCeChange, state.cumulativePeChange);
+        String pcrTrend  = computePcrTrend(pcr);
         return new Snapshot(
             state.baselineTakenAt,
             state.lastSampleAt,
@@ -287,7 +289,39 @@ public class OptionOiTracker {
             state.atmStrike,
             state.activeStrikes == null ? 0 : state.activeStrikes.size(),
             round2(currentBiasThreshold() * 100.0),
-            round2(actualBiasPct(state.cumulativeCeChange, state.cumulativePeChange)));
+            round2(actualBiasPct(state.cumulativeCeChange, state.cumulativePeChange)),
+            round2(pcr),
+            pcrTrend);
+    }
+
+    /** Put-Call Ratio based on CHANGE-in-OI since baseline. Standard convention:
+     *  PCR = ΔPE cumulative / ΔCE cumulative. Values > 1 indicate more puts being
+     *  written (bullish tilt — put writers expect price to hold or rise);
+     *  values < 1 indicate more calls being written (bearish tilt). Cumulative
+     *  changes that go negative (writers unwinding) are clamped to 0 so the ratio
+     *  reflects OI BUILDING only, matching the bias-percent convention. Returns
+     *  {@code -1} when either side has zero building (ratio undefined / not
+     *  useful) — the UI should render "—" in that case. */
+    static double computePcr(long cumCe, long cumPe) {
+        double ce = Math.max(0, cumCe);
+        double pe = Math.max(0, cumPe);
+        if (ce == 0 || pe == 0) return -1;
+        return pe / ce;
+    }
+
+    /** PCR pivot — the fixed baseline against which the trend flips. Standard
+     *  convention: PCR = 1 means puts and calls being written in equal amounts;
+     *  PCR > 1 indicates put-side dominance (bullish tilt), PCR < 1 indicates
+     *  call-side dominance (bearish tilt). Not exposed as a setting — the
+     *  neutral point for the ratio is definitionally 1.0. */
+    private static final double PCR_TREND_BASELINE = 1.0;
+
+    /** BULLISH / BEARISH / N/A based on the current PCR versus the fixed 1.0
+     *  baseline. N/A when PCR isn't computable (either side hasn't started
+     *  building OI yet). */
+    private String computePcrTrend(double currentPcr) {
+        if (currentPcr < 0) return "N/A";
+        return currentPcr >= PCR_TREND_BASELINE ? "BULLISH" : "BEARISH";
     }
 
     /** Actual bias magnitude — the difference between CE and PE cumulative OI change
@@ -455,7 +489,15 @@ public class OptionOiTracker {
                            /** Signed actual percent by which one side exceeds the other
                             *  since baseline. +ve = CE > PE (bearish tilt), −ve = PE > CE
                             *  (bullish tilt). See {@link #actualBiasPct}. */
-                           double        biasActualPct) {}
+                           double        biasActualPct,
+                           /** PCR = ΔPE / ΔCE since baseline. > 1 bullish tilt
+                            *  (put writing dominant); < 1 bearish. Returns {@code -1}
+                            *  when either side has zero OI building. */
+                           double        pcr,
+                           /** RISING / FALLING / FLAT / N/A — direction of PCR vs
+                            *  ~15 min ago (from the samples ring). See
+                            *  {@link #computePcrTrend}. */
+                           String        pcrTrend) {}
 
     public record History(LocalDateTime baselineTakenAt, List<SampleRecord> samples) {}
 
