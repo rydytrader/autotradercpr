@@ -34,13 +34,6 @@ public class GdflProperties {
     /** Exchange code for subscribe messages. NFO for NIFTY options, NSE_IDX for indices. */
     private String exchange = "NFO";
 
-    /** Which ATM leg(s) to route through GDFL. Values: {@code CE}, {@code PE}, {@code BOTH}.
-     *  When set to a single side, Fyers ticks for the OTHER side aggregate as normal AND
-     *  Fyers ticks for the GDFL-owned side are DROPPED at ingress so the aggregator
-     *  builds the bar exclusively from GDFL — useful for side-by-side comparison against
-     *  TradingView (e.g. GDFL-only CE vs Fyers-only PE). Default {@code BOTH}. */
-    private String subscribeSide = "BOTH";
-
     /** Seconds between reconnect attempts on disconnect. */
     private int reconnectDelaySeconds = 5;
 
@@ -59,9 +52,6 @@ public class GdflProperties {
 
     public String getExchange() { return exchange; }
     public void setExchange(String exchange) { this.exchange = exchange; }
-
-    public String getSubscribeSide() { return subscribeSide; }
-    public void setSubscribeSide(String v) { this.subscribeSide = v == null ? "BOTH" : v.trim().toUpperCase(); }
 
     public int getReconnectDelaySeconds() { return reconnectDelaySeconds; }
     public void setReconnectDelaySeconds(int v) { this.reconnectDelaySeconds = v; }

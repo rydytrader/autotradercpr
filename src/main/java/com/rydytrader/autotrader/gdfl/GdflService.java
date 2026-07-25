@@ -170,39 +170,23 @@ public class GdflService {
             // WS must be up + authenticated.
             if (wsClient == null || !wsClient.isAuthenticated()) return;
 
-            // 1) OI-tracker window — populated as early as 09:15 pre-warm by
-            //    OptionOiSubscriber.onPreWarm. Subscribing here (not gated on ATM
-            //    resolution) means every strike's OI baseline is captured from GDFL
-            //    at 09:15, not source-swapped from Fyers at 09:17. Pre-warm ±10 = 42
-            //    symbols, comfortably under GDFL's 50-symbol cap. subscribeOne is
-            //    idempotent — the every-5-s poll doesn't re-send SubscribeRealtime.
+            // OI-tracker window — populated as early as 09:15 pre-warm by
+            // OptionOiSubscriber.onPreWarm. Subscribing here (not gated on ATM
+            // resolution) means every strike's OI baseline is captured from GDFL
+            // at 09:15, not source-swapped from Fyers at 09:17. Pre-warm ±10 = 42
+            // symbols, comfortably under GDFL's 50-symbol cap. subscribeOne is
+            // idempotent — the every-5-s poll doesn't re-send SubscribeRealtime.
+            //
+            // The ATM CE + PE aggregation legs are always inside the ±10 window,
+            // so they're subscribed here too — no separate aggregation-legs block
+            // is needed (the earlier gdfl.subscribe-side filter was retired once
+            // the strategy locked into GDFL-owned CE + PE + OI end-to-end).
             OptionOiTracker oiTracker = oiTrackerProvider.getIfAvailable();
             if (oiTracker != null) {
                 for (OptionOiTracker.StrikeSymbols ss : oiTracker.activeWindow()) {
                     subscribeOne(ss.ceSymbol());
                     subscribeOne(ss.peSymbol());
                 }
-            }
-
-            // 2) Aggregation legs (LTP + OHLC → CandleAggregator + FSM). Only known
-            //    once AtmVwap resolves the ATM at 09:17. Usually a no-op because the
-            //    aggregation legs are ALREADY inside the pre-warm ±10 window and
-            //    subscribeOne saw them at 09:15 — this block just enforces the
-            //    subscribeSide filter and handles the (rare) drift case where the
-            //    resolved ATM sits outside the pre-warm window.
-            AtmVwap atmVwap = atmVwapProvider.getIfAvailable();
-            if (atmVwap == null) return;
-            String ceFyers = atmVwap.getCeSymbol();
-            String peFyers = atmVwap.getPeSymbol();
-            if (ceFyers == null || ceFyers.isBlank()) return;
-            if (peFyers == null || peFyers.isBlank()) return;
-
-            String side = props.getSubscribeSide() == null ? "BOTH"
-                : props.getSubscribeSide().trim().toUpperCase();
-            if ("CE".equals(side) || "BOTH".equals(side)) subscribeOne(ceFyers);
-            if ("PE".equals(side) || "BOTH".equals(side)) subscribeOne(peFyers);
-            if (!"CE".equals(side) && !"PE".equals(side) && !"BOTH".equals(side)) {
-                log.warn("[Gdfl] unrecognised gdfl.subscribe-side={} (allowed: CE, PE, BOTH)", side);
             }
         } catch (Exception e) {
             log.warn("[Gdfl] atm-check loop threw: {}", e.getMessage());
