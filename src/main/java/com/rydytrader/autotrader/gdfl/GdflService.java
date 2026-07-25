@@ -95,13 +95,22 @@ public class GdflService {
             log.info("[Gdfl] disabled (gdfl.enabled=false) — no WS connection opened");
             return;
         }
+        // Credentials come from env vars only (no defaults in application.properties)
+        // so missing them is a hard startup failure — fails safe rather than
+        // silently disabling GDFL and letting the strategy run without the
+        // vendor it was configured to use.
         if (props.getApiKey() == null || props.getApiKey().isBlank()) {
-            log.warn("[Gdfl] gdfl.enabled=true but GDFL_API_KEY env var is not set — skipping");
-            return;
+            throw new IllegalStateException(
+                "GDFL_API_KEY environment variable is not set. Either export "
+                + "GDFL_API_KEY before starting the server, or set "
+                + "gdfl.enabled=false in application.properties.");
         }
         if (props.getEndpoint() == null || props.getEndpoint().isBlank()) {
-            log.warn("[Gdfl] gdfl.enabled=true but gdfl.endpoint is not set — skipping");
-            return;
+            throw new IllegalStateException(
+                "GDFL_ENDPOINT environment variable is not set. Either export "
+                + "GDFL_ENDPOINT (e.g. wss://prod.your-vendor.example:443) "
+                + "before starting the server, or set gdfl.enabled=false in "
+                + "application.properties.");
         }
         connect();
         // Poll for ATM resolution every configured interval. As soon as CE + PE are
