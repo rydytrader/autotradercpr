@@ -119,6 +119,18 @@ public class GdflService {
         executor.scheduleWithFixedDelay(this::checkAtmAndSubscribe, pollSec, pollSec, TimeUnit.SECONDS);
     }
 
+    /** Public health-check for UI status widgets. Values:
+     *  <ul>
+     *    <li>{@code DISABLED} — {@code gdfl.enabled=false}, no attempt to connect.</li>
+     *    <li>{@code CONNECTED} — WS is open and authentication handshake succeeded.</li>
+     *    <li>{@code CONNECTING} — {@code boot()} ran but the WS isn't authenticated yet
+     *        (initial handshake in flight, or reconnect scheduled).</li>
+     *  </ul> */
+    public String connectionStatus() {
+        if (!props.isEnabled()) return "DISABLED";
+        return wsClient != null && wsClient.isAuthenticated() ? "CONNECTED" : "CONNECTING";
+    }
+
     @PreDestroy
     public void shutdown() {
         executor.shutdownNow();

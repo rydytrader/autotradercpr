@@ -946,19 +946,21 @@
         fetch('/status', { signal: ctrl.signal })
             .then(r => { clearTimeout(tid); return r.json(); })
             .then(d => {
-                var dot = document.getElementById('statusDot');
-                var label = document.getElementById('connectionStatus');
-                var status = d.status || 'DISCONNECTED';
-                if (status.indexOf('WS CONNECTED') >= 0) {
+                var dot     = document.getElementById('statusDot');
+                var label   = document.getElementById('connectionStatus');
+                var status  = d.status  || 'DISCONNECTED';
+                var gdfl    = d.gdfl    || 'DISABLED';
+                var overall = d.overall || status;
+                var text = status + (gdfl === 'DISABLED' ? '' : ' · GDFL ' + gdfl);
+                if (overall === 'CONNECTED') {
                     dot.className = 'status-dot connected';
-                    label.textContent = status; label.style.color = 'var(--accent-green)';
-                } else if (status.indexOf('CONNECTING') >= 0 || status.indexOf('RECONNECTING') >= 0
-                        || status === 'POLLING' || status === 'SYNCING') {
+                    label.textContent = text; label.style.color = 'var(--accent-green)';
+                } else if (overall === 'SYNCING') {
                     dot.className = 'status-dot syncing';
-                    label.textContent = status; label.style.color = 'var(--accent-yellow)';
+                    label.textContent = text; label.style.color = 'var(--accent-yellow)';
                 } else {
                     dot.className = 'status-dot disconnected';
-                    label.textContent = 'DISCONNECTED'; label.style.color = 'var(--accent-red)';
+                    label.textContent = text; label.style.color = 'var(--accent-red)';
                 }
             }).catch(() => {
                 document.getElementById('statusDot').className = 'status-dot disconnected';

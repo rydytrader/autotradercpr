@@ -1,14 +1,17 @@
 package com.rydytrader.autotrader.controller;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.rydytrader.autotrader.gdfl.GdflService;
 import com.rydytrader.autotrader.service.EventService;
 import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.OrderEventService;
@@ -28,17 +31,20 @@ public class TradingController {
     private final EventService       eventService;
     private final MarketDataService  marketDataService;
     private final OrderEventService  orderEventService;
+    private final ObjectProvider<GdflService> gdflServiceProvider;
 
     public TradingController(PollingService pollingService,
                               OrderService orderService,
                               EventService eventService,
                               MarketDataService marketDataService,
-                              OrderEventService orderEventService) {
-        this.pollingService     = pollingService;
-        this.orderService       = orderService;
-        this.eventService       = eventService;
-        this.marketDataService  = marketDataService;
-        this.orderEventService  = orderEventService;
+                              OrderEventService orderEventService,
+                              ObjectProvider<GdflService> gdflServiceProvider) {
+        this.pollingService      = pollingService;
+        this.orderService        = orderService;
+        this.eventService        = eventService;
+        this.marketDataService   = marketDataService;
+        this.orderEventService   = orderEventService;
+        this.gdflServiceProvider = gdflServiceProvider;
     }
 
     // ── SQUARE OFF ───────────────────────────────────────────────────────────────
@@ -82,9 +88,42 @@ public class TradingController {
     }
 
     // ── STATUS ────────────────────────────────────────────────────────────────
+    /** Combined vendor health for the navbar status pill.
+     *  <ul>
+     *    <li>{@code status} — Fyers connection state (existing field, unchanged).</li>
+     *    <li>{@code gdfl} — GDFL connection state: {@code CONNECTED} /
+     *        {@code CONNECTING} / {@code DISABLED}. When {@code DISABLED} the pill
+     *        should ignore GDFL and just reflect Fyers.</li>
+     *    <li>{@code overall} — composite label the UI can show directly:
+     *        {@code CONNECTED} only when Fyers is WS-connected AND GDFL is either
+     *        connected or disabled; else {@code DISCONNECTED} (or intermediate
+     *        SYNCING/POLLING/CONNECTING states from either side).</li>
+     *  </ul> */
     @GetMapping("/status")
     public Map<String, String> getStatus() {
-        return Map.of("status", pollingService.getConnectionStatus());
+        String fyers = pollingService.getConnectionStatus();
+        GdflService gdfl = gdflServiceProvider == null ? null : gdflServiceProvider.getIfAvailable();
+        String gdflState = gdfl == null ? "DISABLED" : gdfl.connectionStatus();
+
+        boolean fyersUp = fyers != null && fyers.contains("WS CONNECTED");
+        boolean gdflUp  = "DISABLED".equals(gdflState) || "CONNECTED".equals(gdflState);
+
+        String overall;
+        if (fyersUp && gdflUp) {
+            overall = "CONNECTED";
+        } else if (fyers != null && (fyers.contains("CONNECTING") || fyers.contains("RECONNECTING")
+                || "POLLING".equals(fyers) || "SYNCING".equals(fyers))
+                || "CONNECTING".equals(gdflState)) {
+            overall = "SYNCING";
+        } else {
+            overall = "DISCONNECTED";
+        }
+
+        Map<String, String> body = new LinkedHashMap<>();
+        body.put("status",  fyers);        // legacy field — do not remove.
+        body.put("gdfl",    gdflState);
+        body.put("overall", overall);
+        return body;
     }
 
     // ── EVENT LOG ─────────────────────────────────────────────────────────────
