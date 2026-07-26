@@ -476,6 +476,8 @@ public class AtmVwap implements Strategy {
             }
             state.openPositions.clear();
             state.triggerByOption.clear();
+        state.lastSlBarStartMsBySymbol.clear();
+            state.lastSlBarStartMsBySymbol.clear();
             state.doneForDay = false;
             saveToDisk();
             event("[INFO]", "System", "reset — " + (reason == null ? "" : reason));
@@ -558,11 +560,17 @@ public class AtmVwap implements Strategy {
                 // Anchor to the CURRENT bar's OPEN (the bar the SL tick fell into).
                 // e.g. SL at 09:27:54 → display "09:27" (bar starting 09:27, closing 09:29).
                 // Wall-clock time appended in the message for post-mortem precision.
+                long slBarStart = currentBarStartMs();
                 String wallClock = ZonedDateTime.now(IST).toLocalTime().withNano(0).toString();
                 eventAtDisplayTime("[WARNING]", "Exit",
                     shortSym(p.symbol) + " SL_HIT @ " + round2(ltp)
                     + " (sl=" + round2(p.slLevel) + ") @ " + wallClock,
-                    currentBarStartMs());
+                    slBarStart);
+                // Poison this bar for the same symbol: processOptionBar won't classify
+                // this bar as a new trigger candle when it closes. Rule intent: after
+                // a sharp move that took out our SL, don't immediately re-enter on the
+                // very same bar's structure.
+                state.lastSlBarStartMsBySymbol.put(p.symbol, slBarStart);
                 closePosition(p, "SL_HIT");
             }
         }
@@ -989,6 +997,14 @@ public class AtmVwap implements Strategy {
             if (symbol.equals(p.symbol)) return;
         }
 
+        // Rule: the bar that just took out an SL on this symbol cannot be
+        // classified as a trigger candle (neither seed nor promote). Prevents
+        // re-entering on the same structural bar that just moved against us.
+        // The fire path (S1a below) is unaffected — a prior bar's trigger can
+        // still fire on this bar's close breaking its low.
+        Long slBar = state.lastSlBarStartMsBySymbol.get(symbol);
+        boolean poisonedByRecentSl = slBar != null && slBar == c.startMillis();
+
         // Note: {@code c} arrives already reconciled by {@link #onCandleClose}. All FSM
         // decisions below therefore use exchange-authoritative OHLC without any per-branch
         // /history calls.
@@ -1004,12 +1020,17 @@ public class AtmVwap implements Strategy {
             }
             // (b) No fire — the old trigger is invalidated (immediate follow-through failed).
             //     If THIS bar also closes below VWAP, it's promoted to the new trigger.
-            if (c.close() < vwap) {
+            if (c.close() < vwap && !poisonedByRecentSl) {
                 state.triggerByOption.put(symbol, TriggerCandle.of(c));
                 eventAtDisplayTime("[INFO]", "Setup",
                     shortSym(symbol) + " trigger promoted @ close " + round2(c.close())
                     + " (high=" + round2(c.high()) + ", low=" + round2(c.low())
                     + ", vwap=" + round2(vwap) + ")",
+                    c.startMillis());
+            } else if (c.close() < vwap && poisonedByRecentSl) {
+                state.triggerByOption.remove(symbol);
+                eventAtDisplayTime("[INFO]", "Setup",
+                    shortSym(symbol) + " trigger promote SKIPPED — this bar took out today's SL",
                     c.startMillis());
             } else {
                 state.triggerByOption.remove(symbol);
@@ -1021,8 +1042,15 @@ public class AtmVwap implements Strategy {
             return;
         }
 
-        // S0 — no active trigger. Seed a fresh one if this bar closes below VWAP.
+        // S0 — no active trigger. Seed a fresh one if this bar closes below VWAP
+        // AND the bar didn't just take out an SL on this symbol.
         if (c.close() < vwap) {
+            if (poisonedByRecentSl) {
+                eventAtDisplayTime("[INFO]", "Setup",
+                    shortSym(symbol) + " trigger seed SKIPPED — this bar took out today's SL",
+                    c.startMillis());
+                return;
+            }
             state.triggerByOption.put(symbol, TriggerCandle.of(c));
             eventAtDisplayTime("[INFO]", "Setup",
                 shortSym(symbol) + " trigger seeded @ close " + round2(c.close())
@@ -1492,6 +1520,7 @@ public class AtmVwap implements Strategy {
         int eventsCleared = state.recentEvents.size();
         state.recentEvents.clear();
         state.triggerByOption.clear();
+        state.lastSlBarStartMsBySymbol.clear();
 
         saveToDisk();
 
@@ -1594,6 +1623,7 @@ public class AtmVwap implements Strategy {
         state.openPositions.clear();
         state.symbolRole.clear();
         state.triggerByOption.clear();
+        state.lastSlBarStartMsBySymbol.clear();
         releaseSessionLegs();
         saveToDisk();
         publishStream();
@@ -1628,6 +1658,8 @@ public class AtmVwap implements Strategy {
             state.openPositions.clear();
             state.symbolRole.clear();
             state.triggerByOption.clear();
+        state.lastSlBarStartMsBySymbol.clear();
+            state.lastSlBarStartMsBySymbol.clear();
 
             // Yesterday's resolved-ATM block — resolveAtmFromFirstBar will re-populate
             // at 09:17 from today's first NIFTY 2-min bar close.
@@ -1827,6 +1859,13 @@ public class AtmVwap implements Strategy {
         public String futuresSymbol = "";
         /** Per-option live trigger candle (VWAP FSM state). */
         public Map<String, TriggerCandle> triggerByOption = new ConcurrentHashMap<>();
+        /** Per-symbol memory of the LAST bar in which an SL fired for that symbol.
+         *  Value = the SL-hit bar's start-ms (matches {@link Candle#startMillis()}).
+         *  {@link #processOptionBar} short-circuits trigger classification when the
+         *  incoming bar matches this stamp — the bar that just took out an SL is
+         *  never re-classified as a trigger candle for a new entry on the same
+         *  symbol. Cleared on day rollover, kill switch, and end-of-session. */
+        public Map<String, Long> lastSlBarStartMsBySymbol = new ConcurrentHashMap<>();
         /** Legacy watchlist role map — kept for state-file back-compat. */
         public Map<String, WatchRole> symbolRole = new ConcurrentHashMap<>();
 
@@ -1970,6 +2009,7 @@ public class AtmVwap implements Strategy {
                 if (state.todayClosedTrades == null) state.todayClosedTrades = new ArrayList<>();
                 if (state.recentEvents == null)     state.recentEvents     = new ArrayList<>();
                 if (state.triggerByOption == null)  state.triggerByOption  = new ConcurrentHashMap<>();
+                if (state.lastSlBarStartMsBySymbol == null) state.lastSlBarStartMsBySymbol = new ConcurrentHashMap<>();
                 if (state.symbolRole == null)       state.symbolRole       = new ConcurrentHashMap<>();
                 if (state.warmingStrikes == null)     state.warmingStrikes     = new ArrayList<>();
                 if (state.warmingCeByStrike == null)  state.warmingCeByStrike  = new ConcurrentHashMap<>();
