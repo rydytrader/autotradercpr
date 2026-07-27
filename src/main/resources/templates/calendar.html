@@ -888,11 +888,7 @@
             '<div><div class="stat-label">Charges</div><div style="color:var(--text-muted);">' + fmtMoneyFull(straddleCharges) + '</div></div>' +
         '</div>' +
         '<div id="calDayAlgo" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">' +
-            '<div class="stat-label" style="margin-bottom:8px;">Algo Trades</div>' +
-            '<div style="color:var(--text-muted);">Loading…</div>' +
-        '</div>' +
-        '<div id="calDayManual" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">' +
-            '<div class="stat-label" style="margin-bottom:8px;">Manual Trades</div>' +
+            '<div class="stat-label" style="margin-bottom:8px;">Trades</div>' +
             '<div style="color:var(--text-muted);">Loading…</div>' +
         '</div>';
 
@@ -900,22 +896,18 @@
         document.getElementById('calModalBody').innerHTML = heroHtml;
         document.getElementById('calDayModal').style.display = 'flex';
 
-        // Two parallel fetches — algo and manual sit in separate strategyId buckets in the
-        // DB so each section gets its own list. Either can be empty; the section renders
-        // an empty-state placeholder when so.
-        const loadSection = (strategyId, containerId, sectionLabel) =>
-            fetch('/api/strategies/' + encodeURIComponent(strategyId) + '/trades?date=' + encodeURIComponent(dateStr))
-                .then(r => r.ok ? r.json() : { trades: [] })
-                .catch(() => ({ trades: [] }))
-                .then(payload => {
-                    const rows = (payload && payload.trades) || [];
-                    rows.sort((a, b) => (a.closedAtMillis || 0) - (b.closedAtMillis || 0));
-                    renderStrategyTradeSection(
-                        document.getElementById(containerId),
-                        rows, 'Symbol', sectionLabel);
-                });
-        loadSection('atmvwap', 'calDayAlgo',    'Algo Trades');
-        loadSection('manual',    'calDayManual',  'Manual Trades');
+        // Single fetch — atmvwap is the only active strategy. Manual-terminal
+        // was retired; its section is no longer rendered.
+        fetch('/api/strategies/atmvwap/trades?date=' + encodeURIComponent(dateStr))
+            .then(r => r.ok ? r.json() : { trades: [] })
+            .catch(() => ({ trades: [] }))
+            .then(payload => {
+                const rows = (payload && payload.trades) || [];
+                rows.sort((a, b) => (a.closedAtMillis || 0) - (b.closedAtMillis || 0));
+                renderStrategyTradeSection(
+                    document.getElementById('calDayAlgo'),
+                    rows, 'Symbol', 'Trades');
+            });
     };
 
     // Render one strategy-type section into its container. {@code singularLabel} is the
