@@ -143,10 +143,6 @@ public class StrategyHistoryController {
             m.put("setup",          backfill.lookup(backfill.setups, t.getSetup(),  t.getClosedAtMillis()));
             m.put("sessionDate",    t.getSessionDate());
             m.put("closedAtMillis", t.getClosedAtMillis());
-            // Wall-clock entry epoch — the moment the entry order was placed.
-            // UI's In-column reads this to render wall-clock HH:MM. Legacy
-            // rows without the column stay null → UI shows "—".
-            m.put("openedAtMillis", t.getOpenedAtMillis());
             m.put("qty",            t.getQty());
             m.put("entryPrice",     t.getEntryPrice() != null ? round(t.getEntryPrice()) : 0.0);
             m.put("exitPrice",      t.getExitPrice()  != null ? round(t.getExitPrice())  : 0.0);
@@ -198,10 +194,6 @@ public class StrategyHistoryController {
             m.put("setup",          backfill.lookup(backfill.setups, t.getSetup(),  t.getClosedAtMillis()));
             m.put("sessionDate",    t.getSessionDate());
             m.put("closedAtMillis", t.getClosedAtMillis());
-            // Wall-clock entry epoch — the moment the entry order was placed.
-            // UI's In-column reads this to render wall-clock HH:MM. Legacy
-            // rows without the column stay null → UI shows "—".
-            m.put("openedAtMillis", t.getOpenedAtMillis());
             m.put("qty",            t.getQty());
             m.put("entryPrice",     t.getEntryPrice() != null ? round(t.getEntryPrice()) : 0.0);
             m.put("exitPrice",      t.getExitPrice()  != null ? round(t.getExitPrice())  : 0.0);

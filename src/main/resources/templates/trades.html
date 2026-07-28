@@ -234,8 +234,8 @@
                     <tr>
                         <th>#</th>
                         <th>Time</th>
-                        <th class="text-center">In</th>
-                        <th class="text-center">Out</th>
+                        <th class="text-center">In Bar</th>
+                        <th class="text-center">Out Bar</th>
                         <th>Symbol</th>
                         <th class="text-center">Setup</th>
                         <th class="text-center">OI Bias</th>
@@ -429,8 +429,8 @@
             return '<tr>'
                 + '<td>' + (i + 1) + '</td>'
                 + '<td>' + timeCell + '</td>'
-                + '<td class="text-center">' + fmtHm(t.openedAtMillis) + '</td>'
-                + '<td class="text-center">' + fmtHm(t.closedAtMillis) + '</td>'
+                + '<td class="text-center">' + fmtBarClose(t.entryCandleMs) + '</td>'
+                + '<td class="text-center">' + fmtBarClose(t.exitCandleMs) + '</td>'
                 + '<td>' + escapeHtml(t.symbol || '—') + '</td>'
                 + '<td class="text-center">' + setupPill(t.setup) + '</td>'
                 + '<td class="text-center">' + biasPill(t.entryOiBias) + '</td>'
@@ -445,12 +445,14 @@
         }).join('');
     }
 
-    /** Any epoch (ms) → wall-clock "HH:MM" in IST. Used by the In / Out
-     *  columns for compact entry / exit times alongside the full HH:MM:SS
-     *  Time column. Null / 0 renders "—". */
-    function fmtHm(ms) {
-        if (!ms || Number(ms) <= 0) return '—';
-        var d = new Date(Number(ms) + 5.5 * 3600 * 1000);
+    /** Formats a candle START epoch (ms) as its OPEN time in IST — "HH:MM". Fyers/TV
+     *  canonical: a bar with start 09:19 IS the "09:19 candle" (covers 09:19→09:21).
+     *  This is what the operator identifies the trigger / confirmation / current bar
+     *  by. Empty / null renders as "—" for legacy trade rows that predate
+     *  entry_candle_ms / exit_candle_ms. */
+    function fmtBarClose(candleMs) {
+        if (!candleMs || Number(candleMs) <= 0) return '—';
+        var d = new Date(Number(candleMs) + 5.5 * 3600 * 1000);
         return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
     }
 
