@@ -972,6 +972,20 @@ public class AtmVwap implements Strategy {
 
     /** Per-option 2-min bar walk. Trigger-candle FSM described at the class-level Javadoc. */
     private void processOptionBar(String symbol, Candle c) {
+        // Rule: the first bar of the day (09:15 IST open) is excluded from the
+        // FSM entirely — no seed, no fire, no promote, no invalidate. Its close
+        // at 09:17 is the OPENING move, and 2 min of ticks is not enough VWAP
+        // history to make a meaningful trigger comparison. FSM starts on the
+        // 09:17 bar's close (09:19).
+        ZonedDateTime barIst = ZonedDateTime.ofInstant(
+            java.time.Instant.ofEpochMilli(c.startMillis()), IST);
+        if (barIst.toLocalTime().equals(MARKET_OPEN_IST)) {
+            eventAtDisplayTime("[INFO]", "Setup",
+                shortSym(symbol) + " opening 09:15 bar — FSM skipped (no seed / no fire)",
+                c.startMillis());
+            return;
+        }
+
         double vwap = 0;
         try { vwap = marketDataService.getVwap(symbol); }
         catch (Exception ignored) {}
