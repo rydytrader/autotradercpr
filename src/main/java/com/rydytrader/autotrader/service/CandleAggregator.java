@@ -375,13 +375,31 @@ public class CandleAggregator {
         double ltp = t.ltp();
         if (ltp <= 0) return;
 
-        // Bucket the tick by WALL CLOCK — the local server's clock in IST at the
-        // moment the tick was received. Simple and deterministic. LTT/EFT are
-        // ignored on the ingest path; that closes an off-by-one class of bugs
-        // where a stale keep-alive tick with an old timestamp would reopen a
-        // finalised bucket (see stale-tick-drop guard below, kept intact for
-        // any residual timestamp-based skew that slips through).
-        LocalTime tickTime = ZonedDateTime.now(IST).toLocalTime();
+        // Bucket the tick by the EXCHANGE's own last-traded time (LTT) when available —
+        // that's the timestamp on the actual trade that produced this LTP, and it's what
+        // TradingView aligns bar boundaries on. Fall back to Fyers/GDFL dissemination time
+        // (EFT) — which typically trails LTT by 100-800 ms of ingest lag — and to
+        // wall-clock only when the parser couldn't extract either. This closes the
+        // "boundary skew" gap where a tick TRADED at 09:16:59 arrives locally at
+        // 09:17:00.1 and was previously attributed to the wrong bar.
+        //
+        // Freshness guard — a WS reconnect can replay a tick whose timestamp is from
+        // a PREVIOUS trading day (e.g. yesterday 15:29). Its LocalTime alone would pass
+        // the market-hours filter and create a today-dated bucket with yesterday's data,
+        // which the outside-hours flush would later emit as a "close" pre-market.
+        long tickSec = t.lastTradedTimeSec() > 0 ? t.lastTradedTimeSec()
+                     : t.exchFeedTimeSec()   > 0 ? t.exchFeedTimeSec()
+                     : 0L;
+        LocalTime tickTime;
+        String today = LocalDate.now(IST).toString();
+        if (tickSec > 0) {
+            ZonedDateTime tickZdt = Instant.ofEpochSecond(tickSec).atZone(IST);
+            String tickDay = tickZdt.toLocalDate().toString();
+            if (!today.equals(tickDay)) return;
+            tickTime = tickZdt.toLocalTime();
+        } else {
+            tickTime = ZonedDateTime.now(IST).toLocalTime();
+        }
         if (tickTime.isBefore(LocalTime.of(9, 15)) || tickTime.isAfter(LocalTime.of(15, 31))) return;
         int bucketStart = bucketStartMinute(tickTime.getHour() * 60 + tickTime.getMinute());
 
