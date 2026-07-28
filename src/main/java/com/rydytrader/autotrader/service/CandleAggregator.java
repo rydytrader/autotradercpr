@@ -213,6 +213,14 @@ public class CandleAggregator {
             : (minuteOfDay / BUCKET_MINUTES) * BUCKET_MINUTES;
     }
 
+    /** Formats an epoch-seconds value as IST HH:mm:ss for log lines. Returns
+     *  "—" for a zero / missing timestamp so stale-tick logs don't render as
+     *  "1970-01-01" garbage when a packet omits LTT or EFT. */
+    private static String formatSec(long epochSec) {
+        if (epochSec <= 0) return "—";
+        return Instant.ofEpochSecond(epochSec).atZone(IST).toLocalTime().toString();
+    }
+
     // ── Persistence ────────────────────────────────────────────────────────────
 
     /** Periodic writer — flushes state to disk if anything changed since the last save.
@@ -423,12 +431,16 @@ public class CandleAggregator {
         int wallMin      = wallNow.getHour() * 60 + wallNow.getMinute();
         int wallBucket   = bucketStartMinute(wallMin);
         if (bucketStart < wallBucket) {
-            // Log LTT + server wall clock so the operator can judge whether
-            // switching to wall-clock bucketing would prevent this drop. If the
-            // deltas are consistently in the same direction / magnitude, wall
-            // clock would bucket these into the current bar instead.
-            log.info("[CandleAggregator] {} STALE TICK dropped — bucketStart={} wallBucket={} ltp={} lttTime={} serverTime={}",
-                symbol, bucketStart, wallBucket, ltp, tickTime, wallNow);
+            // Log LTT (packet.LastTradeTime), EFT (packet.ServerTime), and the
+            // bot's local wall clock so the operator can judge which basis would
+            // NOT have been stale — if all three point to the same bar, no
+            // bucketing choice avoids this drop; if LTT is old but EFT / wall
+            // are in the current bar, switching bucketing basis would.
+            log.info("[CandleAggregator] {} STALE TICK dropped — bucketStart={} wallBucket={} ltp={} lttTime={} eftTime={} localTime={}",
+                symbol, bucketStart, wallBucket, ltp,
+                formatSec(t.lastTradedTimeSec()),
+                formatSec(t.exchFeedTimeSec()),
+                wallNow);
             return;
         }
 
@@ -443,8 +455,11 @@ public class CandleAggregator {
             } else if (bucketStart < b.currentBucketMinute) {
                 // Backward roll — another shape of stale tick. Same reasoning: drop
                 // rather than merge, to preserve trigger-candle invariant.
-                log.info("[CandleAggregator] {} STALE TICK dropped (backward-roll) — bucketStart={} currentBucketMinute={} ltp={} lttTime={} serverTime={}",
-                    symbol, bucketStart, b.currentBucketMinute, ltp, tickTime, wallNow);
+                log.info("[CandleAggregator] {} STALE TICK dropped (backward-roll) — bucketStart={} currentBucketMinute={} ltp={} lttTime={} eftTime={} localTime={}",
+                    symbol, bucketStart, b.currentBucketMinute, ltp,
+                    formatSec(t.lastTradedTimeSec()),
+                    formatSec(t.exchFeedTimeSec()),
+                    wallNow);
                 return;
             } else if (bucketStart != b.currentBucketMinute) {
                 // Snapshot for async fanout OUTSIDE the sync block below.
