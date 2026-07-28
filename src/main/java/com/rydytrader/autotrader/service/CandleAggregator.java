@@ -58,9 +58,21 @@ public class CandleAggregator {
     private final MarketDataService marketDataService;
 
     private final Map<String, Bucket> bucketBySymbol = new ConcurrentHashMap<>();
+    /** Second bucket per symbol — the just-closed bar kept OPEN for a short
+     *  "grace window" so late-arriving LTT ticks (LTT stamped just before the
+     *  bar boundary but received by the bot after it) merge into their proper
+     *  bar instead of being dropped as stale. Absent when no grace bucket is
+     *  active. See {@link #GRACE_MS}. */
+    private final Map<String, PendingBucket> pendingBySymbol = new ConcurrentHashMap<>();
+    /** How long a pending bucket stays open after its bar boundary. Set to 3 s
+     *  based on the boundary-skew latency we observed on GDFL / Fyers option
+     *  ticks (typically < 1 s past boundary). If a subsequent bar boundary
+     *  is crossed while a pending is still open, the pending is emitted
+     *  immediately even if the grace window hasn't fully elapsed. */
+    private static final long GRACE_MS = 3000;
     private final Map<String, CopyOnWriteArrayList<Consumer<Candle>>> listenersBySymbol = new ConcurrentHashMap<>();
     /** Closed 2-min candles per symbol, kept in a bounded FIFO ring. Populated by
-     *  {@link #emitClosed} so the chart page can render the day's session without a
+     *  {@link #appendHistoryAndFire} so the chart page can render the day's session without a
      *  Fyers-history REST fetch. Cap = 250 = ~8.3 h of 2-min bars, well over the
      *  ~187 bars in a full NSE session. */
     private static final int HISTORY_CAP = 250;
@@ -138,6 +150,7 @@ public class CandleAggregator {
         if (symbol == null || symbol.isBlank()) return;
         listenersBySymbol.remove(symbol);
         bucketBySymbol.remove(symbol);
+        pendingBySymbol.remove(symbol);
     }
 
     /** Runs every second as a safety net alongside the push-based {@link #onLtpTick} path.
@@ -167,37 +180,88 @@ public class CandleAggregator {
         }
         if (t.isAfter(LocalTime.of(15, 31))) {
             // Post-market — flush the day's last-bar stragglers. Safe to unconditionally
-            // close: no legit forward-dated bucket can exist after market close.
+            // close both active AND pending: no legit forward-dated bucket can exist
+            // after market close, and grace-window buckets should not linger overnight.
             for (Map.Entry<String, Bucket> e : bucketBySymbol.entrySet()) {
+                String symbol = e.getKey();
                 Bucket b = e.getValue();
+                Candle activeCloseSnap = null;
+                Candle pendingCloseSnap = null;
                 synchronized (b) {
+                    PendingBucket pb = pendingBySymbol.remove(symbol);
+                    if (pb != null && pb.bucket.currentBucketMinute >= 0) {
+                        pendingCloseSnap = snapshot(pb.bucket);
+                    }
                     if (b.currentBucketMinute >= 0) {
-                        emitClosed(e.getKey(), b);
+                        activeCloseSnap = snapshot(b);
                         b.reset();
                     }
                 }
+                if (pendingCloseSnap != null) appendHistoryAndFire(symbol, pendingCloseSnap, false);
+                if (activeCloseSnap  != null) appendHistoryAndFire(symbol, activeCloseSnap,  false);
+                if (pendingCloseSnap != null || activeCloseSnap != null) dirty = true;
             }
             return;
         }
 
-        // In-hours: only close a bucket the wall clock has moved PAST. Ordering matters —
-        // buckets can (and do) sit AHEAD of the wall clock when exchFeedTime rounds up to
-        // the next second or the local system clock trails exchange time by a second or
-        // two. Flushing an ahead-of-wall bucket would emit spurious closes every second
-        // until wall catches up, which fires the FSM (and /history reconcile) repeatedly
-        // for the same bar. Only close when wall has genuinely passed the bucket end.
+        // In-hours: two jobs.
+        // (1) Drain grace-expired pending buckets → emit their close now.
+        // (2) Promote an active bucket whose wall-clock end has passed and whose
+        //     grace window hasn't started yet (illiquid symbol: no boundary tick
+        //     arrived to trigger the promote in onLtpTick).
+        // NEVER emit an active bucket directly here — the close path now always
+        // goes through the grace window so late LTTs can merge.
         int wallBucketStart = bucketStartMinute(t.getHour() * 60 + t.getMinute());
+        long nowMs = System.currentTimeMillis();
         for (Map.Entry<String, Bucket> e : bucketBySymbol.entrySet()) {
             String symbol = e.getKey();
             Bucket b = e.getValue();
+            Candle graceExpired = null;
             synchronized (b) {
-                if (b.currentBucketMinute < 0) continue;
-                if (wallBucketStart <= b.currentBucketMinute) continue;
-                emitClosed(symbol, b);
-                b.reset();
+                PendingBucket pb = pendingBySymbol.get(symbol);
+                if (pb != null && nowMs >= pb.graceExpireMs) {
+                    graceExpired = snapshot(pb.bucket);
+                    pendingBySymbol.remove(symbol);
+                }
+                // Illiquid safety net — bar's wall-clock end has passed but no
+                // boundary tick has arrived. Promote active → pending so its
+                // close is eventually emitted after the grace expires.
+                if (!pendingBySymbol.containsKey(symbol)
+                    && b.currentBucketMinute >= 0
+                    && wallBucketStart > b.currentBucketMinute) {
+                    pendingBySymbol.put(symbol, new PendingBucket(cloneBucket(b), nowMs + GRACE_MS));
+                    b.reset();
+                }
+            }
+            if (graceExpired != null) {
+                appendHistoryAndFire(symbol, graceExpired, false);
                 dirty = true;
             }
         }
+    }
+
+    /** Snapshot a bucket's OHLC into an immutable {@link Candle} — used at close
+     *  emission time so the fanout runs on a value copy, immune to any subsequent
+     *  mutation of the underlying {@link Bucket}. */
+    private static Candle snapshot(Bucket b) {
+        return new Candle(
+            round(b.openPx), round(b.highPx), round(b.lowPx), round(b.closePx),
+            0L, b.currentBucketStartMs, round(b.vwapLast));
+    }
+
+    /** Value-copy of a {@link Bucket} — used when moving the active bucket into
+     *  the pending slot at boundary crossing so the two slots don't share state. */
+    private static Bucket cloneBucket(Bucket src) {
+        Bucket dst = new Bucket();
+        dst.currentBucketMinute  = src.currentBucketMinute;
+        dst.currentBucketStartMs = src.currentBucketStartMs;
+        dst.openPx  = src.openPx;
+        dst.highPx  = src.highPx;
+        dst.lowPx   = src.lowPx;
+        dst.closePx = src.closePx;
+        dst.vwapLast = src.vwapLast;
+        dst.tickCount = src.tickCount;
+        return dst;
     }
 
     /** Anchors 2-min bucket boundaries on 09:15 IST — the true market-open minute — not on
@@ -334,16 +398,6 @@ public class CandleAggregator {
         public double vwapLast = 0;
     }
 
-    private void emitClosed(String symbol, Bucket b) {
-        Candle c = new Candle(
-            round(b.openPx), round(b.highPx), round(b.lowPx), round(b.closePx),
-            0L, b.currentBucketStartMs, round(b.vwapLast));
-        log.debug("[CandleAggregator] {} 2-min bar closed (flush) — ticks={} startMs={} O={} H={} L={} C={}",
-            symbol, b.tickCount, b.currentBucketStartMs,
-            c.open(), c.high(), c.low(), c.close());
-        appendHistoryAndFire(symbol, c, false);
-    }
-
     /** Records a closed candle in the per-symbol ring and fans it out to registered
      *  listeners. When {@code async} is true, listener callbacks run on {@link #closeExecutor}
      *  so the caller (the WS thread inside {@link #onLtpTick}) doesn't block on downstream
@@ -430,31 +484,52 @@ public class CandleAggregator {
         LocalTime wallNow = ZonedDateTime.now(IST).toLocalTime();
         int wallMin      = wallNow.getHour() * 60 + wallNow.getMinute();
         int wallBucket   = bucketStartMinute(wallMin);
-        if (bucketStart < wallBucket) {
-            // Log LTT (packet.LastTradeTime), EFT (packet.ServerTime), and the
-            // bot's local wall clock so the operator can judge which basis would
-            // NOT have been stale — if all three point to the same bar, no
-            // bucketing choice avoids this drop; if LTT is old but EFT / wall
-            // are in the current bar, switching bucketing basis would.
-            log.info("[CandleAggregator] {} STALE TICK dropped — bucketStart={} wallBucket={} ltp={} lttTime={} eftTime={} localTime={}",
-                symbol, bucketStart, wallBucket, ltp,
-                formatSec(t.lastTradedTimeSec()),
-                formatSec(t.exchFeedTimeSec()),
-                wallNow);
-            return;
-        }
+        long nowMs       = System.currentTimeMillis();
 
         Bucket b = bucketBySymbol.computeIfAbsent(symbol, k -> new Bucket());
-        Candle closed = null;
-        int closedTicks = 0;
-        long closedStartMs = 0;
+        Candle preemptedPending = null;
         synchronized (b) {
+            PendingBucket pb = pendingBySymbol.get(symbol);
+
+            // Grace-window absorb — this tick's LTT falls in the JUST-CLOSED bar
+            // that's still in its grace window. Merge into pending's OHLC instead
+            // of dropping. The pending bar's close is emitted later by sample()
+            // when grace expires (or by a subsequent boundary crossing).
+            if (pb != null && pb.bucket.currentBucketMinute == bucketStart && nowMs < pb.graceExpireMs) {
+                if (ltp > pb.bucket.highPx) pb.bucket.highPx = ltp;
+                if (ltp < pb.bucket.lowPx)  pb.bucket.lowPx  = ltp;
+                pb.bucket.closePx = ltp;
+                if (t.atp() > 0) pb.bucket.vwapLast = t.atp();
+                pb.bucket.tickCount++;
+                log.debug("[CandleAggregator] {} GRACE ABSORB — bucketStart={} ltp={} lttTime={} eftTime={} localTime={} graceLeftMs={}",
+                    symbol, bucketStart, ltp,
+                    formatSec(t.lastTradedTimeSec()),
+                    formatSec(t.exchFeedTimeSec()),
+                    wallNow,
+                    pb.graceExpireMs - nowMs);
+                dirty = true;
+                return;
+            }
+
+            // Stale — bucket is behind wall clock and NOT the currently-pending bar
+            // (or the grace window has already expired). Drop rather than reopen
+            // a finalised bar; would break the trigger-candle invariant.
+            if (bucketStart < wallBucket) {
+                log.info("[CandleAggregator] {} STALE TICK dropped — bucketStart={} wallBucket={} ltp={} lttTime={} eftTime={} localTime={} pending={}",
+                    symbol, bucketStart, wallBucket, ltp,
+                    formatSec(t.lastTradedTimeSec()),
+                    formatSec(t.exchFeedTimeSec()),
+                    wallNow,
+                    pb == null ? "—" : (pb.bucket.currentBucketMinute + "(exp-in=" + (pb.graceExpireMs - nowMs) + "ms)"));
+                return;
+            }
+
             if (b.currentBucketMinute < 0) {
                 b.start(bucketStart, ltp, ZonedDateTime.now(IST));
                 if (t.atp() > 0) b.vwapLast = t.atp();
             } else if (bucketStart < b.currentBucketMinute) {
-                // Backward roll — another shape of stale tick. Same reasoning: drop
-                // rather than merge, to preserve trigger-candle invariant.
+                // Backward roll — bucket older than active but not older than wall
+                // (rare — happens only when active is briefly ahead of wall clock).
                 log.info("[CandleAggregator] {} STALE TICK dropped (backward-roll) — bucketStart={} currentBucketMinute={} ltp={} lttTime={} eftTime={} localTime={}",
                     symbol, bucketStart, b.currentBucketMinute, ltp,
                     formatSec(t.lastTradedTimeSec()),
@@ -462,12 +537,15 @@ public class CandleAggregator {
                     wallNow);
                 return;
             } else if (bucketStart != b.currentBucketMinute) {
-                // Snapshot for async fanout OUTSIDE the sync block below.
-                closed = new Candle(
-                    round(b.openPx), round(b.highPx), round(b.lowPx), round(b.closePx),
-                    0L, b.currentBucketStartMs, round(b.vwapLast));
-                closedTicks   = b.tickCount;
-                closedStartMs = b.currentBucketStartMs;
+                // Boundary crossing — move active INTO the pending slot and start
+                // a fresh active from this tick. Active's close is emitted after
+                // the grace window; late LTTs for its bar can still merge until
+                // then. If an OLD pending is still sitting in the slot (grace
+                // hadn't expired yet), preempt-flush it now — we only hold one
+                // pending at a time.
+                if (pb != null) preemptedPending = snapshot(pb.bucket);
+                pendingBySymbol.put(symbol, new PendingBucket(cloneBucket(b), nowMs + GRACE_MS));
+                b.reset();
                 b.start(bucketStart, ltp, ZonedDateTime.now(IST));
                 if (t.atp() > 0) b.vwapLast = t.atp();
             } else {
@@ -479,11 +557,10 @@ public class CandleAggregator {
             }
         }
         dirty = true;
-        if (closed != null) {
-            log.debug("[CandleAggregator] {} 2-min bar closed — ticks={} startMs={} O={} H={} L={} C={}",
-                symbol, closedTicks, closedStartMs,
-                closed.open(), closed.high(), closed.low(), closed.close());
-            appendHistoryAndFire(symbol, closed, true);
+        if (preemptedPending != null) {
+            log.debug("[CandleAggregator] {} pending grace preempted by new boundary — emitting startMs={}",
+                symbol, preemptedPending.startMillis());
+            appendHistoryAndFire(symbol, preemptedPending, true);
         }
     }
 
@@ -599,6 +676,18 @@ public class CandleAggregator {
             openPx = highPx = lowPx = closePx = 0;
             vwapLast = 0;
             tickCount = 0;
+        }
+    }
+
+    /** A closed bar in its grace window — still accepting late LTT ticks whose
+     *  LTT falls in the bar's range. {@link #graceExpireMs} is the wall-clock
+     *  epoch after which {@link #sample} emits the close and clears the slot. */
+    private static class PendingBucket {
+        final Bucket bucket;
+        final long graceExpireMs;
+        PendingBucket(Bucket bucket, long graceExpireMs) {
+            this.bucket = bucket;
+            this.graceExpireMs = graceExpireMs;
         }
     }
 }
