@@ -673,16 +673,15 @@
     // Bars are anchored on 09:15 IST → 09:15/09:17/09:19/…/15:29 boundaries.
     // Shows mm:ss remaining until the current bar closes.
     //
-    // Uses EXCHANGE time as the reference, not the browser's wall clock — /api/chart/candles
-    // returns `exchangeNowMs` (max exchFeedTime across subscribed symbols). Local wall
-    // clock typically trails exchange time by 2-3 seconds, which is exactly the mismatch
-    // TradingView doesn't show. `exchangeClockOffsetMs` = exchangeNowMs - Date.now() at
-    // response time; applied to Date.now() every second below so the countdown ticks
-    // in sync with TradingView regardless of local clock drift.
+    // Uses the browser's WALL CLOCK as the reference — operator preference.
+    // The bot's CandleAggregator buckets by LTT, but the UI countdown ticks
+    // against the user's own clock so it matches what they see on any other
+    // timing source (system clock, phone). `exchangeClockOffsetMs` is retained
+    // for backward compatibility with the poll response but is no longer
+    // applied here.
     var exchangeClockOffsetMs = 0;
     function computeBarCountdown() {
-        // Exchange-now = browser now + offset picked up from the server on each poll.
-        var utcMs = Date.now() + exchangeClockOffsetMs;
+        var utcMs = Date.now();
         var istMs = utcMs + 5.5 * 3600 * 1000;
         var istDate = new Date(istMs);
         var h = istDate.getUTCHours(), m = istDate.getUTCMinutes(), s = istDate.getUTCSeconds();
