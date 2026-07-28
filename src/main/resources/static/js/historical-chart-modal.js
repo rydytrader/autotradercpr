@@ -1,9 +1,11 @@
 // ── Historical Chart modal ─────────────────────────────────────────────
 // Opens from the calendar page when the operator clicks the chart-icon
-// button in a day cell. Fetches /api/chart/historical?date=YYYY-MM-DD,
-// renders NIFTY spot + ATM CE + ATM PE as three stacked TradingView
-// Lightweight Charts panels (candlestick + VWAP overlay, same look as the
-// live /chart page).
+// button in a day cell. Fetches /api/chart/historical?date=YYYY-MM-DD
+// and /api/strategies/atmvwap/trades?date=… together, renders ATM CE
+// and ATM PE as two stacked TradingView Lightweight Charts panels
+// (candlestick + VWAP overlay, same look as the live /chart page).
+// Each entry from that session gets an ↑ marker on the bar it fired
+// on, and each exit gets a ↓ marker on the exit bar.
 //
 // Overlay skeleton mirrors OiBiasEffectivenessModal + AppConfirm — fixed
 // dark backdrop, centered card, Esc / backdrop / close-button dismissal.
@@ -39,10 +41,6 @@ window.HistoricalChartModal = (function() {
           +     '<div id="histChartLoading" style="color:var(--text-muted);text-align:center;padding:60px 20px;'
           +       'font-family:var(--font-mono);font-size:0.82rem;">Loading…</div>'
           +     '<div id="histChartPanels" style="display:none;">'
-          +       '<div class="hist-panel" data-key="nifty" style="margin-bottom:14px;">'
-          +         '<div class="hist-panel-hdr">NIFTY 50 <span class="hist-hdr-note">(spot)</span></div>'
-          +         '<div class="hist-panel-body"><div id="histChartNifty" style="position:absolute;inset:0;"></div></div>'
-          +       '</div>'
           +       '<div class="hist-panel" data-key="ce" style="margin-bottom:14px;">'
           +         '<div class="hist-panel-hdr"><span style="color:#34d399;">■</span> ATM CE <span id="histCeSym" class="hist-hdr-note"></span></div>'
           +         '<div class="hist-panel-body"><div id="histChartCe" style="position:absolute;inset:0;"></div></div>'
@@ -80,7 +78,7 @@ window.HistoricalChartModal = (function() {
         overlayEl.style.display = 'none';
         // Tear down charts so the next open starts from a clean slate — LightweightCharts
         // instances don't survive a hidden container being resized.
-        ['nifty','ce','pe'].forEach(function(k) {
+        ['ce','pe'].forEach(function(k) {
             if (charts[k]) { try { charts[k].remove(); } catch (e) {} }
             charts[k] = null; candleSeries[k] = null; vwapSeries[k] = null;
         });
@@ -98,7 +96,7 @@ window.HistoricalChartModal = (function() {
         };
     }
 
-    function renderPanel(panelKey, containerId, candles, priceDecimals) {
+    function renderPanel(panelKey, containerId, candles, priceDecimals, markers) {
         var container = document.getElementById(containerId);
         if (!container || typeof LightweightCharts === 'undefined') return;
         var col = themeColors();
@@ -135,21 +133,52 @@ window.HistoricalChartModal = (function() {
             var v = Number(c.vwap || 0);
             if (v > 0) vwaps.push({ time: t, value: v });
         });
-        // NIFTY spot has no ATP → derive VWAP from typical price like the live chart does.
-        if (vwaps.length === 0 && bars.length > 0) {
-            var cumTyp = 0, cnt = 0;
-            bars.forEach(function(b) {
-                cumTyp += (b.high + b.low + b.close) / 3; cnt++;
-                vwaps.push({ time: b.time, value: cumTyp / cnt });
-            });
-        }
         cs.setData(bars);
         vs.setData(vwaps);
+        // Entry / exit markers — must be sorted by time ascending or LightweightCharts
+        // rejects the whole set. Duplicates on the same bar (2 entries in the same
+        // candle) are allowed.
+        if (markers && markers.length > 0) {
+            markers.sort(function(a, b) { return a.time - b.time; });
+            cs.setMarkers(markers);
+        }
         try { chart.timeScale().fitContent(); } catch (e) {}
 
         charts[panelKey] = chart;
         candleSeries[panelKey] = cs;
         vwapSeries[panelKey] = vs;
+    }
+
+    /** Build TradingView-style marker objects for a leg's entries + exits.
+     *  Entries anchor at the entry-candle START (that bar's start-of-bar time),
+     *  exits at the exit-candle START. The ↑ / ↓ shapes + colour code make wins /
+     *  losses distinguishable at a glance. */
+    function markersFor(trades, legSetup) {
+        var out = [];
+        (trades || []).forEach(function(t) {
+            var setup = String(t.setup || '').toUpperCase();
+            if (setup !== legSetup) return;
+            var entryMs = Number(t.entryCandleMs || 0);
+            var exitMs  = Number(t.exitCandleMs  || 0);
+            var net     = Number(t.netPnl || 0);
+            var reason  = String(t.closeReason || '').toUpperCase();
+            var colour  = net >= 0 ? '#34d399' : '#f87171';
+            if (entryMs > 0) {
+                out.push({
+                    time: Math.floor(entryMs / 1000) + IST_OFFSET_S,
+                    position: 'aboveBar', color: '#fbbf24', shape: 'arrowDown',
+                    text: 'IN ' + (Number(t.entryPrice) || '').toString()
+                });
+            }
+            if (exitMs > 0) {
+                out.push({
+                    time: Math.floor(exitMs / 1000) + IST_OFFSET_S,
+                    position: 'belowBar', color: colour, shape: 'arrowUp',
+                    text: (reason || 'OUT') + ' ' + (Number(t.exitPrice) || '').toString()
+                });
+            }
+        });
+        return out;
     }
 
     function open(dateStr) {
@@ -163,15 +192,21 @@ window.HistoricalChartModal = (function() {
         document.getElementById('histPeSym').textContent = '';
 
         // Tear down previous charts if the modal is being re-opened without a full close.
-        ['nifty','ce','pe'].forEach(function(k) {
+        ['ce','pe'].forEach(function(k) {
             if (charts[k]) { try { charts[k].remove(); } catch (e) {} charts[k] = null; }
         });
 
-        var url = '/api/chart/historical?date=' + encodeURIComponent(dateStr);
-        fetch(url).then(function(r) {
-            if (r.status === 404) return null;
-            return r.json();
-        }).then(function(d) {
+        // Parallel fetch — chart snapshot + trades for the same session. Trades
+        // drive the entry / exit markers on the CE / PE panels.
+        var chartUrl  = '/api/chart/historical?date=' + encodeURIComponent(dateStr);
+        var tradesUrl = '/api/strategies/atmvwap/trades?date=' + encodeURIComponent(dateStr);
+        Promise.all([
+            fetch(chartUrl).then(function(r) { return r.status === 404 ? null : r.json(); }),
+            fetch(tradesUrl).then(function(r) { return r.ok ? r.json() : { trades: [] }; })
+                .catch(function() { return { trades: [] }; })
+        ]).then(function(res) {
+            var d       = res[0];
+            var trades  = (res[1] && res[1].trades) || [];
             var loading = document.getElementById('histChartLoading');
             var panels  = document.getElementById('histChartPanels');
             if (!d) {
@@ -187,12 +222,12 @@ window.HistoricalChartModal = (function() {
             document.getElementById('histPeSym').textContent = d.peSymbol ? '· ' + d.peSymbol : '';
 
             var byS = d.candlesBySymbol || {};
-            // Render in DOM-visible order: NIFTY, CE, PE. Small setTimeout so LWC sees the
-            // container after its display:block flush.
+            var ceMarkers = markersFor(trades, 'CE_SELL');
+            var peMarkers = markersFor(trades, 'PE_SELL');
+            // Small setTimeout so LWC sees the container after its display:block flush.
             setTimeout(function() {
-                renderPanel('nifty', 'histChartNifty', byS['NSE:NIFTY50-INDEX'], 2);
-                if (d.ceSymbol) renderPanel('ce', 'histChartCe', byS[d.ceSymbol], 2);
-                if (d.peSymbol) renderPanel('pe', 'histChartPe', byS[d.peSymbol], 2);
+                if (d.ceSymbol) renderPanel('ce', 'histChartCe', byS[d.ceSymbol], 2, ceMarkers);
+                if (d.peSymbol) renderPanel('pe', 'histChartPe', byS[d.peSymbol], 2, peMarkers);
             }, 30);
         }).catch(function(err) {
             document.getElementById('histChartLoading').textContent =
