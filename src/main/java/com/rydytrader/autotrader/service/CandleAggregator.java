@@ -511,16 +511,23 @@ public class CandleAggregator {
                 return;
             }
 
-            // Stale — bucket is behind wall clock and NOT the currently-pending bar
-            // (or the grace window has already expired). Drop rather than reopen
-            // a finalised bar; would break the trigger-candle invariant.
-            if (bucketStart < wallBucket) {
-                log.info("[CandleAggregator] {} STALE TICK dropped — bucketStart={} wallBucket={} ltp={} lttTime={} eftTime={} localTime={} pending={}",
+            // Stale — bucket is behind wall clock and NOT the currently-pending
+            // bar and NOT the currently-active bar. Drop rather than reopen a
+            // finalised bar (would break the trigger-candle invariant).
+            //
+            // The bucketStart == active.currentBucketMinute exemption catches the
+            // race where the wall clock ticks over to bucket N+1 before sample()
+            // has run to promote active from N to pending — a tick still in N
+            // arrives in that window and would otherwise be wrongly dropped. Let
+            // it append to active; sample() will promote to pending shortly.
+            if (bucketStart < wallBucket && bucketStart != b.currentBucketMinute) {
+                log.info("[CandleAggregator] {} STALE TICK dropped — bucketStart={} wallBucket={} ltp={} lttTime={} eftTime={} localTime={} pending={} active={}",
                     symbol, bucketStart, wallBucket, ltp,
                     formatSec(t.lastTradedTimeSec()),
                     formatSec(t.exchFeedTimeSec()),
                     wallNow,
-                    pb == null ? "—" : (pb.bucket.currentBucketMinute + "(exp-in=" + (pb.graceExpireMs - nowMs) + "ms)"));
+                    pb == null ? "—" : (pb.bucket.currentBucketMinute + "(exp-in=" + (pb.graceExpireMs - nowMs) + "ms)"),
+                    b.currentBucketMinute);
                 return;
             }
 
