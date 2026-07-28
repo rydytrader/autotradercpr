@@ -419,12 +419,16 @@ public class CandleAggregator {
         // the old thresholds while the chart shows the new ones — invariant broken).
         // The small OHLC precision lost on a genuinely late tick is worth keeping
         // the trigger-candle contract simple.
-        int wallMin      = ZonedDateTime.now(IST).toLocalTime().getHour() * 60
-                         + ZonedDateTime.now(IST).toLocalTime().getMinute();
+        LocalTime wallNow = ZonedDateTime.now(IST).toLocalTime();
+        int wallMin      = wallNow.getHour() * 60 + wallNow.getMinute();
         int wallBucket   = bucketStartMinute(wallMin);
         if (bucketStart < wallBucket) {
-            log.info("[CandleAggregator] {} STALE TICK dropped — bucketStart={} wallBucket={} ltp={}",
-                symbol, bucketStart, wallBucket, ltp);
+            // Log LTT + server wall clock so the operator can judge whether
+            // switching to wall-clock bucketing would prevent this drop. If the
+            // deltas are consistently in the same direction / magnitude, wall
+            // clock would bucket these into the current bar instead.
+            log.info("[CandleAggregator] {} STALE TICK dropped — bucketStart={} wallBucket={} ltp={} lttTime={} serverTime={}",
+                symbol, bucketStart, wallBucket, ltp, tickTime, wallNow);
             return;
         }
 
@@ -439,8 +443,8 @@ public class CandleAggregator {
             } else if (bucketStart < b.currentBucketMinute) {
                 // Backward roll — another shape of stale tick. Same reasoning: drop
                 // rather than merge, to preserve trigger-candle invariant.
-                log.info("[CandleAggregator] {} STALE TICK dropped (backward-roll) — bucketStart={} currentBucketMinute={} ltp={}",
-                    symbol, bucketStart, b.currentBucketMinute, ltp);
+                log.info("[CandleAggregator] {} STALE TICK dropped (backward-roll) — bucketStart={} currentBucketMinute={} ltp={} lttTime={} serverTime={}",
+                    symbol, bucketStart, b.currentBucketMinute, ltp, tickTime, wallNow);
                 return;
             } else if (bucketStart != b.currentBucketMinute) {
                 // Snapshot for async fanout OUTSIDE the sync block below.
