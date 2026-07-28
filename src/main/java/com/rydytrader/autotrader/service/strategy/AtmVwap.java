@@ -972,18 +972,33 @@ public class AtmVwap implements Strategy {
 
     /** Per-option 2-min bar walk. Trigger-candle FSM described at the class-level Javadoc. */
     private void processOptionBar(String symbol, Candle c) {
-        // Rule: the first bar of the day (09:15 IST open) is excluded from the
-        // FSM entirely — no seed, no fire, no promote, no invalidate. Its close
-        // at 09:17 is the OPENING move, and 2 min of ticks is not enough VWAP
-        // history to make a meaningful trigger comparison. FSM starts on the
-        // 09:17 bar's close (09:19).
-        ZonedDateTime barIst = ZonedDateTime.ofInstant(
-            java.time.Instant.ofEpochMilli(c.startMillis()), IST);
-        if (barIst.toLocalTime().equals(MARKET_OPEN_IST)) {
-            eventAtDisplayTime("[INFO]", "Setup",
-                shortSym(symbol) + " opening 09:15 bar — FSM skipped (no seed / no fire)",
-                c.startMillis());
-            return;
+        // Bar-level gate: skip bars whose START is before the configured
+        // atmVwapTradingStartTime. "Start = 09:17" means the 09:17 bar (closes
+        // at 09:19) is the first bar the FSM sees; the 09:15 opening bar is
+        // pre-start and ignored — no seed, no fire, no promote, no invalidate.
+        //
+        // {@link #canFireNewEntry} does the same check against WALL CLOCK for
+        // per-tick gates like {@link #fire}; this is the per-bar equivalent.
+        // Without this, canFireNewEntry alone lets the 09:15 bar through
+        // because its close event fires at wall clock 09:17:XX, which is not
+        // before 09:17. OI subscription, pre-warm, and ATM resolution live
+        // outside processOptionBar so they continue running from 09:15.
+        String startHhmm = riskSettings.getAtmVwapTradingStartTime();
+        if (startHhmm != null && !startHhmm.isBlank()) {
+            LocalTime startCfg = null;
+            try { startCfg = LocalTime.parse(startHhmm); }
+            catch (Exception ignored) {}
+            if (startCfg != null) {
+                LocalTime barStart = ZonedDateTime.ofInstant(
+                    java.time.Instant.ofEpochMilli(c.startMillis()), IST).toLocalTime();
+                if (barStart.isBefore(startCfg)) {
+                    eventAtDisplayTime("[INFO]", "Setup",
+                        shortSym(symbol) + " bar " + barStart + " pre-start (< "
+                        + startCfg + ") — FSM skipped",
+                        c.startMillis());
+                    return;
+                }
+            }
         }
 
         double vwap = 0;
