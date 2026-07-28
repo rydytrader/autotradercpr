@@ -187,7 +187,7 @@
     <div class="page-header">
         <div>
             <div class="page-title">Calendar</div>
-            <div class="page-subtitle">Trade P&L by day, month, and year</div>
+            <div class="page-subtitle">Session P&L by day, month, and year</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -224,7 +224,7 @@
             </div>
             <div style="display:flex; gap:28px; flex-wrap:wrap;">
                 <div style="text-align:center;">
-                    <div class="stat-label">Trades</div>
+                    <div class="stat-label">Sessions</div>
                     <div class="stat-value" id="heroSessions" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center;">
@@ -257,7 +257,7 @@
                 <div style="text-align:center;">
                     <div class="stat-label">Max DD Days</div>
                     <div class="stat-value" id="heroMaxDrawdownDays" style="font-size:1.1rem; margin-top:4px;"
-                         title="Number of trades between the equity-curve peak and the trough of the deepest drawdown.">—</div>
+                         title="Number of sessions between the equity-curve peak and the trough of the deepest drawdown.">—</div>
                 </div>
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;">
                     <div class="stat-label">Avg Monthly %</div>
@@ -657,7 +657,7 @@
                     else if (n < 0) card.classList.add('loss');
                 }
                 if (subEl && total > 0) {
-                    subEl.textContent = total + ' trade' + (total === 1 ? '' : 's');
+                    subEl.textContent = total + ' session' + (total === 1 ? '' : 's');
                 }
             });
         }).catch(() => {});
@@ -803,13 +803,13 @@
                 '<div class="cal-month-name">' + MONTH_NAMES[m - 1] + ' ' + y + '</div>' +
                 '<div style="display:flex;align-items:baseline;gap:12px;margin-bottom:12px;">' +
                     '<div class="' + pnlCls.join(' ') + ' cal-month-net">' + (has ? fmtMoney(net) : '—') + '</div>' +
-                    '<div class="cal-month-trades-sub" style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-muted);">' + (has ? agg.trades + ' trade' + (agg.trades === 1 ? '' : 's') : '') + '</div>' +
+                    '<div class="cal-month-trades-sub" style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-muted);">' + (has ? agg.trades + ' session' + (agg.trades === 1 ? '' : 's') : '') + '</div>' +
                 '</div>' +
                 '<div class="cal-month-stats">' +
                     '<div class="cal-month-stat-label">Win %</div><div class="cal-month-stat-value cal-month-winrate">—</div>' +
                     '<div class="cal-month-stat-label">Gross</div><div class="cal-month-stat-value cal-month-gross">' + (has ? fmtMoney(agg.grossPnl) : '—') + '</div>' +
                     '<div class="cal-month-stat-label">Charges</div><div class="cal-month-stat-value cal-month-charges">' + (has ? fmtMoney(agg.charges) : '—') + '</div>' +
-                    '<div class="cal-month-stat-label">Trades</div><div class="cal-month-stat-value cal-month-trades">' + (has ? agg.trades : '—') + '</div>' +
+                    '<div class="cal-month-stat-label">Sessions</div><div class="cal-month-stat-value cal-month-trades">' + (has ? agg.trades : '—') + '</div>' +
                 '</div>' +
             '</div>';
         });
@@ -888,7 +888,7 @@
             '<div><div class="stat-label">Charges</div><div style="color:var(--text-muted);">' + fmtMoneyFull(straddleCharges) + '</div></div>' +
         '</div>' +
         '<div id="calDayAlgo" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">' +
-            '<div class="stat-label" style="margin-bottom:8px;">Trades</div>' +
+            '<div class="stat-label" style="margin-bottom:8px;">Sessions</div>' +
             '<div style="color:var(--text-muted);">Loading…</div>' +
         '</div>';
 
@@ -906,7 +906,7 @@
                 rows.sort((a, b) => (a.closedAtMillis || 0) - (b.closedAtMillis || 0));
                 renderStrategyTradeSection(
                     document.getElementById('calDayAlgo'),
-                    rows, 'Symbol', 'Trades');
+                    rows, 'Symbol', 'Sessions');
             });
     };
 
