@@ -1958,25 +1958,22 @@ public class AtmVwap implements Strategy {
         event(severity, source, message);
     }
 
-    /** Default event emitter — anchors display to the CURRENT 2-min bar's OPEN.
-     *  Every event log entry renders as "HH:MM" (bar-aligned) rather than the
-     *  wall-clock "HH:MM:SS". For an event that must be anchored to a SPECIFIC
-     *  bar boundary that isn't the current one, call {@link #eventAtDisplayTime}
-     *  directly with the desired {@code displayMs}. Pure wall-clock events are
-     *  no longer emitted from this class. */
+    /** Default event emitter — wall-clock only. Every event log entry renders as
+     *  the emit-time wall clock ("HH:MM:SS") on the frontend. Bar anchoring was
+     *  removed on operator preference: analytics reasons about wall clock, so
+     *  the event log should too. */
     private void event(String severity, String source, String message) {
-        eventAtDisplayTime(severity, source, message, currentBarStartMs());
+        eventAtDisplayTime(severity, source, message, 0);
     }
 
-    /** Emit an event whose displayed time is EXACTLY {@code displayMs}. Used when the
-     *  caller wants to anchor to a SPECIFIC bar boundary that isn't the current one
-     *  (e.g. "Trading started — 09:15" pinned to 09:15 even if the first tick arrived
-     *  a few seconds later). Pass 0 for pure wall-clock events. */
+    /** Legacy signature kept so existing callers still compile. The
+     *  {@code displayMs} argument is IGNORED — every event now uses its
+     *  wall-clock {@code ts} for display. Callers that used to pass a
+     *  bar-start epoch to align the entry to a specific bar boundary no
+     *  longer get that behaviour; the frontend renders {@code ts} instead. */
     private void eventAtDisplayTime(String severity, String source, String message, long displayMs) {
         Map<String, Object> e = new LinkedHashMap<>();
-        long wallTs = System.currentTimeMillis();
-        e.put("ts",       wallTs);
-        if (displayMs > 0) e.put("barMs", displayMs);
+        e.put("ts",       System.currentTimeMillis());
         e.put("severity", severity);
         e.put("source",   source);
         e.put("message",  message);

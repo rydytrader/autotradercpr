@@ -944,10 +944,9 @@
                       : 'trade-pill-reason-manual';
             return '<span class="trade-pill ' + cls + '">' + r + '</span>';
         };
-        /** Candle START epoch → its OPEN time in IST "HH:MM" (Fyers/TV canonical). A
-         *  bar starting at 09:19 renders as "09:19" — the identifier operators use for
-         *  the candle. Legacy rows (pre entry_candle_ms) render "—". */
-        const fmtBarClose = ms => {
+        /** Any epoch (ms) → wall-clock "HH:MM" in IST. Used by the In / Out
+         *  columns for compact entry / exit times. Null / 0 renders "—". */
+        const fmtHm = ms => {
             if (!ms || Number(ms) <= 0) return '—';
             const d = new Date(Number(ms) + 5.5 * 3600 * 1000);
             return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
@@ -961,8 +960,8 @@
                     '<td style="padding:8px 10px;color:var(--text-muted);">#' + (i + 1) + '</td>' +
                     '<td style="padding:8px 10px;color:var(--text-primary);">' + (t.symbol || t.shortCode || '—') + '</td>' +
                     '<td style="padding:8px 10px;">' + fmtTime(t.closedAtMillis) + '</td>' +
-                    '<td style="padding:8px 10px;text-align:center;">' + fmtBarClose(t.entryCandleMs) + '</td>' +
-                    '<td style="padding:8px 10px;text-align:center;">' + fmtBarClose(t.exitCandleMs)  + '</td>' +
+                    '<td style="padding:8px 10px;text-align:center;">' + fmtHm(t.openedAtMillis) + '</td>' +
+                    '<td style="padding:8px 10px;text-align:center;">' + fmtHm(t.closedAtMillis) + '</td>' +
                     '<td style="padding:8px 10px;">' + setupPill(t.setup) + '</td>' +
                     '<td style="padding:8px 10px;">' + reasonPill(t.closeReason) + '</td>' +
                     '<td style="padding:8px 10px;text-align:right;color:var(--text-muted);">' + (t.qty || 0) + '</td>' +
@@ -979,8 +978,8 @@
                     '<th style="padding:6px 10px;text-align:left;">#</th>' +
                     '<th style="padding:6px 10px;text-align:left;">' + singularLabel.toUpperCase() + '</th>' +
                     '<th style="padding:6px 10px;text-align:left;">CLOSED</th>' +
-                    '<th style="padding:6px 10px;text-align:center;">IN BAR</th>' +
-                    '<th style="padding:6px 10px;text-align:center;">OUT BAR</th>' +
+                    '<th style="padding:6px 10px;text-align:center;">IN</th>' +
+                    '<th style="padding:6px 10px;text-align:center;">OUT</th>' +
                     '<th style="padding:6px 10px;text-align:left;">SETUP</th>' +
                     '<th style="padding:6px 10px;text-align:left;">REASON</th>' +
                     '<th style="padding:6px 10px;text-align:right;">QTY</th>' +

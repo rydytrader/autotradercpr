@@ -296,7 +296,7 @@
                     <tr>
                         <th>#</th>
                         <th>Time</th>
-                        <th class="text-center">In Bar</th>
+                        <th class="text-center">In</th>
                         <th>Symbol</th>
                         <th class="text-right">Quantity</th>
                         <th class="text-center">Side</th>
@@ -433,13 +433,12 @@
         var d = new Date(Number(ms));
         return d.toTimeString().slice(0, 8);
     }
-    /** Candle START epoch → its OPEN time in IST "HH:MM" (Fyers/TV canonical). The
-     *  entry candle for a fire on the 09:19→09:21 confirmation bar renders as "09:19"
-     *  — the bar identifier operators recognise. Legacy positions from a state file
-     *  predating entryCandleMs render "—". */
-    function fmtBarClose(candleMs) {
-        if (!candleMs || Number(candleMs) <= 0) return '—';
-        var d = new Date(Number(candleMs) + 5.5 * 3600 * 1000);
+    /** Any epoch (ms) → wall-clock "HH:MM" in IST. Used by the Live
+     *  Positions "In" column for a compact entry-time cell next to the
+     *  full HH:MM:SS "Time" column. Null / 0 renders "—". */
+    function fmtHm(ms) {
+        if (!ms || Number(ms) <= 0) return '—';
+        var d = new Date(Number(ms) + 5.5 * 3600 * 1000);
         return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
     }
     function escapeHtml(s) {
@@ -699,7 +698,7 @@
                 return '<tr>'
                     + '<td>' + (i + 1) + '</td>'
                     + '<td>' + fmtTime(p.openMillis) + '</td>'
-                    + '<td class="text-center">' + fmtBarClose(p.entryCandleMs) + '</td>'
+                    + '<td class="text-center">' + fmtHm(p.openMillis) + '</td>'
                     + '<td>' + escapeHtml(p.symbol) + '</td>'
                     + '<td class="text-right">' + escapeHtml(String(p.qty)) + '</td>'
                     + '<td class="text-center">'
@@ -778,14 +777,12 @@
         body.innerHTML = events.map(function(e) {
             var sev = String(e.severity || '').replace(/[\[\]]/g, '');
             var src = normalizeEventSource(String(e.source || 'Strategy').replace(/[\[\]]/g, ''));
-            // Candle-driven events (ATM lock, trigger seed/promote/invalidate, AUTO
-            // ENTRY, Exit) carry `barMs` — the bar CLOSE epoch. Prefer it so an event
-            // firing at wall-clock 09:17:03 renders as "09:17" aligned with the bar
-            // boundary. Non-candle events (SL_HIT ticks, kill switch, connect status)
-            // don't carry barMs and fall back to the full HH:MM:SS wall-clock stamp.
-            var timeLabel = e.barMs && Number(e.barMs) > 0
-                ? fmtBarCloseMs(Number(e.barMs))
-                : fmtTime(e.ts);
+            // Event log renders wall-clock HH:MM:SS from `ts` (emit time). The
+            // previous bar-anchored `barMs` display was removed on operator
+            // preference — analytics reasons about wall clock, so the event
+            // stream matches. Legacy persisted events may still carry `barMs`;
+            // it's ignored here.
+            var timeLabel = fmtTime(e.ts);
             return '<div class="event-row">'
                 + '<span style="color:var(--text-muted);">' + timeLabel + '</span>'
                 + '<span class="sev-' + sev + '">' + escapeHtml(sev) + '</span>'
@@ -793,15 +790,6 @@
                 + '<span class="event-msg">' + escapeHtml(shortenSymbolInText(e.message)) + '</span>'
                 + '</div>';
         }).join('');
-    }
-
-    /** Formats a bar-anchored epoch (ms) as "HH:MM" in IST — the value is already the
-     *  bar OPEN time (Fyers/TV canonical candle identifier). A trigger seeded on the
-     *  09:17→09:19 bar renders as "09:17"; an SL_HIT mid-bar at 09:27:54 renders as
-     *  "09:27" (the current bar the tick fell into). */
-    function fmtBarCloseMs(ms) {
-        var d = new Date(Number(ms) + 5.5 * 3600 * 1000);
-        return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
     }
 
     function filterLogs() {
