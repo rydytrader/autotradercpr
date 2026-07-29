@@ -33,11 +33,13 @@ import java.util.regex.Pattern;
 @Component
 public class GdflSymbolMapper {
 
-    /** {@code NIFTY} + arbitrary expiry chars + strike (digits) + {@code CE|PE}. Used
-     *  to lift the STRIKE + CE/PE off the Fyers symbol after we've stripped the
-     *  {@code NSE:} prefix. Group 1 = strike; group 2 = CE/PE. */
+    /** {@code NIFTY} + expiry chars (ALWAYS exactly 5 — monthly YYMMM like
+     *  {@code 26JUL} or weekly YYMDD like {@code 26804}) + strike (digits) +
+     *  {@code CE|PE}. The fixed-length {@code .{5}} anchor is what stops
+     *  {@code \d+} from greedy-swallowing the numeric expiry digits into the
+     *  strike on weekly-format symbols. Group 1 = strike; group 2 = CE/PE. */
     private static final Pattern FYERS_TAIL =
-        Pattern.compile("NIFTY.*?(\\d+)(CE|PE)$");
+        Pattern.compile("NIFTY.{5}(\\d+)(CE|PE)$");
     /** GDFL uses uppercase month abbreviations: {@code 28JUL26}. */
     private static final DateTimeFormatter GDFL_EXPIRY_FMT =
         DateTimeFormatter.ofPattern("ddMMMuu", Locale.ENGLISH);
