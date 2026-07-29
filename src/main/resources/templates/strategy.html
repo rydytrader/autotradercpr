@@ -533,17 +533,38 @@
         if (d.fyersIdLine) document.getElementById('fyersIdLine').textContent = d.fyersIdLine;
     }).catch(function() {});
 
-    // Connection-status dot mirrors home / calendar
+    // Connection-status dot mirrors home / calendar / chart — reads /status,
+    // derives Fyers + GDFL state, colour-codes the dot and label.
     function checkConnection() {
-        fetch('/api/connection').then(function(r) { return r.ok ? r.json() : null; }).then(function(d) {
-            var dot = document.getElementById('statusDot');
-            var lbl = document.getElementById('connectionStatus');
-            if (!dot || !lbl) return;
-            if (!d) { dot.style.background = '#9ca3af'; lbl.textContent = 'No data'; return; }
-            var status = d.status || 'unknown';
-            dot.style.background = status === 'CONNECTED' ? '#34d399' : status === 'POLLING' ? '#fbbf24' : '#f87171';
-            lbl.textContent = status;
-        }).catch(function() {});
+        var ctrl = new AbortController();
+        var tid = setTimeout(function(){ ctrl.abort(); }, 3000);
+        fetch('/status', { signal: ctrl.signal })
+            .then(function(r) { clearTimeout(tid); return r.json(); })
+            .then(function(d) {
+                var dot   = document.getElementById('statusDot');
+                var label = document.getElementById('connectionStatus');
+                if (!dot || !label) return;
+                var status  = d.status  || 'DISCONNECTED';
+                var gdfl    = d.gdfl    || 'DISABLED';
+                var overall = d.overall;
+                if (!overall) {
+                    if (status.indexOf('WS CONNECTED') >= 0) overall = 'CONNECTED';
+                    else if (status.indexOf('CONNECTING') >= 0 || status.indexOf('RECONNECTING') >= 0
+                             || status === 'POLLING' || status === 'SYNCING') overall = 'SYNCING';
+                    else overall = 'DISCONNECTED';
+                }
+                var text = status + (gdfl === 'DISABLED' ? '' : ' · GDFL ' + gdfl);
+                if (overall === 'CONNECTED') {
+                    dot.className = 'status-dot connected';
+                    label.textContent = text; label.style.color = 'var(--accent-green)';
+                } else if (overall === 'SYNCING') {
+                    dot.className = 'status-dot syncing';
+                    label.textContent = text; label.style.color = 'var(--accent-yellow)';
+                } else {
+                    dot.className = 'status-dot disconnected';
+                    label.textContent = text; label.style.color = 'var(--accent-red)';
+                }
+            }).catch(function() {});
     }
     checkConnection();
     setInterval(checkConnection, 5000);

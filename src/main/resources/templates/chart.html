@@ -741,6 +741,41 @@
         });
     }
 
+    // Connection status dot in the header — same shape as home / calendar /
+    // trade pages. Reads /status, derives Fyers + GDFL state, colour-codes the
+    // dot and label.
+    function checkConnection() {
+        var ctrl = new AbortController();
+        var tid = setTimeout(function(){ ctrl.abort(); }, 3000);
+        fetch('/status', { signal: ctrl.signal })
+            .then(function(r) { clearTimeout(tid); return r.json(); })
+            .then(function(d) {
+                var dot   = document.getElementById('statusDot');
+                var label = document.getElementById('connectionStatus');
+                if (!dot || !label) return;
+                var status  = d.status  || 'DISCONNECTED';
+                var gdfl    = d.gdfl    || 'DISABLED';
+                var overall = d.overall;
+                if (!overall) {
+                    if (status.indexOf('WS CONNECTED') >= 0) overall = 'CONNECTED';
+                    else if (status.indexOf('CONNECTING') >= 0 || status.indexOf('RECONNECTING') >= 0
+                             || status === 'POLLING' || status === 'SYNCING') overall = 'SYNCING';
+                    else overall = 'DISCONNECTED';
+                }
+                var text = status + (gdfl === 'DISABLED' ? '' : ' · GDFL ' + gdfl);
+                if (overall === 'CONNECTED') {
+                    dot.className = 'status-dot connected';
+                    label.textContent = text; label.style.color = 'var(--accent-green)';
+                } else if (overall === 'SYNCING') {
+                    dot.className = 'status-dot syncing';
+                    label.textContent = text; label.style.color = 'var(--accent-yellow)';
+                } else {
+                    dot.className = 'status-dot disconnected';
+                    label.textContent = text; label.style.color = 'var(--accent-red)';
+                }
+            }).catch(function() {});
+    }
+
     document.addEventListener('DOMContentLoaded', function() {
         var yr = document.getElementById('footerYear');
         if (yr) yr.textContent = new Date().getFullYear();
@@ -748,10 +783,12 @@
         refreshSymbols();
         pollAll();
         tickCountdown();
+        checkConnection();
         // refreshSymbols is now folded into pollAll every 2 s (in-memory reads, cheap),
         // so a separate slower interval isn't needed.
         setInterval(pollAll, 2000);
         setInterval(tickCountdown, 1000);
+        setInterval(checkConnection, 5000);
     });
 </script>
 
