@@ -67,15 +67,10 @@ public class GdflService {
 
     private volatile GdflDataWebSocket wsClient;
     /** Which GDFL identifiers we've already sent SubscribeRealtime for TODAY. Reset at
-     *  day rollover AND on every fresh connect (each new WS starts with zero
-     *  live subscriptions). */
+     *  day rollover. */
     private final Set<String> subscribedGdflSymbols = new HashSet<>();
     /** Day-key of the last successful subscribe pass, so day rollover clears state. */
     private volatile String subscribedDayKey = "";
-    /** Flipped in {@link #shutdown} — {@link #scheduleReconnect} and
-     *  {@link #connect} short-circuit once true to avoid reconnect storms during
-     *  app teardown. */
-    private volatile boolean shuttingDown = false;
 
     public GdflService(GdflProperties props,
                        GdflSymbolMapper mapper,
@@ -138,10 +133,6 @@ public class GdflService {
 
     @PreDestroy
     public void shutdown() {
-        // Set BEFORE closing the socket so the onDisconnect callback
-        // (fired from onClose) short-circuits instead of scheduling a
-        // pointless reconnect against a shutting-down executor.
-        shuttingDown = true;
         executor.shutdownNow();
         if (wsClient != null) {
             try { wsClient.close(); } catch (Exception ignored) {}
@@ -149,24 +140,16 @@ public class GdflService {
     }
 
     private synchronized void connect() {
-        if (shuttingDown) return;
         URI endpoint;
         try { endpoint = URI.create(props.getEndpoint()); }
         catch (Exception e) {
             log.warn("[Gdfl] invalid gdfl.endpoint '{}': {}", props.getEndpoint(), e.getMessage());
             return;
         }
-        // Fresh WS instance — no subscriptions active on it yet. Clear the
-        // dedup set so the atm-check loop re-issues SubscribeRealtime for
-        // every symbol in today's OI window. Without this, subscribeOne
-        // would think each symbol is "already subscribed" (from the previous
-        // WS) and skip, leaving the new WS silent.
-        subscribedGdflSymbols.clear();
         // Empty subscribe list at connect time — the poller will send SubscribeRealtime
-        // per symbol once AtmVwap has today's ATM. onDisconnect wires this same class
-        // back into scheduleReconnect, so a mid-day remote drop auto-heals.
+        // per symbol once AtmVwap has today's ATM.
         wsClient = new GdflDataWebSocket(endpoint, props.getApiKey(), props.getExchange(),
-            new ArrayList<>(), this::onGdflTick, this::scheduleReconnect);
+            new ArrayList<>(), this::onGdflTick);
         wsClient.setConnectionLostTimeout(30);
         try {
             boolean connected = wsClient.connectBlocking(15, TimeUnit.SECONDS);
@@ -182,15 +165,8 @@ public class GdflService {
     }
 
     private void scheduleReconnect() {
-        if (shuttingDown) return;
-        if (executor.isShutdown()) return;
         int delaySec = Math.max(1, props.getReconnectDelaySeconds());
-        log.info("[Gdfl] scheduling reconnect in {}s", delaySec);
-        try {
-            executor.schedule(this::connect, delaySec, TimeUnit.SECONDS);
-        } catch (java.util.concurrent.RejectedExecutionException ex) {
-            log.warn("[Gdfl] reconnect not scheduled — executor rejected (shutdown?)");
-        }
+        executor.schedule(this::connect, delaySec, TimeUnit.SECONDS);
     }
 
     /** Fires every {@code gdfl.atmPollIntervalSeconds}. Discovers today's ATM CE + PE

@@ -47,30 +47,23 @@ public class GdflDataWebSocket extends WebSocketClient {
     private final String exchange;
     private final List<String> gdflSymbols;
     private final Consumer<JsonNode> tickListener;
-    private final Runnable onDisconnect;
 
     private volatile boolean authenticated = false;
 
     /** {@code gdflSymbols} may be empty at construction time — {@link GdflService}
      *  keeps it empty and calls {@link #subscribeSymbol} dynamically once AtmVwap
      *  resolves the day's ATM. Any entries passed in at construct time are sent as
-     *  soon as {@code AuthenticateResult} arrives.
-     *
-     *  <p>{@code onDisconnect} fires from {@link #onClose} on any close (remote drop,
-     *  network hiccup, auth reject). {@link GdflService} uses it to schedule a
-     *  reconnect. May be {@code null} for callers that don't care. */
+     *  soon as {@code AuthenticateResult} arrives. */
     public GdflDataWebSocket(URI endpoint,
                              String apiKey,
                              String exchange,
                              List<String> gdflSymbols,
-                             Consumer<JsonNode> tickListener,
-                             Runnable onDisconnect) {
+                             Consumer<JsonNode> tickListener) {
         super(endpoint);
         this.apiKey       = apiKey;
         this.exchange     = exchange;
         this.gdflSymbols  = gdflSymbols;
         this.tickListener = tickListener;
-        this.onDisconnect = onDisconnect;
     }
 
     @Override
@@ -158,10 +151,6 @@ public class GdflDataWebSocket extends WebSocketClient {
     public void onClose(int code, String reason, boolean remote) {
         authenticated = false;
         log.info("[GdflWS] closed code={} reason={} remote={}", code, reason, remote);
-        if (onDisconnect != null) {
-            try { onDisconnect.run(); }
-            catch (Exception e) { log.warn("[GdflWS] onDisconnect callback threw: {}", e.getMessage()); }
-        }
     }
 
     @Override
