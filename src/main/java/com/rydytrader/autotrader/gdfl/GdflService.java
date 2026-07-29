@@ -76,14 +76,6 @@ public class GdflService {
      *  {@link #connect} short-circuit once true to avoid reconnect storms during
      *  app teardown. */
     private volatile boolean shuttingDown = false;
-    /** Monotonic counter bumped on every {@link #connect}. The onDisconnect
-     *  callback captures the generation of the client it was attached to; when
-     *  the callback fires, it checks whether that generation is still current.
-     *  If not, the callback came from a client we already replaced — no
-     *  reconnect is scheduled. Without this guard, closing an old leaked client
-     *  during connect() would cascade into another reconnect and a fresh
-     *  client-per-close spin loop. */
-    private volatile int wsGeneration = 0;
 
     public GdflService(GdflProperties props,
                        GdflSymbolMapper mapper,
@@ -164,33 +156,17 @@ public class GdflService {
             log.warn("[Gdfl] invalid gdfl.endpoint '{}': {}", props.getEndpoint(), e.getMessage());
             return;
         }
-        // Close any prior client BEFORE creating the new one. Skipping this
-        // used to leak the previous socket — the vendor eventually dropped it
-        // (duplicate-connection kick or idle timeout), its onClose fired our
-        // reconnect callback, and we'd cascade into a client-per-close spin.
-        // The generation bump below neutralises the leaked client's callback
-        // so this local close() doesn't itself trigger another connect().
-        int myGeneration = ++wsGeneration;
-        GdflDataWebSocket prior = wsClient;
-        if (prior != null) {
-            try { prior.close(); } catch (Exception ignored) {}
-        }
         // Fresh WS instance — no subscriptions active on it yet. Clear the
         // dedup set so the atm-check loop re-issues SubscribeRealtime for
         // every symbol in today's OI window. Without this, subscribeOne
         // would think each symbol is "already subscribed" (from the previous
         // WS) and skip, leaving the new WS silent.
         subscribedGdflSymbols.clear();
-        // The onDisconnect lambda captures myGeneration; when it fires, it
-        // reconnects only if we haven't already replaced this client. That
-        // way the old leaked client's onClose becomes a no-op instead of
-        // stacking additional reconnects.
-        Runnable onDisconnect = () -> {
-            if (myGeneration != wsGeneration) return;
-            scheduleReconnect();
-        };
+        // Empty subscribe list at connect time — the poller will send SubscribeRealtime
+        // per symbol once AtmVwap has today's ATM. onDisconnect wires this same class
+        // back into scheduleReconnect, so a mid-day remote drop auto-heals.
         wsClient = new GdflDataWebSocket(endpoint, props.getApiKey(), props.getExchange(),
-            new ArrayList<>(), this::onGdflTick, onDisconnect);
+            new ArrayList<>(), this::onGdflTick, this::scheduleReconnect);
         wsClient.setConnectionLostTimeout(30);
         try {
             boolean connected = wsClient.connectBlocking(15, TimeUnit.SECONDS);
@@ -198,7 +174,7 @@ public class GdflService {
                 log.warn("[Gdfl] connect timed out — will retry in {}s", props.getReconnectDelaySeconds());
                 scheduleReconnect();
             } else {
-                log.info("[Gdfl] WS connect returned true — waiting for AuthenticateResult (gen={})", myGeneration);
+                log.info("[Gdfl] WS connect returned true — waiting for AuthenticateResult");
             }
         } catch (InterruptedException ie) {
             Thread.currentThread().interrupt();
