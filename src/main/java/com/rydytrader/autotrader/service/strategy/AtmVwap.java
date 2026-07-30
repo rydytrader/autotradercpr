@@ -1308,6 +1308,7 @@ public class AtmVwap implements Strategy {
         p.entryCandleMs   = entryCandle == null ? 0 : entryCandle.startMillis();
         p.slLevel         = slLevel;
         p.originalSlLevel = slLevel;
+        p.triggerHigh     = trigger.high;   // used by refreshUnresolvedFills to re-clamp SL on fill
         p.targetLevel     = 0;              // no target
         p.isShort         = true;
         p.fillResolved    = false;
@@ -1353,6 +1354,41 @@ public class AtmVwap implements Strategy {
                 p.fillResolved = true;
                 event("[INFO]", "Fill", shortSym(p.symbol) + " fill resolved — entry "
                     + round2(oldEntry) + " → " + round2(p.entryPrice) + " (qty=" + p.qty + ")");
+                // Re-clamp SL against actual fill price — but ONLY for the min/max
+                // clamp arms, not for trigger-dominated SLs. Rule per operator:
+                //   - Original SL == trigger.high (structural anchor)         → leave alone.
+                //   - Original SL was floor (oldEntry + minSl, trigger below) → new SL = fill + minSl.
+                //   - Original SL was ceiling (oldEntry + maxSl, trigger above) → new SL = fill + maxSl.
+                // Fixes the case where slippage pushes fill 15+ pts above the
+                // fire-time LTP and leaves SL stranded 20+ pts away.
+                // Skips positions whose triggerHigh is unset (MANUAL fires or
+                // legacy state-file rows) and positions whose SL has already
+                // been moved to breakeven.
+                if (p.triggerHigh > 0 && !p.breakevenMoved) {
+                    double minSl = Math.max(0, riskSettings.getAtmVwapMinSlPoints());
+                    double maxSl = Math.max(minSl, riskSettings.getAtmVwapMaxSlPoints());
+                    double oldFloor = oldEntry + minSl;
+                    double oldCeil  = oldEntry + maxSl;
+                    boolean triggerDominated = p.triggerHigh >= oldFloor && p.triggerHigh <= oldCeil;
+                    if (!triggerDominated) {
+                        double newFloor = p.entryPrice + minSl;
+                        double newCeil  = p.entryPrice + maxSl;
+                        double reclampedSl = Math.max(p.triggerHigh, newFloor);
+                        if (reclampedSl > newCeil) reclampedSl = newCeil;
+                        reclampedSl = round2(reclampedSl);
+                        if (Math.abs(reclampedSl - p.slLevel) > 0.005) {
+                            double oldSl = p.slLevel;
+                            p.slLevel = reclampedSl;
+                            p.originalSlLevel = reclampedSl;
+                            event("[INFO]", "Fill", shortSym(p.symbol)
+                                + " SL re-clamped on fill "
+                                + round2(oldSl) + " → " + round2(p.slLevel)
+                                + " (trigger.high=" + round2(p.triggerHigh)
+                                + ", fill=" + round2(p.entryPrice)
+                                + ", min=" + minSl + ", max=" + maxSl + ")");
+                        }
+                    }
+                }
                 saveToDisk();
             } catch (Exception e) {
                 log.warn("[AtmVwap] fill lookup failed for {}: {}", p.entryOrderId, e.getMessage());
@@ -1962,6 +1998,12 @@ public class AtmVwap implements Strategy {
         public double     targetLevel;
         public double     slLevel;
         public double     originalSlLevel;
+        /** Trigger candle's high at fire time — the structural anchor used to
+         *  seed the SL clamp. Retained on the Position so {@link #refreshUnresolvedFills}
+         *  can re-clamp against the actual fill price (min/max SL only; SL that
+         *  was already dominated by trigger.high stays put). 0 for MANUAL fires
+         *  and legacy state-file positions that predate this field. */
+        public double     triggerHigh;
         public boolean    breakevenMoved;
         public boolean fillResolved;
         public boolean isShort = true;
