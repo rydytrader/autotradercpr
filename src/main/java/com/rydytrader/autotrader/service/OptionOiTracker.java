@@ -290,6 +290,50 @@ public class OptionOiTracker {
             round2(actualBiasPct(state.cumulativeCeChange, state.cumulativePeChange)));
     }
 
+    /** UI-facing snapshot — freezes the OI bias values to the LAST 1-min
+     *  sample taken by {@link #snapshotForChart} so the pill and % on the
+     *  trade page don't jitter on every browser refresh. Internal callers
+     *  ({@code AtmVwap.currentOiBias}) keep using {@link #snapshot()} for
+     *  live values because the entry filter needs the freshest OI read.
+     *
+     *  <p>Before the first minute-boundary sample fires, falls back to the
+     *  live snapshot so the UI shows something reasonable at 09:15:XX
+     *  instead of empty until 09:16. */
+    public synchronized Snapshot snapshotForUi() {
+        if (state.samples == null || state.samples.isEmpty()) {
+            return snapshot();
+        }
+        SampleRecord last = state.samples.get(state.samples.size() - 1);
+        String bias = last.bias();
+        if (isStale()) bias = "STALE";
+        LocalDateTime frozenAt = parseSampleTimeToday(last.t());
+        return new Snapshot(
+            state.baselineTakenAt,
+            frozenAt,
+            state.samplesTaken,
+            last.cumCe(),
+            last.cumPe(),
+            last.cumCe() - last.cumPe(),
+            round2(last.ratio()),
+            bias,
+            state.atmStrike,
+            state.activeStrikes == null ? 0 : state.activeStrikes.size(),
+            round2(currentBiasThreshold() * 100.0),
+            round2(actualBiasPct(last.cumCe(), last.cumPe())));
+    }
+
+    /** Parse a SampleRecord's HH:mm string back into today's LocalDateTime
+     *  so the UI can render "as of HH:MM" for the frozen snapshot. Returns
+     *  {@code state.lastSampleAt} on parse failure. */
+    private LocalDateTime parseSampleTimeToday(String hhmm) {
+        try {
+            LocalTime t = LocalTime.parse(hhmm);
+            return LocalDateTime.of(LocalDate.now(IST), t);
+        } catch (Exception e) {
+            return state.lastSampleAt;
+        }
+    }
+
     /** Actual bias magnitude — the difference between CE and PE cumulative OI change
      *  expressed as a percent of the LARGER side. Signed: positive = CE dominant
      *  (bearish tilt), negative = PE dominant (bullish tilt). Bounded in [-100, 100].

@@ -10,7 +10,11 @@ import org.springframework.web.bind.annotation.RestController;
  * Exposes {@link OptionOiTracker} state to the trade page.
  *
  * <ul>
- *   <li>{@code GET /api/atmvwap/oi/state}   — current cumulative snapshot + bias.</li>
+ *   <li>{@code GET /api/atmvwap/oi/state}   — LAST 1-min snapshot of cumulative
+ *       CE/PE change + bias. Frozen between minute boundaries so a browser
+ *       refresh doesn't produce a different % / bias on each poll. Internal
+ *       callers (AtmVwap entry filter) still read the live values via
+ *       {@link OptionOiTracker#snapshot()}.</li>
  *   <li>{@code GET /api/atmvwap/oi/history} — per-sample series since baseline for
  *       the inline Chart.js line chart.</li>
  * </ul>
@@ -27,7 +31,7 @@ public class OptionOiController {
 
     @GetMapping("/state")
     public ResponseEntity<OptionOiTracker.Snapshot> state() {
-        return ResponseEntity.ok(tracker.snapshot());
+        return ResponseEntity.ok(tracker.snapshotForUi());
     }
 
     @GetMapping("/history")
