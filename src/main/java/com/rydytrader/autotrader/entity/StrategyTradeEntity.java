@@ -118,7 +118,7 @@ public class StrategyTradeEntity {
     @Column(name = "sl_hit_count")
     private Integer slHitCount;
 
-    /** Start-of-bar epoch millis for the 2-min candle that TRIGGERED the entry (the
+    /** Start-of-bar epoch millis for the 3-min candle that TRIGGERED the entry (the
      *  confirmation bar whose close met the fire gate). Distinct from
      *  {@link #openedAtMillis} which is the wall-clock instant the order was PLACED —
      *  those two differ by up to ~2 min because the FSM decision is made at bar close
@@ -128,9 +128,9 @@ public class StrategyTradeEntity {
     @Column(name = "entry_candle_ms")
     private Long entryCandleMs;
 
-    /** Start-of-bar epoch millis for the 2-min candle DURING WHICH the exit fired —
+    /** Start-of-bar epoch millis for the 3-min candle DURING WHICH the exit fired —
      *  the wall-clock bucket the SL-hit tick fell into (or the manual/timed-squareoff
-     *  moment's 2-min bucket). UI renders as the bar's CLOSE time. Nullable — legacy
+     *  moment's 3-min bucket). UI renders as the bar's CLOSE time. Nullable — legacy
      *  rows load with null. */
     @Column(name = "exit_candle_ms")
     private Long exitCandleMs;

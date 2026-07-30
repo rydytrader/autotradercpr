@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TraderEdge — Systematic ATM VWAP short-options</title>
-<meta name="description" content="A rules-based short-options approach anchored on the ATM option's session VWAP. NIFTY 2-min bars, trigger-candle FSM, portfolio-aware sizing.">
+<meta name="description" content="A rules-based short-options approach anchored on the ATM option's session VWAP. NIFTY 3-min bars, trigger-candle FSM, portfolio-aware sizing.">
 <style>
   :root {
     --bg: #FFFFFF;
@@ -434,7 +434,7 @@
   <section id="strategy">
     <p class="eyebrow">The strategy · four setups</p>
     <h2>One rule, applied to <em>each ATM option's own VWAP</em>.</h2>
-    <p class="section-lede">Every 2-min bar close on the ATM CE and ATM PE runs the same trigger-candle FSM. Below-VWAP close seeds a trigger; the very next bar closing below the trigger's low sells that leg. CE and PE run independently — either, both, or neither can fire on any given session.</p>
+    <p class="section-lede">Every 3-min bar close on the ATM CE and ATM PE runs the same trigger-candle FSM. Below-VWAP close seeds a trigger; the very next bar closing below the trigger's low sells that leg. CE and PE run independently — either, both, or neither can fire on any given session.</p>
 
     <div class="setups">
       <div class="setup">

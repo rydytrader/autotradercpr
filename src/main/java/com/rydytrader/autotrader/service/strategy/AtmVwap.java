@@ -35,12 +35,12 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * NIFTY ATM 2-min VWAP option-selling strategy.
+ * NIFTY ATM 3-min VWAP option-selling strategy.
  *
- * <p>First 2-min NIFTY spot bar close (~09:17 IST) captures the close price and locks
+ * <p>First 3-min NIFTY spot bar close (~09:18 IST) captures the close price and locks
  * today's ATM strike (round to nearest 50). The strike's CE and PE symbols become the
  * two option legs for the session. From {@code atmVwapTradingStartTime} onward (default
- * 09:30 IST), each option's 2-min bar closes drive a trigger-candle state machine:
+ * 09:30 IST), each option's 3-min bar closes drive a trigger-candle state machine:
  *
  * <ul>
  *   <li><b>S0 → seed</b>: a bar whose close is &lt; the option's session VWAP becomes the
@@ -149,7 +149,7 @@ public class AtmVwap implements Strategy {
     /** Symbols for which we've already registered a {@code candleAggregator.subscribe}
      *  listener this JVM lifetime. Prevents duplicate registrations when
      *  {@link #ensureSessionLegsSubscribed()} is called repeatedly (which happens every
-     *  2-min NIFTY candle close via the same-day early-return branch of
+     *  3-min NIFTY candle close via the same-day early-return branch of
      *  {@code resolveAtmFromFirstBar}). Without this guard, each pass added another
      *  listener → {@code processOptionBar} ran N times per bar → trigger promoted /
      *  seeded / invalidated events fired N times. Cleared on day rollover, kill switch,
@@ -223,7 +223,7 @@ public class AtmVwap implements Strategy {
 
     /** Fires the OI subscriber at 09:15 pre-warm, handing it the ±15 strike window so
      *  per-strike baselines are taken from the first tick after market open instead of
-     *  waiting for the 09:17 ATM lock. See {@code OptionOiSubscriber#onPreWarm}. */
+     *  waiting for the 09:18 ATM lock. See {@code OptionOiSubscriber#onPreWarm}. */
     private void notifyOiPreWarm(long baseAtm, java.util.List<com.rydytrader.autotrader.service.OptionOiTracker.StrikeSymbols> window) {
         try {
             var sub = optionOiSubscriberProvider == null ? null : optionOiSubscriberProvider.getIfAvailable();
@@ -287,7 +287,7 @@ public class AtmVwap implements Strategy {
         rolloverIfNewDay();
         pruneStaleEventsBeforeToday();
 
-        // Subscribe NIFTY spot — first 2-min close resolves today's ATM strike.
+        // Subscribe NIFTY spot — first 3-min close resolves today's ATM strike.
         state.futuresSymbol = NIFTY_SYMBOL;
         candleAggregator.subscribe(NIFTY_SYMBOL, c -> onCandleClose(NIFTY_SYMBOL, c));
         try { marketDataService.subscribeAdditional(java.util.List.of(NIFTY_SYMBOL)); }
@@ -296,7 +296,7 @@ public class AtmVwap implements Strategy {
 
         // Trading-started marker — fires exactly once per day, on the first NIFTY spot
         // tick received after 09:15 IST. Anchors the operator's mental timeline to the
-        // 09:15 open of the first 2-min bar.
+        // 09:15 open of the first 3-min bar.
         marketDataService.addLtpListener(this::onFirstNiftyTickOfDay);
 
         atmTracker.setListener(this::onAtmChange);
@@ -305,15 +305,15 @@ public class AtmVwap implements Strategy {
         try { ensureSessionLegsSubscribed(); }
         catch (Exception e) { log.warn("[AtmVwap] session-legs boot re-subscribe failed: {}", e.getMessage()); }
 
-        // If pre-warm was in progress before the crash (09:15-09:17 window), re-subscribe.
+        // If pre-warm was in progress before the crash (09:15-09:18 window), re-subscribe.
         try { resumeWarmingIfNeeded(); }
         catch (Exception e) { log.warn("[AtmVwap] resume-warming failed: {}", e.getMessage()); }
 
         // Mid-day restart with an already-resolved ATM: re-fire the OI-window subscribe
         // immediately so the OI feed resumes within seconds of boot instead of waiting
-        // ~2-3 min for the next NIFTY 2-min candle close to trigger the usual re-entry
+        // ~2-3 min for the next NIFTY 3-min candle close to trigger the usual re-entry
         // path. Idempotent — the subscriber's per-day guard prevents any duplicate work
-        // when the 09:17-ish real resolution also fires.
+        // when the 09:18-ish real resolution also fires.
         try {
             String today = LocalDate.now(IST).toString();
             if (state.atmStrike > 0 && today.equals(state.sessionSetupDayKey)) {
@@ -387,8 +387,8 @@ public class AtmVwap implements Strategy {
 
     @Override public String id() { return STRATEGY_ID; }
     @Override public String displayName() { return "ATM VWAP"; }
-    @Override public String description() { return "NIFTY ATM 2-min · session VWAP · bearish premium sell"; }
-    /** Session-locked ATM strike, or 0 before the first 2-min close resolves it. */
+    @Override public String description() { return "NIFTY ATM 3-min · session VWAP · bearish premium sell"; }
+    /** Session-locked ATM strike, or 0 before the first 3-min close resolves it. */
     public long getAtmStrike() { return state.atmStrike; }
     /** Selected ATM CE leg Fyers symbol, or "" before ATM resolution. */
     public String getCeSymbol() { return state.ceSymbol == null ? "" : state.ceSymbol; }
@@ -579,7 +579,7 @@ public class AtmVwap implements Strategy {
     // ── ATM change handler — no-op (retained as a harmless AtmTracker hook) ─
 
     public synchronized void onAtmChange(AtmTracker.AtmChange ev) {
-        // Session ATM is locked at the first 2-min NIFTY bar close; subsequent
+        // Session ATM is locked at the first 3-min NIFTY bar close; subsequent
         // AtmTracker moves are informational only.
     }
 
@@ -600,7 +600,7 @@ public class AtmVwap implements Strategy {
             if (state.doneForDay) return;
             if (state.dailyLossLockout) return;
 
-            // (1) NIFTY spot: first 2-min close of the day resolves today's ATM strike.
+            // (1) NIFTY spot: first 3-min close of the day resolves today's ATM strike.
             if (NIFTY_SYMBOL.equals(symbol)) {
                 resolveAtmFromFirstBar(authoritative);
                 return;
@@ -616,14 +616,14 @@ public class AtmVwap implements Strategy {
         }
     }
 
-    // ── Session start — pre-warm at 09:15, resolve ATM CE + PE at 09:17 ────
+    // ── Session start — pre-warm at 09:15, resolve ATM CE + PE at 09:18 ────
 
     /** Pre-warm width — ±10 strikes each side (21 strikes total, 42 option symbols).
-     *  Covers ±500 pts of first-2-min NIFTY move so the resolved ATM's CE + PE almost
-     *  always fall inside the window and their first 09:15–09:17 candle has full OHLC.
+     *  Covers ±500 pts of first-3-min NIFTY move so the resolved ATM's CE + PE almost
+     *  always fall inside the window and their first 09:15–09:18 candle has full OHLC.
      *  Also feeds the {@code OptionOiSubscriber}'s window, so the OI tracker's
      *  per-strike baseline can be taken from the first WS OI tick at 09:15 rather than
-     *  waiting for ATM lock at 09:17. Extreme opens beyond ±500 pts still fall back to
+     *  waiting for ATM lock at 09:18. Extreme opens beyond ±500 pts still fall back to
      *  the slow (racy) path with a partial-first-bar warning.
      *
      *  <p>Sized at 10 so the total 42-symbol pre-warm fits under GDFL's 50-symbol
@@ -631,11 +631,14 @@ public class AtmVwap implements Strategy {
      *  same window for exchange-authoritative OI + LTP. */
     private static final int PRE_WARM_STRIKES_EACH_SIDE = 10;
     private static final LocalTime MARKET_OPEN_IST      = LocalTime.of(9, 15);
-    private static final LocalTime PRE_WARM_CUTOFF_IST  = LocalTime.of(9, 17);
+    // 3-min bars close at 09:18, so pre-warm hands off to resolveAtmFromFirstBar
+    // right when the first bar closes. Update this constant if BUCKET_MINUTES
+    // changes again.
+    private static final LocalTime PRE_WARM_CUTOFF_IST  = LocalTime.of(9, 18);
 
     /** Called from {@link #tick()} on the 5 s slow loop. Subscribes ±10 strikes of ATM
      *  candidate legs so the aggregator has 2 min of tick history for whichever strike
-     *  ends up being the 09:17 ATM. Idempotent — same-day short-circuits. */
+     *  ends up being the 09:18 ATM. Idempotent — same-day short-circuits. */
     private synchronized void warmupIfDue() {
         if (!isEnabled()) return;
         LocalTime now = ZonedDateTime.now(IST).toLocalTime();
@@ -692,8 +695,8 @@ public class AtmVwap implements Strategy {
         // Fyers ticks for altFeed-owned symbols get dropped at MarketDataService.onTick).
         // BUT still register the per-strike CandleAggregator listener — CandleAggregator
         // drops ticks for symbols with no registered listener at onLtpTick, so without
-        // this the 09:15 → 09:17 bucket for CE/PE never forms (aggregator subscribe
-        // otherwise wouldn't happen until 09:17 ATM lock, by which point the 09:15
+        // this the 09:15 → 09:18 bucket for CE/PE never forms (aggregator subscribe
+        // otherwise wouldn't happen until 09:18 ATM lock, by which point the 09:15
         // ticks have already been discarded). GDFL pushes LTP via pushLtpTick which
         // fires the same listener chain, so a registered listener is sufficient.
         if (!gdflOwnsOptionTicks()) {
@@ -707,7 +710,7 @@ public class AtmVwap implements Strategy {
             aggregatorSubscribedSymbols.add(sym);
         }
         // Hand the ±10 window to the OI tracker so per-strike baselines are captured on
-        // the very first WS OI tick (09:15 IST), not on the 09:17 ATM lock. When
+        // the very first WS OI tick (09:15 IST), not on the 09:18 ATM lock. When
         // resolveAtmFromFirstBar later fires notifyOiWindow(resolvedAtm), the tracker
         // narrows to ±7 and keeps the 09:15 baselines for strikes that stay in the new
         // window; outer strikes are dropped and their contribution un-credited.
@@ -743,7 +746,7 @@ public class AtmVwap implements Strategy {
         }
         LocalTime now = ZonedDateTime.now(IST).toLocalTime();
         if (!now.isBefore(PRE_WARM_CUTOFF_IST)) {
-            // Past 09:17 with no ATM resolved and stale warming — likely a bug case.
+            // Past 09:18 with no ATM resolved and stale warming — likely a bug case.
             // Drop the warming set; resolveAtmFromFirstBar will slow-path when NIFTY closes.
             state.warmingStrikes.clear();
             state.warmingCeByStrike.clear();
@@ -779,7 +782,7 @@ public class AtmVwap implements Strategy {
     }
 
     /** Unsubscribe every pre-warmed symbol that isn't the resolved ATM CE or PE, and
-     *  clear the warming state. Called by {@link #resolveAtmFromFirstBar} at 09:17. */
+     *  clear the warming state. Called by {@link #resolveAtmFromFirstBar} at 09:18. */
     private synchronized void trimWarmingSet() {
         if (state.warmingStrikes.isEmpty()) return;
         java.util.Set<String> keep = new java.util.HashSet<>();
@@ -812,7 +815,7 @@ public class AtmVwap implements Strategy {
         }
     }
 
-    /** First 2-min NIFTY spot bar close of the day. Rounds close to the nearest 50-point
+    /** First 3-min NIFTY spot bar close of the day. Rounds close to the nearest 50-point
      *  strike, picks the ATM CE + PE symbols. Fast path: pre-warm already subscribed the
      *  target strike (~99% of days). Slow path: the strike fell outside the ±10 pre-warm
      *  window (extreme open) — subscribe fresh and log a warning (that bar's OHLC will be
@@ -836,7 +839,7 @@ public class AtmVwap implements Strategy {
 
         if (ce != null && !ce.isBlank() && pe != null && !pe.isBlank()) {
             // Fast path — pre-warm hit. The strike was subscribed at 09:15 so the
-            // 09:17-09:19 aggregator bucket has been continuously sampling since ~09:15.
+            // 09:18-09:21 aggregator bucket has been continuously sampling since ~09:15.
             state.firstBarCloseSymbol = NIFTY_SYMBOL;
             state.firstBarClose       = close;
             state.atmStrike           = strike;
@@ -848,7 +851,7 @@ public class AtmVwap implements Strategy {
             trimWarmingSet();
             // ATM lock is special-cased to display the bar CLOSE (bar start + 2 min)
             // rather than the bar OPEN — the "lock" conceptually happens AT the boundary
-            // when the first NIFTY bar closes, not inside the bar itself. Shows "09:17"
+            // when the first NIFTY bar closes, not inside the bar itself. Shows "09:18"
             // for the first bar closing, not "09:15".
             eventAtDisplayTime("[INFO]", "Setup",
                 "NIFTY ATM Resolved (pre-warm HIT) — CE " + strike + " (" + shortSym(ce)
@@ -884,7 +887,7 @@ public class AtmVwap implements Strategy {
 
         ensureSessionLegsSubscribed();
         trimWarmingSet();  // drop the useless pre-warm (its ATM guess was wrong)
-        // Same special-case as the fast path above — display bar CLOSE (09:17), not
+        // Same special-case as the fast path above — display bar CLOSE (09:18), not
         // bar OPEN (09:15), for the ATM lock event.
         eventAtDisplayTime("[INFO]", "Setup",
             "NIFTY ATM Resolved — CE " + state.atmStrike + " (" + shortSym(state.ceSymbol)
@@ -970,18 +973,18 @@ public class AtmVwap implements Strategy {
 
     // ── Trigger-candle FSM ─────────────────────────────────────────────────
 
-    /** Per-option 2-min bar walk. Trigger-candle FSM described at the class-level Javadoc. */
+    /** Per-option 3-min bar walk. Trigger-candle FSM described at the class-level Javadoc. */
     private void processOptionBar(String symbol, Candle c) {
         // Bar-level gate: skip bars whose START is before the configured
-        // atmVwapTradingStartTime. "Start = 09:17" means the 09:17 bar (closes
-        // at 09:19) is the first bar the FSM sees; the 09:15 opening bar is
+        // atmVwapTradingStartTime. "Start = 09:18" means the 09:18 bar (closes
+        // at 09:21) is the first bar the FSM sees; the 09:15 opening bar is
         // pre-start and ignored — no seed, no fire, no promote, no invalidate.
         //
         // {@link #canFireNewEntry} does the same check against WALL CLOCK for
         // per-tick gates like {@link #fire}; this is the per-bar equivalent.
         // Without this, canFireNewEntry alone lets the 09:15 bar through
-        // because its close event fires at wall clock 09:17:XX, which is not
-        // before 09:17. OI subscription, pre-warm, and ATM resolution live
+        // because its close event fires at wall clock 09:18:XX, which is not
+        // before 09:18. OI subscription, pre-warm, and ATM resolution live
         // outside processOptionBar so they continue running from 09:15.
         String startHhmm = riskSettings.getAtmVwapTradingStartTime();
         if (startHhmm != null && !startHhmm.isBlank()) {
@@ -1509,7 +1512,7 @@ public class AtmVwap implements Strategy {
         }
     }
 
-    /** Start-of-bar epoch millis for the current wall-clock 2-min bucket, anchored on
+    /** Start-of-bar epoch millis for the current wall-clock 3-min bucket, anchored on
      *  09:15 IST. Used at exit time to tag which bar the exit fell into. Off-market
      *  hours the returned bucket is still math-correct — no callers use it then. */
     private long currentBarStartMs() {
@@ -1691,7 +1694,7 @@ public class AtmVwap implements Strategy {
             state.lastSlBarStartMsBySymbol.clear();
 
             // Yesterday's resolved-ATM block — resolveAtmFromFirstBar will re-populate
-            // at 09:17 from today's first NIFTY 2-min bar close.
+            // at 09:18 from today's first NIFTY 3-min bar close.
             state.firstBarCloseSymbol = "";
             state.firstBarClose       = 0;
             state.atmStrike           = 0;
@@ -1884,7 +1887,7 @@ public class AtmVwap implements Strategy {
         public List<Map<String, Object>> todayClosedTrades = new ArrayList<>();
         public List<Map<String, Object>> recentEvents      = new ArrayList<>();
         public boolean dailyLossLockout;
-        /** NIFTY spot symbol — subscribed to trigger first-2-min ATM resolution. */
+        /** NIFTY spot symbol — subscribed to trigger first-3-min ATM resolution. */
         public String futuresSymbol = "";
         /** Per-option live trigger candle (VWAP FSM state). */
         public Map<String, TriggerCandle> triggerByOption = new ConcurrentHashMap<>();
@@ -1898,7 +1901,7 @@ public class AtmVwap implements Strategy {
         /** Legacy watchlist role map — kept for state-file back-compat. */
         public Map<String, WatchRole> symbolRole = new ConcurrentHashMap<>();
 
-        // ── ATM strike + option legs resolved at first 2-min NIFTY bar close ─
+        // ── ATM strike + option legs resolved at first 3-min NIFTY bar close ─
         public String firstBarCloseSymbol = "";
         public double firstBarClose;
         public long   atmStrike;
@@ -1910,7 +1913,7 @@ public class AtmVwap implements Strategy {
         public String sessionSetupDayKey = "";
 
         // ── Pre-warm (±10 strikes subscribed at 09:15 to eliminate second-candle OHLC race) ─
-        /** Strikes we pre-warmed at 09:15. Empty after the 09:17 trim. */
+        /** Strikes we pre-warmed at 09:15. Empty after the 09:18 trim. */
         public List<Long> warmingStrikes = new ArrayList<>();
         /** Per-strike CE / PE Fyers symbols captured from the chain at pre-warm time. */
         public Map<Long, String> warmingCeByStrike = new ConcurrentHashMap<>();
@@ -1924,7 +1927,7 @@ public class AtmVwap implements Strategy {
         public String tradingStartedDayKey = "";
     }
 
-    /** A 2-min bar that closed below its option's session VWAP. If the very next bar closes
+    /** A 3-min bar that closed below its option's session VWAP. If the very next bar closes
      *  below its low, the fire triggers. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class TriggerCandle {
@@ -1951,7 +1954,7 @@ public class AtmVwap implements Strategy {
         public double     entryPrice;
         public String     entryOrderId = "";
         public long       openMillis;
-        /** Start-of-bar epoch millis for the 2-min candle that TRIGGERED this fire — the
+        /** Start-of-bar epoch millis for the 3-min candle that TRIGGERED this fire — the
          *  confirmation bar whose close met {@code close < trigger.low}. UI renders as
          *  the bar CLOSE time (start + 2 min). 0 for MANUAL fires and legacy state-file
          *  positions that predate this field. */
@@ -1987,7 +1990,7 @@ public class AtmVwap implements Strategy {
         event(severity, source, message);
     }
 
-    /** Default event emitter — anchors display to the CURRENT 2-min bar's OPEN.
+    /** Default event emitter — anchors display to the CURRENT 3-min bar's OPEN.
      *  Every event log entry renders as "HH:MM" (bar-aligned) rather than the
      *  wall-clock "HH:MM:SS". For an event that must be anchored to a SPECIFIC
      *  bar boundary that isn't the current one, call {@link #eventAtDisplayTime}

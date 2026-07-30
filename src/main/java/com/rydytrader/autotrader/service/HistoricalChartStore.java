@@ -35,7 +35,7 @@ import java.util.stream.Stream;
  *
  * <p>Two write triggers:
  * <ul>
- *   <li><b>Scheduled 15:32 IST daily</b> — 2-min buffer after 15:30 market close.
+ *   <li><b>Scheduled 15:32 IST daily</b> — 3-min buffer after 15:30 market close.
  *       Snapshots whatever's currently in {@link CandleAggregator}'s per-symbol history
  *       rings for NIFTY + today's ATM CE + PE.</li>
  *   <li><b>On-boot catch-up</b> — if the bot boots after 15:32 today and no snapshot
@@ -77,7 +77,7 @@ public class HistoricalChartStore {
         public long    atmStrike;
         public String  ceSymbol;
         public String  peSymbol;
-        /** Fyers-format symbol → chronological list of that symbol's 2-min candles. */
+        /** Fyers-format symbol → chronological list of that symbol's 3-min candles. */
         public Map<String, List<Candle>> candlesBySymbol = new LinkedHashMap<>();
     }
 
