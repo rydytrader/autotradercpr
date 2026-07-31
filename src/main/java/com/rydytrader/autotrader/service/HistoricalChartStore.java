@@ -35,12 +35,13 @@ import java.util.stream.Stream;
  *
  * <p>Two write triggers:
  * <ul>
- *   <li><b>Scheduled 15:32 IST daily</b> — 3-min buffer after 15:30 market close.
- *       Snapshots whatever's currently in {@link CandleAggregator}'s per-symbol history
- *       rings for NIFTY + today's ATM CE + PE.</li>
- *   <li><b>On-boot catch-up</b> — if the bot boots after 15:32 today and no snapshot
+ *   <li><b>Scheduled 15:45 IST daily</b> — 5-min buffer after the extended
+ *       15:40 market close (in effect from 2026-08-03). Snapshots whatever's
+ *       currently in {@link CandleAggregator}'s per-symbol history rings for
+ *       NIFTY + today's ATM CE + PE.</li>
+ *   <li><b>On-boot catch-up</b> — if the bot boots after 15:45 today and no snapshot
  *       file exists yet, saves immediately. Handles the case where the bot was offline
- *       at 15:32 but is booted later that evening to catch up.</li>
+ *       at 15:45 but is booted later that evening to catch up.</li>
  * </ul>
  *
  * <p>The {@code store/data/charts/} directory is intentionally distinct from
@@ -85,13 +86,13 @@ public class HistoricalChartStore {
     public void boot() {
         try { ensureStorageDir(); }
         catch (Exception e) { log.warn("[HistoricalChartStore] failed to create dir: {}", e.getMessage()); }
-        // Catch-up: if today > 15:32 AND today's snapshot doesn't exist, save now.
+        // Catch-up: if today > 15:45 AND today's snapshot doesn't exist, save now.
         try {
             String today = LocalDate.now(IST).toString();
             java.time.LocalTime now = java.time.ZonedDateTime.now(IST).toLocalTime();
-            boolean pastCloseWindow = !now.isBefore(java.time.LocalTime.of(15, 32));
+            boolean pastCloseWindow = !now.isBefore(java.time.LocalTime.of(15, 45));
             if (pastCloseWindow && !snapshotExists(today)) {
-                log.info("[HistoricalChartStore] catch-up save — {} > 15:32 and no snapshot yet", today);
+                log.info("[HistoricalChartStore] catch-up save — {} > 15:45 and no snapshot yet", today);
                 saveTodaySnapshot();
             }
         } catch (Exception e) {
@@ -99,8 +100,10 @@ public class HistoricalChartStore {
         }
     }
 
-    /** Fires at 15:32 IST every weekday. Snapshots today's NIFTY + ATM CE + PE candles. */
-    @Scheduled(cron = "0 32 15 * * MON-FRI", zone = "Asia/Kolkata")
+    /** Fires at 15:45 IST every weekday — 5-min buffer after the extended
+     *  15:40 market close (in effect from 2026-08-03). Snapshots today's
+     *  NIFTY + ATM CE + PE candles. */
+    @Scheduled(cron = "0 45 15 * * MON-FRI", zone = "Asia/Kolkata")
     public void scheduledSave() {
         saveTodaySnapshot();
     }
