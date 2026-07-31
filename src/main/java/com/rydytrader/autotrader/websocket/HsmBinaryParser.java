@@ -491,7 +491,7 @@ public class HsmBinaryParser {
         /** Epoch seconds — the exchange's own timestamp on the actual trade that produced
          *  this LTP. This is what TradingView aligns candle boundaries on; it typically
          *  leads {@link #exchFeedTime} by 100-800 ms (Fyers's ingest lag). Prefer this
-         *  over {@code exchFeedTime} for bucketing 3-min bars — closer to TradingView. */
+         *  over {@code exchFeedTime} for bucketing 2-min bars — closer to TradingView. */
         public long lastTradedTime;
         public long oi;             // open interest (raw, no divisor) — non-zero only for option scrips
         public int messageNumber;

@@ -203,7 +203,7 @@ public class AtmTracker {
 
         // Start-time gate: don't lock the ATM until the operator's configured
         // start time (default 09:30). Parsed every poll so a settings edit at
-        // 09:18 still applies to today's resolution. Malformed/missing values
+        // 09:17 still applies to today's resolution. Malformed/missing values
         // fall back to 09:15 — same as the legacy behaviour, fail-safe.
         LocalTime startTime = parseStartTime(riskSettings.getAtmVwapTradingStartTime());
         if (t.isBefore(startTime)) return;

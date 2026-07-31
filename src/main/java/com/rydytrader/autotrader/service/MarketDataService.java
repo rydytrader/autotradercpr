@@ -57,7 +57,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
     /** Per-symbol last exchange dissemination timestamp (epoch seconds). Populated from
      *  every RawTick where the parser could extract {@code exch_feed_time}. Used by
      *  {@link CandleAggregator} to bucket by exchange time (not local receive time), so a
-     *  tick stamped 09:17:59 that arrives at 09:18:00.1 lands in the 09:15→09:18 bar. */
+     *  tick stamped 09:16:59 that arrives at 09:17:00.1 lands in the 09:15→09:17 bar. */
     private final ConcurrentHashMap<String, Long> lastExchFeedTimeSec = new ConcurrentHashMap<>();
     /** Latest exchange-dissemination timestamp (epoch seconds) observed from an
      *  ALTERNATE feed (GDFL). Tracked separately from {@link #lastExchFeedTimeSec} so
@@ -79,7 +79,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
 
     /** Latest exchange-dissemination timestamp (epoch seconds) — the best available
      *  "exchange now" reference on the server side. Used by the chart page to run its
-     *  3-min bar countdown on exchange time instead of the local wall clock. Prefers
+     *  2-min bar countdown on exchange time instead of the local wall clock. Prefers
      *  the alternate feed's clock (GDFL {@code ServerTime}) when available — that's
      *  the same tape TradingView aligns to on the option side. Falls back to the max
      *  across Fyers-tracked symbols when no alternate feed has landed a tick yet.

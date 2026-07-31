@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
  *   <li>{@code fastSlCheck} — fast loop (~500 ms). Tick-based SL watcher on open shorts.</li>
  * </ul>
  *
- * <p>Entry signal evaluation runs from the {@link CandleAggregator} callback on 3-min close
+ * <p>Entry signal evaluation runs from the {@link CandleAggregator} callback on 2-min close
  * (registered by {@code AtmVwap.@PostConstruct}), not from the scheduler.
  */
 @Component

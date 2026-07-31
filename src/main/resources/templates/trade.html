@@ -274,9 +274,9 @@
                     <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
                         <span id="hdrVixChg" style="margin-left:4px;font-weight:600;"></span></span>
                     <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
-                    <!-- Session-monitored ATM option strikes (picked at first 3-min NIFTY bar close) -->
-                    <span style="color:var(--text-muted);" title="ATM CE leg — the CALL side the strategy monitors on 3-min bars">ATM CE <span id="hdrH5Ce" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                    <span style="color:var(--text-muted);" title="ATM PE leg — the PUT side the strategy monitors on 3-min bars">ATM PE <span id="hdrL5Pe" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                    <!-- Session-monitored ATM option strikes (picked at first 2-min NIFTY bar close) -->
+                    <span style="color:var(--text-muted);" title="ATM CE leg — the CALL side the strategy monitors on 2-min bars">ATM CE <span id="hdrH5Ce" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                    <span style="color:var(--text-muted);" title="ATM PE leg — the PUT side the strategy monitors on 2-min bars">ATM PE <span id="hdrL5Pe" style="color:var(--text-primary);font-weight:700;">—</span></span>
                 </div>
             </div>
             <div style="display:flex; gap:10px; align-items:center;">
@@ -434,7 +434,7 @@
         return d.toTimeString().slice(0, 8);
     }
     /** Candle START epoch → its OPEN time in IST "HH:MM" (Fyers/TV canonical). The
-     *  entry candle for a fire on the 09:21→09:24 confirmation bar renders as "09:21"
+     *  entry candle for a fire on the 09:19→09:21 confirmation bar renders as "09:19"
      *  — the bar identifier operators recognise. Legacy positions from a state file
      *  predating entryCandleMs render "—". */
     function fmtBarClose(candleMs) {
@@ -780,7 +780,7 @@
             var src = normalizeEventSource(String(e.source || 'Strategy').replace(/[\[\]]/g, ''));
             // Candle-driven events (ATM lock, trigger seed/promote/invalidate, AUTO
             // ENTRY, Exit) carry `barMs` — the bar CLOSE epoch. Prefer it so an event
-            // firing at wall-clock 09:18:03 renders as "09:18" aligned with the bar
+            // firing at wall-clock 09:17:03 renders as "09:17" aligned with the bar
             // boundary. Non-candle events (SL_HIT ticks, kill switch, connect status)
             // don't carry barMs and fall back to the full HH:MM:SS wall-clock stamp.
             var timeLabel = e.barMs && Number(e.barMs) > 0
@@ -797,8 +797,8 @@
 
     /** Formats a bar-anchored epoch (ms) as "HH:MM" in IST — the value is already the
      *  bar OPEN time (Fyers/TV canonical candle identifier). A trigger seeded on the
-     *  09:18→09:21 bar renders as "09:18"; an SL_HIT mid-bar at 09:26:54 renders as
-     *  "09:24" (the current bar the tick fell into). */
+     *  09:17→09:19 bar renders as "09:17"; an SL_HIT mid-bar at 09:27:54 renders as
+     *  "09:27" (the current bar the tick fell into). */
     function fmtBarCloseMs(ms) {
         var d = new Date(Number(ms) + 5.5 * 3600 * 1000);
         return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
@@ -1020,7 +1020,7 @@
 
     // ── OI Bias chart ──────────────────────────────────────────────────────
     // Polls /api/atmvwap/oi/state (trend pill, 30s) and /api/atmvwap/oi/history
-    // (chart, 60s). Idle until AtmVwap picks the day's ATM (~09:18 IST); once the
+    // (chart, 60s). Idle until AtmVwap picks the day's ATM (~09:17 IST); once the
     // baseline is set, the two-line chart populates with cumulative ΔCE (red) and
     // ΔPE (green) since baseline.
     var oiChart = null;
@@ -1158,7 +1158,7 @@
         setInterval(checkConnection, 5000);
         loadWelcome();
         // OI bias polling — trend pill on 30 s, chart on 60 s. Baseline builds after
-        // AtmVwap locks the day's ATM (~09:18 IST); before that, the "Waiting for
+        // AtmVwap locks the day's ATM (~09:17 IST); before that, the "Waiting for
         // ATM…" placeholder covers the canvas.
         pollOiState();
         pollOiHistory();

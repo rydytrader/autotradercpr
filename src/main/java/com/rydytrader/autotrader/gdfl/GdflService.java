@@ -36,7 +36,7 @@ import java.util.concurrent.TimeUnit;
  *       {@code gdfl.enabled=true}) and completes the {@code Authenticate} handshake.</li>
  *   <li>An in-process poller runs every {@code gdfl.atmPollIntervalSeconds} seconds.
  *       As soon as {@link AtmVwap#getCeSymbol()} + {@link AtmVwap#getPeSymbol()} are
- *       non-blank (i.e. AtmVwap has resolved the day's ATM at ~09:18 IST — either from
+ *       non-blank (i.e. AtmVwap has resolved the day's ATM at ~09:17 IST — either from
  *       its own first-bar close or from a mid-day operator override), the poller
  *       converts the two Fyers-format symbols to GDFL contractwise identifiers via
  *       {@link GdflSymbolMapper}, sends {@code SubscribeRealtime} for each, and stops
@@ -242,7 +242,7 @@ public class GdflService {
             // OI-tracker window — populated as early as 09:15 pre-warm by
             // OptionOiSubscriber.onPreWarm. Subscribing here (not gated on ATM
             // resolution) means every strike's OI baseline is captured from GDFL
-            // at 09:15, not source-swapped from Fyers at 09:18. Pre-warm ±10 = 42
+            // at 09:15, not source-swapped from Fyers at 09:17. Pre-warm ±10 = 42
             // symbols, comfortably under GDFL's 50-symbol cap. subscribeOne is
             // idempotent — the every-5-s poll doesn't re-send SubscribeRealtime.
             //

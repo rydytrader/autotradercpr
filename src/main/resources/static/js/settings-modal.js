@@ -22,7 +22,7 @@
                     '<div class="sm-grid-2col">' +
                       '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-atmVwapLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 65 NIFTY.</div></div>' +
                       '<div class="sm-field"><label>Order Type</label><select id="sm-atmVwapOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select></div>' +
-                      '<div class="sm-field"><label>Trading Start (HH:mm IST)</label><input type="time" id="sm-atmVwapTradingStartTime" step="60"><div class="sm-hint">Entries fire only after this time. Default 09:18 — first fire opportunity at 09:24 (3-min bars).</div></div>' +
+                      '<div class="sm-field"><label>Trading Start (HH:mm IST)</label><input type="time" id="sm-atmVwapTradingStartTime" step="60"><div class="sm-hint">Entries fire only after this time. Default 09:17 — first fire opportunity at 09:21 (2-min bars).</div></div>' +
                       '<div class="sm-field"><label>Trading End (HH:mm IST)</label><input type="time" id="sm-atmVwapTradingEndTime" step="60"><div class="sm-hint">No new entries after this time. Default 14:30.</div></div>' +
                       '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-atmVwapSquareOffTime" step="60"><div class="sm-hint">Hard exit if SL didn\'t trigger. Default 15:25.</div></div>' +
                       '<div class="sm-field"><label>Max CE trades/day</label><input type="number" id="sm-atmVwapMaxCeTradesPerDay" step="1" min="0"><div class="sm-hint">Hard cap on CE-side fires. Default 3.</div></div>' +
@@ -187,7 +187,7 @@
             var g = id => document.getElementById(id);
             if (g('sm-atmVwapLotsPerLeg'))        g('sm-atmVwapLotsPerLeg').value = d.atmVwapLotsPerLeg != null ? d.atmVwapLotsPerLeg : 1;
             if (g('sm-atmVwapOrderType'))         g('sm-atmVwapOrderType').value = d.atmVwapOrderType || 'INTRADAY';
-            if (g('sm-atmVwapTradingStartTime'))  g('sm-atmVwapTradingStartTime').value = d.atmVwapTradingStartTime || '09:18';
+            if (g('sm-atmVwapTradingStartTime'))  g('sm-atmVwapTradingStartTime').value = d.atmVwapTradingStartTime || '09:17';
             if (g('sm-atmVwapTradingEndTime'))    g('sm-atmVwapTradingEndTime').value = d.atmVwapTradingEndTime || '14:30';
             if (g('sm-atmVwapSquareOffTime'))     g('sm-atmVwapSquareOffTime').value = d.atmVwapSquareOffTime || '15:25';
             if (g('sm-atmVwapMaxCeTradesPerDay')) g('sm-atmVwapMaxCeTradesPerDay').value = d.atmVwapMaxCeTradesPerDay != null ? d.atmVwapMaxCeTradesPerDay : 3;

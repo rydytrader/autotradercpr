@@ -193,7 +193,7 @@
     <div class="page-header fade-in" style="margin-bottom:18px;">
         <div>
             <div class="page-title">Strategy</div>
-            <div class="page-subtitle">NIFTY ATM 3-min · session VWAP · bearish premium sell</div>
+            <div class="page-subtitle">NIFTY ATM 2-min · session VWAP · bearish premium sell</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -207,16 +207,16 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot"></span> Overview</h2>
         <p class="doc-p">
-            The bot sells <strong>NIFTY weekly ATM options</strong> on their own 3-min
+            The bot sells <strong>NIFTY weekly ATM options</strong> on their own 2-min
             timeframe. Each session locks in TWO legs at first bar close: the
             <strong>ATM CE</strong> and the <strong>ATM PE</strong> at the strike nearest to
-            the first 3-min NIFTY close (rounded to 50). Every trade is a
+            the first 2-min NIFTY close (rounded to 50). Every trade is a
             <strong>premium sell</strong> — bearish thesis, want premium to decay.
         </p>
         <p class="doc-p">
             Each option's own <strong>session VWAP</strong> (the NSE-cumulative ATP the
-            broker streams for that symbol) is the anchor. A 3-min bar that closes below
-            VWAP seeds a <em>trigger candle</em>. If the very next 3-min bar closes below
+            broker streams for that symbol) is the anchor. A 2-min bar that closes below
+            VWAP seeds a <em>trigger candle</em>. If the very next 2-min bar closes below
             the trigger's low, the bot sells that leg. CE and PE run independent FSMs and
             can both be short at the same time; their combined worst-case loss is bounded
             by the portfolio-max-daily-loss cap.
@@ -233,13 +233,13 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-amber, #fbbf24);"></span> Session flow</h2>
         <ul class="doc-list">
-            <li><strong>09:15 IST — market open.</strong> Bot subscribes NIFTY spot to the 3-min
+            <li><strong>09:15 IST — market open.</strong> Bot subscribes NIFTY spot to the 2-min
                 candle feed. No entries yet.</li>
-            <li><strong>~09:18 IST — first 3-min NIFTY bar closes.</strong> The bar's close price
+            <li><strong>~09:17 IST — first 2-min NIFTY bar closes.</strong> The bar's close price
                 is snapshotted, rounded to the nearest 50-point strike, and the ATM CE + ATM PE
-                symbols are resolved from the weekly chain. Both legs are subscribed to the 3-min
+                symbols are resolved from the weekly chain. Both legs are subscribed to the 2-min
                 feed and locked for the rest of the session.</li>
-            <li><strong>From Trading Start (default 09:18 IST) onward.</strong> Every 3-min bar
+            <li><strong>From Trading Start (default 09:17 IST) onward.</strong> Every 2-min bar
                 close on either option runs the trigger-candle FSM below. Only bearish sells fire.</li>
             <li><strong>Trading End (default 14:30 IST).</strong> No new entries after this time.
                 Existing positions keep being managed.</li>
@@ -252,7 +252,7 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-purple, #a78bfa);"></span> The FSM</h2>
         <p class="doc-p">
-            One state machine per option leg. On every 3-min bar close for a leg,
+            One state machine per option leg. On every 2-min bar close for a leg,
             the bot reads that leg's session VWAP (Fyers ATP) and evaluates in this
             exact order:
         </p>
@@ -481,10 +481,10 @@
             All three windows are configurable in Settings → ATM VWAP:
         </p>
         <ul class="doc-list">
-            <li><strong>Trading Start</strong> (default <code>09:18</code>) — the FSM runs from
+            <li><strong>Trading Start</strong> (default <code>09:17</code>) — the FSM runs from
                 first bar close, but sells don't fire until this time. Applies to the fire
                 gate; seed/promote/invalidate still update. Earliest fire opportunity is
-                the 09:24 bar close (when the 09:18 trigger candle's low is broken).</li>
+                the 09:21 bar close (when the 09:19 trigger candle's low is broken).</li>
             <li><strong>Trading End</strong> (default <code>14:30</code>) — no new entries after
                 this time. Existing positions keep being managed until squareoff.</li>
             <li><strong>Squareoff</strong> (default <code>15:25</code>) — any remaining open

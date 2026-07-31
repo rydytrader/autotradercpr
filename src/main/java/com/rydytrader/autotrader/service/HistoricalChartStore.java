@@ -78,7 +78,7 @@ public class HistoricalChartStore {
         public long    atmStrike;
         public String  ceSymbol;
         public String  peSymbol;
-        /** Fyers-format symbol → chronological list of that symbol's 3-min candles. */
+        /** Fyers-format symbol → chronological list of that symbol's 2-min candles. */
         public Map<String, List<Candle>> candlesBySymbol = new LinkedHashMap<>();
     }
 

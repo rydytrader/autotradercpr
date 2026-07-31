@@ -18,7 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Read-only endpoints powering the Chart page. Exposes the 3-min OHLC buffer maintained
+ * Read-only endpoints powering the Chart page. Exposes the 2-min OHLC buffer maintained
  * by {@link CandleAggregator} plus the currently-selected ATM CE / PE symbols so the
  * page can render NIFTY spot + both option legs side-by-side without hitting Fyers.
  */
@@ -63,7 +63,7 @@ public class ChartController {
     }
 
     /** Which symbols the chart page should render. NIFTY is fixed; CE / PE come from
-     *  AtmVwap.state and populate after the day's first-3-min close (~09:18 IST). */
+     *  AtmVwap.state and populate after the day's first-2-min close (~09:17 IST). */
     @GetMapping("/symbols")
     public Map<String, Object> symbols() {
         Map<String, Object> out = new LinkedHashMap<>();
@@ -109,7 +109,7 @@ public class ChartController {
         return out;
     }
 
-    /** Closed 3-min candles for {@code symbol} plus the in-progress bucket. Polling this
+    /** Closed 2-min candles for {@code symbol} plus the in-progress bucket. Polling this
      *  every couple of seconds gives a live-updating rightmost candle without SSE. If the
      *  aggregator isn't yet buffering {@code symbol}, this endpoint registers a no-op
      *  listener to kick off subscription — subsequent polls will see the ring populate. */
@@ -131,7 +131,7 @@ public class ChartController {
         out.put("history", hist);
         out.put("current", candleAggregator.getCurrentBucket(symbol));
         // Exchange "now" — max exchFeedTime across subscribed symbols. Chart uses this
-        // for the 3-min bar countdown so it ticks in sync with TradingView (which also
+        // for the 2-min bar countdown so it ticks in sync with TradingView (which also
         // runs on exchange time) rather than local wall clock (which typically trails
         // exchange time by 2-3 seconds). 0 when no ticks have arrived yet.
         long latestExchSec = marketDataService.getLatestExchFeedTimeSec();

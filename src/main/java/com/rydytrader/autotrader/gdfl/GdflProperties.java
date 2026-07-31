@@ -11,7 +11,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * and the Fyers feed remains the sole source for every symbol.
  *
  * <p>Subscription happens DYNAMICALLY once {@code AtmVwap} resolves the day's ATM CE
- * and PE (~09:18 IST). The two Fyers symbols carry the expiry embedded, so
+ * and PE (~09:17 IST). The two Fyers symbols carry the expiry embedded, so
  * {@code GdflSymbolMapper} decodes it from the string itself — no operator config for
  * the weekly expiry rollover.
  *
