@@ -117,9 +117,22 @@ public class OptionOiSubscriber {
     public synchronized void onPreWarm(long baseAtm, List<OptionOiTracker.StrikeSymbols> window) {
         if (window == null || window.isEmpty()) return;
         if (marketHolidayService != null && !marketHolidayService.isTradingDay()) return;
-        oiTracker.setActiveWindow(baseAtm, window);
-        log.info("[OptionOiSubscriber] pre-warm OI window baseAtm={} strikes={} — baselines will be taken from first 09:15 tick",
-            baseAtm, window.size());
+        // Trim the AtmVwap-supplied pre-warm window (±10) down to ±7 around
+        // the pre-warm baseAtm so the OI bias basis matches STRIKES_EACH_SIDE.
+        // The outer 3 strikes on each side stay pre-warmed at the aggregator
+        // for OHLC / first-bar coverage but don't feed OI cumulative here.
+        List<OptionOiTracker.StrikeSymbols> trimmed = new ArrayList<>();
+        long lo = baseAtm - (long) STRIKES_EACH_SIDE * STRIKE_STEP;
+        long hi = baseAtm + (long) STRIKES_EACH_SIDE * STRIKE_STEP;
+        for (OptionOiTracker.StrikeSymbols ss : window) {
+            if (ss == null) continue;
+            long k = ss.strike();
+            if (k >= lo && k <= hi) trimmed.add(ss);
+        }
+        if (trimmed.isEmpty()) return;
+        oiTracker.setActiveWindow(baseAtm, trimmed);
+        log.info("[OptionOiSubscriber] pre-warm OI window baseAtm={} strikes={} (trimmed from {} to ±{}) — baselines will be taken from first 09:15 tick",
+            baseAtm, trimmed.size(), window.size(), STRIKES_EACH_SIDE);
     }
 
     /** Called by AtmVwap.resolveAtmFromFirstBar right after the day's ATM is locked.
