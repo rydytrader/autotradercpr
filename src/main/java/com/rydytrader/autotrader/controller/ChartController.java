@@ -89,6 +89,11 @@ public class ChartController {
         // on the corresponding chart. Zero when no position is open on that side.
         out.put("ceSl", strat == null ? 0.0 : round2(strat.getOpenSlLevel(ceSymbol)));
         out.put("peSl", strat == null ? 0.0 : round2(strat.getOpenSlLevel(peSymbol)));
+        // Entry price of the open CE / PE position — drives a horizontal entry
+        // price line alongside the SL line. Zero when no position is open on
+        // that side (the line is removed).
+        out.put("ceEntry", strat == null ? 0.0 : round2(strat.getOpenEntryPrice(ceSymbol)));
+        out.put("peEntry", strat == null ? 0.0 : round2(strat.getOpenEntryPrice(peSymbol)));
         // Per-side session stats — trade count vs configured cap + realised+open P&L.
         // Drives the "(n/max) · P&L +X" chip inside the CE / PE panel headers.
         Map<String, Object> ceStats = new LinkedHashMap<>();

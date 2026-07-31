@@ -293,7 +293,9 @@
     var vwapSeries   = { nifty: null, ce: null, pe: null };
     // Active SL price line per panel — created when an option position opens with an
     // SL level, removed when the position closes or SL changes (then re-created).
-    var slPriceLine  = { ce: null, pe: null };
+    var slPriceLine    = { ce: null, pe: null };
+    var entryPriceLine = { ce: null, pe: null };
+    var entryPriceLevel= { ce: 0,    pe: 0    };
     var slPriceLevel = { ce: 0,    pe: 0 };
     // Last real close price per panel — the countdown price line is pinned here.
     var lastClosePerPanel = { ce: null, pe: null };
@@ -544,6 +546,33 @@
         } catch (e) {}
     }
 
+    /** Draw / update / remove the ENTRY horizontal line on a CE or PE panel.
+     *  Same shape as applySlLine but rendered in cyan (matches accent) to
+     *  distinguish from the red SL line. Removed when the position closes. */
+    function applyEntryLine(panelKey, entryValue) {
+        var series = candleSeries[panelKey];
+        if (!series || typeof series.createPriceLine !== 'function') return;
+        var current = entryPriceLevel[panelKey] || 0;
+        var target  = Number(entryValue) || 0;
+        if (current === target) return;
+        if (entryPriceLine[panelKey]) {
+            try { series.removePriceLine(entryPriceLine[panelKey]); } catch (e) {}
+            entryPriceLine[panelKey] = null;
+        }
+        entryPriceLevel[panelKey] = target;
+        if (target <= 0) return;
+        try {
+            entryPriceLine[panelKey] = series.createPriceLine({
+                price: target,
+                color: '#7dd3fc',
+                lineWidth: 2,
+                lineStyle: LightweightCharts.LineStyle.Dashed,
+                axisLabelVisible: true,
+                title: 'ENTRY'
+            });
+        } catch (e) {}
+    }
+
     function refreshSymbols() {
         fetch('/api/chart/symbols').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
@@ -572,6 +601,9 @@
             // when no position is open on that side, so the line is removed cleanly.
             applySlLine('ce', Number(d.ceSl || 0));
             applySlLine('pe', Number(d.peSl || 0));
+            // Overlay the entry fill price alongside the SL — same removal semantics.
+            applyEntryLine('ce', Number(d.ceEntry || 0));
+            applyEntryLine('pe', Number(d.peEntry || 0));
             // Per-side trade count + P&L chips in the CE / PE headers.
             applySideStats('ce', d.ceStats);
             applySideStats('pe', d.peStats);

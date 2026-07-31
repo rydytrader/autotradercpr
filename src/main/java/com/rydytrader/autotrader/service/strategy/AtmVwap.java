@@ -405,6 +405,18 @@ public class AtmVwap implements Strategy {
         return 0;
     }
 
+    /** Entry price of the currently-open CE / PE leg position (matched by symbol),
+     *  or 0 when no such position is active. Used by the Chart page to draw an
+     *  entry-price horizontal line alongside the SL line. Reflects the FILL price
+     *  once {@link #refreshUnresolvedFills} resolves it, else the fire-time LTP. */
+    public double getOpenEntryPrice(String fyersSymbol) {
+        if (fyersSymbol == null || fyersSymbol.isBlank()) return 0;
+        for (Position p : state.openPositions.values()) {
+            if (p != null && fyersSymbol.equals(p.symbol) && p.entryPrice > 0) return p.entryPrice;
+        }
+        return 0;
+    }
+
     /** Per-side trade counter for today (CE_SELL fires). */
     public int getCeTradesToday() { return state.ceTradesToday; }
     /** Per-side trade counter for today (PE_SELL fires). */
