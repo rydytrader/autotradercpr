@@ -29,33 +29,33 @@ public class RiskSettingsStore {
         volatile double riskPerTrade      = 1000;  // max ₹ loss per trade if SL hits
         volatile String autoSquareOffTime = "";  // empty = disabled, e.g. "15:15"
         // ── ATM VWAP strategy settings (singleton) ──────────────────────────
-        volatile boolean atmVwapEnabled         = true;
-        volatile int     atmVwapLotsPerLeg      = 1;       // 1 lot = 65 NIFTY
-        volatile String  atmVwapOrderType       = "INTRADAY"; // INTRADAY | OVERNIGHT
-        volatile String  atmVwapTradingStartTime = "09:18"; // signals fire only after this time (IST)
-        volatile String  atmVwapTradingEndTime   = "14:30"; // no new signals after this time (IST); exits keep running
-        volatile String  atmVwapSquareOffTime   = "15:25";
-        volatile int     atmVwapMaxConcurrentPositions = 4; // hard cap on simultaneously-open positions
+        volatile boolean optionSellingEnabled         = true;
+        volatile int     optionSellingLotsPerLeg      = 1;       // 1 lot = 65 NIFTY
+        volatile String  optionSellingOrderType       = "INTRADAY"; // INTRADAY | OVERNIGHT
+        volatile String  optionSellingTradingStartTime = "09:18"; // signals fire only after this time (IST)
+        volatile String  optionSellingTradingEndTime   = "14:30"; // no new signals after this time (IST); exits keep running
+        volatile String  optionSellingSquareOffTime   = "15:25";
+        volatile int     optionSellingMaxConcurrentPositions = 4; // hard cap on simultaneously-open positions
         /** Min SL floor in option-premium points ABOVE entry. If (trigger.high − entry)
          *  is smaller than this floor, the SL is raised to entry + minSlPoints. Default 10. */
-        volatile double atmVwapMinSlPoints = 10.0;
+        volatile double optionSellingMinSlPoints = 10.0;
         /** Max SL ceiling in option-premium points ABOVE entry. If (trigger.high − entry)
          *  is larger than this cap, the SL is capped to entry + maxSlPoints. Default 20. */
-        volatile double atmVwapMaxSlPoints = 20.0;
+        volatile double optionSellingMaxSlPoints = 20.0;
         /** Hard cap on CE-side fires per session. Default 3. */
-        volatile int    atmVwapMaxCeTradesPerDay = 3;
+        volatile int    optionSellingMaxCeTradesPerDay = 3;
         /** Hard cap on PE-side fires per session. Default 3. */
-        volatile int    atmVwapMaxPeTradesPerDay = 3;
+        volatile int    optionSellingMaxPeTradesPerDay = 3;
         /** OI bias threshold as a percent. Governs when the tracker labels the market
          *  BULLISH / BEARISH: one side's cumulative-since-baseline change must exceed
          *  the other by at least this percent to earn a directional bias — otherwise
          *  NEUTRAL. Default 40 (i.e. cumCE ≥ 1.40 · cumPE → BEARISH). */
-        volatile double atmVwapOiBiasThresholdPct = 40.0;
-        /** OI-bias trade filter. When ON, AtmVwap will skip CE_SELL fires while the OI
+        volatile double optionSellingOiBiasThresholdPct = 40.0;
+        /** OI-bias trade filter. When ON, OptionSelling will skip CE_SELL fires while the OI
          *  bias reads BULLISH (writers stacking puts — market bullish, don't fight it)
          *  and skip PE_SELL fires while the bias reads BEARISH. NEUTRAL and STALE
          *  never block. Default OFF — opt-in per operator. */
-        volatile boolean atmVwapOiBiasFilterEnabled = false;
+        volatile boolean optionSellingOiBiasFilterEnabled = false;
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
         /** Initial capital used as the baseline for the Analytics Home page (capital growth %,
@@ -405,19 +405,19 @@ public class RiskSettingsStore {
     public double getRiskPerTrade()      { return cfg().riskPerTrade; }
     public double getMaxDailyLoss()      { return cfg().totalCapital * cfg().maxRiskPerDayPct / 100.0; }
     public String getAutoSquareOffTime() { return cfg().autoSquareOffTime; }
-    public boolean isAtmVwapEnabled()           { return cfg().atmVwapEnabled; }
-    public int     getAtmVwapLotsPerLeg()       { return cfg().atmVwapLotsPerLeg; }
-    public String  getAtmVwapOrderType()        { return cfg().atmVwapOrderType; }
-    public String  getAtmVwapTradingStartTime() { return cfg().atmVwapTradingStartTime; }
-    public String  getAtmVwapTradingEndTime()   { return cfg().atmVwapTradingEndTime; }
-    public String  getAtmVwapSquareOffTime()    { return cfg().atmVwapSquareOffTime; }
-    public int     getAtmVwapMaxConcurrentPositions() { return cfg().atmVwapMaxConcurrentPositions; }
-    public double  getAtmVwapMinSlPoints()      { return cfg().atmVwapMinSlPoints; }
-    public double  getAtmVwapMaxSlPoints()      { return cfg().atmVwapMaxSlPoints; }
-    public int     getAtmVwapMaxCeTradesPerDay(){ return cfg().atmVwapMaxCeTradesPerDay; }
-    public int     getAtmVwapMaxPeTradesPerDay(){ return cfg().atmVwapMaxPeTradesPerDay; }
-    public double  getAtmVwapOiBiasThresholdPct(){ return cfg().atmVwapOiBiasThresholdPct; }
-    public boolean isAtmVwapOiBiasFilterEnabled(){ return cfg().atmVwapOiBiasFilterEnabled; }
+    public boolean isOptionSellingEnabled()           { return cfg().optionSellingEnabled; }
+    public int     getOptionSellingLotsPerLeg()       { return cfg().optionSellingLotsPerLeg; }
+    public String  getOptionSellingOrderType()        { return cfg().optionSellingOrderType; }
+    public String  getOptionSellingTradingStartTime() { return cfg().optionSellingTradingStartTime; }
+    public String  getOptionSellingTradingEndTime()   { return cfg().optionSellingTradingEndTime; }
+    public String  getOptionSellingSquareOffTime()    { return cfg().optionSellingSquareOffTime; }
+    public int     getOptionSellingMaxConcurrentPositions() { return cfg().optionSellingMaxConcurrentPositions; }
+    public double  getOptionSellingMinSlPoints()      { return cfg().optionSellingMinSlPoints; }
+    public double  getOptionSellingMaxSlPoints()      { return cfg().optionSellingMaxSlPoints; }
+    public int     getOptionSellingMaxCeTradesPerDay(){ return cfg().optionSellingMaxCeTradesPerDay; }
+    public int     getOptionSellingMaxPeTradesPerDay(){ return cfg().optionSellingMaxPeTradesPerDay; }
+    public double  getOptionSellingOiBiasThresholdPct(){ return cfg().optionSellingOiBiasThresholdPct; }
+    public boolean isOptionSellingOiBiasFilterEnabled(){ return cfg().optionSellingOiBiasFilterEnabled; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getStartingCapital()      { return cfg().startingCapital; }
@@ -601,19 +601,19 @@ public class RiskSettingsStore {
     public void setMaxRiskPerDayPct(double v)  { cfg().maxRiskPerDayPct = v; }
     public void setRiskPerTrade(double v)      { cfg().riskPerTrade = v; }
     public void setAutoSquareOffTime(String v) { cfg().autoSquareOffTime = v; }
-    public void setAtmVwapEnabled(boolean v)            { cfg().atmVwapEnabled = v; }
-    public void setAtmVwapLotsPerLeg(int v)             { cfg().atmVwapLotsPerLeg = Math.max(1, v); }
-    public void setAtmVwapOrderType(String v)           { cfg().atmVwapOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
-    public void setAtmVwapTradingStartTime(String v)    { cfg().atmVwapTradingStartTime = (v == null || v.isBlank()) ? "09:18" : v.trim(); }
-    public void setAtmVwapTradingEndTime(String v)      { cfg().atmVwapTradingEndTime = (v == null || v.isBlank()) ? "14:30" : v.trim(); }
-    public void setAtmVwapSquareOffTime(String v)       { cfg().atmVwapSquareOffTime = v == null ? "" : v.trim(); }
-    public void setAtmVwapMaxConcurrentPositions(int v) { cfg().atmVwapMaxConcurrentPositions = Math.max(1, v); }
-    public void setAtmVwapMinSlPoints(double v)         { cfg().atmVwapMinSlPoints = Math.max(0, v); }
-    public void setAtmVwapMaxSlPoints(double v)         { cfg().atmVwapMaxSlPoints = Math.max(0, v); }
-    public void setAtmVwapMaxCeTradesPerDay(int v)      { cfg().atmVwapMaxCeTradesPerDay = Math.max(0, v); }
-    public void setAtmVwapMaxPeTradesPerDay(int v)      { cfg().atmVwapMaxPeTradesPerDay = Math.max(0, v); }
-    public void setAtmVwapOiBiasThresholdPct(double v)  { cfg().atmVwapOiBiasThresholdPct = Math.max(0, Math.min(500, v)); }
-    public void setAtmVwapOiBiasFilterEnabled(boolean v){ cfg().atmVwapOiBiasFilterEnabled = v; }
+    public void setOptionSellingEnabled(boolean v)            { cfg().optionSellingEnabled = v; }
+    public void setOptionSellingLotsPerLeg(int v)             { cfg().optionSellingLotsPerLeg = Math.max(1, v); }
+    public void setOptionSellingOrderType(String v)           { cfg().optionSellingOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
+    public void setOptionSellingTradingStartTime(String v)    { cfg().optionSellingTradingStartTime = (v == null || v.isBlank()) ? "09:18" : v.trim(); }
+    public void setOptionSellingTradingEndTime(String v)      { cfg().optionSellingTradingEndTime = (v == null || v.isBlank()) ? "14:30" : v.trim(); }
+    public void setOptionSellingSquareOffTime(String v)       { cfg().optionSellingSquareOffTime = v == null ? "" : v.trim(); }
+    public void setOptionSellingMaxConcurrentPositions(int v) { cfg().optionSellingMaxConcurrentPositions = Math.max(1, v); }
+    public void setOptionSellingMinSlPoints(double v)         { cfg().optionSellingMinSlPoints = Math.max(0, v); }
+    public void setOptionSellingMaxSlPoints(double v)         { cfg().optionSellingMaxSlPoints = Math.max(0, v); }
+    public void setOptionSellingMaxCeTradesPerDay(int v)      { cfg().optionSellingMaxCeTradesPerDay = Math.max(0, v); }
+    public void setOptionSellingMaxPeTradesPerDay(int v)      { cfg().optionSellingMaxPeTradesPerDay = Math.max(0, v); }
+    public void setOptionSellingOiBiasThresholdPct(double v)  { cfg().optionSellingOiBiasThresholdPct = Math.max(0, Math.min(500, v)); }
+    public void setOptionSellingOiBiasFilterEnabled(boolean v){ cfg().optionSellingOiBiasFilterEnabled = v; }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setStartingCapital(double v)      { cfg().startingCapital = Math.max(0, v); }
@@ -711,19 +711,19 @@ public class RiskSettingsStore {
     public double getRiskPerTrade(String mode)      { return cfgFor(mode).riskPerTrade; }
     public double getMaxDailyLoss(String mode)      { return cfgFor(mode).totalCapital * cfgFor(mode).maxRiskPerDayPct / 100.0; }
     public String getAutoSquareOffTime(String mode) { return cfgFor(mode).autoSquareOffTime; }
-    public boolean isAtmVwapEnabled(String mode)            { return cfgFor(mode).atmVwapEnabled; }
-    public int     getAtmVwapLotsPerLeg(String mode)        { return cfgFor(mode).atmVwapLotsPerLeg; }
-    public String  getAtmVwapOrderType(String mode)         { return cfgFor(mode).atmVwapOrderType; }
-    public String  getAtmVwapTradingStartTime(String mode)  { return cfgFor(mode).atmVwapTradingStartTime; }
-    public String  getAtmVwapTradingEndTime(String mode)    { return cfgFor(mode).atmVwapTradingEndTime; }
-    public String  getAtmVwapSquareOffTime(String mode)     { return cfgFor(mode).atmVwapSquareOffTime; }
-    public int     getAtmVwapMaxConcurrentPositions(String mode) { return cfgFor(mode).atmVwapMaxConcurrentPositions; }
-    public double  getAtmVwapMinSlPoints(String mode)       { return cfgFor(mode).atmVwapMinSlPoints; }
-    public double  getAtmVwapMaxSlPoints(String mode)       { return cfgFor(mode).atmVwapMaxSlPoints; }
-    public int     getAtmVwapMaxCeTradesPerDay(String mode) { return cfgFor(mode).atmVwapMaxCeTradesPerDay; }
-    public int     getAtmVwapMaxPeTradesPerDay(String mode) { return cfgFor(mode).atmVwapMaxPeTradesPerDay; }
-    public double  getAtmVwapOiBiasThresholdPct(String mode) { return cfgFor(mode).atmVwapOiBiasThresholdPct; }
-    public boolean isAtmVwapOiBiasFilterEnabled(String mode) { return cfgFor(mode).atmVwapOiBiasFilterEnabled; }
+    public boolean isOptionSellingEnabled(String mode)            { return cfgFor(mode).optionSellingEnabled; }
+    public int     getOptionSellingLotsPerLeg(String mode)        { return cfgFor(mode).optionSellingLotsPerLeg; }
+    public String  getOptionSellingOrderType(String mode)         { return cfgFor(mode).optionSellingOrderType; }
+    public String  getOptionSellingTradingStartTime(String mode)  { return cfgFor(mode).optionSellingTradingStartTime; }
+    public String  getOptionSellingTradingEndTime(String mode)    { return cfgFor(mode).optionSellingTradingEndTime; }
+    public String  getOptionSellingSquareOffTime(String mode)     { return cfgFor(mode).optionSellingSquareOffTime; }
+    public int     getOptionSellingMaxConcurrentPositions(String mode) { return cfgFor(mode).optionSellingMaxConcurrentPositions; }
+    public double  getOptionSellingMinSlPoints(String mode)       { return cfgFor(mode).optionSellingMinSlPoints; }
+    public double  getOptionSellingMaxSlPoints(String mode)       { return cfgFor(mode).optionSellingMaxSlPoints; }
+    public int     getOptionSellingMaxCeTradesPerDay(String mode) { return cfgFor(mode).optionSellingMaxCeTradesPerDay; }
+    public int     getOptionSellingMaxPeTradesPerDay(String mode) { return cfgFor(mode).optionSellingMaxPeTradesPerDay; }
+    public double  getOptionSellingOiBiasThresholdPct(String mode) { return cfgFor(mode).optionSellingOiBiasThresholdPct; }
+    public boolean isOptionSellingOiBiasFilterEnabled(String mode) { return cfgFor(mode).optionSellingOiBiasFilterEnabled; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
     public double getStartingCapital(String mode)      { return cfgFor(mode).startingCapital; }
@@ -746,19 +746,19 @@ public class RiskSettingsStore {
     public void setMaxRiskPerDayPct(String mode, double v)  { cfgFor(mode).maxRiskPerDayPct = v; }
     public void setRiskPerTrade(String mode, double v)      { cfgFor(mode).riskPerTrade = v; }
     public void setAutoSquareOffTime(String mode, String v) { cfgFor(mode).autoSquareOffTime = v; }
-    public void setAtmVwapEnabled(String mode, boolean v)            { cfgFor(mode).atmVwapEnabled = v; }
-    public void setAtmVwapLotsPerLeg(String mode, int v)             { cfgFor(mode).atmVwapLotsPerLeg = Math.max(1, v); }
-    public void setAtmVwapOrderType(String mode, String v)           { cfgFor(mode).atmVwapOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
-    public void setAtmVwapTradingStartTime(String mode, String v)    { cfgFor(mode).atmVwapTradingStartTime = (v == null || v.isBlank()) ? "09:18" : v.trim(); }
-    public void setAtmVwapTradingEndTime(String mode, String v)      { cfgFor(mode).atmVwapTradingEndTime = (v == null || v.isBlank()) ? "14:30" : v.trim(); }
-    public void setAtmVwapSquareOffTime(String mode, String v)       { cfgFor(mode).atmVwapSquareOffTime = v == null ? "" : v.trim(); }
-    public void setAtmVwapMaxConcurrentPositions(String mode, int v) { cfgFor(mode).atmVwapMaxConcurrentPositions = Math.max(1, v); }
-    public void setAtmVwapMinSlPoints(String mode, double v)         { cfgFor(mode).atmVwapMinSlPoints = Math.max(0, v); }
-    public void setAtmVwapMaxSlPoints(String mode, double v)         { cfgFor(mode).atmVwapMaxSlPoints = Math.max(0, v); }
-    public void setAtmVwapMaxCeTradesPerDay(String mode, int v)      { cfgFor(mode).atmVwapMaxCeTradesPerDay = Math.max(0, v); }
-    public void setAtmVwapMaxPeTradesPerDay(String mode, int v)      { cfgFor(mode).atmVwapMaxPeTradesPerDay = Math.max(0, v); }
-    public void setAtmVwapOiBiasThresholdPct(String mode, double v)  { cfgFor(mode).atmVwapOiBiasThresholdPct = Math.max(0, Math.min(500, v)); }
-    public void setAtmVwapOiBiasFilterEnabled(String mode, boolean v){ cfgFor(mode).atmVwapOiBiasFilterEnabled = v; }
+    public void setOptionSellingEnabled(String mode, boolean v)            { cfgFor(mode).optionSellingEnabled = v; }
+    public void setOptionSellingLotsPerLeg(String mode, int v)             { cfgFor(mode).optionSellingLotsPerLeg = Math.max(1, v); }
+    public void setOptionSellingOrderType(String mode, String v)           { cfgFor(mode).optionSellingOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
+    public void setOptionSellingTradingStartTime(String mode, String v)    { cfgFor(mode).optionSellingTradingStartTime = (v == null || v.isBlank()) ? "09:18" : v.trim(); }
+    public void setOptionSellingTradingEndTime(String mode, String v)      { cfgFor(mode).optionSellingTradingEndTime = (v == null || v.isBlank()) ? "14:30" : v.trim(); }
+    public void setOptionSellingSquareOffTime(String mode, String v)       { cfgFor(mode).optionSellingSquareOffTime = v == null ? "" : v.trim(); }
+    public void setOptionSellingMaxConcurrentPositions(String mode, int v) { cfgFor(mode).optionSellingMaxConcurrentPositions = Math.max(1, v); }
+    public void setOptionSellingMinSlPoints(String mode, double v)         { cfgFor(mode).optionSellingMinSlPoints = Math.max(0, v); }
+    public void setOptionSellingMaxSlPoints(String mode, double v)         { cfgFor(mode).optionSellingMaxSlPoints = Math.max(0, v); }
+    public void setOptionSellingMaxCeTradesPerDay(String mode, int v)      { cfgFor(mode).optionSellingMaxCeTradesPerDay = Math.max(0, v); }
+    public void setOptionSellingMaxPeTradesPerDay(String mode, int v)      { cfgFor(mode).optionSellingMaxPeTradesPerDay = Math.max(0, v); }
+    public void setOptionSellingOiBiasThresholdPct(String mode, double v)  { cfgFor(mode).optionSellingOiBiasThresholdPct = Math.max(0, Math.min(500, v)); }
+    public void setOptionSellingOiBiasFilterEnabled(String mode, boolean v){ cfgFor(mode).optionSellingOiBiasFilterEnabled = v; }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
     public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
     public void setStartingCapital(String mode, double v)      { cfgFor(mode).startingCapital = Math.max(0, v); }
@@ -791,19 +791,19 @@ public class RiskSettingsStore {
             upsert("maxRiskPerDayPct", String.valueOf(c.maxRiskPerDayPct));
             upsert("riskPerTrade", String.valueOf(c.riskPerTrade));
             upsert("autoSquareOffTime", c.autoSquareOffTime);
-            upsert("atmVwapEnabled",          String.valueOf(c.atmVwapEnabled));
-            upsert("atmVwapLotsPerLeg",       String.valueOf(c.atmVwapLotsPerLeg));
-            upsert("atmVwapOrderType",         c.atmVwapOrderType);
-            upsert("atmVwapTradingStartTime",  c.atmVwapTradingStartTime);
-            upsert("atmVwapTradingEndTime",    c.atmVwapTradingEndTime);
-            upsert("atmVwapSquareOffTime",     c.atmVwapSquareOffTime);
-            upsert("atmVwapMaxConcurrentPositions", String.valueOf(c.atmVwapMaxConcurrentPositions));
-            upsert("atmVwapMinSlPoints",       String.valueOf(c.atmVwapMinSlPoints));
-            upsert("atmVwapMaxSlPoints",       String.valueOf(c.atmVwapMaxSlPoints));
-            upsert("atmVwapMaxCeTradesPerDay", String.valueOf(c.atmVwapMaxCeTradesPerDay));
-            upsert("atmVwapMaxPeTradesPerDay", String.valueOf(c.atmVwapMaxPeTradesPerDay));
-            upsert("atmVwapOiBiasThresholdPct", String.valueOf(c.atmVwapOiBiasThresholdPct));
-            upsert("atmVwapOiBiasFilterEnabled", String.valueOf(c.atmVwapOiBiasFilterEnabled));
+            upsert("optionSellingEnabled",          String.valueOf(c.optionSellingEnabled));
+            upsert("optionSellingLotsPerLeg",       String.valueOf(c.optionSellingLotsPerLeg));
+            upsert("optionSellingOrderType",         c.optionSellingOrderType);
+            upsert("optionSellingTradingStartTime",  c.optionSellingTradingStartTime);
+            upsert("optionSellingTradingEndTime",    c.optionSellingTradingEndTime);
+            upsert("optionSellingSquareOffTime",     c.optionSellingSquareOffTime);
+            upsert("optionSellingMaxConcurrentPositions", String.valueOf(c.optionSellingMaxConcurrentPositions));
+            upsert("optionSellingMinSlPoints",       String.valueOf(c.optionSellingMinSlPoints));
+            upsert("optionSellingMaxSlPoints",       String.valueOf(c.optionSellingMaxSlPoints));
+            upsert("optionSellingMaxCeTradesPerDay", String.valueOf(c.optionSellingMaxCeTradesPerDay));
+            upsert("optionSellingMaxPeTradesPerDay", String.valueOf(c.optionSellingMaxPeTradesPerDay));
+            upsert("optionSellingOiBiasThresholdPct", String.valueOf(c.optionSellingOiBiasThresholdPct));
+            upsert("optionSellingOiBiasFilterEnabled", String.valueOf(c.optionSellingOiBiasFilterEnabled));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("startingCapital",      String.valueOf(c.startingCapital));
@@ -963,28 +963,28 @@ public class RiskSettingsStore {
                     case "riskPerTrade"      -> c.riskPerTrade = Double.parseDouble(v);
                     case "autoSquareOffTime" -> c.autoSquareOffTime = v;
                     case "manualAutoSquareOffTime"    -> { /* retired */ }
-                    case "atmVwapEnabled",
-                         "camarillaEnabled"           -> c.atmVwapEnabled = Boolean.parseBoolean(v);
-                    case "atmVwapLotsPerLeg",
-                         "camarillaLotsPerLeg"        -> c.atmVwapLotsPerLeg = Integer.parseInt(v);
-                    case "atmVwapOrderType",
-                         "camarillaOrderType"         -> c.atmVwapOrderType = v;
-                    case "atmVwapTradingStartTime",
-                         "camarillaTradingStartTime"  -> c.atmVwapTradingStartTime = v;
-                    case "atmVwapTradingEndTime",
-                         "camarillaTradingEndTime"    -> c.atmVwapTradingEndTime = v;
-                    case "atmVwapSquareOffTime",
-                         "camarillaSquareOffTime"     -> c.atmVwapSquareOffTime = v;
-                    case "atmVwapMinSlPoints"         -> c.atmVwapMinSlPoints = Math.max(0, Double.parseDouble(v));
-                    case "atmVwapMaxSlPoints"         -> c.atmVwapMaxSlPoints = Math.max(0, Double.parseDouble(v));
-                    case "atmVwapMaxCeTradesPerDay"   -> c.atmVwapMaxCeTradesPerDay = Math.max(0, Integer.parseInt(v));
-                    case "atmVwapMaxPeTradesPerDay"   -> c.atmVwapMaxPeTradesPerDay = Math.max(0, Integer.parseInt(v));
-                    case "atmVwapOiStrikesEachSide"   -> { /* legacy — hard-coded to 15 in code; silently consume */ }
-                    case "atmVwapOiBiasThresholdPct"  -> c.atmVwapOiBiasThresholdPct = Math.max(0, Math.min(500, Double.parseDouble(v)));
-                    case "atmVwapOiBiasFilterEnabled",
-                         "camarillaOiBiasFilterEnabled" -> c.atmVwapOiBiasFilterEnabled = Boolean.parseBoolean(v);
-                    case "atmVwapMaxConcurrentPositions",
-                         "camarillaMaxConcurrentPositions" -> c.atmVwapMaxConcurrentPositions = Integer.parseInt(v);
+                    case "optionSellingEnabled",
+                         "camarillaEnabled"           -> c.optionSellingEnabled = Boolean.parseBoolean(v);
+                    case "optionSellingLotsPerLeg",
+                         "camarillaLotsPerLeg"        -> c.optionSellingLotsPerLeg = Integer.parseInt(v);
+                    case "optionSellingOrderType",
+                         "camarillaOrderType"         -> c.optionSellingOrderType = v;
+                    case "optionSellingTradingStartTime",
+                         "camarillaTradingStartTime"  -> c.optionSellingTradingStartTime = v;
+                    case "optionSellingTradingEndTime",
+                         "camarillaTradingEndTime"    -> c.optionSellingTradingEndTime = v;
+                    case "optionSellingSquareOffTime",
+                         "camarillaSquareOffTime"     -> c.optionSellingSquareOffTime = v;
+                    case "optionSellingMinSlPoints"         -> c.optionSellingMinSlPoints = Math.max(0, Double.parseDouble(v));
+                    case "optionSellingMaxSlPoints"         -> c.optionSellingMaxSlPoints = Math.max(0, Double.parseDouble(v));
+                    case "optionSellingMaxCeTradesPerDay"   -> c.optionSellingMaxCeTradesPerDay = Math.max(0, Integer.parseInt(v));
+                    case "optionSellingMaxPeTradesPerDay"   -> c.optionSellingMaxPeTradesPerDay = Math.max(0, Integer.parseInt(v));
+                    case "optionSellingOiStrikesEachSide"   -> { /* legacy — hard-coded to 15 in code; silently consume */ }
+                    case "optionSellingOiBiasThresholdPct"  -> c.optionSellingOiBiasThresholdPct = Math.max(0, Math.min(500, Double.parseDouble(v)));
+                    case "optionSellingOiBiasFilterEnabled",
+                         "camarillaOiBiasFilterEnabled" -> c.optionSellingOiBiasFilterEnabled = Boolean.parseBoolean(v);
+                    case "optionSellingMaxConcurrentPositions",
+                         "camarillaMaxConcurrentPositions" -> c.optionSellingMaxConcurrentPositions = Integer.parseInt(v);
                     // Legacy Camarilla-era keys silently consumed so old risk-settings.json
                     // files round-trip cleanly through the ATM-VWAP cutover. All of these
                     // features were removed with the Camarilla strategy.

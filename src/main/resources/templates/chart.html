@@ -265,7 +265,7 @@
     // Charts render 3-min close prices as a line, with the rightmost point animated by the
     // in-progress bucket's live close (LTP). Poll cadence:
     //   • /api/chart/candles per symbol every 2 s — smooth live rightmost point.
-    //   • /api/chart/symbols  every 15 s — catches AtmVwap's ATM lock at ~09:18 IST.
+    //   • /api/chart/symbols  every 15 s — catches OptionSelling's ATM lock at ~09:18 IST.
 
     var charts = { nifty: null, ce: null, pe: null };
     var currentCeSym = '', currentPeSym = '';
@@ -597,7 +597,7 @@
             var pet = d.peTick || {};
             if (pet.ltp) setHeaderCells('pePrice', 'peChg', pet.ltp, pet.ch, pet.chp, 1);
             // Overlay the active SL as a dashed horizontal price line on the CE / PE
-            // charts. Reads d.ceSl / d.peSl from AtmVwap's live position state — zero
+            // charts. Reads d.ceSl / d.peSl from OptionSelling's live position state — zero
             // when no position is open on that side, so the line is removed cleanly.
             applySlLine('ce', Number(d.ceSl || 0));
             applySlLine('pe', Number(d.peSl || 0));
@@ -671,7 +671,7 @@
         // /api/chart/symbols is a purely in-memory read on the server (no DB, no
         // external HTTP), so folding it into the 2-s cycle keeps CE/PE trade-count
         // + P&L chips updating in near-real time. Also picks up the ATM symbol
-        // resolution the moment AtmVwap locks it.
+        // resolution the moment OptionSelling locks it.
         refreshSymbols();
         // Only CE + PE panels remain — NIFTY chart was removed; its LTP still shows
         // in the page-header strip via the SSE ticker handler + /symbols poll.

@@ -3,7 +3,7 @@ package com.rydytrader.autotrader.gdfl;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.OptionOiTracker;
-import com.rydytrader.autotrader.service.strategy.AtmVwap;
+import com.rydytrader.autotrader.service.strategy.OptionSelling;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
@@ -35,8 +35,8 @@ import java.util.concurrent.TimeUnit;
  *   <li>{@link #boot()} opens the WS connection at Spring startup (if
  *       {@code gdfl.enabled=true}) and completes the {@code Authenticate} handshake.</li>
  *   <li>An in-process poller runs every {@code gdfl.atmPollIntervalSeconds} seconds.
- *       As soon as {@link AtmVwap#getCeSymbol()} + {@link AtmVwap#getPeSymbol()} are
- *       non-blank (i.e. AtmVwap has resolved the day's ATM at ~09:18 IST — either from
+ *       As soon as {@link OptionSelling#getCeSymbol()} + {@link OptionSelling#getPeSymbol()} are
+ *       non-blank (i.e. OptionSelling has resolved the day's ATM at ~09:18 IST — either from
  *       its own first-bar close or from a mid-day operator override), the poller
  *       converts the two Fyers-format symbols to GDFL contractwise identifiers via
  *       {@link GdflSymbolMapper}, sends {@code SubscribeRealtime} for each, and stops
@@ -61,7 +61,7 @@ public class GdflService {
     private final GdflProperties     props;
     private final GdflSymbolMapper   mapper;
     private final MarketDataService  marketDataService;
-    private final ObjectProvider<AtmVwap> atmVwapProvider;
+    private final ObjectProvider<OptionSelling> optionSellingProvider;
     private final ObjectProvider<OptionOiTracker> oiTrackerProvider;
     private final ScheduledExecutorService executor;
 
@@ -88,12 +88,12 @@ public class GdflService {
     public GdflService(GdflProperties props,
                        GdflSymbolMapper mapper,
                        MarketDataService marketDataService,
-                       ObjectProvider<AtmVwap> atmVwapProvider,
+                       ObjectProvider<OptionSelling> optionSellingProvider,
                        ObjectProvider<OptionOiTracker> oiTrackerProvider) {
         this.props             = props;
         this.mapper            = mapper;
         this.marketDataService = marketDataService;
-        this.atmVwapProvider   = atmVwapProvider;
+        this.optionSellingProvider   = optionSellingProvider;
         this.oiTrackerProvider = oiTrackerProvider;
         this.executor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "gdfl-lifecycle");
@@ -218,7 +218,7 @@ public class GdflService {
     }
 
     /** Fires every {@code gdfl.atmPollIntervalSeconds}. Discovers today's ATM CE + PE
-     *  from AtmVwap and issues SubscribeRealtime for each — once and only once per day. */
+     *  from OptionSelling and issues SubscribeRealtime for each — once and only once per day. */
     private void checkAtmAndSubscribe() {
         try {
             // Only makes sense during market hours + a small warm-up window.

@@ -7,7 +7,7 @@ import com.rydytrader.autotrader.dto.OrderDTO;
 import com.rydytrader.autotrader.entity.StrategyTradeEntity;
 import com.rydytrader.autotrader.repository.StrategyTradeRepository;
 import com.rydytrader.autotrader.service.AtmTracker;
-import com.rydytrader.autotrader.service.AtmVwapStreamBroker;
+import com.rydytrader.autotrader.service.OptionSellingStreamBroker;
 import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.service.EventService;
 import com.rydytrader.autotrader.service.MarketDataService;
@@ -39,7 +39,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>First 3-min NIFTY spot bar close (~09:18 IST) captures the close price and locks
  * today's ATM strike (round to nearest 50). The strike's CE and PE symbols become the
- * two option legs for the session. From {@code atmVwapTradingStartTime} onward (default
+ * two option legs for the session. From {@code optionSellingTradingStartTime} onward (default
  * 09:30 IST), each option's 3-min bar closes drive a trigger-candle state machine:
  *
  * <ul>
@@ -52,24 +52,23 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li><b>S1 → invalidate</b>: otherwise the trigger is dropped.</li>
  * </ul>
  *
- * <p>Stop loss = max(trigger.high, {@code atmVwapMinSlPoints}). No target — every open
- * position exits on SL hit or timed squareoff at {@code atmVwapSquareOffTime}. CE and PE
+ * <p>Stop loss = max(trigger.high, {@code optionSellingMinSlPoints}). No target — every open
+ * position exits on SL hit or timed squareoff at {@code optionSellingSquareOffTime}. CE and PE
  * can be short simultaneously; the combined (SL − entry) × qty must fit under
  * {@code portfolioMaxDailyLoss}.
  */
 @Service
-public class AtmVwap implements Strategy {
+public class OptionSelling implements Strategy {
 
-    private static final Logger log = LoggerFactory.getLogger(AtmVwap.class);
-    private static final String STRATEGY_ID = "atmvwap";
+    private static final Logger log = LoggerFactory.getLogger(OptionSelling.class);
+    private static final String STRATEGY_ID = "option-selling";
     /** Strategy ID written to DB rows for MANUAL-tagged trades. Analytics, calendar
      *  day-modal, and Trade Log filter on this string so manual scalps stay distinguishable
      *  from algorithm trades while still aggregating into the same portfolio totals. */
     public  static final String MANUAL_STRATEGY_ID = "manual";
     private static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    private static final String STATE_FILE = "../store/cache/atmvwap-state.json";
-    private static final String LEGACY_STATE_FILE = "../store/cache/camarilla-state.json";
+    private static final String STATE_FILE = "../store/cache/option-selling-state.json";
     /** NIFTY option lot size — 65 (post 2025 revision). */
     private static final int    LOT_SIZE = 65;
     /** NIFTY option premium tick size — the minimum tradable price. */
@@ -120,8 +119,8 @@ public class AtmVwap implements Strategy {
     private final EventService          eventService;
     private final RiskSettingsStore     riskSettings;
     private final ObjectProvider<StrategyTradeRepository> tradeRepoProvider;
-    private final ObjectProvider<AtmVwapStreamBroker>     streamBrokerProvider;
-    /** OI subscriber. Injected via {@code ObjectProvider} so the AtmVwap bean can boot
+    private final ObjectProvider<OptionSellingStreamBroker>     streamBrokerProvider;
+    /** OI subscriber. Injected via {@code ObjectProvider} so the OptionSelling bean can boot
      *  even if the OI wiring is disabled or the class hasn't been instantiated yet
      *  (e.g. in a stripped-down test context). */
     private final ObjectProvider<com.rydytrader.autotrader.service.OptionOiSubscriber> optionOiSubscriberProvider;
@@ -131,7 +130,7 @@ public class AtmVwap implements Strategy {
     private final ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> optionOiTrackerProvider;
     /** Fyers /history reconcile — swaps our WS-aggregated bar OHLC with the exchange-
      *  authoritative bar before the FSM commits to a fire/no-fire decision. Provider so
-     *  a stripped-down test context without the Fyers client can still boot AtmVwap. */
+     *  a stripped-down test context without the Fyers client can still boot OptionSelling. */
     private final ObjectProvider<com.rydytrader.autotrader.service.HistoryReconcileService> historyReconcileProvider;
     /** GDFL config — read to skip Fyers WS + aggregator subscribes for option strikes
      *  when GDFL owns those symbols. Provider so the strategy still boots when the
@@ -155,7 +154,7 @@ public class AtmVwap implements Strategy {
      *  seeded / invalidated events fired N times. Cleared on day rollover, kill switch,
      *  logout — anywhere the session's option legs are released. */
     private final java.util.Set<String> aggregatorSubscribedSymbols = ConcurrentHashMap.newKeySet();
-    public AtmVwap(CandleAggregator candleAggregator,
+    public OptionSelling(CandleAggregator candleAggregator,
                    AtmTracker atmTracker,
                    BalancedAtmSelector atmSelector,
                    MarketDataService marketDataService,
@@ -163,7 +162,7 @@ public class AtmVwap implements Strategy {
                    EventService eventService,
                    RiskSettingsStore riskSettings,
                    ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
-                   ObjectProvider<AtmVwapStreamBroker> streamBrokerProvider,
+                   ObjectProvider<OptionSellingStreamBroker> streamBrokerProvider,
                    ObjectProvider<com.rydytrader.autotrader.service.OptionOiSubscriber> optionOiSubscriberProvider,
                    ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> optionOiTrackerProvider,
                    ObjectProvider<com.rydytrader.autotrader.service.HistoryReconcileService> historyReconcileProvider,
@@ -217,7 +216,7 @@ public class AtmVwap implements Strategy {
             var sub = optionOiSubscriberProvider == null ? null : optionOiSubscriberProvider.getIfAvailable();
             if (sub != null) sub.onAtmSelected(atm);
         } catch (Exception e) {
-            log.warn("[AtmVwap] OI subscriber notify failed for ATM={}: {}", atm, e.getMessage());
+            log.warn("[OptionSelling] OI subscriber notify failed for ATM={}: {}", atm, e.getMessage());
         }
     }
 
@@ -229,7 +228,7 @@ public class AtmVwap implements Strategy {
             var sub = optionOiSubscriberProvider == null ? null : optionOiSubscriberProvider.getIfAvailable();
             if (sub != null) sub.onPreWarm(baseAtm, window);
         } catch (Exception e) {
-            log.warn("[AtmVwap] OI pre-warm notify failed for baseAtm={}: {}", baseAtm, e.getMessage());
+            log.warn("[OptionSelling] OI pre-warm notify failed for baseAtm={}: {}", baseAtm, e.getMessage());
         }
     }
 
@@ -273,7 +272,7 @@ public class AtmVwap implements Strategy {
     /** Push the latest dashboard state to every SSE-connected browser. No-op when no clients. */
     private void publishStream() {
         try {
-            AtmVwapStreamBroker b = streamBrokerProvider == null ? null : streamBrokerProvider.getIfAvailable();
+            OptionSellingStreamBroker b = streamBrokerProvider == null ? null : streamBrokerProvider.getIfAvailable();
             if (b != null) b.publish();
         } catch (Exception ignored) {}
     }
@@ -292,7 +291,7 @@ public class AtmVwap implements Strategy {
         candleAggregator.subscribe(NIFTY_SYMBOL, c -> onCandleClose(NIFTY_SYMBOL, c));
         try { marketDataService.subscribeAdditional(java.util.List.of(NIFTY_SYMBOL)); }
         catch (Exception ignored) {}
-        log.info("[AtmVwap] boot — NIFTY spot subscribed: {}", NIFTY_SYMBOL);
+        log.info("[OptionSelling] boot — NIFTY spot subscribed: {}", NIFTY_SYMBOL);
 
         // Trading-started marker — fires exactly once per day, on the first NIFTY spot
         // tick received after 09:15 IST. Anchors the operator's mental timeline to the
@@ -303,11 +302,11 @@ public class AtmVwap implements Strategy {
 
         // If today's ATM is already resolved (mid-day restart), re-subscribe the two option legs.
         try { ensureSessionLegsSubscribed(); }
-        catch (Exception e) { log.warn("[AtmVwap] session-legs boot re-subscribe failed: {}", e.getMessage()); }
+        catch (Exception e) { log.warn("[OptionSelling] session-legs boot re-subscribe failed: {}", e.getMessage()); }
 
         // If pre-warm was in progress before the crash (09:15-09:18 window), re-subscribe.
         try { resumeWarmingIfNeeded(); }
-        catch (Exception e) { log.warn("[AtmVwap] resume-warming failed: {}", e.getMessage()); }
+        catch (Exception e) { log.warn("[OptionSelling] resume-warming failed: {}", e.getMessage()); }
 
         // Mid-day restart with an already-resolved ATM: re-fire the OI-window subscribe
         // immediately so the OI feed resumes within seconds of boot instead of waiting
@@ -320,12 +319,12 @@ public class AtmVwap implements Strategy {
                 notifyOiWindow(state.atmStrike);
             }
         } catch (Exception e) {
-            log.warn("[AtmVwap] OI-window boot re-subscribe failed: {}", e.getMessage());
+            log.warn("[OptionSelling] OI-window boot re-subscribe failed: {}", e.getMessage());
         }
 
-        log.info("[AtmVwap] booted — enabled={}, lots={}, squareoff={}, restoredPositions={}",
-            riskSettings.isAtmVwapEnabled(), riskSettings.getAtmVwapLotsPerLeg(),
-            riskSettings.getAtmVwapSquareOffTime(), state.openPositions.size());
+        log.info("[OptionSelling] booted — enabled={}, lots={}, squareoff={}, restoredPositions={}",
+            riskSettings.isOptionSellingEnabled(), riskSettings.getOptionSellingLotsPerLeg(),
+            riskSettings.getOptionSellingSquareOffTime(), state.openPositions.size());
     }
 
     private void pruneStaleEventsBeforeToday() {
@@ -338,7 +337,7 @@ public class AtmVwap implements Strategy {
         });
         int removed = before - state.recentEvents.size();
         if (removed > 0) {
-            log.info("[AtmVwap] pruned {} stale event(s) from before today's 00:00 IST", removed);
+            log.info("[OptionSelling] pruned {} stale event(s) from before today's 00:00 IST", removed);
             saveToDisk();
             publishStream();
         }
@@ -375,11 +374,11 @@ public class AtmVwap implements Strategy {
             }
             if (patched > 0) {
                 repo.saveAll(rows);
-                log.info("[AtmVwap] backfilled symbol/setup on {} legacy DB row(s) for {}",
+                log.info("[OptionSelling] backfilled symbol/setup on {} legacy DB row(s) for {}",
                     patched, state.dayKey);
             }
         } catch (Exception e) {
-            log.warn("[AtmVwap] backfill failed: {}", e.getMessage());
+            log.warn("[OptionSelling] backfill failed: {}", e.getMessage());
         }
     }
 
@@ -449,7 +448,7 @@ public class AtmVwap implements Strategy {
         if (state.doneForDay) return "DONE_FOR_DAY";
         return state.openPositions.isEmpty() ? "IDLE" : "OPEN(" + state.openPositions.size() + ")";
     }
-    @Override public boolean isEnabled() { return riskSettings.isAtmVwapEnabled(); }
+    @Override public boolean isEnabled() { return riskSettings.isOptionSellingEnabled(); }
 
     @Override
     public boolean forceClose(String reason) {
@@ -672,11 +671,11 @@ public class AtmVwap implements Strategy {
         java.util.NavigableMap<Long, BalancedAtmSelector.ChainStrike> chain;
         try { chain = atmSelector.fetchChainStrikes(); }
         catch (Exception e) {
-            log.warn("[AtmVwap] pre-warm chain fetch failed: {}", e.getMessage());
+            log.warn("[OptionSelling] pre-warm chain fetch failed: {}", e.getMessage());
             return;
         }
         if (chain == null || chain.isEmpty()) {
-            log.warn("[AtmVwap] pre-warm skipped — empty chain response");
+            log.warn("[OptionSelling] pre-warm skipped — empty chain response");
             return;
         }
 
@@ -698,7 +697,7 @@ public class AtmVwap implements Strategy {
         }
 
         if (subs.isEmpty()) {
-            log.warn("[AtmVwap] pre-warm found no quoted strikes near {} (range {}–{})",
+            log.warn("[OptionSelling] pre-warm found no quoted strikes near {} (range {}–{})",
                 baseAtm, lo, hi);
             return;
         }
@@ -884,7 +883,7 @@ public class AtmVwap implements Strategy {
         BalancedAtmSelector.StrikeAtLevel row = atmSelector.resolveStrikeAtLevel(close);
         if (row == null || row.ceSymbol() == null || row.peSymbol() == null
             || row.ceSymbol().isBlank() || row.peSymbol().isBlank()) {
-            log.debug("[AtmVwap] ATM resolution deferred — chain row null for close {}", close);
+            log.debug("[OptionSelling] ATM resolution deferred — chain row null for close {}", close);
             return;
         }
 
@@ -988,7 +987,7 @@ public class AtmVwap implements Strategy {
     /** Per-option 3-min bar walk. Trigger-candle FSM described at the class-level Javadoc. */
     private void processOptionBar(String symbol, Candle c) {
         // Bar-level gate: skip bars whose START is before the configured
-        // atmVwapTradingStartTime. "Start = 09:18" means the 09:18 bar (closes
+        // optionSellingTradingStartTime. "Start = 09:18" means the 09:18 bar (closes
         // at 09:21) is the first bar the FSM sees; the 09:15 opening bar is
         // pre-start and ignored — no seed, no fire, no promote, no invalidate.
         //
@@ -998,7 +997,7 @@ public class AtmVwap implements Strategy {
         // because its close event fires at wall clock 09:18:XX, which is not
         // before 09:18. OI subscription, pre-warm, and ATM resolution live
         // outside processOptionBar so they continue running from 09:15.
-        String startHhmm = riskSettings.getAtmVwapTradingStartTime();
+        String startHhmm = riskSettings.getOptionSellingTradingStartTime();
         if (startHhmm != null && !startHhmm.isBlank()) {
             LocalTime startCfg = null;
             try { startCfg = LocalTime.parse(startHhmm); }
@@ -1124,7 +1123,7 @@ public class AtmVwap implements Strategy {
         Candle auth;
         try { auth = svc.fetchAuthoritative(symbol, bar.startMillis()); }
         catch (Exception e) {
-            log.warn("[AtmVwap] reconcile threw for {} bar {}: {}", symbol, bar.startMillis(), e.getMessage());
+            log.warn("[OptionSelling] reconcile threw for {} bar {}: {}", symbol, bar.startMillis(), e.getMessage());
             return bar;
         }
         if (auth == null) {
@@ -1144,21 +1143,21 @@ public class AtmVwap implements Strategy {
         // Best-effort — a miss just leaves the local bar visible on the chart while the
         // FSM still uses the authoritative value returned below.
         try { candleAggregator.updateHistoryEntry(symbol, auth); }
-        catch (Exception e) { log.warn("[AtmVwap] history-ring update failed for {}: {}", symbol, e.getMessage()); }
+        catch (Exception e) { log.warn("[OptionSelling] history-ring update failed for {}: {}", symbol, e.getMessage()); }
         return auth;
     }
 
 
     private boolean canFireNewEntry() {
         LocalTime now = ZonedDateTime.now(IST).toLocalTime();
-        String startHhmm = riskSettings.getAtmVwapTradingStartTime();
+        String startHhmm = riskSettings.getOptionSellingTradingStartTime();
         if (startHhmm != null && !startHhmm.isBlank()) {
             try {
                 LocalTime start = LocalTime.parse(startHhmm);
                 if (now.isBefore(start)) return false;
             } catch (Exception ignored) {}
         }
-        String endHhmm = riskSettings.getAtmVwapTradingEndTime();
+        String endHhmm = riskSettings.getOptionSellingTradingEndTime();
         if (endHhmm != null && !endHhmm.isBlank()) {
             try {
                 LocalTime end = LocalTime.parse(endHhmm);
@@ -1202,8 +1201,8 @@ public class AtmVwap implements Strategy {
 
         // Per-leg fire count gate — hard cap on CE / PE fires per day.
         boolean isCeLeg = symbol.equals(state.ceSymbol);
-        int maxCe = riskSettings.getAtmVwapMaxCeTradesPerDay();
-        int maxPe = riskSettings.getAtmVwapMaxPeTradesPerDay();
+        int maxCe = riskSettings.getOptionSellingMaxCeTradesPerDay();
+        int maxPe = riskSettings.getOptionSellingMaxPeTradesPerDay();
         if (isCeLeg && maxCe > 0 && state.ceTradesToday >= maxCe) {
             event("[WARNING]", "Risk",
                 shortSym(symbol) + " — CE fire cap reached (" + state.ceTradesToday
@@ -1221,7 +1220,7 @@ public class AtmVwap implements Strategy {
         // BULLISH OI (put writers dominant → market bullish) blocks CE_SELL; BEARISH OI
         // (call writers dominant → market bearish) blocks PE_SELL. NEUTRAL / STALE /
         // UNKNOWN never block (STALE = feed dead > 5 min, UNKNOWN = tracker not present).
-        if (riskSettings.isAtmVwapOiBiasFilterEnabled()) {
+        if (riskSettings.isOptionSellingOiBiasFilterEnabled()) {
             String bias = currentOiBias();
             if (isCeLeg && "BULLISH".equals(bias)) {
                 event("[WARNING]", "OI Bias",
@@ -1255,8 +1254,8 @@ public class AtmVwap implements Strategy {
 
         // SL clamped to [entry + minSl, entry + maxSl]. If trigger.high sits below entry +
         // minSl the floor kicks in; if it sits above entry + maxSl the ceiling caps it.
-        double minSl = Math.max(0, riskSettings.getAtmVwapMinSlPoints());
-        double maxSl = Math.max(minSl, riskSettings.getAtmVwapMaxSlPoints());
+        double minSl = Math.max(0, riskSettings.getOptionSellingMinSlPoints());
+        double maxSl = Math.max(minSl, riskSettings.getOptionSellingMaxSlPoints());
         double slFloor = entryLtp + minSl;
         double slCeil  = entryLtp + maxSl;
         double slLevel = Math.max(trigger.high, slFloor);
@@ -1268,7 +1267,7 @@ public class AtmVwap implements Strategy {
             return;
         }
 
-        int qty = riskSettings.getAtmVwapLotsPerLeg() * LOT_SIZE;
+        int qty = riskSettings.getOptionSellingLotsPerLeg() * LOT_SIZE;
 
         // Combined-risk gate — projected exposure after this entry must fit under portfolioMaxDailyLoss.
         if (maxRisk > 0) {
@@ -1291,7 +1290,7 @@ public class AtmVwap implements Strategy {
             }
         }
 
-        String productType = riskSettings.getAtmVwapOrderType();
+        String productType = riskSettings.getOptionSellingOrderType();
         OrderDTO order = orderService.placeOrder(symbol, qty, -1, 0, productType);
         if (order == null || order.getId() == null || order.getId().isEmpty()) {
             event("[ERROR]", "AUTO ENTRY", "entry order rejected for " + shortSym(symbol));
@@ -1377,8 +1376,8 @@ public class AtmVwap implements Strategy {
                 // legacy state-file rows) and positions whose SL has already
                 // been moved to breakeven.
                 if (p.triggerHigh > 0 && !p.breakevenMoved) {
-                    double minSl = Math.max(0, riskSettings.getAtmVwapMinSlPoints());
-                    double maxSl = Math.max(minSl, riskSettings.getAtmVwapMaxSlPoints());
+                    double minSl = Math.max(0, riskSettings.getOptionSellingMinSlPoints());
+                    double maxSl = Math.max(minSl, riskSettings.getOptionSellingMaxSlPoints());
                     double oldFloor = oldEntry + minSl;
                     double oldCeil  = oldEntry + maxSl;
                     boolean triggerDominated = p.triggerHigh >= oldFloor && p.triggerHigh <= oldCeil;
@@ -1403,7 +1402,7 @@ public class AtmVwap implements Strategy {
                 }
                 saveToDisk();
             } catch (Exception e) {
-                log.warn("[AtmVwap] fill lookup failed for {}: {}", p.entryOrderId, e.getMessage());
+                log.warn("[OptionSelling] fill lookup failed for {}: {}", p.entryOrderId, e.getMessage());
             }
         }
     }
@@ -1412,7 +1411,7 @@ public class AtmVwap implements Strategy {
 
     public synchronized void watchSquareoff() {
         if (state.openPositions.isEmpty()) return;
-        String hhmm = riskSettings.getAtmVwapSquareOffTime();
+        String hhmm = riskSettings.getOptionSellingSquareOffTime();
         if (hhmm == null || hhmm.isBlank()) return;
         LocalTime cutoff;
         try { cutoff = LocalTime.parse(hhmm); }
@@ -1432,7 +1431,7 @@ public class AtmVwap implements Strategy {
         if (p == null) return false;
         String symbol = p.symbol;
         String productType = (p.productType == null || p.productType.isBlank())
-            ? riskSettings.getAtmVwapOrderType()
+            ? riskSettings.getOptionSellingOrderType()
             : p.productType;
         int closeSide = p.isShort ? +1 : -1;
         OrderDTO close = orderService.placeExitOrder(symbol, p.qty, closeSide, productType);
@@ -1459,7 +1458,7 @@ public class AtmVwap implements Strategy {
             try { exitPrice = marketDataService.getLtp(symbol); }
             catch (Exception ignored) {}
             if (exitPrice > 0) {
-                log.warn("[AtmVwap] exit fill not resolved for order {} on {} — persisting LTP {} as fallback",
+                log.warn("[OptionSelling] exit fill not resolved for order {} on {} — persisting LTP {} as fallback",
                     exitOrderId, symbol, round2(exitPrice));
             }
         }
@@ -1556,7 +1555,7 @@ public class AtmVwap implements Strategy {
             row.setExitCandleMs (exitCandleMs  > 0 ? exitCandleMs  : null);
             repo.save(row);
         } catch (Exception e) {
-            log.warn("[AtmVwap] persist trade failed: {}", e.getMessage());
+            log.warn("[OptionSelling] persist trade failed: {}", e.getMessage());
         }
     }
 
@@ -1609,10 +1608,10 @@ public class AtmVwap implements Strategy {
             StrategyTradeRepository repo = tradeRepoProvider == null ? null : tradeRepoProvider.getIfAvailable();
             if (repo != null) {
                 dbCleared = repo.deleteAllRows();
-                log.warn("[AtmVwap] clearAllRecords — DB deleteAllRows wiped {} rows", dbCleared);
+                log.warn("[OptionSelling] clearAllRecords — DB deleteAllRows wiped {} rows", dbCleared);
             }
         } catch (Exception e) {
-            log.warn("[AtmVwap] clearAllRecords DB wipe failed: {}", e.getMessage());
+            log.warn("[OptionSelling] clearAllRecords DB wipe failed: {}", e.getMessage());
         }
 
         event("[WARNING]", "Maintenance",
@@ -1620,7 +1619,7 @@ public class AtmVwap implements Strategy {
             + " events=" + eventsCleared
             + " dbRows=" + dbCleared
             + " (open positions preserved)");
-        log.warn("[AtmVwap] clearAllRecords — cycles={} events={} dbRows={} prevTradesToday={} prevConsLoss={}",
+        log.warn("[OptionSelling] clearAllRecords — cycles={} events={} dbRows={} prevTradesToday={} prevConsLoss={}",
             cyclesCleared, eventsCleared, dbCleared, prevTradesToday, prevConsecutiveLoss);
         publishStream();
 
@@ -1659,7 +1658,7 @@ public class AtmVwap implements Strategy {
                 dbCleared = repo.deleteBySessionDate(LocalDate.now(IST).toString());
             }
         } catch (Exception e) {
-            log.warn("[AtmVwap] clearTodayRecords DB wipe failed: {}", e.getMessage());
+            log.warn("[OptionSelling] clearTodayRecords DB wipe failed: {}", e.getMessage());
         }
 
         event("[WARNING]", "Maintenance",
@@ -1667,7 +1666,7 @@ public class AtmVwap implements Strategy {
             + " events=" + eventsCleared
             + " dbRows=" + dbCleared
             + " (open positions preserved)");
-        log.warn("[AtmVwap] clearTodayRecords — cycles={} events={} dbRows={} prevTradesToday={} prevConsLoss={}",
+        log.warn("[OptionSelling] clearTodayRecords — cycles={} events={} dbRows={} prevTradesToday={} prevConsLoss={}",
             cyclesCleared, eventsCleared, dbCleared, prevTradesToday, prevConsecutiveLoss);
         publishStream();
 
@@ -1683,7 +1682,7 @@ public class AtmVwap implements Strategy {
     @Scheduled(cron = "0 0 6 * * *", zone = "Asia/Kolkata")
     public synchronized void scheduledDailyReset() {
         String today = LocalDate.now(IST).toString();
-        log.info("[AtmVwap] 06:00 IST daily reset — clearing events + today's trades (was dayKey={})", state.dayKey);
+        log.info("[OptionSelling] 06:00 IST daily reset — clearing events + today's trades (was dayKey={})", state.dayKey);
         state.dayKey = today;
         state.tradesToday = 0;
         state.ceTradesToday = 0;
@@ -1797,7 +1796,7 @@ public class AtmVwap implements Strategy {
         }
     }
 
-    // ── Dashboard payload (consumed by AtmVwapController + Trade page) ─────
+    // ── Dashboard payload (consumed by OptionSellingController + Trade page) ─────
 
     public synchronized Map<String, Object> dashboardState() {
         rolloverIfNewDay();
@@ -1860,7 +1859,7 @@ public class AtmVwap implements Strategy {
         vwap.put("peSymbol", "");
         vwap.put("ceVwap",   round2(safeVwap(state.ceSymbol)));
         vwap.put("peVwap",   round2(safeVwap(state.peSymbol)));
-        m.put("atmVwap", vwap);
+        m.put("optionSelling", vwap);
 
         // Open positions
         List<Map<String, Object>> rows = new ArrayList<>();
@@ -1904,7 +1903,7 @@ public class AtmVwap implements Strategy {
         risk.put("exposedRisk",         round2(exposedRiskNow()));
         risk.put("consumedRisk",        round2(consumedRiskNow()));
         risk.put("dailyRiskBudget",     round2(riskSettings.getPortfolioMaxDailyLoss()));
-        risk.put("atmVwapMinSlPoints",  round2(riskSettings.getAtmVwapMinSlPoints()));
+        risk.put("optionSellingMinSlPoints",  round2(riskSettings.getOptionSellingMinSlPoints()));
         m.put("risk", risk);
 
         m.put("todayClosedTrades", new ArrayList<>(state.todayClosedTrades));
@@ -2038,7 +2037,7 @@ public class AtmVwap implements Strategy {
     // ── Event log ────────────────────────────────────────────────────────────
 
     /** Public event-log wrapper for external callers (e.g. the kill-switch toggle in
-     *  AtmVwapController). Pushes into {@code state.recentEvents} for the Trade page
+     *  OptionSellingController). Pushes into {@code state.recentEvents} for the Trade page
      *  event-log widget and mirrors the line to {@link EventService}. */
     public void postEvent(String severity, String source, String message) {
         event(severity, source, message);
@@ -2068,7 +2067,7 @@ public class AtmVwap implements Strategy {
         e.put("message",  message);
         state.recentEvents.add(0, e);
         while (state.recentEvents.size() > RECENT_EVENTS_LIMIT) state.recentEvents.remove(state.recentEvents.size() - 1);
-        if (eventService != null) eventService.log(severity + " [atmvwap:" + source + "] " + message);
+        if (eventService != null) eventService.log(severity + " [option-selling:" + source + "] " + message);
         publishStream();
     }
 
@@ -2077,17 +2076,7 @@ public class AtmVwap implements Strategy {
     private synchronized void loadFromDisk() {
         try {
             Path p = Path.of(STATE_FILE);
-            if (!Files.exists(p)) {
-                Path legacy = Path.of(LEGACY_STATE_FILE);
-                if (Files.exists(legacy)) {
-                    File parent = p.toFile().getParentFile();
-                    if (parent != null && !parent.exists()) parent.mkdirs();
-                    Files.move(legacy, p);
-                    log.info("[AtmVwap] migrated {} → {}", legacy, p);
-                } else {
-                    return;
-                }
-            }
+            if (!Files.exists(p)) return;
             State s = mapper.readValue(Files.readString(p), State.class);
             if (s != null) {
                 state = s;
@@ -2104,7 +2093,7 @@ public class AtmVwap implements Strategy {
                 migrateOpenPositionsKeyFormat();
             }
         } catch (IOException e) {
-            log.warn("[AtmVwap] failed to load state: {}", e.getMessage());
+            log.warn("[OptionSelling] failed to load state: {}", e.getMessage());
         }
     }
 
@@ -2114,7 +2103,7 @@ public class AtmVwap implements Strategy {
             state.openPositions.values().removeIf(p -> p == null || p.setup == null);
             int after = state.openPositions.size();
             if (after != before) {
-                log.info("[AtmVwap] purged {} retired-setup entries from openPositions",
+                log.info("[OptionSelling] purged {} retired-setup entries from openPositions",
                     before - after);
             }
         }
@@ -2134,7 +2123,7 @@ public class AtmVwap implements Strategy {
             migrated.put(posKey(pos), pos);
         }
         state.openPositions = migrated;
-        log.info("[AtmVwap] migrated {} openPositions entries to composite keys",
+        log.info("[OptionSelling] migrated {} openPositions entries to composite keys",
             migrated.size());
     }
 
@@ -2147,7 +2136,7 @@ public class AtmVwap implements Strategy {
             Files.writeString(tmp, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(state));
             com.rydytrader.autotrader.util.FileIoUtils.atomicMoveWithRetry(tmp, dst);
         } catch (IOException e) {
-            log.warn("[AtmVwap] failed to save state: {}", e.getMessage());
+            log.warn("[OptionSelling] failed to save state: {}", e.getMessage());
         }
     }
 

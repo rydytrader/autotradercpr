@@ -18,15 +18,15 @@
                 '</div>' +
                 '<div id="sm-tabstrip" style="display:flex;border-bottom:1px solid var(--border);padding:0 24px;overflow-x:auto;"></div>' +
                 '<div class="sm-body" id="sm-body" style="flex:1;overflow-y:auto;padding:20px 24px;">' +
-                  '<div class="sm-pane" data-pane="atmvwap" style="display:none;">' +
+                  '<div class="sm-pane" data-pane="option-selling" style="display:none;">' +
                     '<div class="sm-grid-2col">' +
-                      '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-atmVwapLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 65 NIFTY.</div></div>' +
-                      '<div class="sm-field"><label>Order Type</label><select id="sm-atmVwapOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select></div>' +
-                      '<div class="sm-field"><label>Trading Start (HH:mm IST)</label><input type="time" id="sm-atmVwapTradingStartTime" step="60"><div class="sm-hint">Entries fire only after this time. Default 09:18 — first fire opportunity at 09:24 (3-min bars).</div></div>' +
-                      '<div class="sm-field"><label>Trading End (HH:mm IST)</label><input type="time" id="sm-atmVwapTradingEndTime" step="60"><div class="sm-hint">No new entries after this time. Default 14:30.</div></div>' +
-                      '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-atmVwapSquareOffTime" step="60"><div class="sm-hint">Hard exit if SL didn\'t trigger. Default 15:25.</div></div>' +
-                      '<div class="sm-field"><label>Max CE trades/day</label><input type="number" id="sm-atmVwapMaxCeTradesPerDay" step="1" min="0"><div class="sm-hint">Hard cap on CE-side fires. Default 3.</div></div>' +
-                      '<div class="sm-field"><label>Max PE trades/day</label><input type="number" id="sm-atmVwapMaxPeTradesPerDay" step="1" min="0"><div class="sm-hint">Hard cap on PE-side fires. Default 3.</div></div>' +
+                      '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-optionSellingLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 65 NIFTY.</div></div>' +
+                      '<div class="sm-field"><label>Order Type</label><select id="sm-optionSellingOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select></div>' +
+                      '<div class="sm-field"><label>Trading Start (HH:mm IST)</label><input type="time" id="sm-optionSellingTradingStartTime" step="60"><div class="sm-hint">Entries fire only after this time. Default 09:18 — first fire opportunity at 09:24 (3-min bars).</div></div>' +
+                      '<div class="sm-field"><label>Trading End (HH:mm IST)</label><input type="time" id="sm-optionSellingTradingEndTime" step="60"><div class="sm-hint">No new entries after this time. Default 14:30.</div></div>' +
+                      '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-optionSellingSquareOffTime" step="60"><div class="sm-hint">Hard exit if SL didn\'t trigger. Default 15:25.</div></div>' +
+                      '<div class="sm-field"><label>Max CE trades/day</label><input type="number" id="sm-optionSellingMaxCeTradesPerDay" step="1" min="0"><div class="sm-hint">Hard cap on CE-side fires. Default 3.</div></div>' +
+                      '<div class="sm-field"><label>Max PE trades/day</label><input type="number" id="sm-optionSellingMaxPeTradesPerDay" step="1" min="0"><div class="sm-hint">Hard cap on PE-side fires. Default 3.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
@@ -34,10 +34,10 @@
                       '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline for Home analytics. Default ₹10L.</div></div>' +
                       '<div class="sm-field"><label>Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Kill switch when net day P&L drops below this % of capital. 0 = off.</div></div>' +
                       '<div class="sm-field"><label>Max Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto from Capital × Risk %.</div></div>' +
-                      '<div class="sm-field"><label>Min SL (points above entry)</label><input type="number" id="sm-atmVwapMinSlPoints" step="1" min="0"><div class="sm-hint">SL is at least this many points above entry. Default 10.</div></div>' +
-                      '<div class="sm-field"><label>Max SL (points above entry)</label><input type="number" id="sm-atmVwapMaxSlPoints" step="1" min="0"><div class="sm-hint">SL is capped to this many points above entry. Default 20.</div></div>' +
-                      '<div class="sm-field"><label>OI bias threshold %</label><input type="number" id="sm-atmVwapOiBiasThresholdPct" step="1" min="0" max="500"><div class="sm-hint">Percent by which one side\'s cumulative OI change must exceed the other to flip the trend pill. Default 40 (cumCE ≥ 1.40 × cumPE → BEARISH).</div></div>' +
-                      '<div class="sm-field"><label><input type="checkbox" id="sm-atmVwapOiBiasFilterEnabled" style="margin-right:6px;vertical-align:middle;">OI bias trade filter</label><div class="sm-hint">When ON, skip CE_SELL fires while OI bias reads BULLISH and skip PE_SELL fires while BEARISH. NEUTRAL / STALE never block. Default off.</div></div>' +
+                      '<div class="sm-field"><label>Min SL (points above entry)</label><input type="number" id="sm-optionSellingMinSlPoints" step="1" min="0"><div class="sm-hint">SL is at least this many points above entry. Default 10.</div></div>' +
+                      '<div class="sm-field"><label>Max SL (points above entry)</label><input type="number" id="sm-optionSellingMaxSlPoints" step="1" min="0"><div class="sm-hint">SL is capped to this many points above entry. Default 20.</div></div>' +
+                      '<div class="sm-field"><label>OI bias threshold %</label><input type="number" id="sm-optionSellingOiBiasThresholdPct" step="1" min="0" max="500"><div class="sm-hint">Percent by which one side\'s cumulative OI change must exceed the other to flip the trend pill. Default 40 (cumCE ≥ 1.40 × cumPE → BEARISH).</div></div>' +
+                      '<div class="sm-field"><label><input type="checkbox" id="sm-optionSellingOiBiasFilterEnabled" style="margin-right:6px;vertical-align:middle;">OI bias trade filter</label><div class="sm-hint">When ON, skip CE_SELL fires while OI bias reads BULLISH and skip PE_SELL fires while BEARISH. NEUTRAL / STALE never block. Default off.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
@@ -139,7 +139,7 @@
         var strip = document.getElementById('sm-tabstrip');
         if (!strip) return;
         var html = '';
-        html += '<button class="sm-tab" data-tab="atmvwap">ATM VWAP</button>';
+        html += '<button class="sm-tab" data-tab="option-selling">ATM VWAP</button>';
         html += '<button class="sm-tab" data-tab="portfolio-risk">RISK</button>';
         html += '<button class="sm-tab" data-tab="charges">CHARGES</button>';
         html += '<button class="sm-tab" data-tab="users">USERS</button>';
@@ -157,9 +157,9 @@
             b.classList.toggle('active', b.getAttribute('data-tab') === tab);
         });
         modalEl.querySelectorAll('.sm-pane').forEach(function(p) { p.style.display = 'none'; });
-        if (tab === 'atmvwap') {
-            var cp = modalEl.querySelector('[data-pane="atmvwap"]'); if (cp) cp.style.display = '';
-            loadAtmVwapValues();
+        if (tab === 'option-selling') {
+            var cp = modalEl.querySelector('[data-pane="option-selling"]'); if (cp) cp.style.display = '';
+            loadOptionSellingValues();
         } else if (tab === 'portfolio-risk') {
             var pp = modalEl.querySelector('[data-pane="portfolio-risk"]'); if (pp) pp.style.display = '';
             loadPortfolioRiskValues();
@@ -174,37 +174,37 @@
     }
 
     function saveSettings() {
-        if (activeTab === 'atmvwap')        return saveAtmVwapTab();
+        if (activeTab === 'option-selling')        return saveOptionSellingTab();
         if (activeTab === 'portfolio-risk') return savePortfolioRiskTab();
         if (activeTab === 'charges')        return saveChargesTab();
         if (activeTab === 'users')          { showBanner('Use the row buttons to manage users.', 'info'); return; }
         showBanner('No save action for this tab.', 'info');
     }
 
-    function loadAtmVwapValues() {
+    function loadOptionSellingValues() {
         fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
             var g = id => document.getElementById(id);
-            if (g('sm-atmVwapLotsPerLeg'))        g('sm-atmVwapLotsPerLeg').value = d.atmVwapLotsPerLeg != null ? d.atmVwapLotsPerLeg : 1;
-            if (g('sm-atmVwapOrderType'))         g('sm-atmVwapOrderType').value = d.atmVwapOrderType || 'INTRADAY';
-            if (g('sm-atmVwapTradingStartTime'))  g('sm-atmVwapTradingStartTime').value = d.atmVwapTradingStartTime || '09:18';
-            if (g('sm-atmVwapTradingEndTime'))    g('sm-atmVwapTradingEndTime').value = d.atmVwapTradingEndTime || '14:30';
-            if (g('sm-atmVwapSquareOffTime'))     g('sm-atmVwapSquareOffTime').value = d.atmVwapSquareOffTime || '15:25';
-            if (g('sm-atmVwapMaxCeTradesPerDay')) g('sm-atmVwapMaxCeTradesPerDay').value = d.atmVwapMaxCeTradesPerDay != null ? d.atmVwapMaxCeTradesPerDay : 3;
-            if (g('sm-atmVwapMaxPeTradesPerDay')) g('sm-atmVwapMaxPeTradesPerDay').value = d.atmVwapMaxPeTradesPerDay != null ? d.atmVwapMaxPeTradesPerDay : 3;
+            if (g('sm-optionSellingLotsPerLeg'))        g('sm-optionSellingLotsPerLeg').value = d.optionSellingLotsPerLeg != null ? d.optionSellingLotsPerLeg : 1;
+            if (g('sm-optionSellingOrderType'))         g('sm-optionSellingOrderType').value = d.optionSellingOrderType || 'INTRADAY';
+            if (g('sm-optionSellingTradingStartTime'))  g('sm-optionSellingTradingStartTime').value = d.optionSellingTradingStartTime || '09:18';
+            if (g('sm-optionSellingTradingEndTime'))    g('sm-optionSellingTradingEndTime').value = d.optionSellingTradingEndTime || '14:30';
+            if (g('sm-optionSellingSquareOffTime'))     g('sm-optionSellingSquareOffTime').value = d.optionSellingSquareOffTime || '15:25';
+            if (g('sm-optionSellingMaxCeTradesPerDay')) g('sm-optionSellingMaxCeTradesPerDay').value = d.optionSellingMaxCeTradesPerDay != null ? d.optionSellingMaxCeTradesPerDay : 3;
+            if (g('sm-optionSellingMaxPeTradesPerDay')) g('sm-optionSellingMaxPeTradesPerDay').value = d.optionSellingMaxPeTradesPerDay != null ? d.optionSellingMaxPeTradesPerDay : 3;
         }).catch(function() {});
     }
 
-    function saveAtmVwapTab() {
+    function saveOptionSellingTab() {
         var g = id => document.getElementById(id);
         var body = {
-            atmVwapLotsPerLeg:         parseInt(g('sm-atmVwapLotsPerLeg').value, 10) || 1,
-            atmVwapOrderType:          g('sm-atmVwapOrderType').value,
-            atmVwapTradingStartTime:   (g('sm-atmVwapTradingStartTime').value || '').trim(),
-            atmVwapTradingEndTime:     (g('sm-atmVwapTradingEndTime').value || '').trim(),
-            atmVwapSquareOffTime:      (g('sm-atmVwapSquareOffTime').value || '').trim(),
-            atmVwapMaxCeTradesPerDay:  parseInt(g('sm-atmVwapMaxCeTradesPerDay').value, 10) || 0,
-            atmVwapMaxPeTradesPerDay:  parseInt(g('sm-atmVwapMaxPeTradesPerDay').value, 10) || 0
+            optionSellingLotsPerLeg:         parseInt(g('sm-optionSellingLotsPerLeg').value, 10) || 1,
+            optionSellingOrderType:          g('sm-optionSellingOrderType').value,
+            optionSellingTradingStartTime:   (g('sm-optionSellingTradingStartTime').value || '').trim(),
+            optionSellingTradingEndTime:     (g('sm-optionSellingTradingEndTime').value || '').trim(),
+            optionSellingSquareOffTime:      (g('sm-optionSellingSquareOffTime').value || '').trim(),
+            optionSellingMaxCeTradesPerDay:  parseInt(g('sm-optionSellingMaxCeTradesPerDay').value, 10) || 0,
+            optionSellingMaxPeTradesPerDay:  parseInt(g('sm-optionSellingMaxPeTradesPerDay').value, 10) || 0
         };
         postSettings('/api/settings/risk', body);
     }
@@ -214,10 +214,10 @@
         var body = {
             startingCapital:          parseFloat(g('sm-startingCapital').value) || 0,
             portfolioMaxRiskPct:      parseFloat(g('sm-portfolioMaxRiskPct').value) || 0,
-            atmVwapMinSlPoints:       Math.max(0, parseFloat(g('sm-atmVwapMinSlPoints').value) || 0),
-            atmVwapMaxSlPoints:       Math.max(0, parseFloat(g('sm-atmVwapMaxSlPoints').value) || 0),
-            atmVwapOiBiasThresholdPct: Math.max(0, parseFloat(g('sm-atmVwapOiBiasThresholdPct').value) || 40),
-            atmVwapOiBiasFilterEnabled: !!(g('sm-atmVwapOiBiasFilterEnabled') && g('sm-atmVwapOiBiasFilterEnabled').checked)
+            optionSellingMinSlPoints:       Math.max(0, parseFloat(g('sm-optionSellingMinSlPoints').value) || 0),
+            optionSellingMaxSlPoints:       Math.max(0, parseFloat(g('sm-optionSellingMaxSlPoints').value) || 0),
+            optionSellingOiBiasThresholdPct: Math.max(0, parseFloat(g('sm-optionSellingOiBiasThresholdPct').value) || 40),
+            optionSellingOiBiasFilterEnabled: !!(g('sm-optionSellingOiBiasFilterEnabled') && g('sm-optionSellingOiBiasFilterEnabled').checked)
         };
         postSettings('/api/settings/risk', body);
     }
@@ -271,16 +271,16 @@
             var g = id => document.getElementById(id);
             var capInput = g('sm-startingCapital');
             var pctInput = g('sm-portfolioMaxRiskPct');
-            var slBufInput = g('sm-atmVwapMinSlPoints');
+            var slBufInput = g('sm-optionSellingMinSlPoints');
             if (capInput) capInput.value = d.startingCapital != null ? d.startingCapital : 1000000;
             if (pctInput) pctInput.value = d.portfolioMaxRiskPct != null ? d.portfolioMaxRiskPct : 0;
-            if (slBufInput) slBufInput.value = d.atmVwapMinSlPoints != null ? d.atmVwapMinSlPoints : 10.0;
-            var maxSlInput = g('sm-atmVwapMaxSlPoints');
-            if (maxSlInput) maxSlInput.value = d.atmVwapMaxSlPoints != null ? d.atmVwapMaxSlPoints : 20.0;
+            if (slBufInput) slBufInput.value = d.optionSellingMinSlPoints != null ? d.optionSellingMinSlPoints : 10.0;
+            var maxSlInput = g('sm-optionSellingMaxSlPoints');
+            if (maxSlInput) maxSlInput.value = d.optionSellingMaxSlPoints != null ? d.optionSellingMaxSlPoints : 20.0;
             // OI bias fields live on the Risk pane too — hydrate them here so their
             // values survive tab switches + get sent in savePortfolioRiskTab below.
-            if (g('sm-atmVwapOiBiasThresholdPct')) g('sm-atmVwapOiBiasThresholdPct').value = d.atmVwapOiBiasThresholdPct != null ? d.atmVwapOiBiasThresholdPct : 40;
-            if (g('sm-atmVwapOiBiasFilterEnabled')) g('sm-atmVwapOiBiasFilterEnabled').checked = d.atmVwapOiBiasFilterEnabled === true;
+            if (g('sm-optionSellingOiBiasThresholdPct')) g('sm-optionSellingOiBiasThresholdPct').value = d.optionSellingOiBiasThresholdPct != null ? d.optionSellingOiBiasThresholdPct : 40;
+            if (g('sm-optionSellingOiBiasFilterEnabled')) g('sm-optionSellingOiBiasFilterEnabled').checked = d.optionSellingOiBiasFilterEnabled === true;
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {
                 updatePortfolioRiskHint(parseFloat(capInput.value) || 0, parseFloat(pctInput && pctInput.value) || 0);
@@ -323,12 +323,12 @@
             buildTabs();
             loadChargesValues();
             modalEl.dataset.tabsBuilt = '1';
-            switchTab('atmvwap');
+            switchTab('option-selling');
         } else {
-            if (activeTab === 'atmvwap')             loadAtmVwapValues();
+            if (activeTab === 'option-selling')             loadOptionSellingValues();
             else if (activeTab === 'portfolio-risk') loadPortfolioRiskValues();
             else if (activeTab === 'charges')        loadChargesValues();
-            else                                     switchTab('atmvwap');
+            else                                     switchTab('option-selling');
         }
     }
 

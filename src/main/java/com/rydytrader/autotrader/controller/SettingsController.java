@@ -32,19 +32,19 @@ public class SettingsController {
         result.put("tradingEndTime",      riskSettings.getTradingEndTime(effectiveMode));
         result.put("autoSquareOffTime",   riskSettings.getAutoSquareOffTime(effectiveMode));
         // ATM VWAP
-        result.put("atmVwapEnabled",            riskSettings.isAtmVwapEnabled(effectiveMode));
-        result.put("atmVwapLotsPerLeg",         riskSettings.getAtmVwapLotsPerLeg(effectiveMode));
-        result.put("atmVwapOrderType",          riskSettings.getAtmVwapOrderType(effectiveMode));
-        result.put("atmVwapTradingStartTime",   riskSettings.getAtmVwapTradingStartTime(effectiveMode));
-        result.put("atmVwapTradingEndTime",     riskSettings.getAtmVwapTradingEndTime(effectiveMode));
-        result.put("atmVwapSquareOffTime",      riskSettings.getAtmVwapSquareOffTime(effectiveMode));
-        result.put("atmVwapMaxConcurrentPositions", riskSettings.getAtmVwapMaxConcurrentPositions(effectiveMode));
-        result.put("atmVwapMinSlPoints",        riskSettings.getAtmVwapMinSlPoints(effectiveMode));
-        result.put("atmVwapMaxSlPoints",        riskSettings.getAtmVwapMaxSlPoints(effectiveMode));
-        result.put("atmVwapMaxCeTradesPerDay",  riskSettings.getAtmVwapMaxCeTradesPerDay(effectiveMode));
-        result.put("atmVwapMaxPeTradesPerDay",  riskSettings.getAtmVwapMaxPeTradesPerDay(effectiveMode));
-        result.put("atmVwapOiBiasThresholdPct", riskSettings.getAtmVwapOiBiasThresholdPct(effectiveMode));
-        result.put("atmVwapOiBiasFilterEnabled", riskSettings.isAtmVwapOiBiasFilterEnabled(effectiveMode));
+        result.put("optionSellingEnabled",            riskSettings.isOptionSellingEnabled(effectiveMode));
+        result.put("optionSellingLotsPerLeg",         riskSettings.getOptionSellingLotsPerLeg(effectiveMode));
+        result.put("optionSellingOrderType",          riskSettings.getOptionSellingOrderType(effectiveMode));
+        result.put("optionSellingTradingStartTime",   riskSettings.getOptionSellingTradingStartTime(effectiveMode));
+        result.put("optionSellingTradingEndTime",     riskSettings.getOptionSellingTradingEndTime(effectiveMode));
+        result.put("optionSellingSquareOffTime",      riskSettings.getOptionSellingSquareOffTime(effectiveMode));
+        result.put("optionSellingMaxConcurrentPositions", riskSettings.getOptionSellingMaxConcurrentPositions(effectiveMode));
+        result.put("optionSellingMinSlPoints",        riskSettings.getOptionSellingMinSlPoints(effectiveMode));
+        result.put("optionSellingMaxSlPoints",        riskSettings.getOptionSellingMaxSlPoints(effectiveMode));
+        result.put("optionSellingMaxCeTradesPerDay",  riskSettings.getOptionSellingMaxCeTradesPerDay(effectiveMode));
+        result.put("optionSellingMaxPeTradesPerDay",  riskSettings.getOptionSellingMaxPeTradesPerDay(effectiveMode));
+        result.put("optionSellingOiBiasThresholdPct", riskSettings.getOptionSellingOiBiasThresholdPct(effectiveMode));
+        result.put("optionSellingOiBiasFilterEnabled", riskSettings.isOptionSellingOiBiasFilterEnabled(effectiveMode));
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
         result.put("maxRiskPerDayPct",    riskSettings.getMaxRiskPerDayPct(effectiveMode));
@@ -81,19 +81,19 @@ public class SettingsController {
             if (body.containsKey("tradingEndTime"))    riskSettings.setTradingEndTime(effectiveMode, body.get("tradingEndTime").toString());
             if (body.containsKey("autoSquareOffTime")) riskSettings.setAutoSquareOffTime(effectiveMode, body.get("autoSquareOffTime").toString());
             // ATM VWAP
-            if (body.containsKey("atmVwapEnabled"))           riskSettings.setAtmVwapEnabled(effectiveMode, Boolean.parseBoolean(body.get("atmVwapEnabled").toString()));
-            if (body.containsKey("atmVwapLotsPerLeg"))        riskSettings.setAtmVwapLotsPerLeg(effectiveMode, Integer.parseInt(body.get("atmVwapLotsPerLeg").toString()));
-            if (body.containsKey("atmVwapOrderType"))         riskSettings.setAtmVwapOrderType(effectiveMode, body.get("atmVwapOrderType").toString());
-            if (body.containsKey("atmVwapTradingStartTime"))  riskSettings.setAtmVwapTradingStartTime(effectiveMode, body.get("atmVwapTradingStartTime").toString());
-            if (body.containsKey("atmVwapTradingEndTime"))    riskSettings.setAtmVwapTradingEndTime(effectiveMode, body.get("atmVwapTradingEndTime").toString());
-            if (body.containsKey("atmVwapSquareOffTime"))     riskSettings.setAtmVwapSquareOffTime(effectiveMode, body.get("atmVwapSquareOffTime").toString());
-            if (body.containsKey("atmVwapMaxConcurrentPositions")) riskSettings.setAtmVwapMaxConcurrentPositions(effectiveMode, Integer.parseInt(body.get("atmVwapMaxConcurrentPositions").toString()));
-            if (body.containsKey("atmVwapMinSlPoints"))            riskSettings.setAtmVwapMinSlPoints(effectiveMode, Double.parseDouble(body.get("atmVwapMinSlPoints").toString()));
-            if (body.containsKey("atmVwapMaxSlPoints"))            riskSettings.setAtmVwapMaxSlPoints(effectiveMode, Double.parseDouble(body.get("atmVwapMaxSlPoints").toString()));
-            if (body.containsKey("atmVwapMaxCeTradesPerDay"))      riskSettings.setAtmVwapMaxCeTradesPerDay(effectiveMode, Integer.parseInt(body.get("atmVwapMaxCeTradesPerDay").toString()));
-            if (body.containsKey("atmVwapMaxPeTradesPerDay"))      riskSettings.setAtmVwapMaxPeTradesPerDay(effectiveMode, Integer.parseInt(body.get("atmVwapMaxPeTradesPerDay").toString()));
-            if (body.containsKey("atmVwapOiBiasThresholdPct"))     riskSettings.setAtmVwapOiBiasThresholdPct(effectiveMode, Double.parseDouble(body.get("atmVwapOiBiasThresholdPct").toString()));
-            if (body.containsKey("atmVwapOiBiasFilterEnabled"))    riskSettings.setAtmVwapOiBiasFilterEnabled(effectiveMode, Boolean.parseBoolean(body.get("atmVwapOiBiasFilterEnabled").toString()));
+            if (body.containsKey("optionSellingEnabled"))           riskSettings.setOptionSellingEnabled(effectiveMode, Boolean.parseBoolean(body.get("optionSellingEnabled").toString()));
+            if (body.containsKey("optionSellingLotsPerLeg"))        riskSettings.setOptionSellingLotsPerLeg(effectiveMode, Integer.parseInt(body.get("optionSellingLotsPerLeg").toString()));
+            if (body.containsKey("optionSellingOrderType"))         riskSettings.setOptionSellingOrderType(effectiveMode, body.get("optionSellingOrderType").toString());
+            if (body.containsKey("optionSellingTradingStartTime"))  riskSettings.setOptionSellingTradingStartTime(effectiveMode, body.get("optionSellingTradingStartTime").toString());
+            if (body.containsKey("optionSellingTradingEndTime"))    riskSettings.setOptionSellingTradingEndTime(effectiveMode, body.get("optionSellingTradingEndTime").toString());
+            if (body.containsKey("optionSellingSquareOffTime"))     riskSettings.setOptionSellingSquareOffTime(effectiveMode, body.get("optionSellingSquareOffTime").toString());
+            if (body.containsKey("optionSellingMaxConcurrentPositions")) riskSettings.setOptionSellingMaxConcurrentPositions(effectiveMode, Integer.parseInt(body.get("optionSellingMaxConcurrentPositions").toString()));
+            if (body.containsKey("optionSellingMinSlPoints"))            riskSettings.setOptionSellingMinSlPoints(effectiveMode, Double.parseDouble(body.get("optionSellingMinSlPoints").toString()));
+            if (body.containsKey("optionSellingMaxSlPoints"))            riskSettings.setOptionSellingMaxSlPoints(effectiveMode, Double.parseDouble(body.get("optionSellingMaxSlPoints").toString()));
+            if (body.containsKey("optionSellingMaxCeTradesPerDay"))      riskSettings.setOptionSellingMaxCeTradesPerDay(effectiveMode, Integer.parseInt(body.get("optionSellingMaxCeTradesPerDay").toString()));
+            if (body.containsKey("optionSellingMaxPeTradesPerDay"))      riskSettings.setOptionSellingMaxPeTradesPerDay(effectiveMode, Integer.parseInt(body.get("optionSellingMaxPeTradesPerDay").toString()));
+            if (body.containsKey("optionSellingOiBiasThresholdPct"))     riskSettings.setOptionSellingOiBiasThresholdPct(effectiveMode, Double.parseDouble(body.get("optionSellingOiBiasThresholdPct").toString()));
+            if (body.containsKey("optionSellingOiBiasFilterEnabled"))    riskSettings.setOptionSellingOiBiasFilterEnabled(effectiveMode, Boolean.parseBoolean(body.get("optionSellingOiBiasFilterEnabled").toString()));
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
             if (body.containsKey("maxRiskPerDayPct"))  riskSettings.setMaxRiskPerDayPct(effectiveMode, Double.parseDouble(body.get("maxRiskPerDayPct").toString()));

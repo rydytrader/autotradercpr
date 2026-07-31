@@ -118,7 +118,7 @@ public class AnalyticsService {
      *  OI bias (i.e., trades the bias filter would have blocked): CE_SELL fired
      *  while bias = BULLISH, or PE_SELL fired while bias = BEARISH.
      *
-     *  <p>Rows are marked at fire time in {@code AtmVwap.fire()} — only against-bias
+     *  <p>Rows are marked at fire time in {@code OptionSelling.fire()} — only against-bias
      *  trades get a non-null {@code entryOiBias} value. Everything else (with-bias,
      *  neutral, stale, unknown, historical pre-fix rows) is null and buckets as
      *  "other". Aggregates net P&L + win-rate for each bucket + a projected impact
@@ -292,7 +292,7 @@ public class AnalyticsService {
         // exactly. The calendar year cards read these to populate per-month stat
         // cells without relying on the strategy-history endpoint (which can return
         // empty rows for dates where a legacy session entity exists alongside real
-        // AtmVwap trades).
+        // OptionSelling trades).
         for (Trade t : trades) {
             String date = t.sessionDate();
             if (date == null || date.length() < 7) continue;
@@ -426,7 +426,7 @@ public class AnalyticsService {
         boolean allStrategies = strategyId == null || strategyId.isBlank() || "all".equalsIgnoreCase(strategyId);
         // NOTE: do NOT bail when strat.id() != strategyId. The strategy's cycle ring also
         // holds MANUAL cycles (strategyId="manual") and those need to flow through the Manual
-        // filter even though the registered strategy is AtmVwap. Per-cycle filtering below.
+        // filter even though the registered strategy is OptionSelling. Per-cycle filtering below.
 
         String iso = today.toString();
         // Pre-compute today's persisted net + charges so OPEN_POSITION_MTM only carries the
@@ -472,7 +472,7 @@ public class AnalyticsService {
                     // Cycle-level strategy attribution. Legacy cycles (pre-MANUAL feature) don't
                     // carry "strategyId" — fall back to the registered strategy's id. New
                     // cycles persist their actual strategyId so MANUAL trades flow to "manual"
-                    // and algo trades stay at "atmvwap".
+                    // and algo trades stay at "option-selling".
                     String cycleStrategy = asString(m.get("strategyId"));
                     if (cycleStrategy == null || cycleStrategy.isBlank()) cycleStrategy = strat.id();
                     if (!allStrategies && !strategyId.equals(cycleStrategy)) continue;
@@ -536,7 +536,7 @@ public class AnalyticsService {
     }
 
     private LocalDate currentExpiryStart(LocalDate today) {
-        // AtmVwap doesn't pin to a specific weekly expiry — it trades whatever this week's
+        // OptionSelling doesn't pin to a specific weekly expiry — it trades whatever this week's
         // weekly is. The "current expiry" period therefore just rolls back 7 days from today.
         return today.minusDays(7);
     }

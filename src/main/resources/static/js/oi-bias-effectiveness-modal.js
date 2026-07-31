@@ -1,8 +1,8 @@
 // ── OI Bias Filter Effectiveness modal ──────────────────────────────────
 // Shown from the Trades page period-picker row. Fetches the current period's
-// summary from /api/analytics/summary?strategyId=atmvwap&from=..&to=.. and
+// summary from /api/analytics/summary?strategyId=option-selling&from=..&to=.. and
 // renders the against-bias vs everything-else split so the operator can
-// decide whether enabling atmVwapOiBiasFilterEnabled is worth it.
+// decide whether enabling optionSellingOiBiasFilterEnabled is worth it.
 //
 // Overlay skeleton mirrors AppConfirm in common.js — same fixed dark backdrop
 // + centered card + Esc / backdrop-click / Close-button dismiss. Independent
@@ -183,7 +183,7 @@ window.OiBiasEffectivenessModal = (function() {
                 '<div style="color:var(--accent-red, #f87171);">Could not resolve period bounds — reload the trades page and try again.</div>';
             return;
         }
-        var url = '/api/analytics/summary?strategyId=atmvwap'
+        var url = '/api/analytics/summary?strategyId=option-selling'
                 + '&from=' + encodeURIComponent(bounds.from)
                 + '&to='   + encodeURIComponent(bounds.to);
         fetch(url).then(function(r) { return r.json(); }).then(function(d) {

@@ -1,7 +1,7 @@
 package com.rydytrader.autotrader.controller;
 
-import com.rydytrader.autotrader.service.AtmVwapStreamBroker;
-import com.rydytrader.autotrader.service.strategy.AtmVwap;
+import com.rydytrader.autotrader.service.OptionSellingStreamBroker;
+import com.rydytrader.autotrader.service.strategy.OptionSelling;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,42 +15,42 @@ import java.util.Map;
 /**
  * REST endpoints for the ATM VWAP strategy.
  * <ul>
- *   <li>{@code GET  /api/atmvwap/state}     — live multi-position state (open positions,
+ *   <li>{@code GET  /api/option-selling/state}     — live multi-position state (open positions,
  *       risk block, today's closes, events, spot)</li>
- *   <li>{@code GET  /api/atmvwap/stream}    — SSE stream of the same payload</li>
- *   <li>{@code POST /api/atmvwap/squareoff} — flatten one symbol or every open position</li>
- *   <li>{@code POST /api/atmvwap/reset}     — recovery: drop in-memory positions without exits</li>
- *   <li>{@code POST /api/atmvwap/enable}    — kill-switch toggle (Trade page)</li>
+ *   <li>{@code GET  /api/option-selling/stream}    — SSE stream of the same payload</li>
+ *   <li>{@code POST /api/option-selling/squareoff} — flatten one symbol or every open position</li>
+ *   <li>{@code POST /api/option-selling/reset}     — recovery: drop in-memory positions without exits</li>
+ *   <li>{@code POST /api/option-selling/enable}    — kill-switch toggle (Trade page)</li>
  * </ul>
  */
 @RestController
-public class AtmVwapController {
+public class OptionSellingController {
 
-    private final AtmVwap             strategy;
+    private final OptionSelling             strategy;
     private final RiskSettingsStore   riskSettings;
-    private final AtmVwapStreamBroker streamBroker;
+    private final OptionSellingStreamBroker streamBroker;
 
-    public AtmVwapController(AtmVwap strategy,
+    public OptionSellingController(OptionSelling strategy,
                              RiskSettingsStore riskSettings,
-                             AtmVwapStreamBroker streamBroker) {
+                             OptionSellingStreamBroker streamBroker) {
         this.strategy     = strategy;
         this.riskSettings = riskSettings;
         this.streamBroker = streamBroker;
     }
 
-    @GetMapping(value = "/api/atmvwap/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @GetMapping(value = "/api/option-selling/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream() {
         SseEmitter emitter = new SseEmitter(0L);
         streamBroker.addEmitter(emitter);
         return emitter;
     }
 
-    @GetMapping("/api/atmvwap/state")
+    @GetMapping("/api/option-selling/state")
     public Map<String, Object> getState() {
         return strategy.dashboardState();
     }
 
-    @PostMapping("/api/atmvwap/squareoff")
+    @PostMapping("/api/option-selling/squareoff")
     public Map<String, Object> squareoff(@RequestBody(required = false) Map<String, Object> body) {
         Object symObj = body == null ? null : body.get("symbol");
         String symbol = symObj == null ? "" : symObj.toString().trim();
@@ -63,19 +63,19 @@ public class AtmVwapController {
         return Map.of("ok", true, "closedSomething", closed);
     }
 
-    @PostMapping("/api/atmvwap/reset")
+    @PostMapping("/api/option-selling/reset")
     public Map<String, Object> reset() {
         strategy.resetToIdle("MANUAL");
         return Map.of("ok", true);
     }
 
-    @PostMapping("/api/atmvwap/enable")
+    @PostMapping("/api/option-selling/enable")
     public Map<String, Object> setEnabled(@RequestBody Map<String, Object> body) {
         Object v = body == null ? null : body.get("enabled");
         boolean enabled = (v instanceof Boolean) ? (Boolean) v
             : v != null && Boolean.parseBoolean(v.toString());
-        boolean previous = riskSettings.isAtmVwapEnabled();
-        riskSettings.setAtmVwapEnabled(enabled);
+        boolean previous = riskSettings.isOptionSellingEnabled();
+        riskSettings.setOptionSellingEnabled(enabled);
         riskSettings.save();
         if (enabled != previous) {
             strategy.postEvent(

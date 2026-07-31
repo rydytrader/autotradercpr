@@ -433,7 +433,7 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-red, #f87171);"></span> Stop loss</h2>
         <p class="doc-p">
-            SL price = <code>max(trigger.high, atmVwapMinSlPoints)</code>. The
+            SL price = <code>max(trigger.high, optionSellingMinSlPoints)</code>. The
             <em>Min SL floor</em> setting (default 10 option points, configurable in
             Settings → Portfolio Risk) is the floor when the trigger candle's high is
             smaller than the desired minimum SL — a tiny trigger candle would otherwise

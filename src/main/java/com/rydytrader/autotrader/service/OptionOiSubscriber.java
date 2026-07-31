@@ -20,16 +20,16 @@ import java.util.Map;
  * Lifecycle owner for the OI tracker's option-chain WebSocket subscription.
  *
  * <p>Trigger: {@link #onAtmSelected(long)} is called once per session by
- * {@code AtmVwap.resolveAtmFromFirstBar} right after it locks the day's ATM (~09:18
+ * {@code OptionSelling.resolveAtmFromFirstBar} right after it locks the day's ATM (~09:18
  * IST). Resolves ±N strikes around the ATM into Fyers CE + PE symbols via a single
  * option-chain REST fetch, hands them to {@link OptionOiTracker#setActiveWindow(long,
  * List)}, and calls {@link MarketDataService#subscribeAdditional} on the net-new
  * symbols. The strike count each side is configurable via
- * {@code riskSettings.getAtmVwapOiStrikesEachSide()} (default 15).
+ * {@code riskSettings.getOptionSellingOiStrikesEachSide()} (default 15).
  *
  * <p>Also wires the MarketDataService OI listener → tracker on boot.
  *
- * <p>No retry loop — one shot per ATM selection. AtmVwap only fires when it has a
+ * <p>No retry loop — one shot per ATM selection. OptionSelling only fires when it has a
  * valid strike, so a failed chain fetch will simply leave the tracker idle for the
  * day. The health of the subscription is inspectable via
  * {@link OptionOiTracker#snapshot()} ({@code activeStrikeCount}).
@@ -52,7 +52,7 @@ public class OptionOiSubscriber {
     private static final int    CHAIN_BUFFER_STRIKES = 5;
 
     /** Per-day idempotency guard — remember the ATM already provisioned so repeated
-     *  calls from AtmVwap's re-entry paths (every 3-min NIFTY candle close hits the
+     *  calls from OptionSelling's re-entry paths (every 3-min NIFTY candle close hits the
      *  same-day early-return branch that also fires notifyOiWindow) don't burn a chain
      *  fetch and spam the log. Reset when the day rolls. */
     private volatile long   lastAtmSubscribed = 0;
@@ -96,10 +96,10 @@ public class OptionOiSubscriber {
         // filters by active window so pre-baseline ticks are safely ignored.
         marketDataService.addOiListener(tick ->
             oiTracker.onOiTick(tick.fyersSymbol(), tick.oi(), tick.exchFeedTimeSec()));
-        log.info("[OptionOiSubscriber] booted — waiting for AtmVwap to select today's ATM");
+        log.info("[OptionOiSubscriber] booted — waiting for OptionSelling to select today's ATM");
     }
 
-    /** Called by {@code AtmVwap.warmupIfDue} at 09:15 IST — right after pre-warm has
+    /** Called by {@code OptionSelling.warmupIfDue} at 09:15 IST — right after pre-warm has
      *  subscribed the ±15-strike WS symbols. Hands that same window to the tracker so
      *  per-strike OI baselines are captured from the very first tick (09:15) instead of
      *  waiting for the 09:18 ATM lock.
@@ -117,7 +117,7 @@ public class OptionOiSubscriber {
     public synchronized void onPreWarm(long baseAtm, List<OptionOiTracker.StrikeSymbols> window) {
         if (window == null || window.isEmpty()) return;
         if (marketHolidayService != null && !marketHolidayService.isTradingDay()) return;
-        // Trim the AtmVwap-supplied pre-warm window (±10) down to ±7 around
+        // Trim the OptionSelling-supplied pre-warm window (±10) down to ±7 around
         // the pre-warm baseAtm so the OI bias basis matches STRIKES_EACH_SIDE.
         // The outer 3 strikes on each side stay pre-warmed at the aggregator
         // for OHLC / first-bar coverage but don't feed OI cumulative here.
@@ -135,7 +135,7 @@ public class OptionOiSubscriber {
             baseAtm, trimmed.size(), window.size(), STRIKES_EACH_SIDE);
     }
 
-    /** Called by AtmVwap.resolveAtmFromFirstBar right after the day's ATM is locked.
+    /** Called by OptionSelling.resolveAtmFromFirstBar right after the day's ATM is locked.
      *  Idempotent — safe to call multiple times per day (tracker's setActiveWindow is a
      *  no-op when the window hasn't changed).
      *
@@ -148,7 +148,7 @@ public class OptionOiSubscriber {
      *  cumulative CE/PE change and bias evaluation all day. */
     public synchronized void onAtmSelected(long atm) {
         if (atm <= 0) return;
-        // NSE closed — weekend or listed holiday. AtmVwap's boot-time re-entry into
+        // NSE closed — weekend or listed holiday. OptionSelling's boot-time re-entry into
         // resolveAtmFromFirstBar can still fire this hook from a persisted state file,
         // but there's no OI feed to consume today so no need to burn a chain fetch or
         // spam subscribe calls at the WS.
@@ -166,7 +166,7 @@ public class OptionOiSubscriber {
                 atm, oiTracker.getActiveAtmStrike());
             return;
         }
-        // Idempotency guard — AtmVwap fires notifyOiWindow from three code paths:
+        // Idempotency guard — OptionSelling fires notifyOiWindow from three code paths:
         //   1. resolveAtmFromFirstBar fast path (first 3-min close)
         //   2. resolveAtmFromFirstBar slow path
         //   3. same-day re-entry (every subsequent 3-min NIFTY close)

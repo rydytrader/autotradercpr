@@ -37,7 +37,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * the day's selected ATM.
  *
  * <p>Driven by Fyers WebSocket OI ticks (no REST polling). {@link OptionOiSubscriber}
- * resolves the ±N strike window around AtmVwap's session-locked ATM, subscribes the
+ * resolves the ±N strike window around OptionSelling's session-locked ATM, subscribes the
  * symbols, and routes {@code OiTick} events into {@link #onOiTick}. Each tick updates
  * one strike's CE or PE OI, then incrementally recomputes the cumulative deltas and
  * bias state.
@@ -63,7 +63,7 @@ public class OptionOiTracker {
     private static final int    MAX_SAMPLES        = 400;   // 1-min cadence × ~6h15m session = 375 + headroom
     private static final long   STALE_THRESHOLD_MS = 5 * 60_000L;
     /** Fallback threshold if the setting can't be read. Matches the default in
-     *  {@code RiskSettingsStore.atmVwapOiBiasThresholdPct} (40 %). */
+     *  {@code RiskSettingsStore.optionSellingOiBiasThresholdPct} (40 %). */
     private static final double DEFAULT_BIAS_THRESHOLD_PCT = 0.40;
     private static final LocalTime SESSION_START   = LocalTime.of(9, 15);
     private static final LocalTime SESSION_END     = LocalTime.of(15, 30);
@@ -91,7 +91,7 @@ public class OptionOiTracker {
         loadFromDisk();
         rolloverIfNewDay();
         // Rebuild the routing maps from persisted state so post-restart ticks resolve
-        // to their strike + side immediately — before AtmVwap re-fires notifyOiWindow.
+        // to their strike + side immediately — before OptionSelling re-fires notifyOiWindow.
         if (state.windowSymbols != null) {
             for (StrikeSymbols ss : state.windowSymbols) {
                 symbolToStrike.put(ss.ceSymbol(), ss.strike());
@@ -115,7 +115,7 @@ public class OptionOiTracker {
     private double currentBiasThreshold() {
         if (riskSettings == null) return DEFAULT_BIAS_THRESHOLD_PCT;
         try {
-            double pct = riskSettings.getAtmVwapOiBiasThresholdPct();
+            double pct = riskSettings.getOptionSellingOiBiasThresholdPct();
             if (pct < 0 || pct > 500) return DEFAULT_BIAS_THRESHOLD_PCT;
             return pct / 100.0;
         } catch (Exception e) {
@@ -133,7 +133,7 @@ public class OptionOiTracker {
      *  caller can call {@code MarketDataService.subscribeAdditional} on just those. Strikes
      *  that leave the window have their per-strike baseline + latest OI dropped, and their
      *  contribution removed from the running cumulative totals. Called once per session by
-     *  the subscriber after AtmVwap picks its ATM; repeat calls are idempotent when the
+     *  the subscriber after OptionSelling picks its ATM; repeat calls are idempotent when the
      *  window is unchanged. */
     public synchronized List<String> setActiveWindow(long atm, List<StrikeSymbols> window) {
         if (window == null) window = new ArrayList<>();
@@ -250,7 +250,7 @@ public class OptionOiTracker {
     }
 
     /** End-of-day reset. Baselines + samples + cumulative wiped. Active window kept — the
-     *  subscriber will replace it next day when AtmVwap picks a fresh ATM. */
+     *  subscriber will replace it next day when OptionSelling picks a fresh ATM. */
     @Scheduled(cron = "0 31 15 * * MON-FRI", zone = "Asia/Kolkata")
     public synchronized void endOfDayReset() {
         log.info("[OptionOi] end-of-day reset — clearing baseline + {} samples", state.samples.size());
@@ -302,7 +302,7 @@ public class OptionOiTracker {
     /** UI-facing snapshot — freezes the OI bias values to the LAST 1-min
      *  sample taken by {@link #snapshotForChart} so the pill and % on the
      *  trade page don't jitter on every browser refresh. Internal callers
-     *  ({@code AtmVwap.currentOiBias}) keep using {@link #snapshot()} for
+     *  ({@code OptionSelling.currentOiBias}) keep using {@link #snapshot()} for
      *  live values because the entry filter needs the freshest OI read.
      *
      *  <p>Before the first minute-boundary sample fires, falls back to the

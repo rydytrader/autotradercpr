@@ -2,7 +2,7 @@ package com.rydytrader.autotrader.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.rydytrader.autotrader.service.strategy.AtmVwap;
+import com.rydytrader.autotrader.service.strategy.OptionSelling;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -23,22 +23,22 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * also emits the latest payload so LTP/MTM keep refreshing on the open positions even when
  * no state mutation is happening.
  *
- * <p>The {@link AtmVwap} strategy is injected lazily via {@link ObjectProvider} to break the
- * AtmVwap → Broker → AtmVwap circular dependency on bean construction.
+ * <p>The {@link OptionSelling} strategy is injected lazily via {@link ObjectProvider} to break the
+ * OptionSelling → Broker → OptionSelling circular dependency on bean construction.
  */
 @Service
-public class AtmVwapStreamBroker {
+public class OptionSellingStreamBroker {
 
-    private static final Logger log = LoggerFactory.getLogger(AtmVwapStreamBroker.class);
+    private static final Logger log = LoggerFactory.getLogger(OptionSellingStreamBroker.class);
 
-    private final ObjectProvider<AtmVwap> atmVwapProvider;
+    private final ObjectProvider<OptionSelling> optionSellingProvider;
     private final ObjectMapper mapper = new ObjectMapper()
         .registerModule(new JavaTimeModule())
         .findAndRegisterModules();
     private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
 
-    public AtmVwapStreamBroker(ObjectProvider<AtmVwap> atmVwapProvider) {
-        this.atmVwapProvider = atmVwapProvider;
+    public OptionSellingStreamBroker(ObjectProvider<OptionSelling> optionSellingProvider) {
+        this.optionSellingProvider = optionSellingProvider;
     }
 
     public void addEmitter(SseEmitter e) {
@@ -67,7 +67,7 @@ public class AtmVwapStreamBroker {
             String json = mapper.writeValueAsString(payload);
             e.send(SseEmitter.event().name("state").data(json));
         } catch (Exception ex) {
-            log.warn("[AtmVwapStream] initial snapshot send failed: {}", ex.getMessage());
+            log.warn("[OptionSellingStream] initial snapshot send failed: {}", ex.getMessage());
             emitters.remove(e);
         }
     }
@@ -78,7 +78,7 @@ public class AtmVwapStreamBroker {
         String json;
         try { json = mapper.writeValueAsString(payload); }
         catch (Exception e) {
-            log.warn("[AtmVwapStream] serialize failed (heartbeat will skip): {}", e.getMessage());
+            log.warn("[OptionSellingStream] serialize failed (heartbeat will skip): {}", e.getMessage());
             return;
         }
         for (SseEmitter e : emitters) {
@@ -87,16 +87,16 @@ public class AtmVwapStreamBroker {
                 emitters.remove(e);
                 try { e.complete(); } catch (Exception ignored) {}
             } catch (Exception ex) {
-                log.debug("[AtmVwapStream] emitter send failed (removing): {}", ex.getMessage());
+                log.debug("[OptionSellingStream] emitter send failed (removing): {}", ex.getMessage());
                 emitters.remove(e);
             }
         }
     }
 
     private Map<String, Object> currentState() {
-        AtmVwap c = atmVwapProvider.getIfAvailable();
+        OptionSelling c = optionSellingProvider.getIfAvailable();
         if (c == null) return null;
         try { return c.dashboardState(); }
-        catch (Exception e) { log.warn("[AtmVwapStream] dashboardState threw: {}", e.getMessage()); return null; }
+        catch (Exception e) { log.warn("[OptionSellingStream] dashboardState threw: {}", e.getMessage()); return null; }
     }
 }

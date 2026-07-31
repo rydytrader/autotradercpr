@@ -378,7 +378,7 @@
                     <canvas id="oiChart"></canvas>
                     <div id="oiEmpty" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
                                               color:var(--text-muted); font-size:0.72rem; font-family:var(--font-mono);">
-                        Waiting for AtmVwap to lock ATM…
+                        Waiting for OptionSelling to lock ATM…
                     </div>
                 </div>
                 <div id="oiUpdatedAt" style="flex-shrink:0; text-align:right; padding:2px 12px 6px;
@@ -459,7 +459,7 @@
         var enabled = !!t.checked;
         label.textContent = enabled ? 'Trading ON' : 'Trading OFF';
         wrap.classList.toggle('disabled', !enabled);
-        fetch('/api/atmvwap/enable', {
+        fetch('/api/option-selling/enable', {
             method: 'POST',
             headers: csrfHeaders(),
             body: JSON.stringify({ enabled: enabled })
@@ -475,7 +475,7 @@
             danger:       true
         }).then(function(ok) {
             if (!ok) return;
-            fetch('/api/atmvwap/squareoff', {
+            fetch('/api/option-selling/squareoff', {
                 method: 'POST',
                 headers: csrfHeaders(),
                 body: '{}'
@@ -491,7 +491,7 @@
             danger:       true
         }).then(function(ok) {
             if (!ok) return;
-            fetch('/api/atmvwap/squareoff', {
+            fetch('/api/option-selling/squareoff', {
                 method: 'POST',
                 headers: csrfHeaders(),
                 body: JSON.stringify({ symbol: symbol })
@@ -511,16 +511,16 @@
         renderKillSwitch(d);
         // v2 header — NIFTY spot LTP + change + %change. No VWAP (index doesn't
         // have a meaningful VWAP; the gate was retired).
-        if (d.atmVwap) {
+        if (d.optionSelling) {
             // perSymbolLevels is retired (no pivots in the ATM VWAP strategy).
-            renderFutTickerCells(d.atmVwap.futLtp, d.atmVwap.futChange,
-                d.atmVwap.futChangePct, d.atmVwap.futSymbol, null);
+            renderFutTickerCells(d.optionSelling.futLtp, d.optionSelling.futChange,
+                d.optionSelling.futChangePct, d.optionSelling.futSymbol, null);
         }
         // (Market Clock card ticks independently on a 1 s interval — see updateMarketClock())
     }
 
     function renderHeader(d) {
-        // Initial / fallback render from the atmvwap state stream (2 s heartbeat).
+        // Initial / fallback render from the option-selling state stream (2 s heartbeat).
         // VIX still rides the per-tick ticker SSE.
         var vxEl  = document.getElementById('hdrVix');
         if (vxEl)  vxEl.textContent  = d.indiaVix  != null ? Number(d.indiaVix).toFixed(2)  : '—';
@@ -595,7 +595,7 @@
     }
 
     function loadState() {
-        fetch('/api/atmvwap/state').then(function(r) { return r.json(); })
+        fetch('/api/option-selling/state').then(function(r) { return r.json(); })
             .then(applyState).catch(function() {});
     }
 
@@ -611,7 +611,7 @@
     }
     function startStream() {
         try {
-            sseStream = new EventSource('/api/atmvwap/stream');
+            sseStream = new EventSource('/api/option-selling/stream');
             sseStream.addEventListener('state', function(ev) {
                 stopPollFallback();
                 try { applyState(JSON.parse(ev.data)); } catch (e) {}
@@ -810,7 +810,7 @@
     }
 
     // ── Tick-level position LTP / P&L update via the shared ticker SSE ──────
-    // The atmvwap state stream pushes every 2 s. To get sub-second LTP/P&L
+    // The option-selling state stream pushes every 2 s. To get sub-second LTP/P&L
     // refresh, we tap the same ticker channel used by the scrolling ticker —
     // it streams every WS tick for every subscribed symbol (including position
     // legs). For each tick that matches an open position, surgically update
@@ -1019,8 +1019,8 @@
     }
 
     // ── OI Bias chart ──────────────────────────────────────────────────────
-    // Polls /api/atmvwap/oi/state (trend pill, 30s) and /api/atmvwap/oi/history
-    // (chart, 60s). Idle until AtmVwap picks the day's ATM (~09:18 IST); once the
+    // Polls /api/option-selling/oi/state (trend pill, 30s) and /api/option-selling/oi/history
+    // (chart, 60s). Idle until OptionSelling picks the day's ATM (~09:18 IST); once the
     // baseline is set, the two-line chart populates with cumulative ΔCE (red) and
     // ΔPE (green) since baseline.
     var oiChart = null;
@@ -1042,7 +1042,7 @@
 
     function pollOiState() {
         if (document.visibilityState !== 'visible') return;
-        fetch('/api/atmvwap/oi/state').then(function(r) { return r.json(); }).then(function(d) {
+        fetch('/api/option-selling/oi/state').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
             var pill = document.getElementById('oiTrendPill');
             var atmEl = document.getElementById('oiAtm');
@@ -1091,7 +1091,7 @@
 
     function pollOiHistory() {
         if (document.visibilityState !== 'visible') return;
-        fetch('/api/atmvwap/oi/history').then(function(r) { return r.json(); }).then(function(d) {
+        fetch('/api/option-selling/oi/history').then(function(r) { return r.json(); }).then(function(d) {
             var samples = (d && d.samples) || [];
             var empty = document.getElementById('oiEmpty');
             if (samples.length === 0) {
@@ -1158,7 +1158,7 @@
         setInterval(checkConnection, 5000);
         loadWelcome();
         // OI bias polling — trend pill on 30 s, chart on 60 s. Baseline builds after
-        // AtmVwap locks the day's ATM (~09:18 IST); before that, the "Waiting for
+        // OptionSelling locks the day's ATM (~09:18 IST); before that, the "Waiting for
         // ATM…" placeholder covers the canvas.
         pollOiState();
         pollOiHistory();

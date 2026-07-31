@@ -4,7 +4,7 @@ import com.rydytrader.autotrader.dto.Candle;
 import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.service.HistoricalChartStore;
 import com.rydytrader.autotrader.service.MarketDataService;
-import com.rydytrader.autotrader.service.strategy.AtmVwap;
+import com.rydytrader.autotrader.service.strategy.OptionSelling;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.ResponseEntity;
@@ -31,18 +31,18 @@ public class ChartController {
     private final CandleAggregator  candleAggregator;
     private final MarketDataService marketDataService;
     private final RiskSettingsStore riskSettings;
-    private final ObjectProvider<AtmVwap> atmVwapProvider;
+    private final ObjectProvider<OptionSelling> optionSellingProvider;
     private final HistoricalChartStore historicalChartStore;
 
     public ChartController(CandleAggregator candleAggregator,
                            MarketDataService marketDataService,
                            RiskSettingsStore riskSettings,
-                           ObjectProvider<AtmVwap> atmVwapProvider,
+                           ObjectProvider<OptionSelling> optionSellingProvider,
                            HistoricalChartStore historicalChartStore) {
         this.candleAggregator     = candleAggregator;
         this.marketDataService    = marketDataService;
         this.riskSettings         = riskSettings;
-        this.atmVwapProvider      = atmVwapProvider;
+        this.optionSellingProvider      = optionSellingProvider;
         this.historicalChartStore = historicalChartStore;
     }
 
@@ -63,16 +63,16 @@ public class ChartController {
     }
 
     /** Which symbols the chart page should render. NIFTY is fixed; CE / PE come from
-     *  AtmVwap.state and populate after the day's first-3-min close (~09:18 IST). */
+     *  OptionSelling.state and populate after the day's first-3-min close (~09:18 IST). */
     @GetMapping("/symbols")
     public Map<String, Object> symbols() {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("nifty", NIFTY_SYMBOL);
-        // Read the session-locked ATM state DIRECTLY from AtmVwap rather than fishing
+        // Read the session-locked ATM state DIRECTLY from OptionSelling rather than fishing
         // through dashboardState — the top-level dashboardState map has no ceSymbol /
-        // peSymbol keys (they live nested under `atmVwap` and are hardcoded to "" there),
+        // peSymbol keys (they live nested under `optionSelling` and are hardcoded to "" there),
         // which was returning empty strings and starving the CE / PE chart panels.
-        AtmVwap strat = atmVwapProvider == null ? null : atmVwapProvider.getIfAvailable();
+        OptionSelling strat = optionSellingProvider == null ? null : optionSellingProvider.getIfAvailable();
         long   atmStrike = strat == null ? 0  : strat.getAtmStrike();
         String ceSymbol  = strat == null ? "" : strat.getCeSymbol();
         String peSymbol  = strat == null ? "" : strat.getPeSymbol();
@@ -99,10 +99,10 @@ public class ChartController {
         Map<String, Object> ceStats = new LinkedHashMap<>();
         Map<String, Object> peStats = new LinkedHashMap<>();
         ceStats.put("count",  strat == null ? 0 : strat.getCeTradesToday());
-        ceStats.put("max",    riskSettings.getAtmVwapMaxCeTradesPerDay());
+        ceStats.put("max",    riskSettings.getOptionSellingMaxCeTradesPerDay());
         ceStats.put("pnl",    strat == null ? 0.0 : round2(strat.getCeSideNetPnlToday()));
         peStats.put("count",  strat == null ? 0 : strat.getPeTradesToday());
-        peStats.put("max",    riskSettings.getAtmVwapMaxPeTradesPerDay());
+        peStats.put("max",    riskSettings.getOptionSellingMaxPeTradesPerDay());
         peStats.put("pnl",    strat == null ? 0.0 : round2(strat.getPeSideNetPnlToday()));
         out.put("ceStats", ceStats);
         out.put("peStats", peStats);
