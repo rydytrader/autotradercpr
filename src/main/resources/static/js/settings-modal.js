@@ -29,6 +29,18 @@
                       '<div class="sm-field"><label>Max PE trades/day</label><input type="number" id="sm-optionSellingMaxPeTradesPerDay" step="1" min="0"><div class="sm-hint">Hard cap on PE-side fires. Default 3.</div></div>' +
                     '</div>' +
                   '</div>' +
+                  '<div class="sm-pane" data-pane="option-buying" style="display:none;">' +
+                    '<div class="sm-grid-2col">' +
+                      '<div class="sm-field"><label><input type="checkbox" id="sm-optionBuyingEnabled" style="margin-right:6px;vertical-align:middle;">Strategy enabled</label><div class="sm-hint">Master kill switch. When OFF, no new option-buy entries fire; existing positions keep being managed.</div></div>' +
+                      '<div class="sm-field"><label>Lots per Trade</label><input type="number" id="sm-optionBuyingLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 65 NIFTY. Each fire buys this many lots of the ATM CE (bullish) or ATM PE (bearish).</div></div>' +
+                      '<div class="sm-field"><label>Order Type</label><select id="sm-optionBuyingOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select></div>' +
+                      '<div class="sm-field"><label>Trading Start (HH:mm IST)</label><input type="time" id="sm-optionBuyingTradingStartTime" step="60"><div class="sm-hint">Entries fire only after this time. Default 09:24 — earliest fire opportunity on 3-min bars (close of 09:21 bar).</div></div>' +
+                      '<div class="sm-field"><label>Trading End (HH:mm IST)</label><input type="time" id="sm-optionBuyingTradingEndTime" step="60"><div class="sm-hint">No new entries after this time. Default 14:30.</div></div>' +
+                      '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-optionBuyingSquareOffTime" step="60"><div class="sm-hint">Hard flatten any open positions. Default 15:25.</div></div>' +
+                      '<div class="sm-field"><label>Hard SL (% of entry)</label><input type="number" id="sm-optionBuyingHardSlPct" step="1" min="0" max="100"><div class="sm-hint">Fast-path stop as % below entry premium. Backstops the SuperTrend-close exit against a mid-bar gap-down. Default 40.</div></div>' +
+                      '<div class="sm-field"><label>Max Trades / Day</label><input type="number" id="sm-optionBuyingMaxTradesPerDay" step="1" min="0"><div class="sm-hint">Hard cap on total fires per session (CE + PE combined). Default 6.</div></div>' +
+                    '</div>' +
+                  '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
                     '<div class="sm-grid-2col">' +
                       '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline for Home analytics. Default ₹10L.</div></div>' +
@@ -139,7 +151,8 @@
         var strip = document.getElementById('sm-tabstrip');
         if (!strip) return;
         var html = '';
-        html += '<button class="sm-tab" data-tab="option-selling">ATM VWAP</button>';
+        html += '<button class="sm-tab" data-tab="option-selling">OPTION SELLING</button>';
+        html += '<button class="sm-tab" data-tab="option-buying">OPTION BUYING</button>';
         html += '<button class="sm-tab" data-tab="portfolio-risk">RISK</button>';
         html += '<button class="sm-tab" data-tab="charges">CHARGES</button>';
         html += '<button class="sm-tab" data-tab="users">USERS</button>';
@@ -160,6 +173,9 @@
         if (tab === 'option-selling') {
             var cp = modalEl.querySelector('[data-pane="option-selling"]'); if (cp) cp.style.display = '';
             loadOptionSellingValues();
+        } else if (tab === 'option-buying') {
+            var ob = modalEl.querySelector('[data-pane="option-buying"]'); if (ob) ob.style.display = '';
+            loadOptionBuyingValues();
         } else if (tab === 'portfolio-risk') {
             var pp = modalEl.querySelector('[data-pane="portfolio-risk"]'); if (pp) pp.style.display = '';
             loadPortfolioRiskValues();
@@ -174,7 +190,8 @@
     }
 
     function saveSettings() {
-        if (activeTab === 'option-selling')        return saveOptionSellingTab();
+        if (activeTab === 'option-selling') return saveOptionSellingTab();
+        if (activeTab === 'option-buying')  return saveOptionBuyingTab();
         if (activeTab === 'portfolio-risk') return savePortfolioRiskTab();
         if (activeTab === 'charges')        return saveChargesTab();
         if (activeTab === 'users')          { showBanner('Use the row buttons to manage users.', 'info'); return; }
@@ -205,6 +222,36 @@
             optionSellingSquareOffTime:      (g('sm-optionSellingSquareOffTime').value || '').trim(),
             optionSellingMaxCeTradesPerDay:  parseInt(g('sm-optionSellingMaxCeTradesPerDay').value, 10) || 0,
             optionSellingMaxPeTradesPerDay:  parseInt(g('sm-optionSellingMaxPeTradesPerDay').value, 10) || 0
+        };
+        postSettings('/api/settings/risk', body);
+    }
+
+    function loadOptionBuyingValues() {
+        fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
+            if (!d) return;
+            var g = id => document.getElementById(id);
+            if (g('sm-optionBuyingEnabled'))         g('sm-optionBuyingEnabled').checked = !!d.optionBuyingEnabled;
+            if (g('sm-optionBuyingLotsPerLeg'))      g('sm-optionBuyingLotsPerLeg').value = d.optionBuyingLotsPerLeg != null ? d.optionBuyingLotsPerLeg : 1;
+            if (g('sm-optionBuyingOrderType'))       g('sm-optionBuyingOrderType').value = d.optionBuyingOrderType || 'INTRADAY';
+            if (g('sm-optionBuyingTradingStartTime'))g('sm-optionBuyingTradingStartTime').value = d.optionBuyingTradingStartTime || '09:24';
+            if (g('sm-optionBuyingTradingEndTime'))  g('sm-optionBuyingTradingEndTime').value = d.optionBuyingTradingEndTime || '14:30';
+            if (g('sm-optionBuyingSquareOffTime'))   g('sm-optionBuyingSquareOffTime').value = d.optionBuyingSquareOffTime || '15:25';
+            if (g('sm-optionBuyingHardSlPct'))       g('sm-optionBuyingHardSlPct').value = d.optionBuyingHardSlPct != null ? d.optionBuyingHardSlPct : 40;
+            if (g('sm-optionBuyingMaxTradesPerDay')) g('sm-optionBuyingMaxTradesPerDay').value = d.optionBuyingMaxTradesPerDay != null ? d.optionBuyingMaxTradesPerDay : 6;
+        }).catch(function() {});
+    }
+
+    function saveOptionBuyingTab() {
+        var g = id => document.getElementById(id);
+        var body = {
+            optionBuyingEnabled:           !!(g('sm-optionBuyingEnabled') && g('sm-optionBuyingEnabled').checked),
+            optionBuyingLotsPerLeg:        parseInt(g('sm-optionBuyingLotsPerLeg').value, 10) || 1,
+            optionBuyingOrderType:         g('sm-optionBuyingOrderType').value,
+            optionBuyingTradingStartTime:  (g('sm-optionBuyingTradingStartTime').value || '').trim(),
+            optionBuyingTradingEndTime:    (g('sm-optionBuyingTradingEndTime').value || '').trim(),
+            optionBuyingSquareOffTime:     (g('sm-optionBuyingSquareOffTime').value || '').trim(),
+            optionBuyingHardSlPct:         Math.max(0, parseFloat(g('sm-optionBuyingHardSlPct').value) || 0),
+            optionBuyingMaxTradesPerDay:   parseInt(g('sm-optionBuyingMaxTradesPerDay').value, 10) || 0
         };
         postSettings('/api/settings/risk', body);
     }

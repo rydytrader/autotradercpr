@@ -45,6 +45,15 @@ public class SettingsController {
         result.put("optionSellingMaxPeTradesPerDay",  riskSettings.getOptionSellingMaxPeTradesPerDay(effectiveMode));
         result.put("optionSellingOiBiasThresholdPct", riskSettings.getOptionSellingOiBiasThresholdPct(effectiveMode));
         result.put("optionSellingOiBiasFilterEnabled", riskSettings.isOptionSellingOiBiasFilterEnabled(effectiveMode));
+        // OPTION BUYING (Ganesan 4-indicator framework — coexists with OPTION SELLING)
+        result.put("optionBuyingEnabled",           riskSettings.isOptionBuyingEnabled());
+        result.put("optionBuyingLotsPerLeg",        riskSettings.getOptionBuyingLotsPerLeg());
+        result.put("optionBuyingOrderType",         riskSettings.getOptionBuyingOrderType());
+        result.put("optionBuyingTradingStartTime",  riskSettings.getOptionBuyingTradingStartTime());
+        result.put("optionBuyingTradingEndTime",    riskSettings.getOptionBuyingTradingEndTime());
+        result.put("optionBuyingSquareOffTime",     riskSettings.getOptionBuyingSquareOffTime());
+        result.put("optionBuyingHardSlPct",         riskSettings.getOptionBuyingHardSlPct());
+        result.put("optionBuyingMaxTradesPerDay",   riskSettings.getOptionBuyingMaxTradesPerDay());
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
         result.put("maxRiskPerDayPct",    riskSettings.getMaxRiskPerDayPct(effectiveMode));
@@ -94,6 +103,15 @@ public class SettingsController {
             if (body.containsKey("optionSellingMaxPeTradesPerDay"))      riskSettings.setOptionSellingMaxPeTradesPerDay(effectiveMode, Integer.parseInt(body.get("optionSellingMaxPeTradesPerDay").toString()));
             if (body.containsKey("optionSellingOiBiasThresholdPct"))     riskSettings.setOptionSellingOiBiasThresholdPct(effectiveMode, Double.parseDouble(body.get("optionSellingOiBiasThresholdPct").toString()));
             if (body.containsKey("optionSellingOiBiasFilterEnabled"))    riskSettings.setOptionSellingOiBiasFilterEnabled(effectiveMode, Boolean.parseBoolean(body.get("optionSellingOiBiasFilterEnabled").toString()));
+            // OPTION BUYING
+            if (body.containsKey("optionBuyingEnabled"))          riskSettings.setOptionBuyingEnabled(Boolean.parseBoolean(body.get("optionBuyingEnabled").toString()));
+            if (body.containsKey("optionBuyingLotsPerLeg"))       riskSettings.setOptionBuyingLotsPerLeg(Integer.parseInt(body.get("optionBuyingLotsPerLeg").toString()));
+            if (body.containsKey("optionBuyingOrderType"))        riskSettings.setOptionBuyingOrderType(body.get("optionBuyingOrderType").toString());
+            if (body.containsKey("optionBuyingTradingStartTime")) riskSettings.setOptionBuyingTradingStartTime(body.get("optionBuyingTradingStartTime").toString());
+            if (body.containsKey("optionBuyingTradingEndTime"))   riskSettings.setOptionBuyingTradingEndTime(body.get("optionBuyingTradingEndTime").toString());
+            if (body.containsKey("optionBuyingSquareOffTime"))    riskSettings.setOptionBuyingSquareOffTime(body.get("optionBuyingSquareOffTime").toString());
+            if (body.containsKey("optionBuyingHardSlPct"))        riskSettings.setOptionBuyingHardSlPct(Double.parseDouble(body.get("optionBuyingHardSlPct").toString()));
+            if (body.containsKey("optionBuyingMaxTradesPerDay"))  riskSettings.setOptionBuyingMaxTradesPerDay(Integer.parseInt(body.get("optionBuyingMaxTradesPerDay").toString()));
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
             if (body.containsKey("maxRiskPerDayPct"))  riskSettings.setMaxRiskPerDayPct(effectiveMode, Double.parseDouble(body.get("maxRiskPerDayPct").toString()));
