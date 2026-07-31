@@ -233,6 +233,7 @@
                 <thead>
                     <tr>
                         <th>#</th>
+                        <th class="text-center">Strategy</th>
                         <th>Time</th>
                         <th class="text-center">In Bar</th>
                         <th class="text-center">Out Bar</th>
@@ -250,7 +251,7 @@
                 </thead>
                 <tbody id="tradesTableBody">
                     <tr>
-                        <td colspan="12">
+                        <td colspan="15">
                             <div class="empty-state">
                                 <div class="empty-icon">◎</div>
                                 No trades completed today
@@ -415,7 +416,7 @@
 
         var tbody = document.getElementById('tradesTableBody');
         if (trades.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="14"><div class="empty-state"><div class="empty-icon">◎</div>No trades in this range</div></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="15"><div class="empty-state"><div class="empty-icon">◎</div>No trades in this range</div></td></tr>';
             return;
         }
         var showDate = currentRange !== 'today';
@@ -428,6 +429,7 @@
             var exitCell  = Number(t.exitPrice  || 0) > 0 ? fmtRs(t.exitPrice)  : '—';
             return '<tr>'
                 + '<td>' + (i + 1) + '</td>'
+                + '<td class="text-center">' + strategyPill(t.strategyId) + '</td>'
                 + '<td>' + timeCell + '</td>'
                 + '<td class="text-center">' + fmtBarClose(t.entryCandleMs) + '</td>'
                 + '<td class="text-center">' + fmtBarClose(t.exitCandleMs) + '</td>'
@@ -445,6 +447,23 @@
         }).join('');
     }
 
+    /** Small colored pill for the trade row's Strategy column. OPTION SELLING
+     *  → amber (matches theta / sell semantics). OPTION BUYING → cyan (matches
+     *  the entry-line color on the chart). Unknown / legacy → grey. */
+    function strategyPill(strategyId) {
+        var id = String(strategyId || '').toLowerCase();
+        if (id === 'option-selling') {
+            return '<span class="pill" style="color:#fbbf24;background:rgba(251,191,36,0.10);border-color:rgba(251,191,36,0.35);">SELL</span>';
+        }
+        if (id === 'option-buying') {
+            return '<span class="pill" style="color:#7dd3fc;background:rgba(125,211,252,0.10);border-color:rgba(125,211,252,0.35);">BUY</span>';
+        }
+        if (id === 'manual') {
+            return '<span class="pill" style="color:var(--text-secondary);background:rgba(148,163,184,0.10);border-color:rgba(148,163,184,0.30);">MANUAL</span>';
+        }
+        return '<span class="pill pill-setup-def">—</span>';
+    }
+
     /** Formats a candle START epoch (ms) as its OPEN time in IST — "HH:MM". Fyers/TV
      *  canonical: a bar with start 09:18 IS the "09:18 candle" (covers 09:18→09:21).
      *  This is what the operator identifies the trigger / confirmation / current bar
@@ -456,27 +475,66 @@
         return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
     }
 
-    function applyState(d) {
-        if (!d || currentRange !== 'today') return;
-        renderTrades(d.todayClosedTrades || []);
+    /** Every registered strategy id — used to fan today / range fetches across
+     *  BOTH strategies so the Trade Log shows the merged history. Order is
+     *  cosmetic (matches the sidebar / settings tabs). */
+    var STRATEGY_IDS = ['option-selling', 'option-buying'];
+
+    /** Tag every row in `list` with the strategy id it came from (server rows
+     *  from /trades-range already carry strategyId, but the in-memory
+     *  todayClosedTrades ring only stamps it on newer cycles — legacy rows
+     *  fall back to the fetched-from id here). */
+    function tagStrategy(list, strategyId) {
+        if (!list) return [];
+        return list.map(function(r) {
+            if (!r) return r;
+            if (r.strategyId == null || r.strategyId === '') r.strategyId = strategyId;
+            return r;
+        });
+    }
+
+    /** Merge and sort a list of per-strategy trade arrays. Newest close first —
+     *  matches the historical-range shape. */
+    function mergeSortDesc(arrays) {
+        var out = [];
+        arrays.forEach(function(a) { if (a && a.length) out.push.apply(out, a); });
+        out.sort(function(a, b) {
+            return Number(b.closedAtMillis || 0) - Number(a.closedAtMillis || 0);
+        });
+        return out;
     }
 
     function loadTodayFromState() {
-        fetch('/api/option-selling/state').then(function(r) { return r.json(); })
-            .then(applyState).catch(function() {});
+        Promise.all(STRATEGY_IDS.map(function(id) {
+            return fetch('/api/' + id + '/state')
+                .then(function(r) { return r.ok ? r.json() : null; })
+                .then(function(d) { return tagStrategy((d && d.todayClosedTrades) || [], id); })
+                .catch(function() { return []; });
+        })).then(function(arrays) {
+            if (currentRange !== 'today') return;
+            renderTrades(mergeSortDesc(arrays));
+        });
+    }
+
+    /** Called by the today SSE — one strategy's state pushed in. Refetch the
+     *  full merged view rather than trying to splice a single strategy's rows
+     *  into an existing render — simpler and today-only, so cost is bounded. */
+    function applyState(d) {
+        if (!d || currentRange !== 'today') return;
+        loadTodayFromState();
     }
 
     function loadRange(key) {
         var b = rangeBounds(key);
-        fetch('/api/strategies/option-selling/trades-range?from=' + encodeURIComponent(b.from) + '&to=' + encodeURIComponent(b.to))
-            .then(function(r) { return r.json(); })
-            .then(function(d) {
-                if (currentRange !== key) return; // user moved on
-                renderTrades((d && d.trades) || []);
-            })
-            .catch(function() {
-                renderTrades([]);
-            });
+        Promise.all(STRATEGY_IDS.map(function(id) {
+            return fetch('/api/strategies/' + id + '/trades-range?from=' + encodeURIComponent(b.from) + '&to=' + encodeURIComponent(b.to))
+                .then(function(r) { return r.ok ? r.json() : null; })
+                .then(function(d) { return tagStrategy((d && d.trades) || [], id); })
+                .catch(function() { return []; });
+        })).then(function(arrays) {
+            if (currentRange !== key) return;
+            renderTrades(mergeSortDesc(arrays));
+        });
     }
 
     var sseStream = null;
