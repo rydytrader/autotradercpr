@@ -272,6 +272,15 @@ public class OptionOiTracker {
             : new ArrayList<>(state.windowSymbols);
     }
 
+    /** ATM strike the tracker's active window is currently pinned to. Returns
+     *  0 before any {@link #setActiveWindow} call fires today (pre-warm didn't
+     *  arrive and no fallback provisioning yet). Used by
+     *  {@link OptionOiSubscriber#onAtmSelected} to decide whether to skip
+     *  re-windowing when pre-warm has already established the window. */
+    public synchronized long getActiveAtmStrike() {
+        return state.atmStrike;
+    }
+
     public synchronized Snapshot snapshot() {
         String bias = state.bias;
         if (isStale()) bias = "STALE";

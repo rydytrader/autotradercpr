@@ -124,7 +124,15 @@ public class OptionOiSubscriber {
 
     /** Called by AtmVwap.resolveAtmFromFirstBar right after the day's ATM is locked.
      *  Idempotent — safe to call multiple times per day (tracker's setActiveWindow is a
-     *  no-op when the window hasn't changed). */
+     *  no-op when the window hasn't changed).
+     *
+     *  <p>Operator rule (2026-07-31): the OI bias tracker stays pinned to the
+     *  PRE-WARM ATM (locked at 09:15) rather than shifting to the resolved
+     *  ATM at 09:18. If {@link #onPreWarm} already established an active
+     *  window today, this call short-circuits — no chain re-fetch, no
+     *  window narrowing, no un-crediting of strikes that would have left
+     *  the ±7 window. The wider ±10 pre-warm window remains the basis for
+     *  cumulative CE/PE change and bias evaluation all day. */
     public synchronized void onAtmSelected(long atm) {
         if (atm <= 0) return;
         // NSE closed — weekend or listed holiday. AtmVwap's boot-time re-entry into
@@ -133,6 +141,16 @@ public class OptionOiSubscriber {
         // spam subscribe calls at the WS.
         if (marketHolidayService != null && !marketHolidayService.isTradingDay()) {
             log.info("[OptionOiSubscriber] skipping OI window setup — not a trading day");
+            return;
+        }
+        // Pre-warm-pinned OI window. If onPreWarm already set an active window,
+        // leave it in place — the operator wants OI bias computed against the
+        // pre-warm ATM's ±10 strikes, not narrowed to the resolved ATM's ±7.
+        // Fallback path (pre-warm didn't fire because bot booted after 09:15,
+        // or LTP was unavailable) still provisions the ±7 window below.
+        if (oiTracker.getActiveAtmStrike() > 0) {
+            log.info("[OptionOiSubscriber] onAtmSelected({}) — pre-warm window at ATM={} already active, keeping it (OI bias stays pinned to pre-warm ATM)",
+                atm, oiTracker.getActiveAtmStrike());
             return;
         }
         // Idempotency guard — AtmVwap fires notifyOiWindow from three code paths:
