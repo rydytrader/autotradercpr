@@ -49,19 +49,17 @@ public class AnalyticsService {
 
     private final StrategyTradeRepository tradeRepo;
     private final RiskSettingsStore riskSettings;
-    private final org.springframework.beans.factory.ObjectProvider<Strategy> strategyProvider;
+    /** All {@code @Service implements Strategy} beans, keyed by Spring bean id.
+     *  Multi-strategy aware — analytics iterates every strategy so today's live
+     *  overlay picks up MTM from ALL enabled strategies, not just one. */
+    private final Map<String, Strategy> strategies;
 
     public AnalyticsService(StrategyTradeRepository tradeRepo,
                             RiskSettingsStore riskSettings,
-                            org.springframework.beans.factory.ObjectProvider<Strategy> strategyProvider) {
+                            Map<String, Strategy> strategies) {
         this.tradeRepo = tradeRepo;
         this.riskSettings = riskSettings;
-        this.strategyProvider = strategyProvider;
-    }
-
-    /** Returns the single Strategy bean if one is registered, else null. */
-    private Strategy strategy() {
-        return strategyProvider == null ? null : strategyProvider.getIfAvailable();
+        this.strategies = strategies == null ? Map.of() : strategies;
     }
 
     /** Composite payload — one round-trip serves all four hero tiles, the four detail cards,
@@ -416,33 +414,21 @@ public class AnalyticsService {
      *  live MTM was then lost). The skip is gone: every strategy is processed and the
      *  OPEN_POSITION_MTM remainder is attributed regardless of persisted history. */
     private void appendLiveTodayTrades(List<Trade> out, String strategyId, LocalDate today) {
-        Strategy strat = strategy();
-        // Kill switch state is irrelevant here — the strategy holds today's
-        // closed-cycle ring and the live MTM of any still-open position
-        // regardless of whether new fires are allowed. Skipping when disabled
-        // hid the day's accrued P&L from Home / Calendar immediately on
-        // toggle. Only skip when the strategy bean isn't present.
-        if (strat == null) return;
+        if (strategies.isEmpty()) return;
         boolean allStrategies = strategyId == null || strategyId.isBlank() || "all".equalsIgnoreCase(strategyId);
-        // NOTE: do NOT bail when strat.id() != strategyId. The strategy's cycle ring also
-        // holds MANUAL cycles (strategyId="manual") and those need to flow through the Manual
-        // filter even though the registered strategy is OptionSelling. Per-cycle filtering below.
 
         String iso = today.toString();
-        // Pre-compute today's persisted net + charges so OPEN_POSITION_MTM only carries the
-        // leftover, never double-counts what's already in strategy_trades. Also collect the
-        // closedAtMillis of every today-row already in `out` so we can dedup the in-memory
-        // ring entries that map to the same cycle — without this, every closed trade today
-        // would be counted twice (once from DB, once from todayClosedTrades).
-        double persistedNet = 0, persistedCh = 0;
+        // Pre-compute today's persisted net + charges PER strategy so OPEN_POSITION_MTM
+        // carries only the leftover live MTM, never double-counting what's already in
+        // strategy_trades. Global closedAtMillis list dedupes ring entries regardless
+        // of source strategy — collisions across strategies are vanishingly rare.
+        Map<String, double[]> perStratPersisted = new java.util.HashMap<>();  // id → [net, charges]
         List<Long> persistedMillis = new ArrayList<>();
         for (Trade t : out) {
             if (!iso.equals(t.sessionDate())) continue;
-            // Dedup window doesn't care about strategyId — closedAtMillis collisions across
-            // strategies are vanishingly rare, and we want every DB-persisted today-row to
-            // suppress its in-memory counterpart regardless of strategyId attribution.
-            persistedNet += t.netPnl();
-            persistedCh  += t.charges();
+            double[] agg = perStratPersisted.computeIfAbsent(t.strategyId(), k -> new double[2]);
+            agg[0] += t.netPnl();
+            agg[1] += t.charges();
             persistedMillis.add(t.closedAtMillis());
         }
         // Dedup window: legacy DB rows were persisted with a separate System.currentTimeMillis()
@@ -451,58 +437,66 @@ public class AnalyticsService {
         // row's millis. New cycles (post-fix) stamp both writes with the SAME value, so 0-ms
         // drift — but legacy today-rows from before the fix need the tolerance to dedup.
         final long DEDUP_WINDOW_MS = 5_000L;
-        try {
-            // 1. Today's already-closed events from the strategy's recent-events ring.
-            //    Skip entries whose closedAtMillis is within the dedup window of a row already
-            //    in `out` (those came from the DB on the same cycle). The remaining in-memory
-            //    entries are cycles that haven't been persisted yet — keep them so today's
-            //    analytics stay current.
-            double addedTodayNet     = 0;
-            double addedTodayCharges = 0;
-            List<Map<String, Object>> live = strat.todayClosedTrades();
-            if (live != null) {
-                for (Map<String, Object> m : live) {
-                    long ts = asLong(m.get("closedAtMillis"));
-                    if (ts == 0) ts = System.currentTimeMillis();
-                    boolean dup = false;
-                    for (Long pm : persistedMillis) {
-                        if (Math.abs(pm - ts) <= DEDUP_WINDOW_MS) { dup = true; break; }
+
+        // Iterate every registered strategy independently. Each contributes its own
+        // ring of today-closed cycles + its own OPEN_POSITION_MTM remainder so today's
+        // analytics rolls up across BOTH OPTION SELLING and OPTION BUYING once the
+        // second strategy lands.
+        for (Strategy strat : strategies.values()) {
+            if (strat == null) continue;
+            // Kill switch state is irrelevant here — the strategy still holds today's
+            // closed-cycle ring and the live MTM of any still-open position regardless
+            // of whether new fires are allowed.
+            try {
+                double addedTodayNet     = 0;
+                double addedTodayCharges = 0;
+                List<Map<String, Object>> live = strat.todayClosedTrades();
+                if (live != null) {
+                    for (Map<String, Object> m : live) {
+                        long ts = asLong(m.get("closedAtMillis"));
+                        if (ts == 0) ts = System.currentTimeMillis();
+                        boolean dup = false;
+                        for (Long pm : persistedMillis) {
+                            if (Math.abs(pm - ts) <= DEDUP_WINDOW_MS) { dup = true; break; }
+                        }
+                        if (dup) continue;
+                        // Cycle-level strategy attribution. Legacy cycles (pre-MANUAL feature)
+                        // don't carry "strategyId" — fall back to the enclosing strategy's id.
+                        // Newer cycles persist their actual strategyId so MANUAL trades flow
+                        // to "manual" and algo trades stay under their strategy's id.
+                        String cycleStrategy = asString(m.get("strategyId"));
+                        if (cycleStrategy == null || cycleStrategy.isBlank()) cycleStrategy = strat.id();
+                        if (!allStrategies && !strategyId.equals(cycleStrategy)) continue;
+                        double gross = asDouble(m.get("grossPnl"));
+                        double ch    = asDouble(m.get("charges"));
+                        double net   = ch != 0 ? gross - ch : gross;
+                        String reason = String.valueOf(m.getOrDefault("closeReason", "OPEN"));
+                        String sym   = asString(m.get("symbol"));
+                        long openMs  = asLong(m.get("openedAtMillis"));
+                        String bias  = asString(m.get("entryOiBias"));
+                        String setup = asString(m.get("setup"));
+                        out.add(new Trade(cycleStrategy, iso, ts, gross, ch, net, reason, 0,
+                            sym, openMs, bias, null, setup));
+                        addedTodayNet     += net;
+                        addedTodayCharges += ch;
                     }
-                    if (dup) continue;
-                    // Cycle-level strategy attribution. Legacy cycles (pre-MANUAL feature) don't
-                    // carry "strategyId" — fall back to the registered strategy's id. New
-                    // cycles persist their actual strategyId so MANUAL trades flow to "manual"
-                    // and algo trades stay at "option-selling".
-                    String cycleStrategy = asString(m.get("strategyId"));
-                    if (cycleStrategy == null || cycleStrategy.isBlank()) cycleStrategy = strat.id();
-                    if (!allStrategies && !strategyId.equals(cycleStrategy)) continue;
-                    double gross = asDouble(m.get("grossPnl"));
-                    double ch    = asDouble(m.get("charges"));
-                    double net   = ch != 0 ? gross - ch : gross;
-                    String reason = String.valueOf(m.getOrDefault("closeReason", "OPEN"));
-                    String sym   = asString(m.get("symbol"));
-                    long openMs  = asLong(m.get("openedAtMillis"));
-                    String bias  = asString(m.get("entryOiBias"));
-                    String setup = asString(m.get("setup"));
-                    out.add(new Trade(cycleStrategy, iso, ts, gross, ch, net, reason, 0,
-                        sym, openMs, bias, null, setup));
-                    addedTodayNet     += net;
-                    addedTodayCharges += ch;
                 }
+                // Synthetic OPEN_POSITION_MTM row for THIS strategy's leftover live MTM.
+                double liveNet        = strat.liveNetPnlToday();
+                double liveCharges    = strat.liveChargesToday();
+                double[] pers         = perStratPersisted.getOrDefault(strat.id(), new double[2]);
+                double openNet        = liveNet     - pers[0] - addedTodayNet;
+                double openChargesRem = liveCharges - pers[1] - addedTodayCharges;
+                double openGross      = openNet + openChargesRem;
+                boolean stratMatchesFilter = allStrategies || strategyId.equals(strat.id());
+                if (stratMatchesFilter && (Math.abs(openNet) > 0.01 || Math.abs(openChargesRem) > 0.01)) {
+                    out.add(new Trade(strat.id(), iso, System.currentTimeMillis(),
+                        openGross, openChargesRem, openNet, OPEN_POSITION_MTM_REASON, 0,
+                        null, 0L, null, null, null));
+                }
+            } catch (Exception e) {
+                log.warn("[Analytics] Live today overlay failed for {}: {}", strat.id(), e.getMessage());
             }
-            // 2. Synthetic OPEN_POSITION_MTM row for the leftover live MTM.
-            double liveNet        = strat.liveNetPnlToday();
-            double liveCharges    = strat.liveChargesToday();
-            double openNet        = liveNet     - persistedNet - addedTodayNet;
-            double openChargesRem = liveCharges - persistedCh  - addedTodayCharges;
-            double openGross      = openNet + openChargesRem;
-            if (Math.abs(openNet) > 0.01 || Math.abs(openChargesRem) > 0.01) {
-                out.add(new Trade(strat.id(), iso, System.currentTimeMillis(),
-                    openGross, openChargesRem, openNet, OPEN_POSITION_MTM_REASON, 0,
-                    null, 0L, null, null, null));
-            }
-        } catch (Exception e) {
-            log.warn("[Analytics] Live today overlay failed: {}", e.getMessage());
         }
     }
 

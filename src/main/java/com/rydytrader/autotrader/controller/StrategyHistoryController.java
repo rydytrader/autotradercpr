@@ -5,7 +5,6 @@ import com.rydytrader.autotrader.entity.StrategyTradeEntity;
 import com.rydytrader.autotrader.repository.StrategySessionRepository;
 import com.rydytrader.autotrader.repository.StrategyTradeRepository;
 import com.rydytrader.autotrader.service.strategy.Strategy;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,10 +19,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Per-strategy history endpoints. The {@code strategyId} path variable now resolves to a
- * fixed value ({@code "option-selling"}) since ATM VWAP is the only strategy; the
- * {@code /api/strategies/{id}/*} URL pattern is kept so the calendar's day-detail modal
- * can stay strategy-agnostic.
+ * Per-strategy history endpoints. The {@code strategyId} path variable is resolved
+ * against every registered {@link Strategy} bean via bean-id-keyed {@code Map<String,
+ * Strategy>} injection, so today's live overlay works for OPTION SELLING, OPTION
+ * BUYING, and any future strategy without controller changes.
  */
 @RestController
 public class StrategyHistoryController {
@@ -32,14 +31,16 @@ public class StrategyHistoryController {
 
     private final StrategySessionRepository repo;
     private final StrategyTradeRepository tradeRepo;
-    private final ObjectProvider<Strategy> strategyProvider;
+    /** All strategy beans keyed by Spring bean id — matched against the URL's
+     *  {@code strategyId} path variable to resolve which one to overlay. */
+    private final Map<String, Strategy> strategies;
 
     public StrategyHistoryController(StrategySessionRepository repo,
                                      StrategyTradeRepository tradeRepo,
-                                     ObjectProvider<Strategy> strategyProvider) {
+                                     Map<String, Strategy> strategies) {
         this.repo = repo;
         this.tradeRepo = tradeRepo;
-        this.strategyProvider = strategyProvider;
+        this.strategies = strategies == null ? Map.of() : strategies;
     }
 
     @GetMapping("/api/strategies/{id}/history")
@@ -232,8 +233,14 @@ public class StrategyHistoryController {
     private LiveBackfill liveBackfillForDate(String strategyId, String date) {
         LiveBackfill out = new LiveBackfill();
         if (date == null || !date.equals(LocalDate.now(IST).toString())) return out;
-        Strategy strat = strategyProvider.getIfAvailable();
-        if (strat == null || !strategyId.equals(strat.id())) return out;
+        // Look up the strategy by id() across every registered bean. The Spring
+        // bean id may differ from Strategy.id() (bean id is class-name-derived,
+        // Strategy.id() is the human-readable slug), so match by id() not map key.
+        Strategy strat = null;
+        for (Strategy s : strategies.values()) {
+            if (s != null && strategyId.equals(s.id())) { strat = s; break; }
+        }
+        if (strat == null) return out;
         for (Map<String, Object> m : strat.todayClosedTrades()) {
             Object ts = m.get("closedAtMillis");
             if (!(ts instanceof Number)) continue;
