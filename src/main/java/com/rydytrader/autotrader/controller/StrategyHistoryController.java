@@ -157,7 +157,7 @@ public class StrategyHistoryController {
             // stays null. Drives the trades-page OI Bias column + effectiveness modal.
             m.put("entryOiBias",    t.getEntryOiBias());
             // Bar-anchored entry / exit timestamps — start-of-bar epoch millis for the
-            // 2-min candle that triggered entry, and the candle the exit fell into.
+            // 3-min candle that triggered entry, and the candle the exit fell into.
             // UI renders as bar CLOSE time (start + 2 min). Null for legacy rows.
             m.put("entryCandleMs",  t.getEntryCandleMs());
             m.put("exitCandleMs",   t.getExitCandleMs());
@@ -208,7 +208,7 @@ public class StrategyHistoryController {
             // stays null. Drives the trades-page OI Bias column + effectiveness modal.
             m.put("entryOiBias",    t.getEntryOiBias());
             // Bar-anchored entry / exit timestamps — start-of-bar epoch millis for the
-            // 2-min candle that triggered entry, and the candle the exit fell into.
+            // 3-min candle that triggered entry, and the candle the exit fell into.
             // UI renders as bar CLOSE time (start + 2 min). Null for legacy rows.
             m.put("entryCandleMs",  t.getEntryCandleMs());
             m.put("exitCandleMs",   t.getExitCandleMs());

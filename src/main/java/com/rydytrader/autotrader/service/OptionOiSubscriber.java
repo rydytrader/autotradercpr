@@ -20,7 +20,7 @@ import java.util.Map;
  * Lifecycle owner for the OI tracker's option-chain WebSocket subscription.
  *
  * <p>Trigger: {@link #onAtmSelected(long)} is called once per session by
- * {@code AtmVwap.resolveAtmFromFirstBar} right after it locks the day's ATM (~09:17
+ * {@code AtmVwap.resolveAtmFromFirstBar} right after it locks the day's ATM (~09:18
  * IST). Resolves ±N strikes around the ATM into Fyers CE + PE symbols via a single
  * option-chain REST fetch, hands them to {@link OptionOiTracker#setActiveWindow(long,
  * List)}, and calls {@link MarketDataService#subscribeAdditional} on the net-new
@@ -52,7 +52,7 @@ public class OptionOiSubscriber {
     private static final int    CHAIN_BUFFER_STRIKES = 5;
 
     /** Per-day idempotency guard — remember the ATM already provisioned so repeated
-     *  calls from AtmVwap's re-entry paths (every 2-min NIFTY candle close hits the
+     *  calls from AtmVwap's re-entry paths (every 3-min NIFTY candle close hits the
      *  same-day early-return branch that also fires notifyOiWindow) don't burn a chain
      *  fetch and spam the log. Reset when the day rolls. */
     private volatile long   lastAtmSubscribed = 0;
@@ -102,10 +102,10 @@ public class OptionOiSubscriber {
     /** Called by {@code AtmVwap.warmupIfDue} at 09:15 IST — right after pre-warm has
      *  subscribed the ±15-strike WS symbols. Hands that same window to the tracker so
      *  per-strike OI baselines are captured from the very first tick (09:15) instead of
-     *  waiting for the 09:17 ATM lock.
+     *  waiting for the 09:18 ATM lock.
      *
      *  <p>Does NOT set {@link #lastAtmSubscribed} / {@link #lastDayKey} — those track the
-     *  final post-ATM-lock provisioning path. When {@link #onAtmSelected} fires at 09:17
+     *  final post-ATM-lock provisioning path. When {@link #onAtmSelected} fires at 09:18
      *  it will narrow the window from ±15 down to ±7, and {@code setActiveWindow}
      *  transparently drops the outer strikes while preserving baselines + latest OI for
      *  the ones that stay. Also does NOT call {@code subscribeAdditional} — pre-warm has
@@ -141,7 +141,7 @@ public class OptionOiSubscriber {
      *
      *  <p>Operator rule (2026-07-31): the OI bias tracker stays pinned to the
      *  PRE-WARM ATM (locked at 09:15) rather than shifting to the resolved
-     *  ATM at 09:17. If {@link #onPreWarm} already established an active
+     *  ATM at 09:18. If {@link #onPreWarm} already established an active
      *  window today, this call short-circuits — no chain re-fetch, no
      *  window narrowing, no un-crediting of strikes that would have left
      *  the ±7 window. The wider ±10 pre-warm window remains the basis for
@@ -167,9 +167,9 @@ public class OptionOiSubscriber {
             return;
         }
         // Idempotency guard — AtmVwap fires notifyOiWindow from three code paths:
-        //   1. resolveAtmFromFirstBar fast path (first 2-min close)
+        //   1. resolveAtmFromFirstBar fast path (first 3-min close)
         //   2. resolveAtmFromFirstBar slow path
-        //   3. same-day re-entry (every subsequent 2-min NIFTY close)
+        //   3. same-day re-entry (every subsequent 3-min NIFTY close)
         // Path 3 fires ~180 times a day with an unchanged ATM. Skip silently after the
         // first successful provisioning per day. Day rollover re-arms the check.
         String today = LocalDate.now(IST).toString();

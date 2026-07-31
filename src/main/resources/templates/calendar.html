@@ -945,7 +945,7 @@
             return '<span class="trade-pill ' + cls + '">' + r + '</span>';
         };
         /** Candle START epoch → its OPEN time in IST "HH:MM" (Fyers/TV canonical). A
-         *  bar starting at 09:19 renders as "09:19" — the identifier operators use for
+         *  bar starting at 09:18 renders as "09:18" — the identifier operators use for
          *  the candle. Legacy rows (pre entry_candle_ms) render "—". */
         const fmtBarClose = ms => {
             if (!ms || Number(ms) <= 0) return '—';

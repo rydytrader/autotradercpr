@@ -35,11 +35,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
- * Samples LTPs for every subscribed Fyers symbol once per second and rolls samples into 2-minute
- * OHLC buckets per symbol. On bucket close (the first sample in a new 2-min window), the closed
+ * Samples LTPs for every subscribed Fyers symbol once per second and rolls samples into 3-minute
+ * OHLC buckets per symbol. On bucket close (the first sample in a new 3-min window), the closed
  * candle is emitted to every listener registered for that symbol.
  *
- * <p>Buckets are anchored on the IST wall clock — 09:15, 09:17, 09:19, … 15:29, 15:31 — and only
+ * <p>Buckets are anchored on the IST wall clock — 09:15, 09:18, 09:21, … 15:27, 15:30 — and only
  * emitted during market hours (09:15 ≤ now ≤ 15:31).
  *
  * <p>{@link #BUCKET_MINUTES} is public so downstream consumers can derive bar length without
@@ -50,10 +50,10 @@ public class CandleAggregator {
 
     private static final Logger log = LoggerFactory.getLogger(CandleAggregator.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    public  static final int    BUCKET_MINUTES = 2;
+    public  static final int    BUCKET_MINUTES = 3;
     /** NSE market open in minutes-of-day (IST). Bucket boundaries are computed relative
-     *  to this so the first bar spans 09:15→09:15+BUCKET_MINUTES (at 2-min:
-     *  09:15→09:17). */
+     *  to this so the first bar spans 09:15→09:15+BUCKET_MINUTES (at 3-min:
+     *  09:15→09:18). */
     private static final int    MARKET_OPEN_MINUTE_OF_DAY = 9 * 60 + 15;
 
     private final MarketDataService marketDataService;
@@ -72,9 +72,9 @@ public class CandleAggregator {
      *  immediately even if the grace window hasn't fully elapsed. */
     private static final long GRACE_MS = 3000;
     private final Map<String, CopyOnWriteArrayList<Consumer<Candle>>> listenersBySymbol = new ConcurrentHashMap<>();
-    /** Closed 2-min candles per symbol, kept in a bounded FIFO ring. Populated by
+    /** Closed 3-min candles per symbol, kept in a bounded FIFO ring. Populated by
      *  {@link #appendHistoryAndFire} so the chart page can render the day's session without a
-     *  Fyers-history REST fetch. Cap = 250 = ~8.3 h of 2-min bars, well over the
+     *  Fyers-history REST fetch. Cap = 250 = ~8.3 h of 3-min bars, well over the
      *  ~187 bars in a full NSE session. */
     private static final int HISTORY_CAP = 250;
     private final Map<String, Deque<Candle>> historyBySymbol = new ConcurrentHashMap<>();
@@ -132,7 +132,7 @@ public class CandleAggregator {
         catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
     }
 
-    /** Subscribe to 2-min candle closes on {@code symbol}. The symbol is also added to the
+    /** Subscribe to 3-min candle closes on {@code symbol}. The symbol is also added to the
      *  Fyers market-data feed if it isn't already streaming. Multiple subscribers per symbol
      *  are allowed; each gets called on every close. */
     public void subscribe(String symbol, Consumer<Candle> listener) {
@@ -170,7 +170,7 @@ public class CandleAggregator {
         ZonedDateTime nowIst = ZonedDateTime.now(IST);
         LocalTime t = nowIst.toLocalTime();
         if (t.isBefore(LocalTime.of(9, 15))) {
-            // Pre-market — DO NOT flush. A bucket may already exist for the 09:15→09:17
+            // Pre-market — DO NOT flush. A bucket may already exist for the 09:15→09:18
             // slot because Fyers rounds exch_feed_time up to the next second (a print at
             // 09:14:59.9 lands with exch_feed_time = 09:15:00, opening a legit 09:15
             // bucket even though wall-clock is still 09:14:xx). Flushing here would emit
@@ -265,10 +265,10 @@ public class CandleAggregator {
         return dst;
     }
 
-    /** Anchors 2-min bucket boundaries on 09:15 IST — the true market-open minute — not on
+    /** Anchors 3-min bucket boundaries on 09:15 IST — the true market-open minute — not on
      *  midnight. Otherwise 09:15 (odd) rounds down to the 09:14 even-minute bucket and
-     *  the "first 2-min bar" closes at 09:16 after only ~1 minute of data. Anchoring on
-     *  09:15 gives 09:15→09:17, 09:17→09:19, … as the docs promise. Pre-open ticks
+     *  the "first 3-min bar" closes at 09:16 after only ~1 minute of data. Anchoring on
+     *  09:15 gives 09:15→09:18, 09:18→09:21, … as the docs promise. Pre-open ticks
      *  (before 09:15) fall back to midnight-anchored buckets — harmless because sample()
      *  gates outside market hours anyway. */
     private static int bucketStartMinute(int minuteOfDay) {
@@ -312,7 +312,7 @@ public class CandleAggregator {
                 return;
             }
             // Bar-size schema check — reject state written under a different
-            // BUCKET_MINUTES setting. Boundaries computed at 2-min and 2-min
+            // BUCKET_MINUTES setting. Boundaries computed at 3-min and 3-min
             // don't align, so mixing them in the same ring corrupts the chart
             // and confuses the FSM. Field is defaulted to 0 in State, so any
             // pre-schema file (missing the field) is also treated as a mismatch
@@ -401,7 +401,7 @@ public class CandleAggregator {
         public String dayKey = "";
         /** BUCKET_MINUTES value under which this state was written. Discarded on
          *  load if it doesn't match the current constant — prevents mixing
-         *  2-min and 2-min bars in the same history ring across a migration.
+         *  3-min and 3-min bars in the same history ring across a migration.
          *  0 for legacy files that predate this field. */
         public int bucketMinutes = 0;
         public Map<String, List<Candle>> historyBySymbol = new LinkedHashMap<>();
@@ -460,8 +460,8 @@ public class CandleAggregator {
         // TradingView aligns bar boundaries on. Fall back to Fyers/GDFL dissemination time
         // (EFT) — which typically trails LTT by 100-800 ms of ingest lag — and to
         // wall-clock only when the parser couldn't extract either. This closes the
-        // "boundary skew" gap where a tick TRADED at 09:16:59 arrives locally at
-        // 09:17:00.1 and was previously attributed to the wrong bar.
+        // "boundary skew" gap where a tick TRADED at 09:17:59 arrives locally at
+        // 09:18:00.1 and was previously attributed to the wrong bar.
         //
         // Freshness guard — a WS reconnect can replay a tick whose timestamp is from
         // a PREVIOUS trading day (e.g. yesterday 15:29). Its LocalTime alone would pass
@@ -636,7 +636,7 @@ public class CandleAggregator {
             existing.close(), merged.close());
     }
 
-    /** Closed 2-min candles for {@code symbol} in chronological order. Empty when the
+    /** Closed 3-min candles for {@code symbol} in chronological order. Empty when the
      *  symbol hasn't rolled a bucket yet (freshly subscribed, or pre-market boot). */
     public List<Candle> getHistory(String symbol) {
         Deque<Candle> ring = historyBySymbol.get(symbol);
@@ -644,7 +644,7 @@ public class CandleAggregator {
         return new ArrayList<>(ring);
     }
 
-    /** In-progress 2-min bucket for {@code symbol}, synthesised into a {@code Candle}
+    /** In-progress 3-min bucket for {@code symbol}, synthesised into a {@code Candle}
      *  using the running OHLC state. {@code null} when the symbol has no open bucket
      *  (never sampled, or reset outside market hours). */
     public Candle getCurrentBucket(String symbol) {

@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
- * Fetches the exchange-authoritative OHLC for a just-closed 2-min bar from Fyers
+ * Fetches the exchange-authoritative OHLC for a just-closed 3-min bar from Fyers
  * {@code /data/history}. Local {@link CandleAggregator} bars are built from throttled WS
  * snapshots (~4 Hz) and can drift a few points from the true bar (open miss, brief-wick
  * high miss). The trigger-candle FSM in {@code AtmVwap} relies on {@code trigger.low}
@@ -43,10 +43,10 @@ public class HistoryReconcileService {
 
     private static final Logger log = LoggerFactory.getLogger(HistoryReconcileService.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    /** Fyers /history resolution for our 2-min bars. */
-    private static final String RESOLUTION = "2";
+    /** Fyers /history resolution for our 3-min bars. */
+    private static final String RESOLUTION = "3";
     /** How many polls to make before giving up. Observed: Fyers publishes just-closed
-     *  2-min bars via /history within <100 ms — attempt 1 succeeds essentially every
+     *  3-min bars via /history within <100 ms — attempt 1 succeeds essentially every
      *  time. 2 × 500 ms retry gap gives Fyers enough time to publish on the rare miss
      *  without blowing entry latency out (worst case ~500 ms extra when attempt 1 fails). */
     private static final int  MAX_ATTEMPTS   = 2;
@@ -116,7 +116,7 @@ public class HistoryReconcileService {
         return null;
     }
 
-    /** 2-min bars in milliseconds — the bar's end wall-clock time equals
+    /** 3-min bars in milliseconds — the bar's end wall-clock time equals
      *  {@code barStartMs + BUCKET_LENGTH_MS}. Used to log how many ms after bar-end the
      *  reconcile call started, so the operator can distinguish "we called too early" from
      *  "Fyers is slow." */
