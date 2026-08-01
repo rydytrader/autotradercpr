@@ -1047,8 +1047,11 @@ public class OptionSelling implements Strategy {
     /** PDF's entry gate check on the just-closed bar. Returns pass=true and the
      *  premium ST line snapshot when all three active gates hold:
      *  <ul>
-     *    <li>A. Fresh VWAP breakdown: close &lt; VWAP AND (open ≥ VWAP if the
-     *        require-gap-open toggle is on).</li>
+     *    <li>A. VWAP cross-and-reject: close &lt; VWAP AND high ≥ VWAP. Covers
+     *        BOTH fresh breakdown (bar opened at/above VWAP and closed below)
+     *        AND wick rejection (bar opened below VWAP, wicked up to at least
+     *        touch VWAP, closed back below). Red or green body doesn't matter
+     *        — only that the bar interacted with VWAP and closed below it.</li>
      *    <li>B. Premium SuperTrend RED at this bar (isUp=false).</li>
      *    <li>C. Spot SuperTrend alignment: CE → spot ST red, PE → spot ST green.</li>
      *  </ul>
@@ -1061,17 +1064,20 @@ public class OptionSelling implements Strategy {
      *  event-log spam. */
     private EntryGateResult evaluateEntryGates(String symbol, Candle c, double vwap, boolean isCeLeg) {
         double close = c.close();
-        double open  = c.open();
-        // Gate A — fresh VWAP breakdown
+        double high  = c.high();
+        // Gate A — VWAP cross-and-reject on this bar.
+        //   close < VWAP  → bar closed on the short side.
+        //   high  ≥ VWAP  → bar interacted with VWAP (either opened at/above
+        //                    and closed below = fresh breakdown, OR opened
+        //                    below and wicked up to at least touch VWAP =
+        //                    retest / wick rejection). Either flavour is a
+        //                    valid entry — no prior-breakdown state needed.
         if (close >= vwap) {
             return new EntryGateResult(false, 0, null);   // not a candidate — silent
         }
-        // Gate A companion — hardcoded ON. Bar must open at/above VWAP so the
-        // close-below-VWAP is a fresh breakdown, not a continuation of a bar
-        // already sitting below VWAP.
-        if (open < vwap) {
+        if (high < vwap) {
             return new EntryGateResult(false, 0,
-                "A fail — bar opened below VWAP (open=" + round2(open) + " < vwap=" + round2(vwap) + ")");
+                "A fail — bar never touched VWAP (high=" + round2(high) + " < vwap=" + round2(vwap) + ")");
         }
         // Gate B — premium SuperTrend RED
         List<Candle> premBars = candleAggregator.getHistory(symbol);

@@ -27,7 +27,6 @@
                       '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-optionSellingSquareOffTime" step="60"><div class="sm-hint">Hard exit if SL didn\'t trigger. Default 15:25.</div></div>' +
                       '<div class="sm-field"><label>Max CE trades/day</label><input type="number" id="sm-optionSellingMaxCeTradesPerDay" step="1" min="0"><div class="sm-hint">Hard cap on CE-side fires. Default 3.</div></div>' +
                       '<div class="sm-field"><label>Max PE trades/day</label><input type="number" id="sm-optionSellingMaxPeTradesPerDay" step="1" min="0"><div class="sm-hint">Hard cap on PE-side fires. Default 3.</div></div>' +
-                      '<div class="sm-field"><label><input type="checkbox" id="sm-optionSellingRetestEntryEnabled" style="margin-right:6px;vertical-align:middle;">Retest entry (Phase 2 — no-op)</label><div class="sm-hint">Alternate entry path where a retest of VWAP that rejects can trigger. Not wired yet — toggle here for future release. Default OFF.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="option-buying" style="display:none;">' +
@@ -208,7 +207,6 @@
             if (g('sm-optionSellingSquareOffTime'))     g('sm-optionSellingSquareOffTime').value = d.optionSellingSquareOffTime || '15:25';
             if (g('sm-optionSellingMaxCeTradesPerDay')) g('sm-optionSellingMaxCeTradesPerDay').value = d.optionSellingMaxCeTradesPerDay != null ? d.optionSellingMaxCeTradesPerDay : 3;
             if (g('sm-optionSellingMaxPeTradesPerDay')) g('sm-optionSellingMaxPeTradesPerDay').value = d.optionSellingMaxPeTradesPerDay != null ? d.optionSellingMaxPeTradesPerDay : 3;
-            if (g('sm-optionSellingRetestEntryEnabled'))     g('sm-optionSellingRetestEntryEnabled').checked = d.optionSellingRetestEntryEnabled === true;
         }).catch(function() {});
     }
 
@@ -221,8 +219,7 @@
             optionSellingTradingEndTime:     (g('sm-optionSellingTradingEndTime').value || '').trim(),
             optionSellingSquareOffTime:      (g('sm-optionSellingSquareOffTime').value || '').trim(),
             optionSellingMaxCeTradesPerDay:  parseInt(g('sm-optionSellingMaxCeTradesPerDay').value, 10) || 0,
-            optionSellingMaxPeTradesPerDay:  parseInt(g('sm-optionSellingMaxPeTradesPerDay').value, 10) || 0,
-            optionSellingRetestEntryEnabled:       !!(g('sm-optionSellingRetestEntryEnabled') && g('sm-optionSellingRetestEntryEnabled').checked)
+            optionSellingMaxPeTradesPerDay:  parseInt(g('sm-optionSellingMaxPeTradesPerDay').value, 10) || 0
         };
         postSettings('/api/settings/risk', body);
     }

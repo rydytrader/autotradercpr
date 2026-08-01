@@ -43,7 +43,6 @@ public class SettingsController {
         result.put("optionSellingMaxSlPoints",        riskSettings.getOptionSellingMaxSlPoints(effectiveMode));
         result.put("optionSellingMaxCeTradesPerDay",  riskSettings.getOptionSellingMaxCeTradesPerDay(effectiveMode));
         result.put("optionSellingMaxPeTradesPerDay",  riskSettings.getOptionSellingMaxPeTradesPerDay(effectiveMode));
-        result.put("optionSellingRetestEntryEnabled",      riskSettings.isOptionSellingRetestEntryEnabled(effectiveMode));
         // OPTION BUYING (Ganesan 4-indicator framework — coexists with OPTION SELLING)
         result.put("optionBuyingEnabled",           riskSettings.isOptionBuyingEnabled());
         result.put("optionBuyingLotsPerLeg",        riskSettings.getOptionBuyingLotsPerLeg());
@@ -103,7 +102,6 @@ public class SettingsController {
             // SuperTrend params (Atr / Mult / Spot Atr / Spot Mult) intentionally not
             // exposed to POST — hardcoded to (10, 3) in OptionSelling.java.
             // TrailingExitEnabled + RequireGapOpenAboveVwap both hardcoded ON in OptionSelling — no POST.
-            if (body.containsKey("optionSellingRetestEntryEnabled"))     riskSettings.setOptionSellingRetestEntryEnabled(effectiveMode, Boolean.parseBoolean(body.get("optionSellingRetestEntryEnabled").toString()));
             // OPTION BUYING
             if (body.containsKey("optionBuyingEnabled"))          riskSettings.setOptionBuyingEnabled(Boolean.parseBoolean(body.get("optionBuyingEnabled").toString()));
             if (body.containsKey("optionBuyingLotsPerLeg"))       riskSettings.setOptionBuyingLotsPerLeg(Integer.parseInt(body.get("optionBuyingLotsPerLeg").toString()));
