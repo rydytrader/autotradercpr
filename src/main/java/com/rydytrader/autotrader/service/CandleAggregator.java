@@ -65,12 +65,15 @@ public class CandleAggregator {
      *  bar instead of being dropped as stale. Absent when no grace bucket is
      *  active. See {@link #GRACE_MS}. */
     private final Map<String, PendingBucket> pendingBySymbol = new ConcurrentHashMap<>();
-    /** How long a pending bucket stays open after its bar boundary. Set to 3 s
-     *  based on the boundary-skew latency we observed on GDFL / Fyers option
-     *  ticks (typically < 1 s past boundary). If a subsequent bar boundary
-     *  is crossed while a pending is still open, the pending is emitted
-     *  immediately even if the grace window hasn't fully elapsed. */
-    private static final long GRACE_MS = 3000;
+    /** How long a pending bucket stays open after its bar boundary to absorb
+     *  late-arriving LTT ticks. Set to 0 — bar closes fire the instant a
+     *  boundary tick arrives, no wait. The strategy entry gate cares only
+     *  about the close price relative to VWAP (and the bar high for SL calc)
+     *  — a late LTT that would have shifted OHLC by a fraction of a point
+     *  is not worth 3 s of entry latency. If a subsequent bar boundary is
+     *  crossed while a pending is still open (only possible when GRACE_MS
+     *  > 0), the pending is emitted immediately. */
+    private static final long GRACE_MS = 0;
     private final Map<String, CopyOnWriteArrayList<Consumer<Candle>>> listenersBySymbol = new ConcurrentHashMap<>();
     /** Closed 3-min candles per symbol, kept in a bounded FIFO ring. Populated by
      *  {@link #appendHistoryAndFire} so the chart page can render the day's session without a
@@ -562,14 +565,19 @@ public class CandleAggregator {
                     wallNow);
                 return;
             } else if (bucketStart != b.currentBucketMinute) {
-                // Boundary crossing — move active INTO the pending slot and start
-                // a fresh active from this tick. Active's close is emitted after
-                // the grace window; late LTTs for its bar can still merge until
-                // then. If an OLD pending is still sitting in the slot (grace
-                // hadn't expired yet), preempt-flush it now — we only hold one
-                // pending at a time.
-                if (pb != null) preemptedPending = snapshot(pb.bucket);
-                pendingBySymbol.put(symbol, new PendingBucket(cloneBucket(b), nowMs + GRACE_MS));
+                // Boundary crossing. Two paths:
+                //   GRACE_MS > 0 → move active INTO the pending slot; late LTTs
+                //     can still merge until grace expires. Preempt any older
+                //     pending still there (we only hold one).
+                //   GRACE_MS == 0 → snapshot + emit immediately. No pending, no
+                //     wait. Late ticks with LTT in the just-closed bar are
+                //     dropped as stale — acceptable trade-off for entry latency.
+                if (GRACE_MS > 0) {
+                    if (pb != null) preemptedPending = snapshot(pb.bucket);
+                    pendingBySymbol.put(symbol, new PendingBucket(cloneBucket(b), nowMs + GRACE_MS));
+                } else {
+                    preemptedPending = snapshot(b);
+                }
                 b.reset();
                 b.start(bucketStart, ltp, ZonedDateTime.now(IST));
                 if (t.atp() > 0) b.vwapLast = t.atp();
