@@ -201,26 +201,12 @@ public class OptionBuying implements Strategy {
 
     @Override
     public void fastSlCheck() {
-        if (state.openPositions.isEmpty()) return;
-        // Hard % SL — options can gap 40%+ in seconds during a reversal, and
-        // the SuperTrend exit only fires on 3-min bar close. This backstop
-        // triggers on any tick.
-        double hardSlPct = riskSettings.getOptionBuyingHardSlPct();
-        if (hardSlPct <= 0) return;
-        for (Position p : new ArrayList<>(state.openPositions.values())) {
-            double ltp;
-            try { ltp = marketDataService.getLtp(p.symbol); }
-            catch (Exception e) { continue; }
-            if (ltp <= 0) continue;
-            // Long position — SL fires when LTP drops far enough below entry.
-            double lossPct = (p.entryPrice - ltp) / p.entryPrice * 100.0;
-            if (lossPct >= hardSlPct) {
-                event("[ERROR]", "Exit",
-                    shortSym(p.symbol) + " HARD_SL_HIT @ " + round2(ltp)
-                    + " (entry=" + round2(p.entryPrice) + ", loss=" + round2(lossPct) + "%)");
-                closePosition(p, "HARD_SL_HIT");
-            }
-        }
+        // Tick-based SL disabled. Exits are bar-close-only: NIFTY spot ST is
+        // re-evaluated on every 3-min close in evaluateExits — an ST flip
+        // against the trade direction closes the position, and while ST is
+        // still with the trade the position's slLevel trails the ST line.
+        // The optionBuyingHardSlPct setting remains in RiskSettingsStore but
+        // is no longer consulted.
     }
 
     // ── Candle close handler — the FSM entry point ──────────────────────────
@@ -351,6 +337,7 @@ public class OptionBuying implements Strategy {
         p.niftyAtEntry   = niftyLtp;
         p.superTrendAtEntry = st.line();
         p.rsiAtEntry     = rsi;
+        p.slLevel        = st.line();   // initial trailing SL = NIFTY ST line at fire
 
         state.openPositions.put(symbol, p);
         state.tradesToday++;
@@ -363,9 +350,16 @@ public class OptionBuying implements Strategy {
 
     // ── Exits ───────────────────────────────────────────────────────────────
 
-    /** On every 3-min NIFTY close, re-evaluate SuperTrend and exit any position
-     *  whose direction is against the trade. Bull position exits when ST flips
-     *  down; bear position exits when ST flips up. */
+    /** On every 3-min NIFTY close, re-evaluate SuperTrend for each open position:
+     *  <ul>
+     *    <li>If ST direction is AGAINST the trade (CE_BUY with ST down, PE_BUY
+     *        with ST up) → exit at market with tag "SUPERTREND_FLIP".</li>
+     *    <li>Else ST is still WITH the trade — trail slLevel to the current ST
+     *        line. For CE_BUY the line sits below NIFTY and trails upward as
+     *        NIFTY rallies; for PE_BUY it sits above NIFTY and trails downward
+     *        as NIFTY drops. Never loosens.</li>
+     *  </ul>
+     *  Bar-close only — no tick-based path. */
     private void evaluateExits(Candle nifty) {
         if (state.openPositions.isEmpty()) return;
         List<Candle> bars = candleAggregator.getHistory(NIFTY_SYMBOL);
@@ -380,6 +374,20 @@ public class OptionBuying implements Strategy {
                     shortSym(p.symbol) + " SUPERTREND_FLIP @ NIFTY " + round2(nifty.close())
                     + " (ST=" + round2(st.line()) + ", isUp=" + st.isUp() + ")");
                 closePosition(p, "SUPERTREND_FLIP");
+                continue;
+            }
+            // Trail slLevel to the current NIFTY ST line, in the direction that
+            // TIGHTENS the stop (CE_BUY tightens UP as ST rises; PE_BUY tightens
+            // DOWN as ST falls). Never loosens.
+            double newLine = st.line();
+            if (newLine <= 0) continue;
+            boolean tightens = bull ? (newLine > p.slLevel) : (p.slLevel <= 0 || newLine < p.slLevel);
+            if (tightens) {
+                double oldSl = p.slLevel;
+                p.slLevel = newLine;
+                event("[INFO]", "Setup",
+                    shortSym(p.symbol) + " SL trailed " + round2(oldSl) + " → " + round2(newLine)
+                    + " (NIFTY ST line)");
             }
         }
     }
@@ -498,6 +506,7 @@ public class OptionBuying implements Strategy {
             row.put("entryCandleMs", p.entryCandleMs);
             row.put("atmStrike",     p.atmStrike);
             row.put("niftyAtEntry",  round2(p.niftyAtEntry));
+            row.put("slLevel",       round2(p.slLevel));
             row.put("mtm",           round2(openMtm(p)));
             openRows.add(row);
         }
@@ -525,7 +534,7 @@ public class OptionBuying implements Strategy {
             row.setCharges(round2(charges));
             row.setNetPnl(round2(net));
             row.setCloseReason(reason);
-            row.setSlHitCount("HARD_SL_HIT".equals(reason) ? 1 : 0);
+            row.setSlHitCount(0);   // hard % SL retired — OPTION BUYING exits are ST-flip only
             row.setEntryPrice(round2(p.entryPrice));
             row.setExitPrice(round2(exitPrice));
             row.setEntryCandleMs(p.entryCandleMs);
@@ -669,5 +678,10 @@ public class OptionBuying implements Strategy {
         public double niftyAtEntry = 0;
         public double superTrendAtEntry = 0;
         public double rsiAtEntry = 0;
+        /** Trailing SL — the current NIFTY spot SuperTrend line. Updated bar-by-bar
+         *  in evaluateExits. Displayed on the position card as the NIFTY spot level
+         *  at which ST would flip and we'd exit. Not a price on the option premium
+         *  — the OPTION BUYING exit mechanism is a NIFTY-ST-flip on bar close. */
+        public double slLevel = 0;
     }
 }
