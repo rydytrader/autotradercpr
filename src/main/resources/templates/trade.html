@@ -207,15 +207,15 @@
     <!-- ── Four hero stat cards (Open Positions / Net Day P&L / Exposed Risk / Market Clock) ── -->
     <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:20px;" class="fade-in">
 
-        <!-- Open Positions -->
+        <!-- NIFTY spot — LTP + signed change + signed %change. Values stream via
+             the shared ticker SSE (see attachTickerHeaderUpdates → hdrFut / hdrFutChg
+             which are mirrored into these ids). -->
         <div class="section-card" style="margin-bottom:0;">
             <div style="padding:20px 22px; text-align:center;">
-                <div class="stat-label" style="margin-bottom:8px;">Open Positions</div>
-                <div class="stat-value" id="statCount" style="font-size:2rem; color:var(--accent-cyan);">0</div>
+                <div class="stat-label" style="margin-bottom:8px;">NIFTY Spot</div>
+                <div class="stat-value" id="statNiftyLtp" style="font-size:2rem; color:var(--accent-cyan);">—</div>
                 <div class="stat-sub" style="margin-top:8px;">
-                    Side: <span id="statSide">—</span>
-                    <span style="color:var(--border); margin:0 6px;">|</span>
-                    <span style="color:var(--text-muted);" id="statNotional">Premium: ₹0</span>
+                    <span id="statNiftyChg" style="font-weight:600;">—</span>
                 </div>
             </div>
         </div>
@@ -269,10 +269,6 @@
                          Legacy 'Fut' IDs retained for back-compat with the JS. -->
                     <span style="color:#fbbf24;">NIFTY <span id="hdrFut" style="color:var(--text-primary);font-weight:700;cursor:help;">—</span>
                         <span id="hdrFutChg" style="margin-left:4px;font-weight:600;"></span></span>
-                    <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
-                    <!-- VIX -->
-                    <span style="color:var(--text-muted);">VIX <span id="hdrVix" style="color:var(--text-primary);font-weight:700;">—</span>
-                        <span id="hdrVixChg" style="margin-left:4px;font-weight:600;"></span></span>
                     <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
                     <!-- Session-monitored ATM option strikes (picked at first 3-min NIFTY bar close) -->
                     <span style="color:var(--text-muted);" title="ATM CE leg — the CALL side the strategy monitors on 3-min bars">ATM CE <span id="hdrH5Ce" style="color:var(--text-primary);font-weight:700;">—</span></span>
@@ -678,21 +674,8 @@
     function renderStats(d) {
         var positions = d.openPositions || [];
 
-        // ── Open Positions card: count + side + notional ──
-        var sides = new Set();
-        var notional = 0;
-        positions.forEach(function(p) {
-            if (/CE$/.test(p.symbol)) sides.add('CE');
-            else if (/PE$/.test(p.symbol)) sides.add('PE');
-            notional += Number(p.entryPrice || 0) * Number(p.qty || 0);
-        });
-        var sideLabel = positions.length === 0 ? '—'
-            : (sides.has('CE') && sides.has('PE') ? 'CE+PE'
-                : sides.has('CE') ? 'CE'
-                : sides.has('PE') ? 'PE' : '—');
-        document.getElementById('statCount').textContent = positions.length;
-        document.getElementById('statSide').textContent = sideLabel;
-        document.getElementById('statNotional').textContent = 'Premium: ' + fmtRs(notional);
+        // NIFTY card is driven purely by the ticker SSE — see
+        // attachTickerHeaderUpdates. Nothing to compute here.
 
         // ── Net Day P&L card ──
         var closed = (d.todayClosedTrades || []).reduce(function(a, b) { return a + Number(b.netPnl || 0); }, 0);
@@ -1071,24 +1054,31 @@
         var v   = Number(ltp  || 0);
         var c   = Number(chg  || 0);
         var p   = Number(pct  || 0);
+        // Header cells (compact) + the NIFTY Spot hero card (large). Same source,
+        // rendered in both places so the operator sees the LTP whether they're
+        // looking at the top bar or the top-left stat card.
         var ltpEl = document.getElementById('hdrFut');
         var chgEl = document.getElementById('hdrFutChg');
+        var cardLtp = document.getElementById('statNiftyLtp');
+        var cardChg = document.getElementById('statNiftyChg');
+        var ltpText = v > 0 ? v.toFixed(2) : '—';
         if (ltpEl) {
-            ltpEl.textContent = v > 0 ? v.toFixed(2) : '—';
+            ltpEl.textContent = ltpText;
             ltpEl.title = symbol || 'NIFTY spot index';
         }
-        if (chgEl) {
-            if (v <= 0 || (c === 0 && p === 0)) {
-                chgEl.textContent = '';
-                chgEl.style.color = '';
-                return;
-            }
+        if (cardLtp) cardLtp.textContent = ltpText;
+
+        var chgText = '';
+        var chgColor = '';
+        if (v > 0 && !(c === 0 && p === 0)) {
             var sign = c > 0 ? '+' : (c < 0 ? '−' : '');
             var pctStr = p === 0 ? '' : ' (' + sign + Math.abs(p).toFixed(2) + '%)';
-            chgEl.textContent = sign + Math.abs(c).toFixed(2) + pctStr;
-            chgEl.style.color = c > 0 ? 'var(--accent-green, #34d399)'
-                : (c < 0 ? 'var(--accent-red, #f87171)' : 'var(--text-muted)');
+            chgText  = sign + Math.abs(c).toFixed(2) + pctStr;
+            chgColor = c > 0 ? 'var(--accent-green, #34d399)'
+                     : (c < 0 ? 'var(--accent-red, #f87171)' : 'var(--text-muted)');
         }
+        if (chgEl)  { chgEl.textContent  = chgText; chgEl.style.color  = chgColor; }
+        if (cardChg) { cardChg.textContent = chgText || '—'; cardChg.style.color = chgColor; }
     }
 
     // ── NIFTY indicators header strip ─────────────────────────────────────
