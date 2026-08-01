@@ -56,10 +56,6 @@ public class RiskSettingsStore {
         volatile int    optionSellingSpotSupertrendAtr = 10;
         /** SuperTrend multiplier for the NIFTY spot ST. PDF spec: 3.0. */
         volatile double optionSellingSpotSupertrendMult = 3.0;
-        /** Gate D — reject a breakdown bar when the premium sits more than this %
-         *  below VWAP. Prevents entering "far below VWAP" bars where the R:R is
-         *  destroyed. Default 15 %. */
-        volatile double optionSellingMaxBreakdownPct = 15.0;
         /** Master toggle for the ST-flip-green early exit. When ON, an open
          *  position is flattened on the first 3-min close where the premium
          *  SuperTrend flips from RED to GREEN. Default ON. */
@@ -452,7 +448,6 @@ public class RiskSettingsStore {
     public double  getOptionSellingSupertrendMult()   { return cfg().optionSellingSupertrendMult; }
     public int     getOptionSellingSpotSupertrendAtr(){ return cfg().optionSellingSpotSupertrendAtr; }
     public double  getOptionSellingSpotSupertrendMult(){ return cfg().optionSellingSpotSupertrendMult; }
-    public double  getOptionSellingMaxBreakdownPct()  { return cfg().optionSellingMaxBreakdownPct; }
     public boolean isOptionSellingTrailingExitEnabled(){ return cfg().optionSellingTrailingExitEnabled; }
     public boolean isOptionSellingRequireGapOpenAboveVwap(){ return cfg().optionSellingRequireGapOpenAboveVwap; }
     public boolean isOptionSellingRetestEntryEnabled(){ return cfg().optionSellingRetestEntryEnabled; }
@@ -663,7 +658,6 @@ public class RiskSettingsStore {
     public void setOptionSellingSupertrendMult(double v)      { cfg().optionSellingSupertrendMult = Math.max(0.1, v); }
     public void setOptionSellingSpotSupertrendAtr(int v)      { cfg().optionSellingSpotSupertrendAtr = Math.max(2, v); }
     public void setOptionSellingSpotSupertrendMult(double v)  { cfg().optionSellingSpotSupertrendMult = Math.max(0.1, v); }
-    public void setOptionSellingMaxBreakdownPct(double v)     { cfg().optionSellingMaxBreakdownPct = Math.max(0, Math.min(100, v)); }
     public void setOptionSellingTrailingExitEnabled(boolean v){ cfg().optionSellingTrailingExitEnabled = v; }
     public void setOptionSellingRequireGapOpenAboveVwap(boolean v){ cfg().optionSellingRequireGapOpenAboveVwap = v; }
     public void setOptionSellingRetestEntryEnabled(boolean v) { cfg().optionSellingRetestEntryEnabled = v; }
@@ -788,7 +782,6 @@ public class RiskSettingsStore {
     public double  getOptionSellingSupertrendMult(String mode)    { return cfgFor(mode).optionSellingSupertrendMult; }
     public int     getOptionSellingSpotSupertrendAtr(String mode) { return cfgFor(mode).optionSellingSpotSupertrendAtr; }
     public double  getOptionSellingSpotSupertrendMult(String mode){ return cfgFor(mode).optionSellingSpotSupertrendMult; }
-    public double  getOptionSellingMaxBreakdownPct(String mode)   { return cfgFor(mode).optionSellingMaxBreakdownPct; }
     public boolean isOptionSellingTrailingExitEnabled(String mode){ return cfgFor(mode).optionSellingTrailingExitEnabled; }
     public boolean isOptionSellingRequireGapOpenAboveVwap(String mode){ return cfgFor(mode).optionSellingRequireGapOpenAboveVwap; }
     public boolean isOptionSellingRetestEntryEnabled(String mode) { return cfgFor(mode).optionSellingRetestEntryEnabled; }
@@ -829,7 +822,6 @@ public class RiskSettingsStore {
     public void setOptionSellingSupertrendMult(String mode, double v)      { cfgFor(mode).optionSellingSupertrendMult = Math.max(0.1, v); }
     public void setOptionSellingSpotSupertrendAtr(String mode, int v)      { cfgFor(mode).optionSellingSpotSupertrendAtr = Math.max(2, v); }
     public void setOptionSellingSpotSupertrendMult(String mode, double v)  { cfgFor(mode).optionSellingSpotSupertrendMult = Math.max(0.1, v); }
-    public void setOptionSellingMaxBreakdownPct(String mode, double v)     { cfgFor(mode).optionSellingMaxBreakdownPct = Math.max(0, Math.min(100, v)); }
     public void setOptionSellingTrailingExitEnabled(String mode, boolean v){ cfgFor(mode).optionSellingTrailingExitEnabled = v; }
     public void setOptionSellingRequireGapOpenAboveVwap(String mode, boolean v){ cfgFor(mode).optionSellingRequireGapOpenAboveVwap = v; }
     public void setOptionSellingRetestEntryEnabled(String mode, boolean v) { cfgFor(mode).optionSellingRetestEntryEnabled = v; }
@@ -880,7 +872,6 @@ public class RiskSettingsStore {
             upsert("optionSellingSupertrendMult",          String.valueOf(c.optionSellingSupertrendMult));
             upsert("optionSellingSpotSupertrendAtr",       String.valueOf(c.optionSellingSpotSupertrendAtr));
             upsert("optionSellingSpotSupertrendMult",      String.valueOf(c.optionSellingSpotSupertrendMult));
-            upsert("optionSellingMaxBreakdownPct",         String.valueOf(c.optionSellingMaxBreakdownPct));
             upsert("optionSellingTrailingExitEnabled",     String.valueOf(c.optionSellingTrailingExitEnabled));
             upsert("optionSellingRequireGapOpenAboveVwap", String.valueOf(c.optionSellingRequireGapOpenAboveVwap));
             upsert("optionSellingRetestEntryEnabled",      String.valueOf(c.optionSellingRetestEntryEnabled));
@@ -1075,7 +1066,7 @@ public class RiskSettingsStore {
                     case "optionSellingSupertrendMult"    -> c.optionSellingSupertrendMult = Math.max(0.1, Double.parseDouble(v));
                     case "optionSellingSpotSupertrendAtr" -> c.optionSellingSpotSupertrendAtr = Math.max(2, Integer.parseInt(v));
                     case "optionSellingSpotSupertrendMult"-> c.optionSellingSpotSupertrendMult = Math.max(0.1, Double.parseDouble(v));
-                    case "optionSellingMaxBreakdownPct"   -> c.optionSellingMaxBreakdownPct = Math.max(0, Math.min(100, Double.parseDouble(v)));
+                    case "optionSellingMaxBreakdownPct"   -> { /* Gate D setting retired 2026-08 — silently consume so old settings rows don't error on boot */ }
                     case "optionSellingTrailingExitEnabled" -> c.optionSellingTrailingExitEnabled = Boolean.parseBoolean(v);
                     case "optionSellingRequireGapOpenAboveVwap" -> c.optionSellingRequireGapOpenAboveVwap = Boolean.parseBoolean(v);
                     case "optionSellingRetestEntryEnabled"  -> c.optionSellingRetestEntryEnabled = Boolean.parseBoolean(v);

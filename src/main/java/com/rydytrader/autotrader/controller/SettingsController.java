@@ -47,7 +47,6 @@ public class SettingsController {
         result.put("optionSellingSupertrendMult",          riskSettings.getOptionSellingSupertrendMult(effectiveMode));
         result.put("optionSellingSpotSupertrendAtr",       riskSettings.getOptionSellingSpotSupertrendAtr(effectiveMode));
         result.put("optionSellingSpotSupertrendMult",      riskSettings.getOptionSellingSpotSupertrendMult(effectiveMode));
-        result.put("optionSellingMaxBreakdownPct",         riskSettings.getOptionSellingMaxBreakdownPct(effectiveMode));
         result.put("optionSellingTrailingExitEnabled",     riskSettings.isOptionSellingTrailingExitEnabled(effectiveMode));
         result.put("optionSellingRequireGapOpenAboveVwap", riskSettings.isOptionSellingRequireGapOpenAboveVwap(effectiveMode));
         result.put("optionSellingRetestEntryEnabled",      riskSettings.isOptionSellingRetestEntryEnabled(effectiveMode));
@@ -111,7 +110,6 @@ public class SettingsController {
             if (body.containsKey("optionSellingSupertrendMult"))         riskSettings.setOptionSellingSupertrendMult(effectiveMode, Double.parseDouble(body.get("optionSellingSupertrendMult").toString()));
             if (body.containsKey("optionSellingSpotSupertrendAtr"))      riskSettings.setOptionSellingSpotSupertrendAtr(effectiveMode, Integer.parseInt(body.get("optionSellingSpotSupertrendAtr").toString()));
             if (body.containsKey("optionSellingSpotSupertrendMult"))     riskSettings.setOptionSellingSpotSupertrendMult(effectiveMode, Double.parseDouble(body.get("optionSellingSpotSupertrendMult").toString()));
-            if (body.containsKey("optionSellingMaxBreakdownPct"))        riskSettings.setOptionSellingMaxBreakdownPct(effectiveMode, Double.parseDouble(body.get("optionSellingMaxBreakdownPct").toString()));
             if (body.containsKey("optionSellingTrailingExitEnabled"))    riskSettings.setOptionSellingTrailingExitEnabled(effectiveMode, Boolean.parseBoolean(body.get("optionSellingTrailingExitEnabled").toString()));
             if (body.containsKey("optionSellingRequireGapOpenAboveVwap")) riskSettings.setOptionSellingRequireGapOpenAboveVwap(effectiveMode, Boolean.parseBoolean(body.get("optionSellingRequireGapOpenAboveVwap").toString()));
             if (body.containsKey("optionSellingRetestEntryEnabled"))     riskSettings.setOptionSellingRetestEntryEnabled(effectiveMode, Boolean.parseBoolean(body.get("optionSellingRetestEntryEnabled").toString()));

@@ -31,7 +31,6 @@
                       '<div class="sm-field"><label>Premium ST multiplier</label><input type="number" id="sm-optionSellingSupertrendMult" step="0.1" min="0.1"><div class="sm-hint">Premium SuperTrend multiplier. Default 3.0.</div></div>' +
                       '<div class="sm-field"><label>Spot ST ATR period</label><input type="number" id="sm-optionSellingSpotSupertrendAtr" step="1" min="2"><div class="sm-hint">Gate C — SuperTrend on NIFTY spot direction. Default 10.</div></div>' +
                       '<div class="sm-field"><label>Spot ST multiplier</label><input type="number" id="sm-optionSellingSpotSupertrendMult" step="0.1" min="0.1"><div class="sm-hint">Spot SuperTrend multiplier. Default 3.0.</div></div>' +
-                      '<div class="sm-field"><label>Max breakdown % below VWAP</label><input type="number" id="sm-optionSellingMaxBreakdownPct" step="1" min="0" max="100"><div class="sm-hint">Gate D — reject if premium is more than this % below VWAP on the breakdown bar. Default 15.</div></div>' +
                       '<div class="sm-field"><label><input type="checkbox" id="sm-optionSellingRequireGapOpenAboveVwap" style="margin-right:6px;vertical-align:middle;">Require open ≥ VWAP</label><div class="sm-hint">Gate A companion — the VWAP-break bar must open at or above VWAP (fresh breakdown). Default ON.</div></div>' +
                       '<div class="sm-field"><label><input type="checkbox" id="sm-optionSellingTrailingExitEnabled" style="margin-right:6px;vertical-align:middle;">ST-flip-green early exit</label><div class="sm-hint">Flatten the position on the first 3-min close where premium ST flips RED → GREEN. Default ON.</div></div>' +
                       '<div class="sm-field"><label><input type="checkbox" id="sm-optionSellingRetestEntryEnabled" style="margin-right:6px;vertical-align:middle;">Retest entry (Phase 2 — no-op)</label><div class="sm-hint">Alternate entry path where a retest of VWAP that rejects can trigger. Not wired yet — toggle here for future release. Default OFF.</div></div>' +
@@ -219,7 +218,6 @@
             if (g('sm-optionSellingSupertrendMult'))         g('sm-optionSellingSupertrendMult').value = d.optionSellingSupertrendMult != null ? d.optionSellingSupertrendMult : 3.0;
             if (g('sm-optionSellingSpotSupertrendAtr'))      g('sm-optionSellingSpotSupertrendAtr').value = d.optionSellingSpotSupertrendAtr != null ? d.optionSellingSpotSupertrendAtr : 10;
             if (g('sm-optionSellingSpotSupertrendMult'))     g('sm-optionSellingSpotSupertrendMult').value = d.optionSellingSpotSupertrendMult != null ? d.optionSellingSpotSupertrendMult : 3.0;
-            if (g('sm-optionSellingMaxBreakdownPct'))        g('sm-optionSellingMaxBreakdownPct').value = d.optionSellingMaxBreakdownPct != null ? d.optionSellingMaxBreakdownPct : 15;
             if (g('sm-optionSellingRequireGapOpenAboveVwap')) g('sm-optionSellingRequireGapOpenAboveVwap').checked = d.optionSellingRequireGapOpenAboveVwap !== false;
             if (g('sm-optionSellingTrailingExitEnabled'))    g('sm-optionSellingTrailingExitEnabled').checked = d.optionSellingTrailingExitEnabled !== false;
             if (g('sm-optionSellingRetestEntryEnabled'))     g('sm-optionSellingRetestEntryEnabled').checked = d.optionSellingRetestEntryEnabled === true;
@@ -240,7 +238,6 @@
             optionSellingSupertrendMult:           Math.max(0.1, parseFloat(g('sm-optionSellingSupertrendMult').value) || 3.0),
             optionSellingSpotSupertrendAtr:        Math.max(2, parseInt(g('sm-optionSellingSpotSupertrendAtr').value, 10) || 10),
             optionSellingSpotSupertrendMult:       Math.max(0.1, parseFloat(g('sm-optionSellingSpotSupertrendMult').value) || 3.0),
-            optionSellingMaxBreakdownPct:          Math.max(0, Math.min(100, parseFloat(g('sm-optionSellingMaxBreakdownPct').value) || 15.0)),
             optionSellingTrailingExitEnabled:      !!(g('sm-optionSellingTrailingExitEnabled') && g('sm-optionSellingTrailingExitEnabled').checked),
             optionSellingRequireGapOpenAboveVwap:  !!(g('sm-optionSellingRequireGapOpenAboveVwap') && g('sm-optionSellingRequireGapOpenAboveVwap').checked),
             optionSellingRetestEntryEnabled:       !!(g('sm-optionSellingRetestEntryEnabled') && g('sm-optionSellingRetestEntryEnabled').checked)

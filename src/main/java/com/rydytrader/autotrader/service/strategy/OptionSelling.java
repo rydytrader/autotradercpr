@@ -1059,20 +1059,21 @@ public class OptionSelling implements Strategy {
         }
     }
 
-    /** PDF's 4-condition entry gate check on the just-closed bar. Returns pass=true
-     *  and the premium ST line snapshot when all four hold:
+    /** PDF's entry gate check on the just-closed bar. Returns pass=true and the
+     *  premium ST line snapshot when all three active gates hold:
      *  <ul>
      *    <li>A. Fresh VWAP breakdown: close &lt; VWAP AND (open ≥ VWAP if the
      *        require-gap-open toggle is on).</li>
      *    <li>B. Premium SuperTrend RED at this bar (isUp=false).</li>
      *    <li>C. Spot SuperTrend alignment: CE → spot ST red, PE → spot ST green.</li>
-     *    <li>D. Not "far below VWAP" — the distance below VWAP as % is ≤
-     *        {@code optionSellingMaxBreakdownPct}.</li>
      *  </ul>
-     *  When any check fails, {@code reason} carries a short human-readable label
-     *  the caller can log INFO-level to keep the operator's event log debuggable.
-     *  Returns {@code reason=null} when the bar wasn't a candidate at all (close
-     *  ≥ VWAP) — caller logs nothing in that case to avoid event-log spam. */
+     *  Gate D ("not far below VWAP") not implemented — will be added later.
+     *
+     *  <p>When any check fails, {@code reason} carries a short human-readable
+     *  label the caller can log INFO-level to keep the operator's event log
+     *  debuggable. Returns {@code reason=null} when the bar wasn't a candidate
+     *  at all (close ≥ VWAP) — caller logs nothing in that case to avoid
+     *  event-log spam. */
     private EntryGateResult evaluateEntryGates(String symbol, Candle c, double vwap, boolean isCeLeg) {
         double close = c.close();
         double open  = c.open();
@@ -1083,13 +1084,6 @@ public class OptionSelling implements Strategy {
         if (riskSettings.isOptionSellingRequireGapOpenAboveVwap() && open < vwap) {
             return new EntryGateResult(false, 0,
                 "A fail — bar opened below VWAP (open=" + round2(open) + " < vwap=" + round2(vwap) + ")");
-        }
-        // Gate D — not far below VWAP
-        double maxBreakdownPct = riskSettings.getOptionSellingMaxBreakdownPct();
-        double breakdownPct = vwap > 0 ? (vwap - close) / vwap * 100.0 : 0;
-        if (maxBreakdownPct > 0 && breakdownPct > maxBreakdownPct) {
-            return new EntryGateResult(false, 0,
-                "D fail — " + round2(breakdownPct) + "% below VWAP > cap " + round2(maxBreakdownPct) + "%");
         }
         // Gate B — premium SuperTrend RED
         int    stAtr  = riskSettings.getOptionSellingSupertrendAtr();
