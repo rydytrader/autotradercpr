@@ -165,6 +165,14 @@
                     <button class="scope-pill"        data-period="all">All Time</button>
                 </div>
             </div>
+            <div style="display:flex; align-items:center; gap:12px;">
+                <span class="ah-stat-label" style="font-weight:700;">Strategy</span>
+                <div class="pill-row" id="strategyPills">
+                    <button class="scope-pill active" data-strategy="all"             title="Combined stats across both strategies.">All</button>
+                    <button class="scope-pill"        data-strategy="option-selling"  title="OPTION SELLING only — VWAP + Premium ST short setups.">OPTION SELLING</button>
+                    <button class="scope-pill"        data-strategy="option-buying"   title="OPTION BUYING only — ST + RSI + BB + Pivots long setups.">OPTION BUYING</button>
+                </div>
+            </div>
             <div style="display:flex; align-items:center; gap:10px;">
                 <span class="ah-stat-label" style="font-weight:700;">Pick</span>
                 <select id="pickYear" class="ah-picker"
@@ -432,8 +440,9 @@
 
     // ── Selectors ────────────────────────────────────────────────────────────
     var currentPeriod   = 'today';
-    // Manual trading was retired; all rows are algo. Kept as a constant so
-    // the /api/analytics/* URL parameter format stays stable.
+    // Strategy filter — driven by the Strategy pill row. Values: 'all',
+    // 'option-selling', 'option-buying'. Passed as strategyId to the
+    // /api/analytics/* endpoints which already filter by it.
     var currentStrategy = 'all';
     var currentIncludeAdjustments = false;   // Options Terminal removed — always off
     var lastEquityRenderMs = 0;
@@ -458,8 +467,10 @@
         clearPicker(false);
         loadSummary(true);
     });
-    // Source-pill wiring removed with the ALGO / MANUAL toggle — every
-    // trade is now algo. currentStrategy stays at 'all' permanently.
+    bindPills('strategyPills', function(btn) {
+        currentStrategy = btn.getAttribute('data-strategy');
+        loadSummary(true);
+    });
 
     // ── Month/Year picker ────────────────────────────────────────────────────
     // Populate the year dropdown from current calendar year going back 5 years. Could be
