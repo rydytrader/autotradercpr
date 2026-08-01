@@ -442,7 +442,6 @@ public class OptionSelling implements Strategy {
                 candleAggregator.unsubscribe(sym);
             }
             state.openPositions.clear();
-            state.triggerByOption.clear();
         state.lastSlBarStartMsBySymbol.clear();
             state.lastSlBarStartMsBySymbol.clear();
             state.doneForDay = false;
@@ -999,87 +998,47 @@ public class OptionSelling implements Strategy {
             return;
         }
 
-        // After the configured trading end time, no new entries will fire — so the FSM
-        // work (seeding / promoting / invalidating triggers) is dead weight and just
-        // spams the event log. Silently skip. Existing open positions keep running via
-        // fastSlCheck + watchSquareoff independently of this method.
-        if (!canFireNewEntry()) {
-            // Also drop any stale trigger so it doesn't linger past squareoff / next day.
-            state.triggerByOption.remove(symbol);
-            return;
-        }
+        // After the configured trading end time, no new entries fire. Existing open
+        // positions keep running via fastSlCheck + watchSquareoff independently.
+        // Trailing exits still evaluate (see bottom of method) so we exit late.
+        boolean canFire = canFireNewEntry();
 
-        // Skip if a position is already open on this symbol (no stacking).
+        // Skip entry work if a position is already open on this symbol.
+        boolean alreadyOpen = false;
         for (Position p : state.openPositions.values()) {
             if (p == null) continue;
             if (p.setup == ActiveSetup.MANUAL) continue;
-            if (symbol.equals(p.symbol)) return;
+            if (symbol.equals(p.symbol)) { alreadyOpen = true; break; }
         }
 
-        // Rule: the bar that just took out an SL on this symbol cannot be
-        // classified as a trigger candle (neither seed nor promote). Prevents
-        // re-entering on the same structural bar that just moved against us.
-        // The fire path (S1a below) is unaffected — a prior bar's trigger can
-        // still fire on this bar's close breaking its low.
+        // Rule: the bar that just took out an SL on this symbol cannot be the
+        // qualifying entry bar — prevents re-entering on the same structural
+        // bar that just moved against us.
         Long slBar = state.lastSlBarStartMsBySymbol.get(symbol);
         boolean poisonedByRecentSl = slBar != null && slBar == c.startMillis();
 
-        // Note: {@code c} arrives already reconciled by {@link #onCandleClose}. All FSM
-        // decisions below therefore use exchange-authoritative OHLC without any per-branch
-        // /history calls.
-        TriggerCandle trigger = state.triggerByOption.get(symbol);
-
         boolean isCeLeg = symbol.equals(state.ceSymbol);
 
-        if (trigger != null) {
-            // S1 — this bar decides the previous trigger's fate.
-            if (c.close() < trigger.low) {
-                // (a) Fire — check is UNCONDITIONAL vs VWAP / gates. If A/B/C/D
-                //     already passed at seed time and the next bar breaks the
-                //     trigger low, we've got confirmation.
-                fire(symbol, c, trigger);
-                state.triggerByOption.remove(symbol);
-                return;
-            }
-            // (b) No fire — invalidate. Promotion path also requires all 4 gates.
-            state.triggerByOption.remove(symbol);
-            if (poisonedByRecentSl) {
+        // Single-bar entry: if this closed bar passes all 4 gates, fire NOW.
+        // The PDF says "Execute the sell order at the market open of the candle
+        // immediately following the confirmed breakdown close" — in our world
+        // that is the market order placed the instant onCandleClose fires
+        // (~3 s after bar close via the aggregator grace window).
+        if (canFire && !alreadyOpen && !poisonedByRecentSl) {
+            EntryGateResult gate = evaluateEntryGates(symbol, c, vwap, isCeLeg);
+            if (gate.pass) {
                 eventAtDisplayTime("[INFO]", "Setup",
-                    shortSym(symbol) + " trigger invalidated — promote SKIPPED (bar took out today's SL)",
+                    shortSym(symbol) + " entry gates PASS @ close " + round2(c.close())
+                    + " (high=" + round2(c.high()) + ", vwap=" + round2(vwap)
+                    + ", stLine=" + round2(gate.premiumStLine) + ")",
                     c.startMillis());
-                return;
-            }
-            EntryGateResult promoteGate = evaluateEntryGates(symbol, c, vwap, isCeLeg);
-            if (promoteGate.pass) {
-                state.triggerByOption.put(symbol, TriggerCandle.of(c, promoteGate.premiumStLine));
+                fire(symbol, c, TriggerCandle.of(c, gate.premiumStLine));
+            } else if (gate.reason != null) {
+                // Log only when we had a candidate breakdown (skips the vacuous "close ≥ VWAP" case).
                 eventAtDisplayTime("[INFO]", "Setup",
-                    shortSym(symbol) + " trigger promoted @ close " + round2(c.close())
-                    + " (high=" + round2(c.high()) + ", low=" + round2(c.low())
-                    + ", vwap=" + round2(vwap) + ", stLine=" + round2(promoteGate.premiumStLine) + ")",
-                    c.startMillis());
-            } else {
-                eventAtDisplayTime("[INFO]", "Setup",
-                    shortSym(symbol) + " trigger invalidated (" + promoteGate.reason + ")",
+                    shortSym(symbol) + " gate REJECT — " + gate.reason,
                     c.startMillis());
             }
-            return;
-        }
-
-        // S0 — no active trigger. Seed only when all 4 gates pass.
-        if (poisonedByRecentSl) return;   // silent — the previous bar already logged
-        EntryGateResult seed = evaluateEntryGates(symbol, c, vwap, isCeLeg);
-        if (seed.pass) {
-            state.triggerByOption.put(symbol, TriggerCandle.of(c, seed.premiumStLine));
-            eventAtDisplayTime("[INFO]", "Setup",
-                shortSym(symbol) + " trigger seeded @ close " + round2(c.close())
-                + " (high=" + round2(c.high()) + ", low=" + round2(c.low())
-                + ", vwap=" + round2(vwap) + ", stLine=" + round2(seed.premiumStLine) + ")",
-                c.startMillis());
-        } else if (seed.reason != null) {
-            // Log only when we had a reason to consider seeding (not vacuous "close ≥ VWAP" case).
-            eventAtDisplayTime("[INFO]", "Setup",
-                shortSym(symbol) + " gate REJECT — " + seed.reason,
-                c.startMillis());
         }
 
         // ── Trailing exit — ST-flip-green on the just-closed bar for any open position on this symbol.
@@ -1585,9 +1544,6 @@ public class OptionSelling implements Strategy {
             candleAggregator.unsubscribe(symbol);
         }
 
-        // Drop any lingering trigger — the FSM resets after any close on this symbol.
-        if (symbol != null) state.triggerByOption.remove(symbol);
-
         saveToDisk();
         return true;
     }
@@ -1664,7 +1620,6 @@ public class OptionSelling implements Strategy {
 
         int eventsCleared = state.recentEvents.size();
         state.recentEvents.clear();
-        state.triggerByOption.clear();
         state.lastSlBarStartMsBySymbol.clear();
 
         saveToDisk();
@@ -1767,7 +1722,6 @@ public class OptionSelling implements Strategy {
         }
         state.openPositions.clear();
         state.symbolRole.clear();
-        state.triggerByOption.clear();
         state.lastSlBarStartMsBySymbol.clear();
         releaseSessionLegs();
         saveToDisk();
@@ -1802,7 +1756,6 @@ public class OptionSelling implements Strategy {
             }
             state.openPositions.clear();
             state.symbolRole.clear();
-            state.triggerByOption.clear();
         state.lastSlBarStartMsBySymbol.clear();
             state.lastSlBarStartMsBySymbol.clear();
 
@@ -2002,8 +1955,6 @@ public class OptionSelling implements Strategy {
         public boolean dailyLossLockout;
         /** NIFTY spot symbol — subscribed to trigger first-3-min ATM resolution. */
         public String futuresSymbol = "";
-        /** Per-option live trigger candle (VWAP FSM state). */
-        public Map<String, TriggerCandle> triggerByOption = new ConcurrentHashMap<>();
         /** Per-symbol memory of the LAST bar in which an SL fired for that symbol.
          *  Value = the SL-hit bar's start-ms (matches {@link Candle#startMillis()}).
          *  {@link #processOptionBar} short-circuits trigger classification when the
@@ -2159,7 +2110,6 @@ public class OptionSelling implements Strategy {
                 if (state.openPositions == null)    state.openPositions    = new ConcurrentHashMap<>();
                 if (state.todayClosedTrades == null) state.todayClosedTrades = new ArrayList<>();
                 if (state.recentEvents == null)     state.recentEvents     = new ArrayList<>();
-                if (state.triggerByOption == null)  state.triggerByOption  = new ConcurrentHashMap<>();
                 if (state.lastSlBarStartMsBySymbol == null) state.lastSlBarStartMsBySymbol = new ConcurrentHashMap<>();
                 if (state.symbolRole == null)       state.symbolRole       = new ConcurrentHashMap<>();
                 if (state.warmingStrikes == null)     state.warmingStrikes     = new ArrayList<>();
