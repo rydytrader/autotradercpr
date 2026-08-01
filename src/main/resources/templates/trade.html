@@ -212,8 +212,8 @@
     <div class="section-card fade-in" style="margin-bottom:20px;">
         <div class="section-header">
             <div class="section-title"><div class="section-title-dot"></div> Overview</div>
-            <!-- Right-side header cluster: exposed risk (compact) + market clock badge.
-                 Exposed Risk moved out of the tile row per operator ask. -->
+            <!-- Right-side header cluster: exposed risk (compact). Market clock
+                 lives in the tile row below now. -->
             <div style="margin-left:auto; display:flex; align-items:center; gap:14px;
                         font-family:var(--font-mono); font-size:0.72rem;">
                 <span style="color:var(--text-muted);">Exposed
@@ -225,7 +225,6 @@
                 <span style="color:var(--text-muted);">Budget
                     <span id="riskBudgetVal" style="color:#68d391; font-weight:700;">—</span>
                 </span>
-                <span class="section-badge" id="marketClock">—</span>
             </div>
         </div>
         <div style="padding:20px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px;">
@@ -233,7 +232,7 @@
             <div>
                 <div class="stat-label" style="margin-bottom:6px;">Net Day P&amp;L</div>
                 <div class="stat-value" id="statPnl" style="font-size:2.2rem;">—</div>
-                <div class="stat-sub" id="statPnlSub" style="margin-top:6px; color:var(--text-muted);">Realized + Unrealized · <span id="marketClockSub">Checking…</span></div>
+                <div class="stat-sub" id="statPnlSub" style="margin-top:6px; color:var(--text-muted);">Realized + Unrealized</div>
             </div>
             <div style="display:flex; gap:28px; flex-wrap:wrap; align-items:flex-start;">
                 <!-- NIFTY Spot — now a small tile on the right. -->
@@ -279,6 +278,13 @@
                     <div class="stat-label">RSI</div>
                     <div class="stat-value" id="tileRsiValue" style="font-size:1.3rem; margin-top:4px;">—</div>
                     <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">30 · 70</div>
+                </div>
+                <!-- Market Clock — session clock + market status. Rightmost tile. -->
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
+                     title="IST market clock and session status">
+                    <div class="stat-label">Clock</div>
+                    <div class="stat-value" id="marketClock" style="font-size:1.3rem; margin-top:4px;">—</div>
+                    <div class="stat-sub" id="marketClockSub" style="margin-top:4px; color:var(--text-muted);">Checking…</div>
                 </div>
             </div>
         </div>
