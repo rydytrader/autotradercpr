@@ -55,11 +55,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * drift hundreds of points during a session, and an option buyer wants the
  * momentary at-the-money leg, not a stale session anchor.
  *
- * <p><b>Exit — SuperTrend trailing.</b> On every subsequent 3-min NIFTY bar
- * close, re-evaluate SuperTrend. Long CE exits when ST flips to down. Long
- * PE exits when ST flips to up. Fast-path {@code fastSlCheck} enforces a
- * hard {@code optionBuyingHardSlPct} backstop (default 40 % of entry
- * premium) so a gap-down doesn't wait for the next bar close.
+ * <p><b>Exit — SuperTrend trailing.</b> On every 3-min NIFTY bar close,
+ * re-evaluate SuperTrend. Long CE exits when ST flips to down. Long PE
+ * exits when ST flips to up. Position.slLevel trails the NIFTY ST line
+ * in the tightening direction between exits. No tick-based hard SL —
+ * exits are bar-close only.
  *
  * <p><b>Time gates.</b> Entries fire only in
  * {@code optionBuyingTradingStartTime}..{@code optionBuyingTradingEndTime}.
@@ -167,7 +167,7 @@ public class OptionBuying implements Strategy {
     @Override public String id()          { return STRATEGY_ID; }
     @Override public String displayName() { return "OPTION BUYING"; }
     @Override public String description() { return "NIFTY 3-min · 4-indicator (ST/RSI/Pivots/BB) · CE/PE long"; }
-    @Override public boolean isEnabled()  { return riskSettings.isOptionBuyingEnabled(); }
+    @Override public boolean isEnabled()  { return true; }   // always on — no kill switch
 
     @Override public String currentState() {
         if (state.openPositions.isEmpty()) return "IDLE";
@@ -223,12 +223,10 @@ public class OptionBuying implements Strategy {
 
     @Override
     public void fastSlCheck() {
-        // Tick-based SL disabled. Exits are bar-close-only: NIFTY spot ST is
+        // Tick-based SL retired. Exits are bar-close-only: NIFTY spot ST is
         // re-evaluated on every 3-min close in evaluateExits — an ST flip
         // against the trade direction closes the position, and while ST is
         // still with the trade the position's slLevel trails the ST line.
-        // The optionBuyingHardSlPct setting remains in RiskSettingsStore but
-        // is no longer consulted.
     }
 
     // ── Candle close handler — the FSM entry point ──────────────────────────

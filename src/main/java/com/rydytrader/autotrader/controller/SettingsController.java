@@ -44,13 +44,11 @@ public class SettingsController {
         result.put("optionSellingMaxCeTradesPerDay",  riskSettings.getOptionSellingMaxCeTradesPerDay(effectiveMode));
         result.put("optionSellingMaxPeTradesPerDay",  riskSettings.getOptionSellingMaxPeTradesPerDay(effectiveMode));
         // OPTION BUYING (Ganesan 4-indicator framework — coexists with OPTION SELLING)
-        result.put("optionBuyingEnabled",           riskSettings.isOptionBuyingEnabled());
         result.put("optionBuyingLotsPerLeg",        riskSettings.getOptionBuyingLotsPerLeg());
         result.put("optionBuyingOrderType",         riskSettings.getOptionBuyingOrderType());
         result.put("optionBuyingTradingStartTime",  riskSettings.getOptionBuyingTradingStartTime());
         result.put("optionBuyingTradingEndTime",    riskSettings.getOptionBuyingTradingEndTime());
         result.put("optionBuyingSquareOffTime",     riskSettings.getOptionBuyingSquareOffTime());
-        result.put("optionBuyingHardSlPct",         riskSettings.getOptionBuyingHardSlPct());
         result.put("optionBuyingMaxTradesPerDay",   riskSettings.getOptionBuyingMaxTradesPerDay());
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
@@ -102,14 +100,12 @@ public class SettingsController {
             // SuperTrend params (Atr / Mult / Spot Atr / Spot Mult) intentionally not
             // exposed to POST — hardcoded to (10, 3) in OptionSelling.java.
             // TrailingExitEnabled + RequireGapOpenAboveVwap both hardcoded ON in OptionSelling — no POST.
-            // OPTION BUYING
-            if (body.containsKey("optionBuyingEnabled"))          riskSettings.setOptionBuyingEnabled(Boolean.parseBoolean(body.get("optionBuyingEnabled").toString()));
+            // OPTION BUYING — Enabled + HardSlPct hardcoded, no POST.
             if (body.containsKey("optionBuyingLotsPerLeg"))       riskSettings.setOptionBuyingLotsPerLeg(Integer.parseInt(body.get("optionBuyingLotsPerLeg").toString()));
             if (body.containsKey("optionBuyingOrderType"))        riskSettings.setOptionBuyingOrderType(body.get("optionBuyingOrderType").toString());
             if (body.containsKey("optionBuyingTradingStartTime")) riskSettings.setOptionBuyingTradingStartTime(body.get("optionBuyingTradingStartTime").toString());
             if (body.containsKey("optionBuyingTradingEndTime"))   riskSettings.setOptionBuyingTradingEndTime(body.get("optionBuyingTradingEndTime").toString());
             if (body.containsKey("optionBuyingSquareOffTime"))    riskSettings.setOptionBuyingSquareOffTime(body.get("optionBuyingSquareOffTime").toString());
-            if (body.containsKey("optionBuyingHardSlPct"))        riskSettings.setOptionBuyingHardSlPct(Double.parseDouble(body.get("optionBuyingHardSlPct").toString()));
             if (body.containsKey("optionBuyingMaxTradesPerDay"))  riskSettings.setOptionBuyingMaxTradesPerDay(Integer.parseInt(body.get("optionBuyingMaxTradesPerDay").toString()));
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
