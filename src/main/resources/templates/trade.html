@@ -270,6 +270,9 @@
                 <span style="color:var(--text-muted);" title="NIFTY Bollinger lower band (20, 2σ)">BB↓ <span id="ntBbLo" style="color:var(--text-primary);font-weight:700;">—</span></span>
                 <span style="color:var(--text-muted);" title="Floor Pivot R1 — yesterday's HLC, constant intraday">R1 <span id="ntR1" style="color:var(--text-primary);font-weight:700;">—</span></span>
                 <span style="color:var(--text-muted);" title="Floor Pivot S1 — yesterday's HLC, constant intraday">S1 <span id="ntS1" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
+                <span style="color:var(--text-muted);" title="ATM CE premium SuperTrend(10,3) — the OPTION SELLING trailing SL / flip source">CE ST <span id="ntCeSt" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                <span style="color:var(--text-muted);" title="ATM PE premium SuperTrend(10,3) — the OPTION SELLING trailing SL / flip source">PE ST <span id="ntPeSt" style="color:var(--text-primary);font-weight:700;">—</span></span>
             </div>
         </div>
     </div>
@@ -1130,6 +1133,34 @@
                 if (s1El) s1El.textContent = fmt(d.s1);
             })
             .catch(function() { /* silent — keep prior values */ });
+
+        // Second fetch: OPTION SELLING's premium ST on the ATM CE + PE legs.
+        // Same session, same 3-min bars — piggybacks on the same 3 s cadence.
+        fetch('/api/option-selling/indicators')
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(d) {
+                if (!d) return;
+                var ceEl = document.getElementById('ntCeSt');
+                var peEl = document.getElementById('ntPeSt');
+                var render = function(el, available, line, isUp) {
+                    if (!el) return;
+                    if (available && line > 0) {
+                        var arrow = isUp ? '▲' : '▼';
+                        el.textContent = Number(line).toFixed(2) + arrow;
+                        // Premium ST semantics for a SELL: RED = we're short and
+                        // trend agrees (green pill); GREEN = flip → exit (red pill).
+                        el.style.color = isUp
+                            ? 'var(--accent-red, #f87171)'
+                            : 'var(--accent-green, #34d399)';
+                    } else {
+                        el.textContent = '—';
+                        el.style.color = 'var(--text-primary)';
+                    }
+                };
+                render(ceEl, d.ceStAvailable, d.ceStLine, d.ceStIsUp);
+                render(peEl, d.peStAvailable, d.peStLine, d.peStIsUp);
+            })
+            .catch(function() { /* silent */ });
     }
 
     // ── Boot ───────────────────────────────────────────────────────────────

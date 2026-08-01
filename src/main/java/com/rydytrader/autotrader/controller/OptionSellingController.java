@@ -50,6 +50,14 @@ public class OptionSellingController {
         return strategy.dashboardState();
     }
 
+    /** Premium SuperTrend snapshot for both ATM CE and PE legs — consumed by the
+     *  /positions NIFTY Technicals row so the operator sees the same premium-ST
+     *  values the entry gate + trailing SL evaluate. */
+    @GetMapping("/api/option-selling/indicators")
+    public Map<String, Object> getIndicators() {
+        return strategy.optionIndicatorsSnapshot();
+    }
+
     @PostMapping("/api/option-selling/squareoff")
     public Map<String, Object> squareoff(@RequestBody(required = false) Map<String, Object> body) {
         Object symObj = body == null ? null : body.get("symbol");

@@ -1781,6 +1781,40 @@ public class OptionSelling implements Strategy {
         }
     }
 
+    /** Premium SuperTrend snapshot for both ATM CE and PE legs. Consumed by
+     *  the /positions page's NIFTY Technicals row so the operator can watch
+     *  the same premium-ST direction the entry gate + trailing SL evaluate.
+     *  Returns 0 values / stAvailable=false when the leg isn't yet resolved
+     *  (pre-09:18) or bars haven't warmed up. */
+    public Map<String, Object> optionIndicatorsSnapshot() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        int    atr  = riskSettings.getOptionSellingSupertrendAtr();
+        double mult = riskSettings.getOptionSellingSupertrendMult();
+        m.put("ceSymbol", state.ceSymbol == null ? "" : state.ceSymbol);
+        m.put("peSymbol", state.peSymbol == null ? "" : state.peSymbol);
+        m.put("atmStrike", state.atmStrike);
+        addLegSt(m, "ce", state.ceSymbol, atr, mult);
+        addLegSt(m, "pe", state.peSymbol, atr, mult);
+        m.put("ts", System.currentTimeMillis());
+        return m;
+    }
+
+    private void addLegSt(Map<String, Object> out, String prefix, String symbol,
+                          int atr, double mult) {
+        if (symbol == null || symbol.isBlank()) {
+            out.put(prefix + "StAvailable", false);
+            out.put(prefix + "StLine", 0.0);
+            out.put(prefix + "StIsUp", false);
+            return;
+        }
+        List<Candle> bars = candleAggregator.getHistory(symbol);
+        com.rydytrader.autotrader.indicator.SuperTrend.State st =
+            com.rydytrader.autotrader.indicator.SuperTrend.at(bars, atr, mult);
+        out.put(prefix + "StAvailable", st.available());
+        out.put(prefix + "StLine",   st.available() ? round2(st.line()) : 0.0);
+        out.put(prefix + "StIsUp",   st.available() && st.isUp());
+    }
+
     // ── Dashboard payload (consumed by OptionSellingController + Trade page) ─────
 
     public synchronized Map<String, Object> dashboardState() {
