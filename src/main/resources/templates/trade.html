@@ -240,22 +240,47 @@
                 </div>
             </div>
         </div>
-        <!-- Technicals chip row — sits inside the same hero card, below the divider.
-             All values are on NIFTY spot at the latest 3-min close (except CE ST /
-             PE ST which are on the option premium legs); polled every 3 s. -->
-        <div style="border-top:1px solid var(--border); padding:14px 28px; display:flex;
-                    gap:22px; align-items:center; font-family:var(--font-mono);
-                    font-size:0.78rem; flex-wrap:wrap;">
-            <div class="stat-label" style="letter-spacing:0.08em; text-transform:uppercase; color:#a78bfa;">Technicals</div>
-            <span style="color:var(--text-muted);" title="NIFTY SuperTrend(10,3) — arrow shows direction">ST <span id="ntSt" style="color:var(--text-primary);font-weight:700;">—</span></span>
-            <span style="color:var(--text-muted);" title="NIFTY RSI(14)">RSI <span id="ntRsi" style="color:var(--text-primary);font-weight:700;">—</span></span>
-            <span style="color:var(--text-muted);" title="NIFTY Bollinger upper band (20, 2σ)">BB↑ <span id="ntBbUp" style="color:var(--text-primary);font-weight:700;">—</span></span>
-            <span style="color:var(--text-muted);" title="NIFTY Bollinger lower band (20, 2σ)">BB↓ <span id="ntBbLo" style="color:var(--text-primary);font-weight:700;">—</span></span>
-            <span style="color:var(--text-muted);" title="Floor Pivot R1 — yesterday's HLC, constant intraday">R1 <span id="ntR1" style="color:var(--text-primary);font-weight:700;">—</span></span>
-            <span style="color:var(--text-muted);" title="Floor Pivot S1 — yesterday's HLC, constant intraday">S1 <span id="ntS1" style="color:var(--text-primary);font-weight:700;">—</span></span>
-            <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
-            <span style="color:var(--text-muted);" title="ATM CE premium SuperTrend(10,3) — OPTION SELLING trailing SL / flip source">CE ST <span id="ntCeSt" style="color:var(--text-primary);font-weight:700;">—</span></span>
-            <span style="color:var(--text-muted);" title="ATM PE premium SuperTrend(10,3) — OPTION SELLING trailing SL / flip source">PE ST <span id="ntPeSt" style="color:var(--text-primary);font-weight:700;">—</span></span>
+        <!-- Technicals — one tile per indicator category, styled to match the P&L / Risk
+             tiles above. Each tile has a label, a headline value, and a sub-caption with
+             finer detail. Border-top divider visually separates market/risk from
+             technicals but keeps them in one hero card. -->
+        <div style="border-top:1px solid var(--border); padding:16px 28px;
+                    display:flex; gap:32px; flex-wrap:wrap; justify-content:flex-start;">
+            <!-- SuperTrend — NIFTY spot ST as headline, CE + PE premium ST in the sub. -->
+            <div style="text-align:center;" title="SuperTrend(10, 3) — direction filter">
+                <div class="stat-label">SuperTrend</div>
+                <div class="stat-value" id="tileStValue" style="font-size:1.4rem; margin-top:4px;">—</div>
+                <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">
+                    CE <span id="tileStCe" style="font-weight:600;">—</span>
+                    <span style="margin:0 4px;">·</span>
+                    PE <span id="tileStPe" style="font-weight:600;">—</span>
+                </div>
+            </div>
+            <!-- Bollinger — upper / lower band as headline, mid band in the sub. -->
+            <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;"
+                 title="Bollinger Bands (20 SMA ± 2σ)">
+                <div class="stat-label">Bollinger</div>
+                <div class="stat-value" id="tileBbValue" style="font-size:1.4rem; margin-top:4px;">—</div>
+                <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">
+                    Mid <span id="tileBbMid" style="font-weight:600;">—</span>
+                </div>
+            </div>
+            <!-- Floor Pivots — R1 / S1 as headline, pivot in the sub. -->
+            <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;"
+                 title="Floor Pivots from yesterday's HLC — constant intraday">
+                <div class="stat-label">Pivots</div>
+                <div class="stat-value" id="tilePivotValue" style="font-size:1.4rem; margin-top:4px;">—</div>
+                <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">
+                    P <span id="tilePivotMid" style="font-weight:600;">—</span>
+                </div>
+            </div>
+            <!-- RSI — value coloured on 30/70 thresholds. -->
+            <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;"
+                 title="RSI(14) — Wilder smoothing">
+                <div class="stat-label">RSI</div>
+                <div class="stat-value" id="tileRsiValue" style="font-size:1.4rem; margin-top:4px;">—</div>
+                <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">30 · 70</div>
+            </div>
         </div>
     </div>
 
@@ -1065,29 +1090,30 @@
         if (cardChg) { cardChg.textContent = chgText || '—'; cardChg.style.color = chgColor; }
     }
 
-    // ── NIFTY Technicals poll ──────────────────────────────────────────────
-    // Polls /api/option-buying/indicators every 3 s and hydrates the NIFTY
-    // Technicals chip row (ST direction-coloured, RSI, BB upper/lower, R1/S1).
-    // Values change only on 3-min NIFTY close (BB, ST, RSI) or once at day
-    // start (R1/S1) so a 3 s cadence is more than sufficient. Silent on
-    // network error — chips keep their last value.
+    // ── Technicals tile poll ───────────────────────────────────────────────
+    // Every 3 s, hydrates the four Technicals tiles inside the hero card:
+    //   SuperTrend → NIFTY spot ST + arrow; sub carries CE + PE premium ST
+    //   Bollinger  → upper / lower band; sub carries the mid (20-SMA)
+    //   Pivots     → R1 / S1; sub carries the pivot P (all from yesterday's HLC)
+    //   RSI        → 14-period value coloured on 30 / 70 thresholds
+    // Two parallel fetches:
+    //   /api/option-buying/indicators — NIFTY ST/RSI/BB/pivots
+    //   /api/option-selling/indicators — ATM CE / PE premium ST
     function pollNiftyTechnicals() {
         if (document.visibilityState !== 'visible') return;
+
         fetch('/api/option-buying/indicators')
             .then(function(r) { return r.ok ? r.json() : null; })
             .then(function(d) {
                 if (!d) return;
-                var stEl   = document.getElementById('ntSt');
-                var rsiEl  = document.getElementById('ntRsi');
-                var upEl   = document.getElementById('ntBbUp');
-                var loEl   = document.getElementById('ntBbLo');
-                var r1El   = document.getElementById('ntR1');
-                var s1El   = document.getElementById('ntS1');
                 var fmt = function(v) { return v > 0 ? Number(v).toFixed(1) : '—'; };
+
+                // SuperTrend tile — headline value + arrow, colour by direction.
+                var stEl = document.getElementById('tileStValue');
                 if (stEl) {
                     if (d.stAvailable && d.stLine > 0) {
                         var arrow = d.stIsUp ? '▲' : '▼';
-                        stEl.textContent = Number(d.stLine).toFixed(1) + arrow;
+                        stEl.textContent = Number(d.stLine).toFixed(1) + ' ' + arrow;
                         stEl.style.color = d.stIsUp
                             ? 'var(--accent-green, #34d399)'
                             : 'var(--accent-red, #f87171)';
@@ -1096,11 +1122,32 @@
                         stEl.style.color = 'var(--text-primary)';
                     }
                 }
+
+                // Bollinger tile — "upper / lower" headline, mid in the sub.
+                var bbEl = document.getElementById('tileBbValue');
+                var bbMidEl = document.getElementById('tileBbMid');
+                if (bbEl) {
+                    bbEl.textContent = (d.bbUpper > 0 && d.bbLower > 0)
+                        ? (Number(d.bbUpper).toFixed(1) + ' / ' + Number(d.bbLower).toFixed(1))
+                        : '—';
+                }
+                if (bbMidEl) bbMidEl.textContent = fmt(d.bbMid);
+
+                // Pivots tile — "R1 · S1" headline, pivot in the sub.
+                var pvEl = document.getElementById('tilePivotValue');
+                var pvMidEl = document.getElementById('tilePivotMid');
+                if (pvEl) {
+                    pvEl.textContent = (d.r1 > 0 && d.s1 > 0)
+                        ? (Number(d.r1).toFixed(1) + ' / ' + Number(d.s1).toFixed(1))
+                        : '—';
+                }
+                if (pvMidEl) pvMidEl.textContent = fmt(d.pivot);
+
+                // RSI tile — colour on 30 / 70 thresholds.
+                var rsiEl = document.getElementById('tileRsiValue');
                 if (rsiEl) {
                     if (d.rsi > 0) {
                         rsiEl.textContent = Number(d.rsi).toFixed(1);
-                        // Colour tint: > 70 green (overbought), < 30 red (oversold),
-                        // in between the default text colour.
                         rsiEl.style.color = d.rsi >= 70 ? 'var(--accent-green, #34d399)'
                                           : d.rsi <= 30 ? 'var(--accent-red, #f87171)'
                                           : 'var(--text-primary)';
@@ -1109,38 +1156,31 @@
                         rsiEl.style.color = 'var(--text-primary)';
                     }
                 }
-                if (upEl) upEl.textContent = fmt(d.bbUpper);
-                if (loEl) loEl.textContent = fmt(d.bbLower);
-                if (r1El) r1El.textContent = fmt(d.r1);
-                if (s1El) s1El.textContent = fmt(d.s1);
             })
-            .catch(function() { /* silent — keep prior values */ });
+            .catch(function() { /* silent */ });
 
-        // Second fetch: OPTION SELLING's premium ST on the ATM CE + PE legs.
-        // Same session, same 3-min bars — piggybacks on the same 3 s cadence.
+        // ATM CE + PE premium ST → SuperTrend tile's sub line.
         fetch('/api/option-selling/indicators')
             .then(function(r) { return r.ok ? r.json() : null; })
             .then(function(d) {
                 if (!d) return;
-                var ceEl = document.getElementById('ntCeSt');
-                var peEl = document.getElementById('ntPeSt');
                 var render = function(el, available, line, isUp) {
                     if (!el) return;
                     if (available && line > 0) {
                         var arrow = isUp ? '▲' : '▼';
                         el.textContent = Number(line).toFixed(2) + arrow;
-                        // Premium ST semantics for a SELL: RED = we're short and
-                        // trend agrees (green pill); GREEN = flip → exit (red pill).
+                        // Premium ST for a SHORT: RED = trend agrees (green tint),
+                        // GREEN = flip → exit (red tint).
                         el.style.color = isUp
                             ? 'var(--accent-red, #f87171)'
                             : 'var(--accent-green, #34d399)';
                     } else {
                         el.textContent = '—';
-                        el.style.color = 'var(--text-primary)';
+                        el.style.color = 'var(--text-secondary)';
                     }
                 };
-                render(ceEl, d.ceStAvailable, d.ceStLine, d.ceStIsUp);
-                render(peEl, d.peStAvailable, d.peStLine, d.peStIsUp);
+                render(document.getElementById('tileStCe'), d.ceStAvailable, d.ceStLine, d.ceStIsUp);
+                render(document.getElementById('tileStPe'), d.peStAvailable, d.peStLine, d.peStIsUp);
             })
             .catch(function() { /* silent */ });
     }
