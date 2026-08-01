@@ -223,63 +223,59 @@
                     <span style="color:var(--text-muted); margin-left:8px;" id="marketClockSub">Checking…</span>
                 </div>
             </div>
-            <div style="display:flex; gap:32px; flex-wrap:wrap;">
+            <div style="display:flex; gap:28px; flex-wrap:wrap; align-items:flex-start;">
+                <!-- Net Day P&L -->
                 <div style="text-align:center;">
                     <div class="stat-label">Net Day P&amp;L</div>
-                    <div class="stat-value" id="statPnl" style="font-size:1.4rem; margin-top:4px;">—</div>
+                    <div class="stat-value" id="statPnl" style="font-size:1.3rem; margin-top:4px;">—</div>
                     <div class="stat-sub" id="statPnlSub" style="margin-top:4px; color:var(--text-muted);">Realized + Unrealized</div>
                 </div>
-                <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
+                <!-- Exposed Risk -->
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;">
                     <div class="stat-label">Exposed Risk</div>
-                    <div class="stat-value" id="exposedRiskVal" style="font-size:1.4rem; margin-top:4px; color:#f6ad55;">₹0</div>
+                    <div class="stat-value" id="exposedRiskVal" style="font-size:1.3rem; margin-top:4px; color:#f6ad55;">₹0</div>
                     <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">
                         Consumed: <span id="consumedRiskVal" style="color:#fc8181;">₹0</span>
                         <span style="margin-left:6px;">Budget:</span>
                         <span id="riskBudgetVal" style="color:#68d391;">—</span>
                     </div>
                 </div>
-            </div>
-        </div>
-        <!-- Technicals — one tile per indicator category, styled to match the P&L / Risk
-             tiles above. Each tile has a label, a headline value, and a sub-caption with
-             finer detail. Border-top divider visually separates market/risk from
-             technicals but keeps them in one hero card. -->
-        <div style="border-top:1px solid var(--border); padding:16px 28px;
-                    display:flex; gap:32px; flex-wrap:wrap; justify-content:flex-start;">
-            <!-- SuperTrend — NIFTY spot ST as headline, CE + PE premium ST in the sub. -->
-            <div style="text-align:center;" title="SuperTrend(10, 3) — direction filter">
-                <div class="stat-label">SuperTrend</div>
-                <div class="stat-value" id="tileStValue" style="font-size:1.4rem; margin-top:4px;">—</div>
-                <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">
-                    CE <span id="tileStCe" style="font-weight:600;">—</span>
-                    <span style="margin:0 4px;">·</span>
-                    PE <span id="tileStPe" style="font-weight:600;">—</span>
+                <!-- SuperTrend — NIFTY spot ST headline, CE + PE premium ST in the sub. -->
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
+                     title="SuperTrend(10, 3) — direction filter">
+                    <div class="stat-label">SuperTrend</div>
+                    <div class="stat-value" id="tileStValue" style="font-size:1.3rem; margin-top:4px;">—</div>
+                    <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">
+                        CE <span id="tileStCe" style="font-weight:600;">—</span>
+                        <span style="margin:0 4px;">·</span>
+                        PE <span id="tileStPe" style="font-weight:600;">—</span>
+                    </div>
                 </div>
-            </div>
-            <!-- Bollinger — upper / lower band as headline, mid band in the sub. -->
-            <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;"
-                 title="Bollinger Bands (20 SMA ± 2σ)">
-                <div class="stat-label">Bollinger</div>
-                <div class="stat-value" id="tileBbValue" style="font-size:1.4rem; margin-top:4px;">—</div>
-                <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">
-                    Mid <span id="tileBbMid" style="font-weight:600;">—</span>
+                <!-- Bollinger — upper / lower headline, mid band in the sub. -->
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
+                     title="Bollinger Bands (20 SMA ± 2σ)">
+                    <div class="stat-label">Bollinger</div>
+                    <div class="stat-value" id="tileBbValue" style="font-size:1.3rem; margin-top:4px;">—</div>
+                    <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">
+                        Mid <span id="tileBbMid" style="font-weight:600;">—</span>
+                    </div>
                 </div>
-            </div>
-            <!-- Floor Pivots — R1 / S1 as headline, pivot in the sub. -->
-            <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;"
-                 title="Floor Pivots from yesterday's HLC — constant intraday">
-                <div class="stat-label">Pivots</div>
-                <div class="stat-value" id="tilePivotValue" style="font-size:1.4rem; margin-top:4px;">—</div>
-                <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">
-                    P <span id="tilePivotMid" style="font-weight:600;">—</span>
+                <!-- Floor Pivots — R1 / S1 headline, pivot in the sub. -->
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
+                     title="Floor Pivots from yesterday's HLC — constant intraday">
+                    <div class="stat-label">Pivots</div>
+                    <div class="stat-value" id="tilePivotValue" style="font-size:1.3rem; margin-top:4px;">—</div>
+                    <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">
+                        P <span id="tilePivotMid" style="font-weight:600;">—</span>
+                    </div>
                 </div>
-            </div>
-            <!-- RSI — value coloured on 30/70 thresholds. -->
-            <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;"
-                 title="RSI(14) — Wilder smoothing">
-                <div class="stat-label">RSI</div>
-                <div class="stat-value" id="tileRsiValue" style="font-size:1.4rem; margin-top:4px;">—</div>
-                <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">30 · 70</div>
+                <!-- RSI — value coloured on 30/70 thresholds. -->
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
+                     title="RSI(14) — Wilder smoothing">
+                    <div class="stat-label">RSI</div>
+                    <div class="stat-value" id="tileRsiValue" style="font-size:1.3rem; margin-top:4px;">—</div>
+                    <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">30 · 70</div>
+                </div>
             </div>
         </div>
     </div>
