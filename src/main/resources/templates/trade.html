@@ -303,13 +303,11 @@
                     <tr>
                         <th>#</th>
                         <th class="text-center">Strategy</th>
-                        <th>Time</th>
-                        <th class="text-center">In Bar</th>
+                        <th class="text-center">Entry</th>
                         <th>Symbol</th>
                         <th class="text-right">Quantity</th>
                         <th class="text-center">Side</th>
                         <th class="text-center">Setup</th>
-                        <th class="text-right">Entry</th>
                         <th class="text-right">SL</th>
                         <th class="text-right">LTP</th>
                         <th class="text-right">P&amp;L</th>
@@ -318,7 +316,7 @@
                 </thead>
                 <tbody id="positionsTableBody">
                     <tr>
-                        <td colspan="13">
+                        <td colspan="11">
                             <div class="empty-state">
                                 <div class="empty-icon">◎</div>
                                 No active positions
@@ -736,7 +734,7 @@
         if (d.__mergedPositions) positions = d.__mergedPositions;
         var tbody = document.getElementById('positionsTableBody');
         if (positions.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="13"><div class="empty-state"><div class="empty-icon">◎</div>No active positions</div></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><div class="empty-icon">◎</div>No active positions</div></td></tr>';
         } else {
             tbody.innerHTML = positions.map(function(p, i) {
                 var pnl = Number(p.mtm || 0);
@@ -748,7 +746,6 @@
                 return '<tr>'
                     + '<td>' + (i + 1) + '</td>'
                     + '<td class="text-center">' + strategyPill(strategyId) + '</td>'
-                    + '<td>' + fmtTime(p.openMillis) + '</td>'
                     + '<td class="text-center">' + fmtBarClose(p.entryCandleMs) + '</td>'
                     + '<td>' + escapeHtml(p.symbol) + '</td>'
                     + '<td class="text-right">' + escapeHtml(String(p.qty)) + '</td>'
@@ -758,7 +755,6 @@
                             : '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;background:rgba(248,113,113,0.10);color:#f87171;border:1px solid rgba(248,113,113,0.35);">SELL</span>')
                       + '</td>'
                     + '<td class="text-center">' + escapeHtml(p.setup || p.side || '') + '</td>'
-                    + '<td class="text-right">' + fmtRs(p.entryPrice) + '</td>'
                     + '<td class="text-right pnl-negative">' + fmtLevel(p, p.slLevel)
                         + (p.breakevenMoved
                             ? ' <span title="SL moved to breakeven" style="color:#fbbf24;font-size:0.7rem;margin-left:6px;cursor:help;">▲</span>'
@@ -907,12 +903,12 @@
         if (!tbody) return true;
         var visibleRows = tbody.querySelectorAll('tr');
         for (var r = 0; r < visibleRows.length; r++) {
-            // Columns: # Strategy Time BarClose Symbol Qty Side Setup Entry SL LTP P&L Action
-            //         0  1        2    3        4      5   6    7     8     9  10  11  12
-            var rowSym = visibleRows[r].children[4];  // 5th column = Symbol
+            // Columns: # Strategy Entry Symbol Qty Side Setup SL LTP P&L Action
+            //         0  1        2     3      4   5    6    7  8   9    10
+            var rowSym = visibleRows[r].children[3];  // 4th column = Symbol
             if (rowSym && rowSym.textContent === symbol) {
-                var ltpCell = visibleRows[r].children[10];
-                var pnlCell = visibleRows[r].children[11];
+                var ltpCell = visibleRows[r].children[8];
+                var pnlCell = visibleRows[r].children[9];
                 if (ltpCell) ltpCell.textContent = fmtRs(ltp);
                 if (pnlCell) {
                     pnlCell.textContent = fmtRs(newMtm);
