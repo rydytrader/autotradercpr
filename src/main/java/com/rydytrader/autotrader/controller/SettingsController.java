@@ -43,8 +43,6 @@ public class SettingsController {
         result.put("optionSellingMaxSlPoints",        riskSettings.getOptionSellingMaxSlPoints(effectiveMode));
         result.put("optionSellingMaxCeTradesPerDay",  riskSettings.getOptionSellingMaxCeTradesPerDay(effectiveMode));
         result.put("optionSellingMaxPeTradesPerDay",  riskSettings.getOptionSellingMaxPeTradesPerDay(effectiveMode));
-        result.put("optionSellingTrailingExitEnabled",     riskSettings.isOptionSellingTrailingExitEnabled(effectiveMode));
-        result.put("optionSellingRequireGapOpenAboveVwap", riskSettings.isOptionSellingRequireGapOpenAboveVwap(effectiveMode));
         result.put("optionSellingRetestEntryEnabled",      riskSettings.isOptionSellingRetestEntryEnabled(effectiveMode));
         // OPTION BUYING (Ganesan 4-indicator framework — coexists with OPTION SELLING)
         result.put("optionBuyingEnabled",           riskSettings.isOptionBuyingEnabled());
@@ -104,8 +102,7 @@ public class SettingsController {
             if (body.containsKey("optionSellingMaxPeTradesPerDay"))      riskSettings.setOptionSellingMaxPeTradesPerDay(effectiveMode, Integer.parseInt(body.get("optionSellingMaxPeTradesPerDay").toString()));
             // SuperTrend params (Atr / Mult / Spot Atr / Spot Mult) intentionally not
             // exposed to POST — hardcoded to (10, 3) in OptionSelling.java.
-            if (body.containsKey("optionSellingTrailingExitEnabled"))    riskSettings.setOptionSellingTrailingExitEnabled(effectiveMode, Boolean.parseBoolean(body.get("optionSellingTrailingExitEnabled").toString()));
-            if (body.containsKey("optionSellingRequireGapOpenAboveVwap")) riskSettings.setOptionSellingRequireGapOpenAboveVwap(effectiveMode, Boolean.parseBoolean(body.get("optionSellingRequireGapOpenAboveVwap").toString()));
+            // TrailingExitEnabled + RequireGapOpenAboveVwap both hardcoded ON in OptionSelling — no POST.
             if (body.containsKey("optionSellingRetestEntryEnabled"))     riskSettings.setOptionSellingRetestEntryEnabled(effectiveMode, Boolean.parseBoolean(body.get("optionSellingRetestEntryEnabled").toString()));
             // OPTION BUYING
             if (body.containsKey("optionBuyingEnabled"))          riskSettings.setOptionBuyingEnabled(Boolean.parseBoolean(body.get("optionBuyingEnabled").toString()));

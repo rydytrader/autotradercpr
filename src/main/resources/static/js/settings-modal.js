@@ -27,8 +27,6 @@
                       '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-optionSellingSquareOffTime" step="60"><div class="sm-hint">Hard exit if SL didn\'t trigger. Default 15:25.</div></div>' +
                       '<div class="sm-field"><label>Max CE trades/day</label><input type="number" id="sm-optionSellingMaxCeTradesPerDay" step="1" min="0"><div class="sm-hint">Hard cap on CE-side fires. Default 3.</div></div>' +
                       '<div class="sm-field"><label>Max PE trades/day</label><input type="number" id="sm-optionSellingMaxPeTradesPerDay" step="1" min="0"><div class="sm-hint">Hard cap on PE-side fires. Default 3.</div></div>' +
-                      '<div class="sm-field"><label><input type="checkbox" id="sm-optionSellingRequireGapOpenAboveVwap" style="margin-right:6px;vertical-align:middle;">Require open ≥ VWAP</label><div class="sm-hint">Gate A companion — the VWAP-break bar must open at or above VWAP (fresh breakdown). Default ON.</div></div>' +
-                      '<div class="sm-field"><label><input type="checkbox" id="sm-optionSellingTrailingExitEnabled" style="margin-right:6px;vertical-align:middle;">ST-flip-green early exit</label><div class="sm-hint">Flatten the position on the first 3-min close where premium ST flips RED → GREEN. Default ON.</div></div>' +
                       '<div class="sm-field"><label><input type="checkbox" id="sm-optionSellingRetestEntryEnabled" style="margin-right:6px;vertical-align:middle;">Retest entry (Phase 2 — no-op)</label><div class="sm-hint">Alternate entry path where a retest of VWAP that rejects can trigger. Not wired yet — toggle here for future release. Default OFF.</div></div>' +
                     '</div>' +
                   '</div>' +
@@ -210,8 +208,6 @@
             if (g('sm-optionSellingSquareOffTime'))     g('sm-optionSellingSquareOffTime').value = d.optionSellingSquareOffTime || '15:25';
             if (g('sm-optionSellingMaxCeTradesPerDay')) g('sm-optionSellingMaxCeTradesPerDay').value = d.optionSellingMaxCeTradesPerDay != null ? d.optionSellingMaxCeTradesPerDay : 3;
             if (g('sm-optionSellingMaxPeTradesPerDay')) g('sm-optionSellingMaxPeTradesPerDay').value = d.optionSellingMaxPeTradesPerDay != null ? d.optionSellingMaxPeTradesPerDay : 3;
-            if (g('sm-optionSellingRequireGapOpenAboveVwap')) g('sm-optionSellingRequireGapOpenAboveVwap').checked = d.optionSellingRequireGapOpenAboveVwap !== false;
-            if (g('sm-optionSellingTrailingExitEnabled'))    g('sm-optionSellingTrailingExitEnabled').checked = d.optionSellingTrailingExitEnabled !== false;
             if (g('sm-optionSellingRetestEntryEnabled'))     g('sm-optionSellingRetestEntryEnabled').checked = d.optionSellingRetestEntryEnabled === true;
         }).catch(function() {});
     }
@@ -226,8 +222,6 @@
             optionSellingSquareOffTime:      (g('sm-optionSellingSquareOffTime').value || '').trim(),
             optionSellingMaxCeTradesPerDay:  parseInt(g('sm-optionSellingMaxCeTradesPerDay').value, 10) || 0,
             optionSellingMaxPeTradesPerDay:  parseInt(g('sm-optionSellingMaxPeTradesPerDay').value, 10) || 0,
-            optionSellingTrailingExitEnabled:      !!(g('sm-optionSellingTrailingExitEnabled') && g('sm-optionSellingTrailingExitEnabled').checked),
-            optionSellingRequireGapOpenAboveVwap:  !!(g('sm-optionSellingRequireGapOpenAboveVwap') && g('sm-optionSellingRequireGapOpenAboveVwap').checked),
             optionSellingRetestEntryEnabled:       !!(g('sm-optionSellingRetestEntryEnabled') && g('sm-optionSellingRetestEntryEnabled').checked)
         };
         postSettings('/api/settings/risk', body);

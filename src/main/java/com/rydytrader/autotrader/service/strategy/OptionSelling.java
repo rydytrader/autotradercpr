@@ -1028,10 +1028,8 @@ public class OptionSelling implements Strategy {
             }
         }
 
-        // ── Trailing exit — ST-flip-green on the just-closed bar for any open position on this symbol.
-        if (riskSettings.isOptionSellingTrailingExitEnabled()) {
-            evaluateTrailingExit(symbol, c);
-        }
+        // Trailing exit + ST-flip-green — hardcoded ON; evaluated on every 3-min close.
+        evaluateTrailingExit(symbol, c);
     }
 
     /** Result of the 4-gate entry evaluation. */
@@ -1068,7 +1066,10 @@ public class OptionSelling implements Strategy {
         if (close >= vwap) {
             return new EntryGateResult(false, 0, null);   // not a candidate — silent
         }
-        if (riskSettings.isOptionSellingRequireGapOpenAboveVwap() && open < vwap) {
+        // Gate A companion — hardcoded ON. Bar must open at/above VWAP so the
+        // close-below-VWAP is a fresh breakdown, not a continuation of a bar
+        // already sitting below VWAP.
+        if (open < vwap) {
             return new EntryGateResult(false, 0,
                 "A fail — bar opened below VWAP (open=" + round2(open) + " < vwap=" + round2(vwap) + ")");
         }
@@ -1112,8 +1113,9 @@ public class OptionSelling implements Strategy {
      *    <li>Flat-exit — if premium ST has flipped from RED to GREEN, exit
      *        the position with tag "ST_FLIP".</li>
      *  </ul>
-     *  Gate wired inside the caller via {@code optionSellingTrailingExitEnabled}.
-     *  Bar-close only — no tick-based path. */
+     *  Bar-close only — no tick-based path. Mechanism is always ON (no
+     *  operator toggle) — the trailing-SL / ST-flip exit IS the strategy's
+     *  primary exit path. */
     private void evaluateTrailingExit(String symbol, Candle c) {
         Position openHere = null;
         for (Position p : state.openPositions.values()) {

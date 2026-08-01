@@ -46,14 +46,6 @@ public class RiskSettingsStore {
         volatile int    optionSellingMaxCeTradesPerDay = 3;
         /** Hard cap on PE-side fires per session. Default 3. */
         volatile int    optionSellingMaxPeTradesPerDay = 3;
-        /** Master toggle for the ST-flip-green early exit. When ON, an open
-         *  position is flattened on the first 3-min close where the premium
-         *  SuperTrend flips from RED to GREEN. Default ON. */
-        volatile boolean optionSellingTrailingExitEnabled = true;
-        /** Gate A companion — require the VWAP-break bar to have opened at or
-         *  above VWAP (fresh breakdown, not continuation of a bar already below).
-         *  Default ON. */
-        volatile boolean optionSellingRequireGapOpenAboveVwap = true;
         /** Phase-2 flag for the retest-rejection entry variant — no wiring in v1.
          *  Kept in settings so the operator can flip it after the feature ships. */
         volatile boolean optionSellingRetestEntryEnabled = false;
@@ -434,8 +426,6 @@ public class RiskSettingsStore {
     public double  getOptionSellingMaxSlPoints()      { return cfg().optionSellingMaxSlPoints; }
     public int     getOptionSellingMaxCeTradesPerDay(){ return cfg().optionSellingMaxCeTradesPerDay; }
     public int     getOptionSellingMaxPeTradesPerDay(){ return cfg().optionSellingMaxPeTradesPerDay; }
-    public boolean isOptionSellingTrailingExitEnabled(){ return cfg().optionSellingTrailingExitEnabled; }
-    public boolean isOptionSellingRequireGapOpenAboveVwap(){ return cfg().optionSellingRequireGapOpenAboveVwap; }
     public boolean isOptionSellingRetestEntryEnabled(){ return cfg().optionSellingRetestEntryEnabled; }
     // OPTION BUYING getters
     public boolean isOptionBuyingEnabled()             { return cfg().optionBuyingEnabled; }
@@ -640,8 +630,6 @@ public class RiskSettingsStore {
     public void setOptionSellingMaxSlPoints(double v)         { cfg().optionSellingMaxSlPoints = Math.max(0, v); }
     public void setOptionSellingMaxCeTradesPerDay(int v)      { cfg().optionSellingMaxCeTradesPerDay = Math.max(0, v); }
     public void setOptionSellingMaxPeTradesPerDay(int v)      { cfg().optionSellingMaxPeTradesPerDay = Math.max(0, v); }
-    public void setOptionSellingTrailingExitEnabled(boolean v){ cfg().optionSellingTrailingExitEnabled = v; }
-    public void setOptionSellingRequireGapOpenAboveVwap(boolean v){ cfg().optionSellingRequireGapOpenAboveVwap = v; }
     public void setOptionSellingRetestEntryEnabled(boolean v) { cfg().optionSellingRetestEntryEnabled = v; }
     // OPTION BUYING setters
     public void setOptionBuyingEnabled(boolean v)             { cfg().optionBuyingEnabled = v; }
@@ -760,8 +748,6 @@ public class RiskSettingsStore {
     public double  getOptionSellingMaxSlPoints(String mode)       { return cfgFor(mode).optionSellingMaxSlPoints; }
     public int     getOptionSellingMaxCeTradesPerDay(String mode) { return cfgFor(mode).optionSellingMaxCeTradesPerDay; }
     public int     getOptionSellingMaxPeTradesPerDay(String mode) { return cfgFor(mode).optionSellingMaxPeTradesPerDay; }
-    public boolean isOptionSellingTrailingExitEnabled(String mode){ return cfgFor(mode).optionSellingTrailingExitEnabled; }
-    public boolean isOptionSellingRequireGapOpenAboveVwap(String mode){ return cfgFor(mode).optionSellingRequireGapOpenAboveVwap; }
     public boolean isOptionSellingRetestEntryEnabled(String mode) { return cfgFor(mode).optionSellingRetestEntryEnabled; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
@@ -796,8 +782,6 @@ public class RiskSettingsStore {
     public void setOptionSellingMaxSlPoints(String mode, double v)         { cfgFor(mode).optionSellingMaxSlPoints = Math.max(0, v); }
     public void setOptionSellingMaxCeTradesPerDay(String mode, int v)      { cfgFor(mode).optionSellingMaxCeTradesPerDay = Math.max(0, v); }
     public void setOptionSellingMaxPeTradesPerDay(String mode, int v)      { cfgFor(mode).optionSellingMaxPeTradesPerDay = Math.max(0, v); }
-    public void setOptionSellingTrailingExitEnabled(String mode, boolean v){ cfgFor(mode).optionSellingTrailingExitEnabled = v; }
-    public void setOptionSellingRequireGapOpenAboveVwap(String mode, boolean v){ cfgFor(mode).optionSellingRequireGapOpenAboveVwap = v; }
     public void setOptionSellingRetestEntryEnabled(String mode, boolean v) { cfgFor(mode).optionSellingRetestEntryEnabled = v; }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
     public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
@@ -842,8 +826,6 @@ public class RiskSettingsStore {
             upsert("optionSellingMaxSlPoints",       String.valueOf(c.optionSellingMaxSlPoints));
             upsert("optionSellingMaxCeTradesPerDay", String.valueOf(c.optionSellingMaxCeTradesPerDay));
             upsert("optionSellingMaxPeTradesPerDay", String.valueOf(c.optionSellingMaxPeTradesPerDay));
-            upsert("optionSellingTrailingExitEnabled",     String.valueOf(c.optionSellingTrailingExitEnabled));
-            upsert("optionSellingRequireGapOpenAboveVwap", String.valueOf(c.optionSellingRequireGapOpenAboveVwap));
             upsert("optionSellingRetestEntryEnabled",      String.valueOf(c.optionSellingRetestEntryEnabled));
             upsert("optionBuyingEnabled",             String.valueOf(c.optionBuyingEnabled));
             upsert("optionBuyingLotsPerLeg",          String.valueOf(c.optionBuyingLotsPerLeg));
@@ -1037,8 +1019,8 @@ public class RiskSettingsStore {
                          "optionSellingSpotSupertrendAtr",
                          "optionSellingSpotSupertrendMult" -> { /* SuperTrend params hardcoded to (10, 3) — silently consume legacy rows */ }
                     case "optionSellingMaxBreakdownPct"   -> { /* Gate D setting retired 2026-08 — silently consume so old settings rows don't error on boot */ }
-                    case "optionSellingTrailingExitEnabled" -> c.optionSellingTrailingExitEnabled = Boolean.parseBoolean(v);
-                    case "optionSellingRequireGapOpenAboveVwap" -> c.optionSellingRequireGapOpenAboveVwap = Boolean.parseBoolean(v);
+                    case "optionSellingTrailingExitEnabled",
+                         "optionSellingRequireGapOpenAboveVwap" -> { /* Both hardcoded ON — silently consume legacy rows */ }
                     case "optionSellingRetestEntryEnabled"  -> c.optionSellingRetestEntryEnabled = Boolean.parseBoolean(v);
                     case "optionSellingMaxConcurrentPositions",
                          "camarillaMaxConcurrentPositions" -> c.optionSellingMaxConcurrentPositions = Integer.parseInt(v);
