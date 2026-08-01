@@ -75,6 +75,14 @@ public class OptionSelling implements Strategy {
     private static final double OPTION_TICK_SIZE = 0.05;
     /** NIFTY strike interval — 50 points. */
     private static final long   STRIKE_STEP = 50L;
+    /** SuperTrend(ATR, multiplier) — hardcoded to PDF spec (10, 3) for both the
+     *  option premium leg (Gate B / trailing SL) and the NIFTY spot alignment
+     *  filter (Gate C). Deliberately not exposed as settings — TA convention
+     *  is fixed, and the operator was clear the strategy shouldn't drift here. */
+    private static final int    SUPERTREND_ATR       = 10;
+    private static final double SUPERTREND_MULT      = 3.0;
+    private static final int    SPOT_SUPERTREND_ATR  = 10;
+    private static final double SPOT_SUPERTREND_MULT = 3.0;
     private static final int    RECENT_EVENTS_LIMIT = 60;
 
     /** NIFTY contract lot size — exposed for the Manual Terminal controller (translates
@@ -1065,28 +1073,24 @@ public class OptionSelling implements Strategy {
                 "A fail — bar opened below VWAP (open=" + round2(open) + " < vwap=" + round2(vwap) + ")");
         }
         // Gate B — premium SuperTrend RED
-        int    stAtr  = riskSettings.getOptionSellingSupertrendAtr();
-        double stMult = riskSettings.getOptionSellingSupertrendMult();
         List<Candle> premBars = candleAggregator.getHistory(symbol);
         com.rydytrader.autotrader.indicator.SuperTrend.State premSt =
-            com.rydytrader.autotrader.indicator.SuperTrend.at(premBars, stAtr, stMult);
+            com.rydytrader.autotrader.indicator.SuperTrend.at(premBars, SUPERTREND_ATR, SUPERTREND_MULT);
         if (!premSt.available()) {
             return new EntryGateResult(false, 0,
-                "B fail — premium ST warming (" + premBars.size() + "/" + (stAtr + 1) + " bars)");
+                "B fail — premium ST warming (" + premBars.size() + "/" + (SUPERTREND_ATR + 1) + " bars)");
         }
         if (premSt.isUp()) {
             return new EntryGateResult(false, premSt.line(),
                 "B fail — premium ST is GREEN (line=" + round2(premSt.line()) + ")");
         }
         // Gate C — spot SuperTrend alignment
-        int    spotAtr  = riskSettings.getOptionSellingSpotSupertrendAtr();
-        double spotMult = riskSettings.getOptionSellingSpotSupertrendMult();
         List<Candle> spotBars = candleAggregator.getHistory(NIFTY_SYMBOL);
         com.rydytrader.autotrader.indicator.SuperTrend.State spotSt =
-            com.rydytrader.autotrader.indicator.SuperTrend.at(spotBars, spotAtr, spotMult);
+            com.rydytrader.autotrader.indicator.SuperTrend.at(spotBars, SPOT_SUPERTREND_ATR, SPOT_SUPERTREND_MULT);
         if (!spotSt.available()) {
             return new EntryGateResult(false, premSt.line(),
-                "C fail — spot ST warming (" + spotBars.size() + "/" + (spotAtr + 1) + " bars)");
+                "C fail — spot ST warming (" + spotBars.size() + "/" + (SPOT_SUPERTREND_ATR + 1) + " bars)");
         }
         // CE trigger requires spot bearish (isUp=false); PE trigger requires spot bullish.
         boolean spotOk = isCeLeg ? !spotSt.isUp() : spotSt.isUp();
@@ -1118,11 +1122,9 @@ public class OptionSelling implements Strategy {
             }
         }
         if (openHere == null) return;
-        int    stAtr  = riskSettings.getOptionSellingSupertrendAtr();
-        double stMult = riskSettings.getOptionSellingSupertrendMult();
         List<Candle> bars = candleAggregator.getHistory(symbol);
         com.rydytrader.autotrader.indicator.SuperTrend.State st =
-            com.rydytrader.autotrader.indicator.SuperTrend.at(bars, stAtr, stMult);
+            com.rydytrader.autotrader.indicator.SuperTrend.at(bars, SUPERTREND_ATR, SUPERTREND_MULT);
         if (!st.available()) return;   // warming — hold, don't change SL
 
         if (st.isUp()) {
@@ -1788,13 +1790,11 @@ public class OptionSelling implements Strategy {
      *  (pre-09:18) or bars haven't warmed up. */
     public Map<String, Object> optionIndicatorsSnapshot() {
         Map<String, Object> m = new LinkedHashMap<>();
-        int    atr  = riskSettings.getOptionSellingSupertrendAtr();
-        double mult = riskSettings.getOptionSellingSupertrendMult();
         m.put("ceSymbol", state.ceSymbol == null ? "" : state.ceSymbol);
         m.put("peSymbol", state.peSymbol == null ? "" : state.peSymbol);
         m.put("atmStrike", state.atmStrike);
-        addLegSt(m, "ce", state.ceSymbol, atr, mult);
-        addLegSt(m, "pe", state.peSymbol, atr, mult);
+        addLegSt(m, "ce", state.ceSymbol, SUPERTREND_ATR, SUPERTREND_MULT);
+        addLegSt(m, "pe", state.peSymbol, SUPERTREND_ATR, SUPERTREND_MULT);
         m.put("ts", System.currentTimeMillis());
         return m;
     }
