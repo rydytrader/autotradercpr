@@ -41,6 +41,15 @@ public class OptionBuyingController {
         return strategy.stateSnapshot();
     }
 
+    /** NIFTY spot indicator snapshot for the header strip on /positions:
+     *  SuperTrend line + direction, Bollinger upper/mid/lower, RSI, and R1/S1
+     *  from yesterday's daily pivots. Cheap to compute (single indicator pass
+     *  per call), safe to poll every few seconds. */
+    @GetMapping("/api/option-buying/indicators")
+    public Map<String, Object> getIndicators() {
+        return strategy.indicatorsSnapshot();
+    }
+
     @PostMapping("/api/option-buying/squareoff")
     public Map<String, Object> squareoff() {
         boolean closed = strategy.forceClose("MANUAL");

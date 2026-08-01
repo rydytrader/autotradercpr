@@ -481,6 +481,43 @@ public class OptionBuying implements Strategy {
     /** Number of entries fired today. */
     public int getTradesToday() { return state.tradesToday; }
 
+    /** Snapshot of the four indicators the entry gate consumes, computed against
+     *  the current NIFTY 3-min bar ring + yesterday's daily OHLC (for pivots).
+     *  Returned as a bag-of-values so the positions page can render a compact
+     *  indicator strip next to the NIFTY LTP.
+     *
+     *  <p>All values are the CURRENT reading at the latest closed 3-min bar.
+     *  Missing values (indicator warming, daily bar not cached yet) come back
+     *  as 0 and the UI renders as an em-dash. */
+    public Map<String, Object> indicatorsSnapshot() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        List<Candle> bars = candleAggregator.getHistory(NIFTY_SYMBOL);
+        SuperTrend.State st = SuperTrend.at(bars, SUPERTREND_ATR, SUPERTREND_MULT);
+        BollingerBands.State bb = BollingerBands.at(bars, BB_PERIOD, BB_STD);
+        double rsi = Rsi.at(bars, RSI_PERIOD);
+        Optional<DailyOhlcCache.DailyBar> prev = dailyOhlcCache.previousDay(NIFTY_SYMBOL);
+        m.put("stLine",     st.available() ? round2(st.line()) : 0.0);
+        m.put("stIsUp",     st.available() && st.isUp());
+        m.put("stAvailable", st.available());
+        m.put("bbUpper",    bb.available() ? round2(bb.upper()) : 0.0);
+        m.put("bbLower",    bb.available() ? round2(bb.lower()) : 0.0);
+        m.put("bbMid",      bb.available() ? round2(bb.mid())   : 0.0);
+        m.put("rsi",        rsi > 0 ? round2(rsi) : 0.0);
+        if (prev.isPresent()) {
+            FloorPivots p = FloorPivots.from(prev.get().high(), prev.get().low(), prev.get().close());
+            m.put("r1",   round2(p.r1()));
+            m.put("s1",   round2(p.s1()));
+            m.put("pivot", round2(p.p()));
+        } else {
+            m.put("r1", 0.0);
+            m.put("s1", 0.0);
+            m.put("pivot", 0.0);
+        }
+        m.put("barCount", bars.size());
+        m.put("ts",       System.currentTimeMillis());
+        return m;
+    }
+
     /** Snapshot for the UI dashboard: today's open positions + closed cycles +
      *  event log + counts. Bag-of-values, matches OptionSelling's /state shape
      *  so the frontend can be strategy-agnostic. */
