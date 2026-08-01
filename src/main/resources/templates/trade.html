@@ -253,6 +253,27 @@
 
     </div>
 
+    <!-- ── NIFTY Technicals — SuperTrend + RSI + Bollinger + Floor Pivots ── -->
+    <!-- All values are on NIFTY spot at the latest 3-min close. Polled every 3 s
+         from /api/option-buying/indicators. Pivots (R1/S1) come from yesterday's
+         daily HLC and are constant for the trading day. -->
+    <div class="section-card fade-in" style="margin-bottom:16px;">
+        <div class="section-header" style="flex-wrap:wrap; gap:16px;">
+            <div class="section-title" style="display:flex; align-items:center; gap:8px;">
+                <div class="section-title-dot" style="background:#a78bfa;"></div>
+                NIFTY Technicals
+            </div>
+            <div style="display:flex; gap:22px; align-items:center; font-family:var(--font-mono); font-size:0.78rem; flex-wrap:wrap;">
+                <span style="color:var(--text-muted);" title="NIFTY SuperTrend(10,3) — arrow shows direction">ST <span id="ntSt" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                <span style="color:var(--text-muted);" title="NIFTY RSI(14)">RSI <span id="ntRsi" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                <span style="color:var(--text-muted);" title="NIFTY Bollinger upper band (20, 2σ)">BB↑ <span id="ntBbUp" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                <span style="color:var(--text-muted);" title="NIFTY Bollinger lower band (20, 2σ)">BB↓ <span id="ntBbLo" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                <span style="color:var(--text-muted);" title="Floor Pivot R1 — yesterday's HLC, constant intraday">R1 <span id="ntR1" style="color:var(--text-primary);font-weight:700;">—</span></span>
+                <span style="color:var(--text-muted);" title="Floor Pivot S1 — yesterday's HLC, constant intraday">S1 <span id="ntS1" style="color:var(--text-primary);font-weight:700;">—</span></span>
+            </div>
+        </div>
+    </div>
+
     <!-- ── Live Positions table ─────────────────────────────────────────── -->
     <div class="section-card fixed-card fade-in">
         <div class="section-header">
@@ -1059,6 +1080,58 @@
         if (cardChg) { cardChg.textContent = chgText || '—'; cardChg.style.color = chgColor; }
     }
 
+    // ── NIFTY Technicals poll ──────────────────────────────────────────────
+    // Polls /api/option-buying/indicators every 3 s and hydrates the NIFTY
+    // Technicals chip row (ST direction-coloured, RSI, BB upper/lower, R1/S1).
+    // Values change only on 3-min NIFTY close (BB, ST, RSI) or once at day
+    // start (R1/S1) so a 3 s cadence is more than sufficient. Silent on
+    // network error — chips keep their last value.
+    function pollNiftyTechnicals() {
+        if (document.visibilityState !== 'visible') return;
+        fetch('/api/option-buying/indicators')
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(d) {
+                if (!d) return;
+                var stEl   = document.getElementById('ntSt');
+                var rsiEl  = document.getElementById('ntRsi');
+                var upEl   = document.getElementById('ntBbUp');
+                var loEl   = document.getElementById('ntBbLo');
+                var r1El   = document.getElementById('ntR1');
+                var s1El   = document.getElementById('ntS1');
+                var fmt = function(v) { return v > 0 ? Number(v).toFixed(1) : '—'; };
+                if (stEl) {
+                    if (d.stAvailable && d.stLine > 0) {
+                        var arrow = d.stIsUp ? '▲' : '▼';
+                        stEl.textContent = Number(d.stLine).toFixed(1) + arrow;
+                        stEl.style.color = d.stIsUp
+                            ? 'var(--accent-green, #34d399)'
+                            : 'var(--accent-red, #f87171)';
+                    } else {
+                        stEl.textContent = '—';
+                        stEl.style.color = 'var(--text-primary)';
+                    }
+                }
+                if (rsiEl) {
+                    if (d.rsi > 0) {
+                        rsiEl.textContent = Number(d.rsi).toFixed(1);
+                        // Colour tint: > 70 green (overbought), < 30 red (oversold),
+                        // in between the default text colour.
+                        rsiEl.style.color = d.rsi >= 70 ? 'var(--accent-green, #34d399)'
+                                          : d.rsi <= 30 ? 'var(--accent-red, #f87171)'
+                                          : 'var(--text-primary)';
+                    } else {
+                        rsiEl.textContent = '—';
+                        rsiEl.style.color = 'var(--text-primary)';
+                    }
+                }
+                if (upEl) upEl.textContent = fmt(d.bbUpper);
+                if (loEl) loEl.textContent = fmt(d.bbLower);
+                if (r1El) r1El.textContent = fmt(d.r1);
+                if (s1El) s1El.textContent = fmt(d.s1);
+            })
+            .catch(function() { /* silent — keep prior values */ });
+    }
+
     // ── Boot ───────────────────────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', function() {
         var yr = document.getElementById('footerYear');
@@ -1074,6 +1147,8 @@
         checkConnection();
         setInterval(checkConnection, 5000);
         loadWelcome();
+        pollNiftyTechnicals();
+        setInterval(pollNiftyTechnicals, 3000);
     });
 </script>
 
