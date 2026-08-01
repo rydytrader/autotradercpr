@@ -107,6 +107,28 @@ public class OptionBuying implements Strategy {
 
     private volatile State state = new State();
 
+    /** Floor Pivots cached per trading day — yesterday's HLC doesn't change
+     *  intraday, so the R1/S1/etc. values are constant from market open to
+     *  close. Cleared automatically on day rollover (todayPivots() rebuilds
+     *  when cachedPivotsDay stops matching today's IST date). */
+    private volatile FloorPivots cachedPivots;
+    private volatile LocalDate   cachedPivotsDay;
+
+    /** Returns today's Floor Pivots (from yesterday's HLC), computed once per
+     *  day and cached. {@code null} when the previous-day daily bar isn't
+     *  available in the cache yet (pre-warm race on the first market-open call). */
+    private FloorPivots todayPivots() {
+        LocalDate today = LocalDate.now(IST);
+        FloorPivots cached = cachedPivots;
+        if (cached != null && today.equals(cachedPivotsDay)) return cached;
+        Optional<DailyOhlcCache.DailyBar> prev = dailyOhlcCache.previousDay(NIFTY_SYMBOL);
+        if (prev.isEmpty()) return null;
+        FloorPivots p = FloorPivots.from(prev.get().high(), prev.get().low(), prev.get().close());
+        cachedPivots = p;
+        cachedPivotsDay = today;
+        return p;
+    }
+
     public OptionBuying(CandleAggregator candleAggregator,
                         BalancedAtmSelector atmSelector,
                         MarketDataService marketDataService,
@@ -234,13 +256,12 @@ public class OptionBuying implements Strategy {
             SuperTrend.State st  = SuperTrend.at(bars, SUPERTREND_ATR, SUPERTREND_MULT);
             double rsi           = Rsi.at(bars, RSI_PERIOD);
             BollingerBands.State bb = BollingerBands.at(bars, BB_PERIOD, BB_STD);
-            Optional<DailyOhlcCache.DailyBar> prev = dailyOhlcCache.previousDay(NIFTY_SYMBOL);
-            if (!st.available() || !bb.available() || prev.isEmpty() || rsi <= 0) {
-                log.debug("[OptionBuying] indicators unavailable — st={} bb={} rsi={} prev={}",
-                    st.available(), bb.available(), rsi, prev.isPresent());
+            FloorPivots pivots   = todayPivots();
+            if (!st.available() || !bb.available() || pivots == null || rsi <= 0) {
+                log.debug("[OptionBuying] indicators unavailable — st={} bb={} rsi={} pivots={}",
+                    st.available(), bb.available(), rsi, pivots != null);
                 return;
             }
-            FloorPivots pivots = FloorPivots.from(prev.get().high(), prev.get().low(), prev.get().close());
 
             double close = c.close();
             // Bullish 4-condition
@@ -495,7 +516,7 @@ public class OptionBuying implements Strategy {
         SuperTrend.State st = SuperTrend.at(bars, SUPERTREND_ATR, SUPERTREND_MULT);
         BollingerBands.State bb = BollingerBands.at(bars, BB_PERIOD, BB_STD);
         double rsi = Rsi.at(bars, RSI_PERIOD);
-        Optional<DailyOhlcCache.DailyBar> prev = dailyOhlcCache.previousDay(NIFTY_SYMBOL);
+        FloorPivots pivots = todayPivots();
         m.put("stLine",     st.available() ? round2(st.line()) : 0.0);
         m.put("stIsUp",     st.available() && st.isUp());
         m.put("stAvailable", st.available());
@@ -503,11 +524,10 @@ public class OptionBuying implements Strategy {
         m.put("bbLower",    bb.available() ? round2(bb.lower()) : 0.0);
         m.put("bbMid",      bb.available() ? round2(bb.mid())   : 0.0);
         m.put("rsi",        rsi > 0 ? round2(rsi) : 0.0);
-        if (prev.isPresent()) {
-            FloorPivots p = FloorPivots.from(prev.get().high(), prev.get().low(), prev.get().close());
-            m.put("r1",   round2(p.r1()));
-            m.put("s1",   round2(p.s1()));
-            m.put("pivot", round2(p.p()));
+        if (pivots != null) {
+            m.put("r1",    round2(pivots.r1()));
+            m.put("s1",    round2(pivots.s1()));
+            m.put("pivot", round2(pivots.p()));
         } else {
             m.put("r1", 0.0);
             m.put("s1", 0.0);
