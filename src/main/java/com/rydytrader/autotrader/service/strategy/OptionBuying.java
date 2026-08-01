@@ -263,12 +263,12 @@ public class OptionBuying implements Strategy {
 
             double close = c.close();
             // Bullish 4-condition
-            boolean stBull   = st.isUp() && close > st.line();
+            boolean stBull   = st.isUp();
             boolean rsiBull  = rsi > RSI_BULL_THRESHOLD;
             boolean pivBull  = close > pivots.r1();
             boolean bbBull   = close > bb.upper();
             // Bearish 4-condition
-            boolean stBear   = !st.isUp() && close < st.line();
+            boolean stBear   = !st.isUp();
             boolean rsiBear  = rsi < RSI_BEAR_THRESHOLD;
             boolean pivBear  = close < pivots.s1();
             boolean bbBear   = close < bb.lower();
