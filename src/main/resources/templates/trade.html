@@ -256,31 +256,9 @@
     <!-- ── Live Positions table ─────────────────────────────────────────── -->
     <div class="section-card fixed-card fade-in">
         <div class="section-header">
-            <div class="section-title" style="display:flex; align-items:center; gap:18px; flex-wrap:wrap;">
-                <div style="display:flex; align-items:center; gap:8px;">
-                    <div class="section-title-dot"></div>
-                    Live Positions
-                </div>
-                <!-- Vertical separator after the section title — visually delineates the
-                     market-stats cluster from the title. -->
-                <span style="border-left:1px solid var(--border); height:18px; display:inline-block;"></span>
-                <div style="display:flex; gap:14px; align-items:center; font-family:var(--font-mono); font-size:0.72rem; font-weight:normal; flex-wrap:wrap;">
-                    <!-- NIFTY cluster: LTP + change + 5m ATR. Amber label.
-                         Legacy 'Fut' IDs retained for back-compat with the JS. -->
-                    <span style="color:#fbbf24;">NIFTY <span id="hdrFut" style="color:var(--text-primary);font-weight:700;cursor:help;">—</span>
-                        <span id="hdrFutChg" style="margin-left:4px;font-weight:600;"></span></span>
-                    <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
-                    <!-- Session-monitored ATM option strikes (picked at first 3-min NIFTY bar close) -->
-                    <span style="color:var(--text-muted);" title="ATM CE leg — the CALL side the strategy monitors on 3-min bars">ATM CE <span id="hdrH5Ce" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                    <span style="color:var(--text-muted);" title="ATM PE leg — the PUT side the strategy monitors on 3-min bars">ATM PE <span id="hdrL5Pe" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                    <!-- NIFTY spot indicators — SuperTrend / Bollinger / Floor Pivots.
-                         Polled every 3 s from /api/option-buying/indicators. -->
-                    <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
-                    <span style="color:var(--text-muted);" title="NIFTY spot SuperTrend(10,3) — arrow shows direction (▲ up / ▼ down)">ST <span id="hdrNiftySt" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                    <span style="color:var(--text-muted);" title="Bollinger Bands(20, 2σ) — upper / lower">BB <span id="hdrNiftyBb" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                    <span style="color:var(--text-muted);" title="Floor Pivot R1 (yesterday's HLC)">R1 <span id="hdrNiftyR1" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                    <span style="color:var(--text-muted);" title="Floor Pivot S1 (yesterday's HLC)">S1 <span id="hdrNiftyS1" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                </div>
+            <div class="section-title" style="display:flex; align-items:center; gap:8px;">
+                <div class="section-title-dot"></div>
+                Live Positions
             </div>
             <div style="display:flex; gap:10px; align-items:center;">
                 <div class="kill-switch-wrap" id="killSwitchWrap">
@@ -1081,43 +1059,6 @@
         if (cardChg) { cardChg.textContent = chgText || '—'; cardChg.style.color = chgColor; }
     }
 
-    // ── NIFTY indicators header strip ─────────────────────────────────────
-    // Polls /api/option-buying/indicators every 3 s. Populates the SuperTrend /
-    // Bollinger / Pivots pills next to the NIFTY LTP. Values only change on
-    // 3-min bar close so a 3 s poll cadence is plenty. Silent on network error
-    // — the pills just stay at their last value.
-    function pollNiftyIndicators() {
-        if (document.visibilityState !== 'visible') return;
-        fetch('/api/option-buying/indicators')
-            .then(function(r) { return r.ok ? r.json() : null; })
-            .then(function(d) {
-                if (!d) return;
-                var stEl = document.getElementById('hdrNiftySt');
-                var bbEl = document.getElementById('hdrNiftyBb');
-                var r1El = document.getElementById('hdrNiftyR1');
-                var s1El = document.getElementById('hdrNiftyS1');
-                var fmt = function(v) { return v > 0 ? Number(v).toFixed(1) : '—'; };
-                if (stEl) {
-                    if (d.stAvailable && d.stLine > 0) {
-                        var arrow = d.stIsUp ? '▲' : '▼';
-                        stEl.textContent = Number(d.stLine).toFixed(1) + arrow;
-                        stEl.style.color = d.stIsUp
-                            ? 'var(--accent-green, #34d399)'
-                            : 'var(--accent-red, #f87171)';
-                    } else {
-                        stEl.textContent = '—';
-                        stEl.style.color = 'var(--text-primary)';
-                    }
-                }
-                if (bbEl) bbEl.textContent = (d.bbUpper > 0 && d.bbLower > 0)
-                    ? (Number(d.bbUpper).toFixed(1) + ' / ' + Number(d.bbLower).toFixed(1))
-                    : '—';
-                if (r1El) r1El.textContent = fmt(d.r1);
-                if (s1El) s1El.textContent = fmt(d.s1);
-            })
-            .catch(function() { /* silent — keep prior values */ });
-    }
-
     // ── Boot ───────────────────────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', function() {
         var yr = document.getElementById('footerYear');
@@ -1133,8 +1074,6 @@
         checkConnection();
         setInterval(checkConnection, 5000);
         loadWelcome();
-        pollNiftyIndicators();
-        setInterval(pollNiftyIndicators, 3000);
     });
 </script>
 
