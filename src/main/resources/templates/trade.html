@@ -1119,23 +1119,35 @@
                     }
                 }
 
-                // Bollinger tile — "upper / lower" headline, mid in the sub.
+                // Bollinger tile — upper in GREEN (resistance), lower in RED (support).
+                // Mid (20-SMA) neutral in the sub.
                 var bbEl = document.getElementById('tileBbValue');
                 var bbMidEl = document.getElementById('tileBbMid');
                 if (bbEl) {
-                    bbEl.textContent = (d.bbUpper > 0 && d.bbLower > 0)
-                        ? (Number(d.bbUpper).toFixed(1) + ' / ' + Number(d.bbLower).toFixed(1))
-                        : '—';
+                    if (d.bbUpper > 0 && d.bbLower > 0) {
+                        bbEl.innerHTML =
+                            '<span style="color:var(--accent-green, #34d399);">' + Number(d.bbUpper).toFixed(1) + '</span>'
+                            + '<span style="color:var(--text-muted); margin:0 4px;">/</span>'
+                            + '<span style="color:var(--accent-red, #f87171);">'   + Number(d.bbLower).toFixed(1) + '</span>';
+                    } else {
+                        bbEl.textContent = '—';
+                    }
                 }
                 if (bbMidEl) bbMidEl.textContent = fmt(d.bbMid);
 
-                // Pivots tile — "R1 · S1" headline, pivot in the sub.
+                // Pivots tile — R1 in GREEN (resistance), S1 in RED (support).
+                // Pivot P neutral in the sub.
                 var pvEl = document.getElementById('tilePivotValue');
                 var pvMidEl = document.getElementById('tilePivotMid');
                 if (pvEl) {
-                    pvEl.textContent = (d.r1 > 0 && d.s1 > 0)
-                        ? (Number(d.r1).toFixed(1) + ' / ' + Number(d.s1).toFixed(1))
-                        : '—';
+                    if (d.r1 > 0 && d.s1 > 0) {
+                        pvEl.innerHTML =
+                            '<span style="color:var(--accent-green, #34d399);">' + Number(d.r1).toFixed(1) + '</span>'
+                            + '<span style="color:var(--text-muted); margin:0 4px;">/</span>'
+                            + '<span style="color:var(--accent-red, #f87171);">'   + Number(d.s1).toFixed(1) + '</span>';
+                    } else {
+                        pvEl.textContent = '—';
+                    }
                 }
                 if (pvMidEl) pvMidEl.textContent = fmt(d.pivot);
 
