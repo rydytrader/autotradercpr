@@ -204,76 +204,58 @@
         </div>
     </div>
 
-    <!-- ── Four hero stat cards (Open Positions / Net Day P&L / Exposed Risk / Market Clock) ── -->
-    <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:20px;" class="fade-in">
-
-        <!-- NIFTY spot — LTP + signed change + signed %change. Values stream via
-             the shared ticker SSE (see attachTickerHeaderUpdates → hdrFut / hdrFutChg
-             which are mirrored into these ids). -->
-        <div class="section-card" style="margin-bottom:0;">
-            <div style="padding:20px 22px; text-align:center;">
-                <div class="stat-label" style="margin-bottom:8px;">NIFTY Spot</div>
-                <div class="stat-value" id="statNiftyLtp" style="font-size:2rem; color:var(--accent-cyan);">—</div>
-                <div class="stat-sub" style="margin-top:8px;">
+    <!-- ── Overview hero — big NIFTY on the left, tiles on the right, ──────
+         Technicals chip row across the bottom. Mirrors home.html's Overview
+         card shape. Everything on this card updates live (NIFTY LTP via
+         ticker SSE, P&L / risk via /api/option-selling/state SSE, clock on
+         a 1 s local tick, indicators via a 3 s poll). -->
+    <div class="section-card fade-in" style="margin-bottom:20px;">
+        <div class="section-header">
+            <div class="section-title"><div class="section-title-dot"></div> Overview</div>
+            <span class="section-badge" id="marketClock" style="margin-left:auto;">—</span>
+        </div>
+        <div style="padding:20px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px;">
+            <div>
+                <div class="stat-label" style="margin-bottom:6px;">NIFTY Spot</div>
+                <div class="stat-value" id="statNiftyLtp" style="font-size:2.2rem; color:var(--accent-cyan);">—</div>
+                <div class="stat-sub" style="margin-top:6px;">
                     <span id="statNiftyChg" style="font-weight:600;">—</span>
+                    <span style="color:var(--text-muted); margin-left:8px;" id="marketClockSub">Checking…</span>
+                </div>
+            </div>
+            <div style="display:flex; gap:32px; flex-wrap:wrap;">
+                <div style="text-align:center;">
+                    <div class="stat-label">Net Day P&amp;L</div>
+                    <div class="stat-value" id="statPnl" style="font-size:1.4rem; margin-top:4px;">—</div>
+                    <div class="stat-sub" id="statPnlSub" style="margin-top:4px; color:var(--text-muted);">Realized + Unrealized</div>
+                </div>
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
+                    <div class="stat-label">Exposed Risk</div>
+                    <div class="stat-value" id="exposedRiskVal" style="font-size:1.4rem; margin-top:4px; color:#f6ad55;">₹0</div>
+                    <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">
+                        Consumed: <span id="consumedRiskVal" style="color:#fc8181;">₹0</span>
+                        <span style="margin-left:6px;">Budget:</span>
+                        <span id="riskBudgetVal" style="color:#68d391;">—</span>
+                    </div>
                 </div>
             </div>
         </div>
-
-        <!-- Net Day P&L -->
-        <div class="section-card" style="margin-bottom:0;">
-            <div style="padding:20px 22px; text-align:center;">
-                <div class="stat-label" style="margin-bottom:8px;">Net Day P&amp;L</div>
-                <div class="stat-value" id="statPnl" style="font-size:2rem;">—</div>
-                <div class="stat-sub" id="statPnlSub" style="margin-top:8px;">Realized + Unrealized</div>
-            </div>
-        </div>
-
-        <!-- Exposed Risk -->
-        <div class="section-card" style="margin-bottom:0;">
-            <div style="padding:20px 22px; text-align:center;">
-                <div class="stat-label" style="margin-bottom:8px;">Exposed Risk</div>
-                <div class="stat-value" id="exposedRiskVal" style="font-size:2rem; color:#f6ad55;">₹0</div>
-                <div class="stat-sub" style="margin-top:8px;">
-                    Consumed: <span id="consumedRiskVal" style="color:#fc8181;">₹0</span>
-                    <span style="color:var(--text-muted); margin-left:6px;">Budget:</span>
-                    <span id="riskBudgetVal" style="color:#68d391;">—</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Market Clock -->
-        <div class="section-card" style="margin-bottom:0;">
-            <div style="padding:20px 22px; text-align:center;">
-                <div class="stat-label" style="margin-bottom:8px;">Market Clock</div>
-                <div class="stat-value" id="marketClock" style="font-size:2rem;">—</div>
-                <div class="stat-sub" id="marketClockSub" style="margin-top:8px;">Checking…</div>
-            </div>
-        </div>
-
-    </div>
-
-    <!-- ── NIFTY Technicals — SuperTrend + RSI + Bollinger + Floor Pivots ── -->
-    <!-- All values are on NIFTY spot at the latest 3-min close. Polled every 3 s
-         from /api/option-buying/indicators. Pivots (R1/S1) come from yesterday's
-         daily HLC and are constant for the trading day. -->
-    <div class="section-card fade-in" style="margin-bottom:16px;">
-        <div class="section-header" style="flex-wrap:wrap; gap:16px;">
-            <div class="section-title" style="display:flex; align-items:center; gap:8px;">
-                <div class="section-title-dot" style="background:#a78bfa;"></div>
-                NIFTY Technicals
-            </div>
-            <div style="display:flex; gap:22px; align-items:center; font-family:var(--font-mono); font-size:0.78rem; flex-wrap:wrap;">
-                <span style="color:var(--text-muted);" title="NIFTY SuperTrend(10,3) — arrow shows direction">ST <span id="ntSt" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                <span style="color:var(--text-muted);" title="NIFTY RSI(14)">RSI <span id="ntRsi" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                <span style="color:var(--text-muted);" title="NIFTY Bollinger upper band (20, 2σ)">BB↑ <span id="ntBbUp" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                <span style="color:var(--text-muted);" title="NIFTY Bollinger lower band (20, 2σ)">BB↓ <span id="ntBbLo" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                <span style="color:var(--text-muted);" title="Floor Pivot R1 — yesterday's HLC, constant intraday">R1 <span id="ntR1" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                <span style="color:var(--text-muted);" title="Floor Pivot S1 — yesterday's HLC, constant intraday">S1 <span id="ntS1" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
-                <span style="color:var(--text-muted);" title="ATM CE premium SuperTrend(10,3) — the OPTION SELLING trailing SL / flip source">CE ST <span id="ntCeSt" style="color:var(--text-primary);font-weight:700;">—</span></span>
-                <span style="color:var(--text-muted);" title="ATM PE premium SuperTrend(10,3) — the OPTION SELLING trailing SL / flip source">PE ST <span id="ntPeSt" style="color:var(--text-primary);font-weight:700;">—</span></span>
-            </div>
+        <!-- Technicals chip row — sits inside the same hero card, below the divider.
+             All values are on NIFTY spot at the latest 3-min close (except CE ST /
+             PE ST which are on the option premium legs); polled every 3 s. -->
+        <div style="border-top:1px solid var(--border); padding:14px 28px; display:flex;
+                    gap:22px; align-items:center; font-family:var(--font-mono);
+                    font-size:0.78rem; flex-wrap:wrap;">
+            <div class="stat-label" style="letter-spacing:0.08em; text-transform:uppercase; color:#a78bfa;">Technicals</div>
+            <span style="color:var(--text-muted);" title="NIFTY SuperTrend(10,3) — arrow shows direction">ST <span id="ntSt" style="color:var(--text-primary);font-weight:700;">—</span></span>
+            <span style="color:var(--text-muted);" title="NIFTY RSI(14)">RSI <span id="ntRsi" style="color:var(--text-primary);font-weight:700;">—</span></span>
+            <span style="color:var(--text-muted);" title="NIFTY Bollinger upper band (20, 2σ)">BB↑ <span id="ntBbUp" style="color:var(--text-primary);font-weight:700;">—</span></span>
+            <span style="color:var(--text-muted);" title="NIFTY Bollinger lower band (20, 2σ)">BB↓ <span id="ntBbLo" style="color:var(--text-primary);font-weight:700;">—</span></span>
+            <span style="color:var(--text-muted);" title="Floor Pivot R1 — yesterday's HLC, constant intraday">R1 <span id="ntR1" style="color:var(--text-primary);font-weight:700;">—</span></span>
+            <span style="color:var(--text-muted);" title="Floor Pivot S1 — yesterday's HLC, constant intraday">S1 <span id="ntS1" style="color:var(--text-primary);font-weight:700;">—</span></span>
+            <span style="border-left:1px solid var(--border); height:14px; display:inline-block;"></span>
+            <span style="color:var(--text-muted);" title="ATM CE premium SuperTrend(10,3) — OPTION SELLING trailing SL / flip source">CE ST <span id="ntCeSt" style="color:var(--text-primary);font-weight:700;">—</span></span>
+            <span style="color:var(--text-muted);" title="ATM PE premium SuperTrend(10,3) — OPTION SELLING trailing SL / flip source">PE ST <span id="ntPeSt" style="color:var(--text-primary);font-weight:700;">—</span></span>
         </div>
     </div>
 
