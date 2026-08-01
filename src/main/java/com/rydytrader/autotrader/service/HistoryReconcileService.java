@@ -12,6 +12,9 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -133,6 +136,87 @@ public class HistoryReconcileService {
             catch (Exception e) { log.warn("[HistoryReconcile] async fetch threw: {}", e.getMessage()); }
             try { onResult.accept(c); }
             catch (Exception e) { log.warn("[HistoryReconcile] onResult callback threw: {}", e.getMessage()); }
+        });
+    }
+
+    /** Blocking multi-day fetch — pulls ALL 3-min bars in the given [from, to] date
+     *  range for the symbol and returns them in chronological order. Used to warm up
+     *  indicators (e.g. SuperTrend needs 11+ bars) with yesterday's session before the
+     *  live tick stream has accumulated enough closed bars.
+     *
+     *  <p>Empty list is a valid return — never null. Callers should NOT retry on empty;
+     *  it usually means the symbol didn't exist on the requested date (weekly option
+     *  first-day-of-trading edge case). Auth / HTTP errors also collapse to empty list
+     *  after MAX_ATTEMPTS retries — the caller falls back to live-only warm-up. */
+    public List<Candle> fetchDayRange(String fyersSymbol, LocalDate from, LocalDate to) {
+        if (fyersSymbol == null || fyersSymbol.isBlank() || from == null || to == null) {
+            return Collections.emptyList();
+        }
+        if (!tokenStore.isTokenAvailable()) return Collections.emptyList();
+
+        String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
+        long startNanos = System.nanoTime();
+        JsonNode root = null;
+        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            try {
+                root = fyersClient.getHistory(fyersSymbol, RESOLUTION,
+                    from.toString(), to.toString(), auth);
+                if (root != null && "ok".equalsIgnoreCase(root.path("s").asText(""))) break;
+            } catch (Exception e) {
+                log.debug("[HistoryReconcile] dayRange fetch failed for {} {}..{}: {}",
+                    fyersSymbol, from, to, e.getMessage());
+            }
+            if (attempt == MAX_ATTEMPTS) break;
+            try { Thread.sleep(RETRY_DELAY_MS); }
+            catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+                return Collections.emptyList();
+            }
+        }
+        if (root == null || !"ok".equalsIgnoreCase(root.path("s").asText(""))) {
+            log.warn("[HistoryReconcile] dayRange {} {}..{} — no data after {} attempts ({} ms)",
+                fyersSymbol, from, to, MAX_ATTEMPTS,
+                (System.nanoTime() - startNanos) / 1_000_000L);
+            return Collections.emptyList();
+        }
+        JsonNode candles = root.path("candles");
+        if (candles == null || !candles.isArray()) return Collections.emptyList();
+
+        List<Candle> out = new ArrayList<>(candles.size());
+        for (JsonNode row : candles) {
+            if (!row.isArray() || row.size() < 5) continue;
+            long   ts    = row.get(0).asLong(0);
+            double open  = row.get(1).asDouble(0);
+            double high  = row.get(2).asDouble(0);
+            double low   = row.get(3).asDouble(0);
+            double close = row.get(4).asDouble(0);
+            long   vol   = row.size() >= 6 ? row.get(5).asLong(0) : 0L;
+            if (ts <= 0) continue;
+            // /history doesn't publish VWAP — 0 is fine, live bars carry live ATP.
+            out.add(new Candle(open, high, low, close, vol, ts * 1000L, 0.0));
+        }
+        long totalMs = (System.nanoTime() - startNanos) / 1_000_000L;
+        log.info("[HistoryReconcile] dayRange {} {}..{} — {} bars in {} ms",
+            fyersSymbol, from, to, out.size(), totalMs);
+        return out;
+    }
+
+    /** Fires {@link #fetchDayRange} on {@link #asyncExecutor} and delivers the result
+     *  (never null; may be empty). Caller must be prepared for the callback to run on
+     *  a different thread. */
+    public void fetchDayRangeAsync(String fyersSymbol, LocalDate from, LocalDate to,
+                                    Consumer<List<Candle>> onResult) {
+        if (onResult == null) return;
+        asyncExecutor.submit(() -> {
+            List<Candle> bars = Collections.emptyList();
+            try { bars = fetchDayRange(fyersSymbol, from, to); }
+            catch (Exception e) {
+                log.warn("[HistoryReconcile] dayRange async threw: {}", e.getMessage());
+            }
+            try { onResult.accept(bars); }
+            catch (Exception e) {
+                log.warn("[HistoryReconcile] dayRange onResult callback threw: {}", e.getMessage());
+            }
         });
     }
 

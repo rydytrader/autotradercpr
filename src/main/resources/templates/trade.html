@@ -323,9 +323,9 @@
         </div>
     </div>
 
-    <!-- ── OI Bias 40% (left) · Event Log 60% (right) side-by-side. ─────────────────── -->
-    <div id="chartRow" style="margin-top:12px; display:grid; grid-template-columns:2fr 3fr; gap:28px;">
-        <div class="section-card fixed-card-log fade-in" style="margin:0; order:2;">
+    <!-- ── Event Log ─────────────────────────────────────────────────────────────── -->
+    <div id="chartRow" style="margin-top:12px;">
+        <div class="section-card fixed-card-log fade-in" style="margin:0;">
             <div class="section-header">
                 <div class="section-title">
                     <div class="section-title-dot" style="background: var(--accent-cyan)"></div>
@@ -348,43 +348,6 @@
                         No events recorded
                     </div>
                 </div>
-            </div>
-        </div>
-
-        <!-- OI Bias — line chart of ΔCE (red) and ΔPE (green) since baseline. -->
-        <div class="section-card fade-in" style="margin:0; order:1; display:flex; flex-direction:column;">
-            <div class="section-header">
-                <div class="section-title">
-                    <div class="section-title-dot" style="background:#a78bfa;"></div>
-                    OI Bias
-                </div>
-                <div style="margin-left:auto; display:flex; align-items:center; gap:12px; font-family:var(--font-mono); font-size:0.82rem; font-weight:700; letter-spacing:0.03em;">
-                    <span style="color:var(--text-muted);">ΔCE <span id="oiHdrCe" style="color:#f87171;">—</span></span>
-                    <span style="color:var(--text-muted);">ΔPE <span id="oiHdrPe" style="color:#34d399;">—</span></span>
-                    <span id="oiTrendPill"
-                          style="font-family:var(--font-mono); font-size:0.72rem; font-weight:700;
-                                 letter-spacing:0.06em; color:var(--text-muted); background:rgba(128,128,128,0.10);
-                                 border:1px solid var(--border); padding:4px 12px; border-radius:999px;">
-                        NEUTRAL
-                    </span>
-                </div>
-                <!-- oiAtm / oiStrikeCount / oiLastTick kept hidden so the poll JS still finds
-                     them and doesn't throw when writing to null elements. -->
-                <span id="oiAtm" hidden></span>
-                <span id="oiStrikeCount" hidden></span>
-                <span id="oiLastTick" hidden></span>
-            </div>
-            <div style="flex:1; min-height:250px; display:flex; flex-direction:column;">
-                <div style="padding:0 12px; flex:1; min-height:0; position:relative;">
-                    <canvas id="oiChart"></canvas>
-                    <div id="oiEmpty" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-                                              color:var(--text-muted); font-size:0.72rem; font-family:var(--font-mono);">
-                        Waiting for OptionSelling to lock ATM…
-                    </div>
-                </div>
-                <div id="oiUpdatedAt" style="flex-shrink:0; text-align:right; padding:2px 12px 6px;
-                                              color:var(--text-muted); font-size:0.62rem;
-                                              font-family:var(--font-mono); letter-spacing:0.04em;">—</div>
             </div>
         </div>
     </div>
@@ -1125,130 +1088,6 @@
         }
     }
 
-    // ── OI Bias chart ──────────────────────────────────────────────────────
-    // Polls /api/option-selling/oi/state (trend pill, 30s) and /api/option-selling/oi/history
-    // (chart, 60s). Idle until OptionSelling picks the day's ATM (~09:18 IST); once the
-    // baseline is set, the two-line chart populates with cumulative ΔCE (red) and
-    // ΔPE (green) since baseline.
-    var oiChart = null;
-    var oiThresholdPct = 40;
-    function oiPnlClass(v) { return v > 0 ? 'pnl-positive' : (v < 0 ? 'pnl-negative' : ''); }
-    function oiInFmt(v) {
-        // Indian-style number grouping — matches the header ΔCE / ΔPE convention.
-        try { return new Intl.NumberFormat('en-IN').format(v); } catch (e) { return String(v); }
-    }
-    function oiTrendStyle(bias) {
-        // Colour palette matches the tracker's three states + STALE fallback.
-        switch (bias) {
-            case 'BEARISH': return { color:'#f87171', bg:'rgba(248,113,113,0.10)', border:'rgba(248,113,113,0.35)' };
-            case 'BULLISH': return { color:'#34d399', bg:'rgba(52,211,153,0.10)', border:'rgba(52,211,153,0.35)' };
-            case 'STALE':   return { color:'#fbbf24', bg:'rgba(251,191,36,0.10)', border:'rgba(251,191,36,0.35)' };
-            default:        return { color:'var(--text-muted)', bg:'rgba(128,128,128,0.10)', border:'var(--border)' };
-        }
-    }
-
-    function pollOiState() {
-        if (document.visibilityState !== 'visible') return;
-        fetch('/api/option-selling/oi/state').then(function(r) { return r.json(); }).then(function(d) {
-            if (!d) return;
-            var pill = document.getElementById('oiTrendPill');
-            var atmEl = document.getElementById('oiAtm');
-            var strikeEl = document.getElementById('oiStrikeCount');
-            var tickEl = document.getElementById('oiLastTick');
-            if (typeof d.biasThresholdPct === 'number') oiThresholdPct = d.biasThresholdPct;
-            if (pill) {
-                var style = oiTrendStyle(d.bias || 'NEUTRAL');
-                // Show the ACTUAL percent by which one side exceeds the other, not the
-                // threshold. Threshold is just what decides when the bias label flips —
-                // the live number is what the operator wants to see. Tooltip surfaces
-                // the threshold for reference.
-                var actual = typeof d.biasActualPct === 'number' ? Math.abs(d.biasActualPct) : 0;
-                pill.textContent = (d.bias || 'NEUTRAL') + ' · ' + actual.toFixed(0) + '%';
-                pill.title = 'Actual skew — threshold to flip: ' + oiThresholdPct.toFixed(0) + '%';
-                pill.style.color = style.color;
-                pill.style.background = style.bg;
-                pill.style.borderColor = style.border;
-            }
-            if (atmEl) atmEl.textContent = d.atmStrike > 0 ? String(d.atmStrike) : '—';
-            if (strikeEl) strikeEl.textContent = d.activeStrikeCount > 0 ? '(' + d.activeStrikeCount + ' strikes)' : '';
-            if (tickEl) {
-                if (d.lastSampleAt) tickEl.textContent = 'last tick ' + String(d.lastSampleAt).slice(11, 19);
-                else tickEl.textContent = '—';
-            }
-            // Header ΔCE / ΔPE — signed Indian-style number so a glance shows whether
-            // writers are stacking (+) or unwinding (−) each side.
-            var ceEl = document.getElementById('oiHdrCe');
-            var peEl = document.getElementById('oiHdrPe');
-            var oiSigned = function(v) {
-                var n = Number(v || 0);
-                return (n >= 0 ? '+' : '−') + oiInFmt(Math.abs(n));
-            };
-            if (ceEl) ceEl.textContent = d.cumulativeCeChange != null ? oiSigned(d.cumulativeCeChange) : '—';
-            if (peEl) peEl.textContent = d.cumulativePeChange != null ? oiSigned(d.cumulativePeChange) : '—';
-            var updatedEl = document.getElementById('oiUpdatedAt');
-            if (updatedEl) {
-                var d2 = new Date();
-                var hh = String(d2.getHours()).padStart(2, '0');
-                var mm = String(d2.getMinutes()).padStart(2, '0');
-                var ss = String(d2.getSeconds()).padStart(2, '0');
-                updatedEl.textContent = 'updated ' + hh + ':' + mm + ':' + ss;
-            }
-        }).catch(function() {});
-    }
-
-    function pollOiHistory() {
-        if (document.visibilityState !== 'visible') return;
-        fetch('/api/option-selling/oi/history').then(function(r) { return r.json(); }).then(function(d) {
-            var samples = (d && d.samples) || [];
-            var empty = document.getElementById('oiEmpty');
-            if (samples.length === 0) {
-                if (empty) empty.style.display = 'flex';
-                return;
-            }
-            if (empty) empty.style.display = 'none';
-            var labels = samples.map(function(s) { return s.t; });
-            var ce = samples.map(function(s) { return s.cumCe; });
-            var pe = samples.map(function(s) { return s.cumPe; });
-            var canvas = document.getElementById('oiChart');
-            if (!canvas || typeof Chart === 'undefined') return;
-            if (oiChart) {
-                oiChart.data.labels = labels;
-                oiChart.data.datasets[0].data = ce;
-                oiChart.data.datasets[1].data = pe;
-                oiChart.update('none');
-                return;
-            }
-            oiChart = new Chart(canvas.getContext('2d'), {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [
-                        { label: 'ΔCE', data: ce, borderColor: '#f87171', backgroundColor: 'rgba(248,113,113,0.08)',
-                          borderWidth: 1.2, tension: 0.25, pointRadius: 0, fill: false },
-                        { label: 'ΔPE', data: pe, borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,0.08)',
-                          borderWidth: 1.2, tension: 0.25, pointRadius: 0, fill: false }
-                    ]
-                },
-                options: {
-                    responsive: true, maintainAspectRatio: false, animation: false,
-                    interaction: { intersect: false, mode: 'index' },
-                    plugins: {
-                        legend: { display: true, labels: { boxWidth: 10, boxHeight: 10, font: { size: 12, family: 'Roboto Mono' }, color: '#94a3b8' } },
-                        tooltip: {
-                            titleFont: { size: 12, family: 'Roboto Mono' },
-                            bodyFont:  { size: 12, family: 'Roboto Mono' },
-                            callbacks: { label: function(ctx) { return ctx.dataset.label + ': ' + oiInFmt(ctx.parsed.y); } }
-                        }
-                    },
-                    scales: {
-                        x: { ticks: { font: { size: 11, family: 'Roboto Mono' }, color: '#64748b', maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { display: false } },
-                        y: { ticks: { font: { size: 11, family: 'Roboto Mono' }, color: '#64748b', callback: function(v) { return oiInFmt(v); } }, grid: { color: 'rgba(128,128,128,0.08)' } }
-                    }
-                }
-            });
-        }).catch(function() {});
-    }
-
     // ── Boot ───────────────────────────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', function() {
         var yr = document.getElementById('footerYear');
@@ -1264,13 +1103,6 @@
         checkConnection();
         setInterval(checkConnection, 5000);
         loadWelcome();
-        // OI bias polling — trend pill on 30 s, chart on 60 s. Baseline builds after
-        // OptionSelling locks the day's ATM (~09:18 IST); before that, the "Waiting for
-        // ATM…" placeholder covers the canvas.
-        pollOiState();
-        pollOiHistory();
-        setInterval(pollOiState, 30000);
-        setInterval(pollOiHistory, 60000);
     });
 </script>
 

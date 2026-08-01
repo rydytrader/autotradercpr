@@ -96,24 +96,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
     // SSE emitters
     private final CopyOnWriteArrayList<SseEmitter> emitters = new CopyOnWriteArrayList<>();
 
-    // OI listeners — side channel for open interest ticks on option symbols. Non-blocking,
-    // fanned out to each registered consumer on every option tick that carries a positive
-    // OI value. Used by OptionOiTracker to maintain cumulative-since-baseline aggregates.
-    /** Raw open interest event. {@code exchFeedTimeSec} is the exchange dissemination
-     *  time in epoch seconds (0 when the parser couldn't extract it).
-     *  {@code oiChange} is the exchange-published incremental OI change carried on the
-     *  tick — currently populated only by the GDFL feed ({@code OpenInterestChange}
-     *  field on {@code RealtimeResult}); Fyers ticks pass 0. Not consumed today —
-     *  {@code OptionOiTracker} still computes its own delta against baseline — kept for
-     *  future filters (e.g. instantaneous OI surge detection). */
-    public record OiTick(String fyersSymbol, long oi, long exchFeedTimeSec, long oiChange) {}
-    private final CopyOnWriteArrayList<java.util.function.Consumer<OiTick>> oiListeners = new CopyOnWriteArrayList<>();
-    /** Registers a listener that receives every option-symbol OI tick. Callers must not
-     *  block — listeners run inline on the WebSocket callback thread. */
-    public void addOiListener(java.util.function.Consumer<OiTick> l) {
-        if (l != null) oiListeners.add(l);
-    }
-
     /** Raw LTP tick — fanned out on every WS snapshot that carries a positive LTP.
      *  {@code atp} is the session VWAP (Fyers' avg_trade_price), 0 for index symbols and
      *  pre-first-tick option symbols. {@code exchFeedTimeSec} is the Fyers dissemination
@@ -160,20 +142,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
      *  alternate feed's stream (e.g. GDFL). */
     public boolean isAltFeedOwned(String fyersSymbol) {
         return fyersSymbol != null && altFeedOwnedSymbols.contains(fyersSymbol);
-    }
-
-    /** Fans an externally-sourced OI tick to every registered OI listener. Symmetric
-     *  to {@link #pushLtpTick} — used by alternate feed clients (e.g. GDFL) so their
-     *  OI updates reach {@link OptionOiTracker} through the same pub-sub chain the
-     *  Fyers WS uses. {@code oiChange} is forwarded verbatim on the {@link OiTick}
-     *  record for future consumers; pass 0 when the source feed doesn't publish it. */
-    public void pushOiTick(String fyersSymbol, long oi, long exchFeedTimeSec, long oiChange) {
-        if (fyersSymbol == null || fyersSymbol.isBlank() || oi <= 0) return;
-        if (oiListeners.isEmpty()) return;
-        OiTick evt = new OiTick(fyersSymbol, oi, exchFeedTimeSec, oiChange);
-        for (var l : oiListeners) {
-            try { l.accept(evt); } catch (Exception ignored) {}
-        }
     }
 
     /** Fans an externally-sourced LtpTick to every registered listener. Used by
@@ -419,11 +387,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         String fyersSymbol = raw.fyersSymbol != null ? raw.fyersSymbol : hsmToFyersSymbol.get(raw.hsmToken);
         if (fyersSymbol == null) return;
         // Alternate-feed ownership — GDFL is the SOLE source for these symbols. Drop
-        // Fyers ticks entirely (LTP, OHLC, OI, everything). GDFL supplies OI via
-        // pushOiTick so OptionOiTracker still gets per-strike updates for the ATM legs.
-        // The non-ATM strikes in the ±7 OI window remain Fyers-fed through this method
-        // as they're never in altFeedOwnedSymbols. Each strike's OI is thus sourced by
-        // exactly ONE vendor, avoiding cross-feed timestamp drift inside the tracker.
+        // Fyers ticks entirely (LTP, OHLC, everything).
         if (altFeedOwnedSymbols.contains(fyersSymbol)) return;
         String today = LocalDate.now(ZoneId.of("Asia/Kolkata")).toString();
         TickData tick = currentTicks.computeIfAbsent(fyersSymbol, k -> {
@@ -456,17 +420,6 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
             }
         }
 
-        // OI side channel — options only, positive OI only. Fan out to registered
-        // listeners so OptionOiTracker can maintain cumulative-since-baseline aggregates
-        // without polluting the TickData path used by the scrolling ticker. Fyers's HSM
-        // frame doesn't carry an OI-change field, so oiChange is 0 here — populated by
-        // the GDFL feed only.
-        if (raw.oi > 0 && !oiListeners.isEmpty() && isOptionSymbol(fyersSymbol)) {
-            OiTick evt = new OiTick(fyersSymbol, raw.oi, raw.exchFeedTime, 0L);
-            for (var l : oiListeners) {
-                try { l.accept(evt); } catch (Exception ignored) {}
-            }
-        }
     }
 
     @Override

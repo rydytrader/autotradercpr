@@ -108,96 +108,15 @@ public class AnalyticsService {
         out.put("equityCurve", equityCurve(trades, startingCapital));
         out.put("byMonth",     byMonth(trades, dailyClosed));
         out.put("byDate",      byDate(trades, dailyClosed));
-        out.put("oiBiasEffectiveness", oiBiasEffectiveness(closed));
-        return out;
-    }
-
-    /** Per-cycle split of closed trades by whether they were entered AGAINST the
-     *  OI bias (i.e., trades the bias filter would have blocked): CE_SELL fired
-     *  while bias = BULLISH, or PE_SELL fired while bias = BEARISH.
-     *
-     *  <p>Rows are marked at fire time in {@code OptionSelling.fire()} — only against-bias
-     *  trades get a non-null {@code entryOiBias} value. Everything else (with-bias,
-     *  neutral, stale, unknown, historical pre-fix rows) is null and buckets as
-     *  "other". Aggregates net P&L + win-rate for each bucket + a projected impact
-     *  block the UI can render directly.
-     *
-     *  <p>Walks per-cycle {@code closed} — NOT the daily-aggregated list —
-     *  because bias is a per-trade attribute. */
-    private Map<String, Object> oiBiasEffectiveness(List<Trade> closed) {
-        int againstT = 0, againstW = 0, againstL = 0;
-        double againstNet = 0;
-        int ceT = 0, ceW = 0, ceL = 0;    double ceNet = 0;
-        int peT = 0, peW = 0, peL = 0;    double peNet = 0;
-        int otherT = 0, otherW = 0, otherL = 0;
-        double otherNet = 0;
-        for (Trade t : closed) {
-            double pnl = t.netPnl();
-            String bias = t.entryOiBias();
-            boolean against = bias != null && !bias.isBlank();
-            if (against) {
-                againstT++;
-                againstNet += pnl;
-                if (pnl > 0) againstW++;
-                else if (pnl < 0) againstL++;
-                if ("CE_SELL".equals(t.setup())) {
-                    ceT++; ceNet += pnl;
-                    if (pnl > 0) ceW++;
-                    else if (pnl < 0) ceL++;
-                } else if ("PE_SELL".equals(t.setup())) {
-                    peT++; peNet += pnl;
-                    if (pnl > 0) peW++;
-                    else if (pnl < 0) peL++;
-                }
-            } else {
-                otherT++;
-                otherNet += pnl;
-                if (pnl > 0) otherW++;
-                else if (pnl < 0) otherL++;
-            }
-        }
-        Map<String, Object> against = new LinkedHashMap<>();
-        against.put("trades",  againstT);
-        against.put("wins",    againstW);
-        against.put("losses",  againstL);
-        against.put("winRate", round2(againstT > 0 ? (againstW * 100.0 / againstT) : 0));
-        against.put("netPnl",  round2(againstNet));
-        Map<String, Object> ceSell = new LinkedHashMap<>();
-        ceSell.put("trades",  ceT);
-        ceSell.put("wins",    ceW);
-        ceSell.put("winRate", round2(ceT > 0 ? (ceW * 100.0 / ceT) : 0));
-        ceSell.put("netPnl",  round2(ceNet));
-        Map<String, Object> peSell = new LinkedHashMap<>();
-        peSell.put("trades",  peT);
-        peSell.put("wins",    peW);
-        peSell.put("winRate", round2(peT > 0 ? (peW * 100.0 / peT) : 0));
-        peSell.put("netPnl",  round2(peNet));
-        against.put("ceSell", ceSell);
-        against.put("peSell", peSell);
-        Map<String, Object> other = new LinkedHashMap<>();
-        other.put("trades",  otherT);
-        other.put("wins",    otherW);
-        other.put("losses",  otherL);
-        other.put("winRate", round2(otherT > 0 ? (otherW * 100.0 / otherT) : 0));
-        other.put("netPnl",  round2(otherNet));
-        Map<String, Object> impact = new LinkedHashMap<>();
-        impact.put("wouldBlockTrades", againstT);
-        impact.put("wouldBlockWins",   againstW);
-        impact.put("wouldBlockLosses", againstL);
-        impact.put("netPnlIfEnabled",  round2(-againstNet));
-        Map<String, Object> out = new LinkedHashMap<>();
-        out.put("against", against);
-        out.put("other",   other);
-        out.put("projectedFilterImpact", impact);
         return out;
     }
 
     /** Collapse per-cycle closed trades into one synthetic Trade per trading day.
      *  netPnl / grossPnl / charges / slHitCount are summed; sessionDate keyed;
      *  closedAtMillis takes the day's latest close so downstream ordering is
-     *  stable. Symbol / setup / instrument / OI bias are dropped — those are
-     *  cycle-level attributes that don't survive daily aggregation. Rows with
-     *  a blank sessionDate are skipped. */
+     *  stable. Symbol / setup / instrument are dropped — those are cycle-level
+     *  attributes that don't survive daily aggregation. Rows with a blank
+     *  sessionDate are skipped. */
     private List<Trade> aggregateByDay(List<Trade> closed) {
         java.util.NavigableMap<String, double[]> sums = new java.util.TreeMap<>();
         // [grossPnl, charges, netPnl, slHitCount, closedAtMillis]
@@ -218,7 +137,7 @@ public class AnalyticsService {
             double[] s = e.getValue();
             out.add(new Trade(strategyByDay.get(e.getKey()), e.getKey(), (long) s[4],
                 s[0], s[1], s[2], "DAY_AGGREGATE", (int) s[3],
-                null, 0L, null, null, null));
+                null, 0L, null, null));
         }
         return out;
     }
@@ -336,9 +255,6 @@ public class AnalyticsService {
                          /** Epoch millis when the entry order was placed. 0 for legacy
                           *  rows persisted before the column existed. */
                          long openedAtMillis,
-                         /** OI bias state captured at fire-time. Null for legacy rows
-                          *  and for any cycle where the tracker wasn't yet baselined. */
-                         String entryOiBias,
                          /** Underlying instrument for this cycle — NIFTY or BANKNIFTY.
                           *  Drives the analytics NIFTY vs BankNifty split. Null for
                           *  legacy rows persisted before the column existed — analytics
@@ -385,7 +301,7 @@ public class AnalyticsService {
             Long openedAt = e.getOpenedAtMillis();
             out.add(new Trade(e.getStrategyId(), e.getSessionDate(), e.getClosedAtMillis(),
                               e.getGrossPnl(), e.getCharges(), e.getNetPnl(), e.getCloseReason(), sl,
-                              e.getSymbol(), openedAt == null ? 0L : openedAt, e.getEntryOiBias(),
+                              e.getSymbol(), openedAt == null ? 0L : openedAt,
                               e.getInstrument(), e.getSetup()));
         }
         // Live overlay: today's in-progress closes from in-memory state.
@@ -473,10 +389,9 @@ public class AnalyticsService {
                         String reason = String.valueOf(m.getOrDefault("closeReason", "OPEN"));
                         String sym   = asString(m.get("symbol"));
                         long openMs  = asLong(m.get("openedAtMillis"));
-                        String bias  = asString(m.get("entryOiBias"));
                         String setup = asString(m.get("setup"));
                         out.add(new Trade(cycleStrategy, iso, ts, gross, ch, net, reason, 0,
-                            sym, openMs, bias, null, setup));
+                            sym, openMs, null, setup));
                         addedTodayNet     += net;
                         addedTodayCharges += ch;
                     }
@@ -492,7 +407,7 @@ public class AnalyticsService {
                 if (stratMatchesFilter && (Math.abs(openNet) > 0.01 || Math.abs(openChargesRem) > 0.01)) {
                     out.add(new Trade(strat.id(), iso, System.currentTimeMillis(),
                         openGross, openChargesRem, openNet, OPEN_POSITION_MTM_REASON, 0,
-                        null, 0L, null, null, null));
+                        null, 0L, null, null));
                 }
             } catch (Exception e) {
                 log.warn("[Analytics] Live today overlay failed for {}: {}", strat.id(), e.getMessage());

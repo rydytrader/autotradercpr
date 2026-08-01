@@ -43,8 +43,14 @@ public class SettingsController {
         result.put("optionSellingMaxSlPoints",        riskSettings.getOptionSellingMaxSlPoints(effectiveMode));
         result.put("optionSellingMaxCeTradesPerDay",  riskSettings.getOptionSellingMaxCeTradesPerDay(effectiveMode));
         result.put("optionSellingMaxPeTradesPerDay",  riskSettings.getOptionSellingMaxPeTradesPerDay(effectiveMode));
-        result.put("optionSellingOiBiasThresholdPct", riskSettings.getOptionSellingOiBiasThresholdPct(effectiveMode));
-        result.put("optionSellingOiBiasFilterEnabled", riskSettings.isOptionSellingOiBiasFilterEnabled(effectiveMode));
+        result.put("optionSellingSupertrendAtr",           riskSettings.getOptionSellingSupertrendAtr(effectiveMode));
+        result.put("optionSellingSupertrendMult",          riskSettings.getOptionSellingSupertrendMult(effectiveMode));
+        result.put("optionSellingSpotSupertrendAtr",       riskSettings.getOptionSellingSpotSupertrendAtr(effectiveMode));
+        result.put("optionSellingSpotSupertrendMult",      riskSettings.getOptionSellingSpotSupertrendMult(effectiveMode));
+        result.put("optionSellingMaxBreakdownPct",         riskSettings.getOptionSellingMaxBreakdownPct(effectiveMode));
+        result.put("optionSellingTrailingExitEnabled",     riskSettings.isOptionSellingTrailingExitEnabled(effectiveMode));
+        result.put("optionSellingRequireGapOpenAboveVwap", riskSettings.isOptionSellingRequireGapOpenAboveVwap(effectiveMode));
+        result.put("optionSellingRetestEntryEnabled",      riskSettings.isOptionSellingRetestEntryEnabled(effectiveMode));
         // OPTION BUYING (Ganesan 4-indicator framework — coexists with OPTION SELLING)
         result.put("optionBuyingEnabled",           riskSettings.isOptionBuyingEnabled());
         result.put("optionBuyingLotsPerLeg",        riskSettings.getOptionBuyingLotsPerLeg());
@@ -101,8 +107,14 @@ public class SettingsController {
             if (body.containsKey("optionSellingMaxSlPoints"))            riskSettings.setOptionSellingMaxSlPoints(effectiveMode, Double.parseDouble(body.get("optionSellingMaxSlPoints").toString()));
             if (body.containsKey("optionSellingMaxCeTradesPerDay"))      riskSettings.setOptionSellingMaxCeTradesPerDay(effectiveMode, Integer.parseInt(body.get("optionSellingMaxCeTradesPerDay").toString()));
             if (body.containsKey("optionSellingMaxPeTradesPerDay"))      riskSettings.setOptionSellingMaxPeTradesPerDay(effectiveMode, Integer.parseInt(body.get("optionSellingMaxPeTradesPerDay").toString()));
-            if (body.containsKey("optionSellingOiBiasThresholdPct"))     riskSettings.setOptionSellingOiBiasThresholdPct(effectiveMode, Double.parseDouble(body.get("optionSellingOiBiasThresholdPct").toString()));
-            if (body.containsKey("optionSellingOiBiasFilterEnabled"))    riskSettings.setOptionSellingOiBiasFilterEnabled(effectiveMode, Boolean.parseBoolean(body.get("optionSellingOiBiasFilterEnabled").toString()));
+            if (body.containsKey("optionSellingSupertrendAtr"))          riskSettings.setOptionSellingSupertrendAtr(effectiveMode, Integer.parseInt(body.get("optionSellingSupertrendAtr").toString()));
+            if (body.containsKey("optionSellingSupertrendMult"))         riskSettings.setOptionSellingSupertrendMult(effectiveMode, Double.parseDouble(body.get("optionSellingSupertrendMult").toString()));
+            if (body.containsKey("optionSellingSpotSupertrendAtr"))      riskSettings.setOptionSellingSpotSupertrendAtr(effectiveMode, Integer.parseInt(body.get("optionSellingSpotSupertrendAtr").toString()));
+            if (body.containsKey("optionSellingSpotSupertrendMult"))     riskSettings.setOptionSellingSpotSupertrendMult(effectiveMode, Double.parseDouble(body.get("optionSellingSpotSupertrendMult").toString()));
+            if (body.containsKey("optionSellingMaxBreakdownPct"))        riskSettings.setOptionSellingMaxBreakdownPct(effectiveMode, Double.parseDouble(body.get("optionSellingMaxBreakdownPct").toString()));
+            if (body.containsKey("optionSellingTrailingExitEnabled"))    riskSettings.setOptionSellingTrailingExitEnabled(effectiveMode, Boolean.parseBoolean(body.get("optionSellingTrailingExitEnabled").toString()));
+            if (body.containsKey("optionSellingRequireGapOpenAboveVwap")) riskSettings.setOptionSellingRequireGapOpenAboveVwap(effectiveMode, Boolean.parseBoolean(body.get("optionSellingRequireGapOpenAboveVwap").toString()));
+            if (body.containsKey("optionSellingRetestEntryEnabled"))     riskSettings.setOptionSellingRetestEntryEnabled(effectiveMode, Boolean.parseBoolean(body.get("optionSellingRetestEntryEnabled").toString()));
             // OPTION BUYING
             if (body.containsKey("optionBuyingEnabled"))          riskSettings.setOptionBuyingEnabled(Boolean.parseBoolean(body.get("optionBuyingEnabled").toString()));
             if (body.containsKey("optionBuyingLotsPerLeg"))       riskSettings.setOptionBuyingLotsPerLeg(Integer.parseInt(body.get("optionBuyingLotsPerLeg").toString()));

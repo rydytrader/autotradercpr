@@ -7,8 +7,8 @@
 // Each entry from that session gets an ↑ marker on the bar it fired
 // on, and each exit gets a ↓ marker on the exit bar.
 //
-// Overlay skeleton mirrors OiBiasEffectivenessModal + AppConfirm — fixed
-// dark backdrop, centered card, Esc / backdrop / close-button dismissal.
+// Overlay skeleton mirrors AppConfirm — fixed dark backdrop, centered card,
+// Esc / backdrop / close-button dismissal.
 window.HistoricalChartModal = (function() {
     var overlayEl = null;
     var charts = {};              // panelKey -> chart

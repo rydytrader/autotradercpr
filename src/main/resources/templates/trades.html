@@ -174,12 +174,6 @@
                     <button class="scope-pill"        data-range="all"       title="Every trade in the database.">All Time</button>
                 </div>
             </div>
-            <button id="oiBiasEffBtn" class="scope-pill"
-                    style="margin-left:auto;"
-                    title="Show win rate / P&L of trades taken against the OI bias — the ones the filter would have blocked."
-                    onclick="OiBiasEffectivenessModal.open()">
-                ⚖ OI Bias Effectiveness
-            </button>
         </div>
     </div>
 
@@ -239,7 +233,6 @@
                         <th class="text-center">Out Bar</th>
                         <th>Symbol</th>
                         <th class="text-center">Setup</th>
-                        <th class="text-center">OI Bias</th>
                         <th class="text-right">Qty</th>
                         <th class="text-right">Entry</th>
                         <th class="text-right">Exit</th>
@@ -251,7 +244,7 @@
                 </thead>
                 <tbody id="tradesTableBody">
                     <tr>
-                        <td colspan="15">
+                        <td colspan="14">
                             <div class="empty-state">
                                 <div class="empty-icon">◎</div>
                                 No trades completed today
@@ -307,19 +300,6 @@
                  : r === 'TIMED_EXIT' ? 'pill-reason-timed'
                  : 'pill-reason-manual';
         return '<span class="pill ' + cls + '">' + escapeHtml(r) + '</span>';
-    }
-    /** Bias pill — non-null entryOiBias means the trade was fired AGAINST the
-     *  current OI bias (the ones the filter would have blocked). Rendered red so
-     *  they stand out visually next to the setup pill. Null / blank → muted em-dash. */
-    function biasPill(bias) {
-        var b = String(bias || '').toUpperCase();
-        if (!b) return '<span style="color:var(--text-muted);">—</span>';
-        return '<span style="display:inline-block; padding:2px 8px; border-radius:999px;'
-             + ' font-family:var(--font-mono); font-size:0.66rem; font-weight:700;'
-             + ' letter-spacing:0.05em; color:#f87171; background:rgba(248,113,113,0.10);'
-             + ' border:1px solid rgba(248,113,113,0.35);"'
-             + ' title="Trade fired against OI bias — would be blocked if the OI bias filter is enabled.">'
-             + escapeHtml(b) + '</span>';
     }
 
     // ── Date range selection ────────────────────────────────────────────────
@@ -416,7 +396,7 @@
 
         var tbody = document.getElementById('tradesTableBody');
         if (trades.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="15"><div class="empty-state"><div class="empty-icon">◎</div>No trades in this range</div></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="14"><div class="empty-state"><div class="empty-icon">◎</div>No trades in this range</div></td></tr>';
             return;
         }
         var showDate = currentRange !== 'today';
@@ -435,7 +415,6 @@
                 + '<td class="text-center">' + fmtBarClose(t.exitCandleMs) + '</td>'
                 + '<td>' + escapeHtml(t.symbol || '—') + '</td>'
                 + '<td class="text-center">' + setupPill(t.setup) + '</td>'
-                + '<td class="text-center">' + biasPill(t.entryOiBias) + '</td>'
                 + '<td class="text-right">' + escapeHtml(String(t.qty || 0)) + '</td>'
                 + '<td class="text-right">' + entryCell + '</td>'
                 + '<td class="text-right">' + exitCell + '</td>'
@@ -659,6 +638,5 @@
 <script src="/js/ticker.js?v=34"></script>
 <script src="/js/settings-modal.js?v=73"></script>
 <script src="/js/option-chain-modal.js?v=27"></script>
-<script src="/js/oi-bias-effectiveness-modal.js?v=1"></script>
 </body>
 </html>

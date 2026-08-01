@@ -46,16 +46,31 @@ public class RiskSettingsStore {
         volatile int    optionSellingMaxCeTradesPerDay = 3;
         /** Hard cap on PE-side fires per session. Default 3. */
         volatile int    optionSellingMaxPeTradesPerDay = 3;
-        /** OI bias threshold as a percent. Governs when the tracker labels the market
-         *  BULLISH / BEARISH: one side's cumulative-since-baseline change must exceed
-         *  the other by at least this percent to earn a directional bias — otherwise
-         *  NEUTRAL. Default 40 (i.e. cumCE ≥ 1.40 · cumPE → BEARISH). */
-        volatile double optionSellingOiBiasThresholdPct = 40.0;
-        /** OI-bias trade filter. When ON, OptionSelling will skip CE_SELL fires while the OI
-         *  bias reads BULLISH (writers stacking puts — market bullish, don't fight it)
-         *  and skip PE_SELL fires while the bias reads BEARISH. NEUTRAL and STALE
-         *  never block. Default OFF — opt-in per operator. */
-        volatile boolean optionSellingOiBiasFilterEnabled = false;
+        /** SuperTrend ATR period for the option-premium ST (Gate B + SL + trailing
+         *  exit). PDF spec: 10. */
+        volatile int    optionSellingSupertrendAtr = 10;
+        /** SuperTrend multiplier for the option-premium ST. PDF spec: 3.0. */
+        volatile double optionSellingSupertrendMult = 3.0;
+        /** SuperTrend ATR period for the NIFTY spot ST (Gate C — spot direction
+         *  alignment). PDF spec: 10. */
+        volatile int    optionSellingSpotSupertrendAtr = 10;
+        /** SuperTrend multiplier for the NIFTY spot ST. PDF spec: 3.0. */
+        volatile double optionSellingSpotSupertrendMult = 3.0;
+        /** Gate D — reject a breakdown bar when the premium sits more than this %
+         *  below VWAP. Prevents entering "far below VWAP" bars where the R:R is
+         *  destroyed. Default 15 %. */
+        volatile double optionSellingMaxBreakdownPct = 15.0;
+        /** Master toggle for the ST-flip-green early exit. When ON, an open
+         *  position is flattened on the first 3-min close where the premium
+         *  SuperTrend flips from RED to GREEN. Default ON. */
+        volatile boolean optionSellingTrailingExitEnabled = true;
+        /** Gate A companion — require the VWAP-break bar to have opened at or
+         *  above VWAP (fresh breakdown, not continuation of a bar already below).
+         *  Default ON. */
+        volatile boolean optionSellingRequireGapOpenAboveVwap = true;
+        /** Phase-2 flag for the retest-rejection entry variant — no wiring in v1.
+         *  Kept in settings so the operator can flip it after the feature ships. */
+        volatile boolean optionSellingRetestEntryEnabled = false;
         // ── OPTION BUYING strategy settings (singleton) ─────────────────────
         // Dharanidharan Ganesan 4-indicator framework on 3-min NIFTY spot.
         // On a bullish 4-of-4 setup: buy today's ATM CE (fresh ATM from NIFTY
@@ -433,8 +448,14 @@ public class RiskSettingsStore {
     public double  getOptionSellingMaxSlPoints()      { return cfg().optionSellingMaxSlPoints; }
     public int     getOptionSellingMaxCeTradesPerDay(){ return cfg().optionSellingMaxCeTradesPerDay; }
     public int     getOptionSellingMaxPeTradesPerDay(){ return cfg().optionSellingMaxPeTradesPerDay; }
-    public double  getOptionSellingOiBiasThresholdPct(){ return cfg().optionSellingOiBiasThresholdPct; }
-    public boolean isOptionSellingOiBiasFilterEnabled(){ return cfg().optionSellingOiBiasFilterEnabled; }
+    public int     getOptionSellingSupertrendAtr()    { return cfg().optionSellingSupertrendAtr; }
+    public double  getOptionSellingSupertrendMult()   { return cfg().optionSellingSupertrendMult; }
+    public int     getOptionSellingSpotSupertrendAtr(){ return cfg().optionSellingSpotSupertrendAtr; }
+    public double  getOptionSellingSpotSupertrendMult(){ return cfg().optionSellingSpotSupertrendMult; }
+    public double  getOptionSellingMaxBreakdownPct()  { return cfg().optionSellingMaxBreakdownPct; }
+    public boolean isOptionSellingTrailingExitEnabled(){ return cfg().optionSellingTrailingExitEnabled; }
+    public boolean isOptionSellingRequireGapOpenAboveVwap(){ return cfg().optionSellingRequireGapOpenAboveVwap; }
+    public boolean isOptionSellingRetestEntryEnabled(){ return cfg().optionSellingRetestEntryEnabled; }
     // OPTION BUYING getters
     public boolean isOptionBuyingEnabled()             { return cfg().optionBuyingEnabled; }
     public int     getOptionBuyingLotsPerLeg()         { return cfg().optionBuyingLotsPerLeg; }
@@ -638,8 +659,14 @@ public class RiskSettingsStore {
     public void setOptionSellingMaxSlPoints(double v)         { cfg().optionSellingMaxSlPoints = Math.max(0, v); }
     public void setOptionSellingMaxCeTradesPerDay(int v)      { cfg().optionSellingMaxCeTradesPerDay = Math.max(0, v); }
     public void setOptionSellingMaxPeTradesPerDay(int v)      { cfg().optionSellingMaxPeTradesPerDay = Math.max(0, v); }
-    public void setOptionSellingOiBiasThresholdPct(double v)  { cfg().optionSellingOiBiasThresholdPct = Math.max(0, Math.min(500, v)); }
-    public void setOptionSellingOiBiasFilterEnabled(boolean v){ cfg().optionSellingOiBiasFilterEnabled = v; }
+    public void setOptionSellingSupertrendAtr(int v)          { cfg().optionSellingSupertrendAtr = Math.max(2, v); }
+    public void setOptionSellingSupertrendMult(double v)      { cfg().optionSellingSupertrendMult = Math.max(0.1, v); }
+    public void setOptionSellingSpotSupertrendAtr(int v)      { cfg().optionSellingSpotSupertrendAtr = Math.max(2, v); }
+    public void setOptionSellingSpotSupertrendMult(double v)  { cfg().optionSellingSpotSupertrendMult = Math.max(0.1, v); }
+    public void setOptionSellingMaxBreakdownPct(double v)     { cfg().optionSellingMaxBreakdownPct = Math.max(0, Math.min(100, v)); }
+    public void setOptionSellingTrailingExitEnabled(boolean v){ cfg().optionSellingTrailingExitEnabled = v; }
+    public void setOptionSellingRequireGapOpenAboveVwap(boolean v){ cfg().optionSellingRequireGapOpenAboveVwap = v; }
+    public void setOptionSellingRetestEntryEnabled(boolean v) { cfg().optionSellingRetestEntryEnabled = v; }
     // OPTION BUYING setters
     public void setOptionBuyingEnabled(boolean v)             { cfg().optionBuyingEnabled = v; }
     public void setOptionBuyingLotsPerLeg(int v)              { cfg().optionBuyingLotsPerLeg = Math.max(1, v); }
@@ -757,8 +784,14 @@ public class RiskSettingsStore {
     public double  getOptionSellingMaxSlPoints(String mode)       { return cfgFor(mode).optionSellingMaxSlPoints; }
     public int     getOptionSellingMaxCeTradesPerDay(String mode) { return cfgFor(mode).optionSellingMaxCeTradesPerDay; }
     public int     getOptionSellingMaxPeTradesPerDay(String mode) { return cfgFor(mode).optionSellingMaxPeTradesPerDay; }
-    public double  getOptionSellingOiBiasThresholdPct(String mode) { return cfgFor(mode).optionSellingOiBiasThresholdPct; }
-    public boolean isOptionSellingOiBiasFilterEnabled(String mode) { return cfgFor(mode).optionSellingOiBiasFilterEnabled; }
+    public int     getOptionSellingSupertrendAtr(String mode)     { return cfgFor(mode).optionSellingSupertrendAtr; }
+    public double  getOptionSellingSupertrendMult(String mode)    { return cfgFor(mode).optionSellingSupertrendMult; }
+    public int     getOptionSellingSpotSupertrendAtr(String mode) { return cfgFor(mode).optionSellingSpotSupertrendAtr; }
+    public double  getOptionSellingSpotSupertrendMult(String mode){ return cfgFor(mode).optionSellingSpotSupertrendMult; }
+    public double  getOptionSellingMaxBreakdownPct(String mode)   { return cfgFor(mode).optionSellingMaxBreakdownPct; }
+    public boolean isOptionSellingTrailingExitEnabled(String mode){ return cfgFor(mode).optionSellingTrailingExitEnabled; }
+    public boolean isOptionSellingRequireGapOpenAboveVwap(String mode){ return cfgFor(mode).optionSellingRequireGapOpenAboveVwap; }
+    public boolean isOptionSellingRetestEntryEnabled(String mode) { return cfgFor(mode).optionSellingRetestEntryEnabled; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
     public double getStartingCapital(String mode)      { return cfgFor(mode).startingCapital; }
@@ -792,8 +825,14 @@ public class RiskSettingsStore {
     public void setOptionSellingMaxSlPoints(String mode, double v)         { cfgFor(mode).optionSellingMaxSlPoints = Math.max(0, v); }
     public void setOptionSellingMaxCeTradesPerDay(String mode, int v)      { cfgFor(mode).optionSellingMaxCeTradesPerDay = Math.max(0, v); }
     public void setOptionSellingMaxPeTradesPerDay(String mode, int v)      { cfgFor(mode).optionSellingMaxPeTradesPerDay = Math.max(0, v); }
-    public void setOptionSellingOiBiasThresholdPct(String mode, double v)  { cfgFor(mode).optionSellingOiBiasThresholdPct = Math.max(0, Math.min(500, v)); }
-    public void setOptionSellingOiBiasFilterEnabled(String mode, boolean v){ cfgFor(mode).optionSellingOiBiasFilterEnabled = v; }
+    public void setOptionSellingSupertrendAtr(String mode, int v)          { cfgFor(mode).optionSellingSupertrendAtr = Math.max(2, v); }
+    public void setOptionSellingSupertrendMult(String mode, double v)      { cfgFor(mode).optionSellingSupertrendMult = Math.max(0.1, v); }
+    public void setOptionSellingSpotSupertrendAtr(String mode, int v)      { cfgFor(mode).optionSellingSpotSupertrendAtr = Math.max(2, v); }
+    public void setOptionSellingSpotSupertrendMult(String mode, double v)  { cfgFor(mode).optionSellingSpotSupertrendMult = Math.max(0.1, v); }
+    public void setOptionSellingMaxBreakdownPct(String mode, double v)     { cfgFor(mode).optionSellingMaxBreakdownPct = Math.max(0, Math.min(100, v)); }
+    public void setOptionSellingTrailingExitEnabled(String mode, boolean v){ cfgFor(mode).optionSellingTrailingExitEnabled = v; }
+    public void setOptionSellingRequireGapOpenAboveVwap(String mode, boolean v){ cfgFor(mode).optionSellingRequireGapOpenAboveVwap = v; }
+    public void setOptionSellingRetestEntryEnabled(String mode, boolean v) { cfgFor(mode).optionSellingRetestEntryEnabled = v; }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
     public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
     public void setStartingCapital(String mode, double v)      { cfgFor(mode).startingCapital = Math.max(0, v); }
@@ -837,8 +876,14 @@ public class RiskSettingsStore {
             upsert("optionSellingMaxSlPoints",       String.valueOf(c.optionSellingMaxSlPoints));
             upsert("optionSellingMaxCeTradesPerDay", String.valueOf(c.optionSellingMaxCeTradesPerDay));
             upsert("optionSellingMaxPeTradesPerDay", String.valueOf(c.optionSellingMaxPeTradesPerDay));
-            upsert("optionSellingOiBiasThresholdPct", String.valueOf(c.optionSellingOiBiasThresholdPct));
-            upsert("optionSellingOiBiasFilterEnabled", String.valueOf(c.optionSellingOiBiasFilterEnabled));
+            upsert("optionSellingSupertrendAtr",           String.valueOf(c.optionSellingSupertrendAtr));
+            upsert("optionSellingSupertrendMult",          String.valueOf(c.optionSellingSupertrendMult));
+            upsert("optionSellingSpotSupertrendAtr",       String.valueOf(c.optionSellingSpotSupertrendAtr));
+            upsert("optionSellingSpotSupertrendMult",      String.valueOf(c.optionSellingSpotSupertrendMult));
+            upsert("optionSellingMaxBreakdownPct",         String.valueOf(c.optionSellingMaxBreakdownPct));
+            upsert("optionSellingTrailingExitEnabled",     String.valueOf(c.optionSellingTrailingExitEnabled));
+            upsert("optionSellingRequireGapOpenAboveVwap", String.valueOf(c.optionSellingRequireGapOpenAboveVwap));
+            upsert("optionSellingRetestEntryEnabled",      String.valueOf(c.optionSellingRetestEntryEnabled));
             upsert("optionBuyingEnabled",             String.valueOf(c.optionBuyingEnabled));
             upsert("optionBuyingLotsPerLeg",          String.valueOf(c.optionBuyingLotsPerLeg));
             upsert("optionBuyingOrderType",            c.optionBuyingOrderType);
@@ -1022,10 +1067,18 @@ public class RiskSettingsStore {
                     case "optionSellingMaxSlPoints"         -> c.optionSellingMaxSlPoints = Math.max(0, Double.parseDouble(v));
                     case "optionSellingMaxCeTradesPerDay"   -> c.optionSellingMaxCeTradesPerDay = Math.max(0, Integer.parseInt(v));
                     case "optionSellingMaxPeTradesPerDay"   -> c.optionSellingMaxPeTradesPerDay = Math.max(0, Integer.parseInt(v));
-                    case "optionSellingOiStrikesEachSide"   -> { /* legacy — hard-coded to 15 in code; silently consume */ }
-                    case "optionSellingOiBiasThresholdPct"  -> c.optionSellingOiBiasThresholdPct = Math.max(0, Math.min(500, Double.parseDouble(v)));
-                    case "optionSellingOiBiasFilterEnabled",
-                         "camarillaOiBiasFilterEnabled" -> c.optionSellingOiBiasFilterEnabled = Boolean.parseBoolean(v);
+                    case "optionSellingOiStrikesEachSide",
+                         "optionSellingOiBiasThresholdPct",
+                         "optionSellingOiBiasFilterEnabled",
+                         "camarillaOiBiasFilterEnabled" -> { /* OI-bias retired 2026-08 — silently consume so old settings rows don't error on boot */ }
+                    case "optionSellingSupertrendAtr"     -> c.optionSellingSupertrendAtr = Math.max(2, Integer.parseInt(v));
+                    case "optionSellingSupertrendMult"    -> c.optionSellingSupertrendMult = Math.max(0.1, Double.parseDouble(v));
+                    case "optionSellingSpotSupertrendAtr" -> c.optionSellingSpotSupertrendAtr = Math.max(2, Integer.parseInt(v));
+                    case "optionSellingSpotSupertrendMult"-> c.optionSellingSpotSupertrendMult = Math.max(0.1, Double.parseDouble(v));
+                    case "optionSellingMaxBreakdownPct"   -> c.optionSellingMaxBreakdownPct = Math.max(0, Math.min(100, Double.parseDouble(v)));
+                    case "optionSellingTrailingExitEnabled" -> c.optionSellingTrailingExitEnabled = Boolean.parseBoolean(v);
+                    case "optionSellingRequireGapOpenAboveVwap" -> c.optionSellingRequireGapOpenAboveVwap = Boolean.parseBoolean(v);
+                    case "optionSellingRetestEntryEnabled"  -> c.optionSellingRetestEntryEnabled = Boolean.parseBoolean(v);
                     case "optionSellingMaxConcurrentPositions",
                          "camarillaMaxConcurrentPositions" -> c.optionSellingMaxConcurrentPositions = Integer.parseInt(v);
                     case "optionBuyingEnabled"           -> c.optionBuyingEnabled = Boolean.parseBoolean(v);

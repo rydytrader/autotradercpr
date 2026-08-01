@@ -27,6 +27,14 @@
                       '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-optionSellingSquareOffTime" step="60"><div class="sm-hint">Hard exit if SL didn\'t trigger. Default 15:25.</div></div>' +
                       '<div class="sm-field"><label>Max CE trades/day</label><input type="number" id="sm-optionSellingMaxCeTradesPerDay" step="1" min="0"><div class="sm-hint">Hard cap on CE-side fires. Default 3.</div></div>' +
                       '<div class="sm-field"><label>Max PE trades/day</label><input type="number" id="sm-optionSellingMaxPeTradesPerDay" step="1" min="0"><div class="sm-hint">Hard cap on PE-side fires. Default 3.</div></div>' +
+                      '<div class="sm-field"><label>Premium ST ATR period</label><input type="number" id="sm-optionSellingSupertrendAtr" step="1" min="2"><div class="sm-hint">Gate B / SL / trailing exit — SuperTrend on the option premium. Default 10.</div></div>' +
+                      '<div class="sm-field"><label>Premium ST multiplier</label><input type="number" id="sm-optionSellingSupertrendMult" step="0.1" min="0.1"><div class="sm-hint">Premium SuperTrend multiplier. Default 3.0.</div></div>' +
+                      '<div class="sm-field"><label>Spot ST ATR period</label><input type="number" id="sm-optionSellingSpotSupertrendAtr" step="1" min="2"><div class="sm-hint">Gate C — SuperTrend on NIFTY spot direction. Default 10.</div></div>' +
+                      '<div class="sm-field"><label>Spot ST multiplier</label><input type="number" id="sm-optionSellingSpotSupertrendMult" step="0.1" min="0.1"><div class="sm-hint">Spot SuperTrend multiplier. Default 3.0.</div></div>' +
+                      '<div class="sm-field"><label>Max breakdown % below VWAP</label><input type="number" id="sm-optionSellingMaxBreakdownPct" step="1" min="0" max="100"><div class="sm-hint">Gate D — reject if premium is more than this % below VWAP on the breakdown bar. Default 15.</div></div>' +
+                      '<div class="sm-field"><label><input type="checkbox" id="sm-optionSellingRequireGapOpenAboveVwap" style="margin-right:6px;vertical-align:middle;">Require open ≥ VWAP</label><div class="sm-hint">Gate A companion — the VWAP-break bar must open at or above VWAP (fresh breakdown). Default ON.</div></div>' +
+                      '<div class="sm-field"><label><input type="checkbox" id="sm-optionSellingTrailingExitEnabled" style="margin-right:6px;vertical-align:middle;">ST-flip-green early exit</label><div class="sm-hint">Flatten the position on the first 3-min close where premium ST flips RED → GREEN. Default ON.</div></div>' +
+                      '<div class="sm-field"><label><input type="checkbox" id="sm-optionSellingRetestEntryEnabled" style="margin-right:6px;vertical-align:middle;">Retest entry (Phase 2 — no-op)</label><div class="sm-hint">Alternate entry path where a retest of VWAP that rejects can trigger. Not wired yet — toggle here for future release. Default OFF.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="option-buying" style="display:none;">' +
@@ -48,8 +56,6 @@
                       '<div class="sm-field"><label>Max Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto from Capital × Risk %.</div></div>' +
                       '<div class="sm-field"><label>Min SL (points above entry)</label><input type="number" id="sm-optionSellingMinSlPoints" step="1" min="0"><div class="sm-hint">SL is at least this many points above entry. Default 10.</div></div>' +
                       '<div class="sm-field"><label>Max SL (points above entry)</label><input type="number" id="sm-optionSellingMaxSlPoints" step="1" min="0"><div class="sm-hint">SL is capped to this many points above entry. Default 20.</div></div>' +
-                      '<div class="sm-field"><label>OI bias threshold %</label><input type="number" id="sm-optionSellingOiBiasThresholdPct" step="1" min="0" max="500"><div class="sm-hint">Percent by which one side\'s cumulative OI change must exceed the other to flip the trend pill. Default 40 (cumCE ≥ 1.40 × cumPE → BEARISH).</div></div>' +
-                      '<div class="sm-field"><label><input type="checkbox" id="sm-optionSellingOiBiasFilterEnabled" style="margin-right:6px;vertical-align:middle;">OI bias trade filter</label><div class="sm-hint">When ON, skip CE_SELL fires while OI bias reads BULLISH and skip PE_SELL fires while BEARISH. NEUTRAL / STALE never block. Default off.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
@@ -209,6 +215,14 @@
             if (g('sm-optionSellingSquareOffTime'))     g('sm-optionSellingSquareOffTime').value = d.optionSellingSquareOffTime || '15:25';
             if (g('sm-optionSellingMaxCeTradesPerDay')) g('sm-optionSellingMaxCeTradesPerDay').value = d.optionSellingMaxCeTradesPerDay != null ? d.optionSellingMaxCeTradesPerDay : 3;
             if (g('sm-optionSellingMaxPeTradesPerDay')) g('sm-optionSellingMaxPeTradesPerDay').value = d.optionSellingMaxPeTradesPerDay != null ? d.optionSellingMaxPeTradesPerDay : 3;
+            if (g('sm-optionSellingSupertrendAtr'))          g('sm-optionSellingSupertrendAtr').value = d.optionSellingSupertrendAtr != null ? d.optionSellingSupertrendAtr : 10;
+            if (g('sm-optionSellingSupertrendMult'))         g('sm-optionSellingSupertrendMult').value = d.optionSellingSupertrendMult != null ? d.optionSellingSupertrendMult : 3.0;
+            if (g('sm-optionSellingSpotSupertrendAtr'))      g('sm-optionSellingSpotSupertrendAtr').value = d.optionSellingSpotSupertrendAtr != null ? d.optionSellingSpotSupertrendAtr : 10;
+            if (g('sm-optionSellingSpotSupertrendMult'))     g('sm-optionSellingSpotSupertrendMult').value = d.optionSellingSpotSupertrendMult != null ? d.optionSellingSpotSupertrendMult : 3.0;
+            if (g('sm-optionSellingMaxBreakdownPct'))        g('sm-optionSellingMaxBreakdownPct').value = d.optionSellingMaxBreakdownPct != null ? d.optionSellingMaxBreakdownPct : 15;
+            if (g('sm-optionSellingRequireGapOpenAboveVwap')) g('sm-optionSellingRequireGapOpenAboveVwap').checked = d.optionSellingRequireGapOpenAboveVwap !== false;
+            if (g('sm-optionSellingTrailingExitEnabled'))    g('sm-optionSellingTrailingExitEnabled').checked = d.optionSellingTrailingExitEnabled !== false;
+            if (g('sm-optionSellingRetestEntryEnabled'))     g('sm-optionSellingRetestEntryEnabled').checked = d.optionSellingRetestEntryEnabled === true;
         }).catch(function() {});
     }
 
@@ -221,7 +235,15 @@
             optionSellingTradingEndTime:     (g('sm-optionSellingTradingEndTime').value || '').trim(),
             optionSellingSquareOffTime:      (g('sm-optionSellingSquareOffTime').value || '').trim(),
             optionSellingMaxCeTradesPerDay:  parseInt(g('sm-optionSellingMaxCeTradesPerDay').value, 10) || 0,
-            optionSellingMaxPeTradesPerDay:  parseInt(g('sm-optionSellingMaxPeTradesPerDay').value, 10) || 0
+            optionSellingMaxPeTradesPerDay:  parseInt(g('sm-optionSellingMaxPeTradesPerDay').value, 10) || 0,
+            optionSellingSupertrendAtr:            Math.max(2, parseInt(g('sm-optionSellingSupertrendAtr').value, 10) || 10),
+            optionSellingSupertrendMult:           Math.max(0.1, parseFloat(g('sm-optionSellingSupertrendMult').value) || 3.0),
+            optionSellingSpotSupertrendAtr:        Math.max(2, parseInt(g('sm-optionSellingSpotSupertrendAtr').value, 10) || 10),
+            optionSellingSpotSupertrendMult:       Math.max(0.1, parseFloat(g('sm-optionSellingSpotSupertrendMult').value) || 3.0),
+            optionSellingMaxBreakdownPct:          Math.max(0, Math.min(100, parseFloat(g('sm-optionSellingMaxBreakdownPct').value) || 15.0)),
+            optionSellingTrailingExitEnabled:      !!(g('sm-optionSellingTrailingExitEnabled') && g('sm-optionSellingTrailingExitEnabled').checked),
+            optionSellingRequireGapOpenAboveVwap:  !!(g('sm-optionSellingRequireGapOpenAboveVwap') && g('sm-optionSellingRequireGapOpenAboveVwap').checked),
+            optionSellingRetestEntryEnabled:       !!(g('sm-optionSellingRetestEntryEnabled') && g('sm-optionSellingRetestEntryEnabled').checked)
         };
         postSettings('/api/settings/risk', body);
     }
@@ -262,9 +284,7 @@
             startingCapital:          parseFloat(g('sm-startingCapital').value) || 0,
             portfolioMaxRiskPct:      parseFloat(g('sm-portfolioMaxRiskPct').value) || 0,
             optionSellingMinSlPoints:       Math.max(0, parseFloat(g('sm-optionSellingMinSlPoints').value) || 0),
-            optionSellingMaxSlPoints:       Math.max(0, parseFloat(g('sm-optionSellingMaxSlPoints').value) || 0),
-            optionSellingOiBiasThresholdPct: Math.max(0, parseFloat(g('sm-optionSellingOiBiasThresholdPct').value) || 40),
-            optionSellingOiBiasFilterEnabled: !!(g('sm-optionSellingOiBiasFilterEnabled') && g('sm-optionSellingOiBiasFilterEnabled').checked)
+            optionSellingMaxSlPoints:       Math.max(0, parseFloat(g('sm-optionSellingMaxSlPoints').value) || 0)
         };
         postSettings('/api/settings/risk', body);
     }
@@ -324,10 +344,6 @@
             if (slBufInput) slBufInput.value = d.optionSellingMinSlPoints != null ? d.optionSellingMinSlPoints : 10.0;
             var maxSlInput = g('sm-optionSellingMaxSlPoints');
             if (maxSlInput) maxSlInput.value = d.optionSellingMaxSlPoints != null ? d.optionSellingMaxSlPoints : 20.0;
-            // OI bias fields live on the Risk pane too — hydrate them here so their
-            // values survive tab switches + get sent in savePortfolioRiskTab below.
-            if (g('sm-optionSellingOiBiasThresholdPct')) g('sm-optionSellingOiBiasThresholdPct').value = d.optionSellingOiBiasThresholdPct != null ? d.optionSellingOiBiasThresholdPct : 40;
-            if (g('sm-optionSellingOiBiasFilterEnabled')) g('sm-optionSellingOiBiasFilterEnabled').checked = d.optionSellingOiBiasFilterEnabled === true;
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {
                 updatePortfolioRiskHint(parseFloat(capInput.value) || 0, parseFloat(pctInput && pctInput.value) || 0);

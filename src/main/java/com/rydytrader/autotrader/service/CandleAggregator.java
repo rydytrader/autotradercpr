@@ -644,6 +644,48 @@ public class CandleAggregator {
         return new ArrayList<>(ring);
     }
 
+    /** Merge historical bars (typically fetched from Fyers /history for yesterday's
+     *  session) into the FRONT of the per-symbol ring. Used to warm up indicators
+     *  (SuperTrend needs 11+ closed bars) at strategy boot / ATM lock time before
+     *  the live tick stream has accumulated enough history.
+     *
+     *  <p>De-dupes by {@code startMillis} — an existing (live) bar always wins over
+     *  a prepended historical bar for the same timestamp. Ring is capped at
+     *  {@link #HISTORY_CAP}; older historical bars are dropped when the ring fills.
+     *
+     *  <p>No listener fanout, no persistence dirty-flag — this is a silent warm-up
+     *  path, not a live close. Safe to call from any thread; the underlying deque
+     *  is a {@link ConcurrentLinkedDeque} and the merge is guarded by intrinsic
+     *  synchronisation on the ring instance. */
+    public void prependHistory(String symbol, List<Candle> bars) {
+        if (symbol == null || symbol.isBlank() || bars == null || bars.isEmpty()) return;
+        Deque<Candle> ring = historyBySymbol.computeIfAbsent(symbol, k -> new ConcurrentLinkedDeque<>());
+        synchronized (ring) {
+            // Collect existing startMillis so we can skip duplicates cheaply.
+            java.util.Set<Long> present = new java.util.HashSet<>(ring.size());
+            for (Candle c : ring) present.add(c.startMillis());
+            // Sort input bars ascending and take only those that aren't already in the ring
+            // AND are older than the earliest live bar (we never overwrite live data).
+            long earliestLive = ring.isEmpty() ? Long.MAX_VALUE : ring.peekFirst().startMillis();
+            List<Candle> toAdd = new ArrayList<>();
+            for (Candle c : bars) {
+                if (c == null || c.startMillis() <= 0) continue;
+                if (present.contains(c.startMillis())) continue;
+                if (c.startMillis() >= earliestLive) continue;
+                toAdd.add(c);
+            }
+            if (toAdd.isEmpty()) return;
+            toAdd.sort((a, b) -> Long.compare(a.startMillis(), b.startMillis()));
+            // Prepend in reverse so the earliest bar ends up at index 0.
+            for (int i = toAdd.size() - 1; i >= 0; i--) {
+                ring.addFirst(toAdd.get(i));
+            }
+            while (ring.size() > HISTORY_CAP) ring.pollFirst();
+        }
+        log.info("[CandleAggregator] {} — prepended {} historical bars (ring={})",
+            symbol, bars.size(), ring.size());
+    }
+
     /** In-progress 3-min bucket for {@code symbol}, synthesised into a {@code Candle}
      *  using the running OHLC state. {@code null} when the symbol has no open bucket
      *  (never sampled, or reset outside market hours). */

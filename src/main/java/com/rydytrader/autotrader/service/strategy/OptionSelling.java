@@ -120,17 +120,12 @@ public class OptionSelling implements Strategy {
     private final RiskSettingsStore     riskSettings;
     private final ObjectProvider<StrategyTradeRepository> tradeRepoProvider;
     private final ObjectProvider<OptionSellingStreamBroker>     streamBrokerProvider;
-    /** OI subscriber. Injected via {@code ObjectProvider} so the OptionSelling bean can boot
-     *  even if the OI wiring is disabled or the class hasn't been instantiated yet
-     *  (e.g. in a stripped-down test context). */
-    private final ObjectProvider<com.rydytrader.autotrader.service.OptionOiSubscriber> optionOiSubscriberProvider;
-    /** OI tracker snapshot source for the CE/PE-side entry filter. Same provider
-     *  pattern as {@link #optionOiSubscriberProvider} so the strategy tolerates the
-     *  tracker being absent. */
-    private final ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> optionOiTrackerProvider;
     /** Fyers /history reconcile — swaps our WS-aggregated bar OHLC with the exchange-
-     *  authoritative bar before the FSM commits to a fire/no-fire decision. Provider so
-     *  a stripped-down test context without the Fyers client can still boot OptionSelling. */
+     *  authoritative bar before the FSM commits to a fire/no-fire decision. Also used
+     *  to backfill yesterday's session for NIFTY spot + ATM CE/PE so the SuperTrend
+     *  indicator has 11+ bars available at 09:18 instead of waiting until ~09:48
+     *  live-only warm-up. Provider so a stripped-down test context without the Fyers
+     *  client can still boot OptionSelling. */
     private final ObjectProvider<com.rydytrader.autotrader.service.HistoryReconcileService> historyReconcileProvider;
     /** GDFL config — read to skip Fyers WS + aggregator subscribes for option strikes
      *  when GDFL owns those symbols. Provider so the strategy still boots when the
@@ -163,8 +158,6 @@ public class OptionSelling implements Strategy {
                    RiskSettingsStore riskSettings,
                    ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
                    ObjectProvider<OptionSellingStreamBroker> streamBrokerProvider,
-                   ObjectProvider<com.rydytrader.autotrader.service.OptionOiSubscriber> optionOiSubscriberProvider,
-                   ObjectProvider<com.rydytrader.autotrader.service.OptionOiTracker> optionOiTrackerProvider,
                    ObjectProvider<com.rydytrader.autotrader.service.HistoryReconcileService> historyReconcileProvider,
                    ObjectProvider<com.rydytrader.autotrader.gdfl.GdflProperties> gdflPropertiesProvider) {
         this.candleAggregator           = candleAggregator;
@@ -176,8 +169,6 @@ public class OptionSelling implements Strategy {
         this.riskSettings               = riskSettings;
         this.tradeRepoProvider          = tradeRepoProvider;
         this.streamBrokerProvider       = streamBrokerProvider;
-        this.optionOiSubscriberProvider = optionOiSubscriberProvider;
-        this.optionOiTrackerProvider    = optionOiTrackerProvider;
         this.historyReconcileProvider   = historyReconcileProvider;
         this.gdflPropertiesProvider     = gdflPropertiesProvider;
     }
@@ -190,46 +181,6 @@ public class OptionSelling implements Strategy {
     private boolean gdflOwnsOptionTicks() {
         var props = gdflPropertiesProvider == null ? null : gdflPropertiesProvider.getIfAvailable();
         return props != null && props.isEnabled();
-    }
-
-    /** Current OI bias — {@code BULLISH} / {@code BEARISH} / {@code NEUTRAL} / {@code STALE} /
-     *  {@code UNKNOWN}. Reads {@link com.rydytrader.autotrader.service.OptionOiTracker#snapshot()}
-     *  when the tracker bean is available; returns {@code "UNKNOWN"} otherwise so the
-     *  filter never fires on a missing dependency. */
-    private String currentOiBias() {
-        try {
-            var t = optionOiTrackerProvider == null ? null : optionOiTrackerProvider.getIfAvailable();
-            if (t == null) return "UNKNOWN";
-            var snap = t.snapshot();
-            String b = snap == null ? null : snap.bias();
-            return (b == null || b.isBlank()) ? "UNKNOWN" : b;
-        } catch (Exception e) {
-            return "UNKNOWN";
-        }
-    }
-
-    /** Fires the OI subscriber for the day's ATM. Called from both fast + slow paths of
-     *  {@code resolveAtmFromFirstBar} once the strike is locked. No-op when the provider
-     *  hasn't materialised (e.g. dependency missing in a test context). */
-    private void notifyOiWindow(long atm) {
-        try {
-            var sub = optionOiSubscriberProvider == null ? null : optionOiSubscriberProvider.getIfAvailable();
-            if (sub != null) sub.onAtmSelected(atm);
-        } catch (Exception e) {
-            log.warn("[OptionSelling] OI subscriber notify failed for ATM={}: {}", atm, e.getMessage());
-        }
-    }
-
-    /** Fires the OI subscriber at 09:15 pre-warm, handing it the ±15 strike window so
-     *  per-strike baselines are taken from the first tick after market open instead of
-     *  waiting for the 09:18 ATM lock. See {@code OptionOiSubscriber#onPreWarm}. */
-    private void notifyOiPreWarm(long baseAtm, java.util.List<com.rydytrader.autotrader.service.OptionOiTracker.StrikeSymbols> window) {
-        try {
-            var sub = optionOiSubscriberProvider == null ? null : optionOiSubscriberProvider.getIfAvailable();
-            if (sub != null) sub.onPreWarm(baseAtm, window);
-        } catch (Exception e) {
-            log.warn("[OptionSelling] OI pre-warm notify failed for baseAtm={}: {}", baseAtm, e.getMessage());
-        }
     }
 
     /** Fires on every LTP tick from the {@link MarketDataService} listener chain — most
@@ -293,6 +244,12 @@ public class OptionSelling implements Strategy {
         catch (Exception ignored) {}
         log.info("[OptionSelling] boot — NIFTY spot subscribed: {}", NIFTY_SYMBOL);
 
+        // Backfill yesterday's session on NIFTY spot so Gate C (spot SuperTrend)
+        // is warm the moment the first 09:18 bar closes. Index /history is very
+        // reliable so no fallback path is needed. Runs async on the reconcile
+        // pool; boot() doesn't block on it.
+        backfillLegHistory(NIFTY_SYMBOL);
+
         // Trading-started marker — fires exactly once per day, on the first NIFTY spot
         // tick received after 09:15 IST. Anchors the operator's mental timeline to the
         // 09:15 open of the first 3-min bar.
@@ -307,20 +264,6 @@ public class OptionSelling implements Strategy {
         // If pre-warm was in progress before the crash (09:15-09:18 window), re-subscribe.
         try { resumeWarmingIfNeeded(); }
         catch (Exception e) { log.warn("[OptionSelling] resume-warming failed: {}", e.getMessage()); }
-
-        // Mid-day restart with an already-resolved ATM: re-fire the OI-window subscribe
-        // immediately so the OI feed resumes within seconds of boot instead of waiting
-        // ~2-3 min for the next NIFTY 3-min candle close to trigger the usual re-entry
-        // path. Idempotent — the subscriber's per-day guard prevents any duplicate work
-        // when the 09:18-ish real resolution also fires.
-        try {
-            String today = LocalDate.now(IST).toString();
-            if (state.atmStrike > 0 && today.equals(state.sessionSetupDayKey)) {
-                notifyOiWindow(state.atmStrike);
-            }
-        } catch (Exception e) {
-            log.warn("[OptionSelling] OI-window boot re-subscribe failed: {}", e.getMessage());
-        }
 
         log.info("[OptionSelling] booted — enabled={}, lots={}, squareoff={}, restoredPositions={}",
             riskSettings.isOptionSellingEnabled(), riskSettings.getOptionSellingLotsPerLeg(),
@@ -393,6 +336,19 @@ public class OptionSelling implements Strategy {
     public String getCeSymbol() { return state.ceSymbol == null ? "" : state.ceSymbol; }
     /** Selected ATM PE leg Fyers symbol, or "" before ATM resolution. */
     public String getPeSymbol() { return state.peSymbol == null ? "" : state.peSymbol; }
+    /** All pre-warm CE + PE symbols (±10 strikes around baseAtm at 09:15). Used by
+     *  {@code GdflService} to subscribe the same window on GDFL so the 09:15-09:18
+     *  first bar has tick data for whichever strike ends up as ATM. Empty when the
+     *  pre-warm hasn't run yet OR after {@link #trimWarmingSet} has narrowed to just
+     *  the resolved ATM pair. */
+    public java.util.List<String> getPreWarmSymbols() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        try {
+            state.warmingCeByStrike.values().forEach(s -> { if (s != null && !s.isBlank()) out.add(s); });
+            state.warmingPeByStrike.values().forEach(s -> { if (s != null && !s.isBlank()) out.add(s); });
+        } catch (Exception ignored) {}
+        return out;
+    }
     /** SL price of the currently-open CE / PE leg position (matched by symbol), or 0
      *  when no such position is active. Used by the Chart page to draw an SL price
      *  line on the corresponding option chart. */
@@ -632,14 +588,11 @@ public class OptionSelling implements Strategy {
     /** Pre-warm width — ±10 strikes each side (21 strikes total, 42 option symbols).
      *  Covers ±500 pts of first-3-min NIFTY move so the resolved ATM's CE + PE almost
      *  always fall inside the window and their first 09:15–09:18 candle has full OHLC.
-     *  Also feeds the {@code OptionOiSubscriber}'s window, so the OI tracker's
-     *  per-strike baseline can be taken from the first WS OI tick at 09:15 rather than
-     *  waiting for ATM lock at 09:18. Extreme opens beyond ±500 pts still fall back to
-     *  the slow (racy) path with a partial-first-bar warning.
+     *  Extreme opens beyond ±500 pts still fall back to the slow (racy) path with a
+     *  partial-first-bar warning.
      *
      *  <p>Sized at 10 so the total 42-symbol pre-warm fits under GDFL's 50-symbol
-     *  per-key subscription cap when the {@code gdfl-integration} flow subscribes the
-     *  same window for exchange-authoritative OI + LTP. */
+     *  per-key subscription cap. */
     private static final int PRE_WARM_STRIKES_EACH_SIDE = 10;
     private static final LocalTime MARKET_OPEN_IST      = LocalTime.of(9, 15);
     // 3-min bars close at 09:18, so pre-warm hands off to resolveAtmFromFirstBar
@@ -680,7 +633,6 @@ public class OptionSelling implements Strategy {
         }
 
         List<String> subs = new ArrayList<>();
-        List<com.rydytrader.autotrader.service.OptionOiTracker.StrikeSymbols> oiWindow = new ArrayList<>();
         for (Map.Entry<Long, BalancedAtmSelector.ChainStrike> e : chain.entrySet()) {
             long strike = e.getKey();
             if (strike < lo || strike > hi) continue;
@@ -693,7 +645,6 @@ public class OptionSelling implements Strategy {
             state.warmingPeByStrike.put(strike, pe);
             subs.add(ce);
             subs.add(pe);
-            oiWindow.add(new com.rydytrader.autotrader.service.OptionOiTracker.StrikeSymbols(strike, ce, pe));
         }
 
         if (subs.isEmpty()) {
@@ -720,12 +671,6 @@ public class OptionSelling implements Strategy {
             candleAggregator.subscribe(s, cc -> onCandleClose(s, cc));
             aggregatorSubscribedSymbols.add(sym);
         }
-        // Hand the ±10 window to the OI tracker so per-strike baselines are captured on
-        // the very first WS OI tick (09:15 IST), not on the 09:18 ATM lock. When
-        // resolveAtmFromFirstBar later fires notifyOiWindow(resolvedAtm), the tracker
-        // narrows to ±7 and keeps the 09:15 baselines for strikes that stay in the new
-        // window; outer strikes are dropped and their contribution un-credited.
-        notifyOiPreWarm(baseAtm, oiWindow);
         state.preWarmDayKey = today;
         saveToDisk();
 
@@ -836,9 +781,6 @@ public class OptionSelling implements Strategy {
         if (today.equals(state.sessionSetupDayKey) && state.atmStrike > 0
             && !state.ceSymbol.isBlank() && !state.peSymbol.isBlank()) {
             ensureSessionLegsSubscribed();
-            // Re-establish OI subscriptions after a restart — idempotent when the window
-            // is already active in the tracker.
-            notifyOiWindow(state.atmStrike);
             return;
         }
         double close = c.close();
@@ -869,7 +811,8 @@ public class OptionSelling implements Strategy {
                 + ") | PE " + strike + " (" + shortSym(pe) + ")",
                 c.startMillis() + 2 * 60 * 1000L);
             saveToDisk();
-            notifyOiWindow(state.atmStrike);
+            backfillLegHistory(ce);
+            backfillLegHistory(pe);
             return;
         }
 
@@ -905,7 +848,40 @@ public class OptionSelling implements Strategy {
             + ") | PE " + state.atmStrike + " (" + shortSym(state.peSymbol) + ")",
             c.startMillis() + 2 * 60 * 1000L);
         saveToDisk();
-        notifyOiWindow(state.atmStrike);
+        backfillLegHistory(state.ceSymbol);
+        backfillLegHistory(state.peSymbol);
+    }
+
+    /** Async /history backfill for yesterday's session on a single option leg. Prepends
+     *  the returned bars into the {@link CandleAggregator} ring so
+     *  {@link com.rydytrader.autotrader.indicator.SuperTrend#at} can compute a valid
+     *  state on the first live 09:18 bar close (11-bar warm-up satisfied).
+     *  No-op when the /history bean isn't available (e.g. simulator boot). */
+    private void backfillLegHistory(String symbol) {
+        if (symbol == null || symbol.isBlank()) return;
+        var hist = historyReconcileProvider == null ? null : historyReconcileProvider.getIfAvailable();
+        if (hist == null) return;
+        java.time.LocalDate yday = previousTradingDay();
+        hist.fetchDayRangeAsync(symbol, yday, yday, bars -> {
+            if (bars == null || bars.isEmpty()) {
+                log.info("[OptionSelling] backfill empty for {} on {} — SuperTrend will warm live", symbol, yday);
+                return;
+            }
+            candleAggregator.prependHistory(symbol, bars);
+        });
+    }
+
+    /** Walk back through weekends / obvious holidays to the previous trading day. Not
+     *  authoritative — the /history call itself will return empty on a holiday and we
+     *  fall back to live-only warm-up in that case. */
+    private java.time.LocalDate previousTradingDay() {
+        java.time.LocalDate d = java.time.LocalDate.now(IST).minusDays(1);
+        for (int i = 0; i < 3; i++) {
+            java.time.DayOfWeek dow = d.getDayOfWeek();
+            if (dow != java.time.DayOfWeek.SATURDAY && dow != java.time.DayOfWeek.SUNDAY) break;
+            d = d.minusDays(1);
+        }
+        return d;
     }
 
     private void ensureSessionLegsSubscribed() {
@@ -1053,54 +1029,167 @@ public class OptionSelling implements Strategy {
         // /history calls.
         TriggerCandle trigger = state.triggerByOption.get(symbol);
 
+        boolean isCeLeg = symbol.equals(state.ceSymbol);
+
         if (trigger != null) {
             // S1 — this bar decides the previous trigger's fate.
             if (c.close() < trigger.low) {
-                // (a) Fire — check is UNCONDITIONAL vs VWAP.
+                // (a) Fire — check is UNCONDITIONAL vs VWAP / gates. If A/B/C/D
+                //     already passed at seed time and the next bar breaks the
+                //     trigger low, we've got confirmation.
                 fire(symbol, c, trigger);
                 state.triggerByOption.remove(symbol);
                 return;
             }
-            // (b) No fire — the old trigger is invalidated (immediate follow-through failed).
-            //     If THIS bar also closes below VWAP, it's promoted to the new trigger.
-            if (c.close() < vwap && !poisonedByRecentSl) {
-                state.triggerByOption.put(symbol, TriggerCandle.of(c));
+            // (b) No fire — invalidate. Promotion path also requires all 4 gates.
+            state.triggerByOption.remove(symbol);
+            if (poisonedByRecentSl) {
+                eventAtDisplayTime("[INFO]", "Setup",
+                    shortSym(symbol) + " trigger invalidated — promote SKIPPED (bar took out today's SL)",
+                    c.startMillis());
+                return;
+            }
+            EntryGateResult promoteGate = evaluateEntryGates(symbol, c, vwap, isCeLeg);
+            if (promoteGate.pass) {
+                state.triggerByOption.put(symbol, TriggerCandle.of(c, promoteGate.premiumStLine));
                 eventAtDisplayTime("[INFO]", "Setup",
                     shortSym(symbol) + " trigger promoted @ close " + round2(c.close())
                     + " (high=" + round2(c.high()) + ", low=" + round2(c.low())
-                    + ", vwap=" + round2(vwap) + ")",
-                    c.startMillis());
-            } else if (c.close() < vwap && poisonedByRecentSl) {
-                state.triggerByOption.remove(symbol);
-                eventAtDisplayTime("[INFO]", "Setup",
-                    shortSym(symbol) + " trigger promote SKIPPED — this bar took out today's SL",
+                    + ", vwap=" + round2(vwap) + ", stLine=" + round2(promoteGate.premiumStLine) + ")",
                     c.startMillis());
             } else {
-                state.triggerByOption.remove(symbol);
                 eventAtDisplayTime("[INFO]", "Setup",
-                    shortSym(symbol) + " trigger invalidated (no follow-through, close "
-                    + round2(c.close()) + " ≥ VWAP " + round2(vwap) + ")",
+                    shortSym(symbol) + " trigger invalidated (" + promoteGate.reason + ")",
                     c.startMillis());
             }
             return;
         }
 
-        // S0 — no active trigger. Seed a fresh one if this bar closes below VWAP
-        // AND the bar didn't just take out an SL on this symbol.
-        if (c.close() < vwap) {
-            if (poisonedByRecentSl) {
-                eventAtDisplayTime("[INFO]", "Setup",
-                    shortSym(symbol) + " trigger seed SKIPPED — this bar took out today's SL",
-                    c.startMillis());
-                return;
-            }
-            state.triggerByOption.put(symbol, TriggerCandle.of(c));
+        // S0 — no active trigger. Seed only when all 4 gates pass.
+        if (poisonedByRecentSl) return;   // silent — the previous bar already logged
+        EntryGateResult seed = evaluateEntryGates(symbol, c, vwap, isCeLeg);
+        if (seed.pass) {
+            state.triggerByOption.put(symbol, TriggerCandle.of(c, seed.premiumStLine));
             eventAtDisplayTime("[INFO]", "Setup",
                 shortSym(symbol) + " trigger seeded @ close " + round2(c.close())
                 + " (high=" + round2(c.high()) + ", low=" + round2(c.low())
-                + ", vwap=" + round2(vwap) + ")",
+                + ", vwap=" + round2(vwap) + ", stLine=" + round2(seed.premiumStLine) + ")",
+                c.startMillis());
+        } else if (seed.reason != null) {
+            // Log only when we had a reason to consider seeding (not vacuous "close ≥ VWAP" case).
+            eventAtDisplayTime("[INFO]", "Setup",
+                shortSym(symbol) + " gate REJECT — " + seed.reason,
                 c.startMillis());
         }
+
+        // ── Trailing exit — ST-flip-green on the just-closed bar for any open position on this symbol.
+        if (riskSettings.isOptionSellingTrailingExitEnabled()) {
+            evaluateTrailingExit(symbol, c);
+        }
+    }
+
+    /** Result of the 4-gate entry evaluation. */
+    private static class EntryGateResult {
+        final boolean pass;
+        final double  premiumStLine;
+        /** Human-readable rejection reason for the event log, or {@code null} when the
+         *  bar wasn't a candidate at all (e.g. close ≥ VWAP — nothing to reject). */
+        final String  reason;
+        EntryGateResult(boolean pass, double stLine, String reason) {
+            this.pass = pass; this.premiumStLine = stLine; this.reason = reason;
+        }
+    }
+
+    /** PDF's 4-condition entry gate check on the just-closed bar. Returns pass=true
+     *  and the premium ST line snapshot when all four hold:
+     *  <ul>
+     *    <li>A. Fresh VWAP breakdown: close &lt; VWAP AND (open ≥ VWAP if the
+     *        require-gap-open toggle is on).</li>
+     *    <li>B. Premium SuperTrend RED at this bar (isUp=false).</li>
+     *    <li>C. Spot SuperTrend alignment: CE → spot ST red, PE → spot ST green.</li>
+     *    <li>D. Not "far below VWAP" — the distance below VWAP as % is ≤
+     *        {@code optionSellingMaxBreakdownPct}.</li>
+     *  </ul>
+     *  When any check fails, {@code reason} carries a short human-readable label
+     *  the caller can log INFO-level to keep the operator's event log debuggable.
+     *  Returns {@code reason=null} when the bar wasn't a candidate at all (close
+     *  ≥ VWAP) — caller logs nothing in that case to avoid event-log spam. */
+    private EntryGateResult evaluateEntryGates(String symbol, Candle c, double vwap, boolean isCeLeg) {
+        double close = c.close();
+        double open  = c.open();
+        // Gate A — fresh VWAP breakdown
+        if (close >= vwap) {
+            return new EntryGateResult(false, 0, null);   // not a candidate — silent
+        }
+        if (riskSettings.isOptionSellingRequireGapOpenAboveVwap() && open < vwap) {
+            return new EntryGateResult(false, 0,
+                "A fail — bar opened below VWAP (open=" + round2(open) + " < vwap=" + round2(vwap) + ")");
+        }
+        // Gate D — not far below VWAP
+        double maxBreakdownPct = riskSettings.getOptionSellingMaxBreakdownPct();
+        double breakdownPct = vwap > 0 ? (vwap - close) / vwap * 100.0 : 0;
+        if (maxBreakdownPct > 0 && breakdownPct > maxBreakdownPct) {
+            return new EntryGateResult(false, 0,
+                "D fail — " + round2(breakdownPct) + "% below VWAP > cap " + round2(maxBreakdownPct) + "%");
+        }
+        // Gate B — premium SuperTrend RED
+        int    stAtr  = riskSettings.getOptionSellingSupertrendAtr();
+        double stMult = riskSettings.getOptionSellingSupertrendMult();
+        List<Candle> premBars = candleAggregator.getHistory(symbol);
+        com.rydytrader.autotrader.indicator.SuperTrend.State premSt =
+            com.rydytrader.autotrader.indicator.SuperTrend.at(premBars, stAtr, stMult);
+        if (!premSt.available()) {
+            return new EntryGateResult(false, 0,
+                "B fail — premium ST warming (" + premBars.size() + "/" + (stAtr + 1) + " bars)");
+        }
+        if (premSt.isUp()) {
+            return new EntryGateResult(false, premSt.line(),
+                "B fail — premium ST is GREEN (line=" + round2(premSt.line()) + ")");
+        }
+        // Gate C — spot SuperTrend alignment
+        int    spotAtr  = riskSettings.getOptionSellingSpotSupertrendAtr();
+        double spotMult = riskSettings.getOptionSellingSpotSupertrendMult();
+        List<Candle> spotBars = candleAggregator.getHistory(NIFTY_SYMBOL);
+        com.rydytrader.autotrader.indicator.SuperTrend.State spotSt =
+            com.rydytrader.autotrader.indicator.SuperTrend.at(spotBars, spotAtr, spotMult);
+        if (!spotSt.available()) {
+            return new EntryGateResult(false, premSt.line(),
+                "C fail — spot ST warming (" + spotBars.size() + "/" + (spotAtr + 1) + " bars)");
+        }
+        // CE trigger requires spot bearish (isUp=false); PE trigger requires spot bullish.
+        boolean spotOk = isCeLeg ? !spotSt.isUp() : spotSt.isUp();
+        if (!spotOk) {
+            return new EntryGateResult(false, premSt.line(),
+                "C fail — spot ST " + (spotSt.isUp() ? "GREEN" : "RED") + " but "
+                + (isCeLeg ? "CE" : "PE") + " needs " + (isCeLeg ? "RED" : "GREEN"));
+        }
+        return new EntryGateResult(true, premSt.line(), null);
+    }
+
+    /** Flatten any open position on {@code symbol} when the premium SuperTrend flips
+     *  from RED (down) to GREEN (up) on the just-closed bar. Gate wired inside the
+     *  caller via {@code optionSellingTrailingExitEnabled}. No-op when no position
+     *  is open or when ST is still red / unavailable. */
+    private void evaluateTrailingExit(String symbol, Candle c) {
+        // Bail fast if no position is open on this symbol.
+        Position openHere = null;
+        for (Position p : state.openPositions.values()) {
+            if (p != null && symbol.equals(p.symbol) && p.setup != ActiveSetup.MANUAL) {
+                openHere = p; break;
+            }
+        }
+        if (openHere == null) return;
+        int    stAtr  = riskSettings.getOptionSellingSupertrendAtr();
+        double stMult = riskSettings.getOptionSellingSupertrendMult();
+        List<Candle> bars = candleAggregator.getHistory(symbol);
+        com.rydytrader.autotrader.indicator.SuperTrend.State st =
+            com.rydytrader.autotrader.indicator.SuperTrend.at(bars, stAtr, stMult);
+        if (!st.available() || !st.isUp()) return;   // still red or warming — hold
+
+        eventAtDisplayTime("[INFO]", "Exit",
+            shortSym(symbol) + " premium ST flipped GREEN — trailing exit (line=" + round2(st.line()) + ")",
+            c.startMillis());
+        closePosition(openHere, "ST_FLIP");
     }
 
     /** Blocking /history reconcile for {@code bar}. Returns the authoritative bar when
@@ -1216,24 +1305,6 @@ public class OptionSelling implements Strategy {
             return;
         }
 
-        // OI bias trade filter. Opt-in gate — when ON, don't fight a directional flow:
-        // BULLISH OI (put writers dominant → market bullish) blocks CE_SELL; BEARISH OI
-        // (call writers dominant → market bearish) blocks PE_SELL. NEUTRAL / STALE /
-        // UNKNOWN never block (STALE = feed dead > 5 min, UNKNOWN = tracker not present).
-        if (riskSettings.isOptionSellingOiBiasFilterEnabled()) {
-            String bias = currentOiBias();
-            if (isCeLeg && "BULLISH".equals(bias)) {
-                event("[WARNING]", "OI Bias",
-                    shortSym(symbol) + " — CE_SELL blocked, market is BULLISH per OI flow");
-                return;
-            }
-            if (!isCeLeg && "BEARISH".equals(bias)) {
-                event("[WARNING]", "OI Bias",
-                    shortSym(symbol) + " — PE_SELL blocked, market is BEARISH per OI flow");
-                return;
-            }
-        }
-
         // Portfolio realized-loss lockout.
         double maxRisk = riskSettings.getPortfolioMaxDailyLoss();
         if (maxRisk > 0 && consumedRiskNow() > maxRisk) {
@@ -1252,17 +1323,25 @@ public class OptionSelling implements Strategy {
             return;
         }
 
-        // SL clamped to [entry + minSl, entry + maxSl]. If trigger.high sits below entry +
-        // minSl the floor kicks in; if it sits above entry + maxSl the ceiling caps it.
+        // PDF SL rule: whichever is TIGHTER — the breakdown candle's high, or the
+        // premium SuperTrend line at the breakdown bar. For a SHORT, "tighter" =
+        // lower price = closer to entry. Then clamped to [entry+minSl, entry+maxSl].
+        // If the ST snapshot is 0 (legacy trigger or ST unavailable at seed time),
+        // fall back to trigger.high alone.
         double minSl = Math.max(0, riskSettings.getOptionSellingMinSlPoints());
         double maxSl = Math.max(minSl, riskSettings.getOptionSellingMaxSlPoints());
         double slFloor = entryLtp + minSl;
         double slCeil  = entryLtp + maxSl;
-        double slLevel = Math.max(trigger.high, slFloor);
+        double slRaw   = trigger.high;
+        if (trigger.premiumStLine > 0 && trigger.premiumStLine < slRaw) {
+            slRaw = trigger.premiumStLine;
+        }
+        double slLevel = Math.max(slRaw, slFloor);
         if (slLevel > slCeil) slLevel = slCeil;
         if (slLevel <= 0) {
             event("[ERROR]", "AUTO ENTRY",
                 shortSym(symbol) + " — invalid SL level (trigger.high=" + trigger.high
+                + ", stLine=" + trigger.premiumStLine
                 + ", entry=" + entryLtp + ", minSl=" + minSl + ", maxSl=" + maxSl + ")");
             return;
         }
@@ -1326,17 +1405,6 @@ public class OptionSelling implements Strategy {
         p.productType     = productType;
         p.breakevenMoved  = false;
         p.lockedAtm       = state.atmStrike;
-        // Record entryOiBias ONLY when the trade is against the current bias — those
-        // are the ones the filter would have blocked. With-bias / neutral / stale /
-        // unknown trades leave the column NULL so analytics can trivially split
-        // "against" from "everything else". Only accumulates while the filter is off
-        // (with it on, fire() short-circuits earlier and no row is written at all).
-        String biasAtEntry = currentOiBias();
-        boolean againstBias =
-            (isCeLeg && "BULLISH".equals(biasAtEntry)) ||
-            (!isCeLeg && "BEARISH".equals(biasAtEntry));
-        if (againstBias) p.entryOiBias = biasAtEntry;
-
         state.openPositions.put(posKey(p), p);
         state.tradesToday++;
         if (isCeLeg) state.ceTradesToday++; else state.peTradesToday++;
@@ -1477,7 +1545,7 @@ public class OptionSelling implements Strategy {
         persistTradeRow(dbStrategyId, p.symbol, setupName, reason, p.qty,
             gross, charges, net,
             "SL_HIT".equals(reason) ? 1 : 0,
-            closedAtMillis, p.openMillis, p.entryOiBias, p.entryPrice, exitPrice,
+            closedAtMillis, p.openMillis, p.entryPrice, exitPrice,
             p.entryCandleMs, exitCandleMs);
 
         Map<String, Object> cycle = new LinkedHashMap<>();
@@ -1496,7 +1564,6 @@ public class OptionSelling implements Strategy {
         cycle.put("openedAtMillis", p.openMillis);
         cycle.put("entryCandleMs",  p.entryCandleMs);
         cycle.put("exitCandleMs",   exitCandleMs);
-        cycle.put("entryOiBias",    p.entryOiBias);
         state.todayClosedTrades.add(cycle);
         while (state.todayClosedTrades.size() > 100) state.todayClosedTrades.remove(0);
 
@@ -1527,7 +1594,7 @@ public class OptionSelling implements Strategy {
 
     private void persistTradeRow(String strategyId, String symbol, String setup, String reason, int qty,
                                  double gross, double charges, double net, int slHits,
-                                 long closedAtMillis, long openedAtMillis, String entryOiBias,
+                                 long closedAtMillis, long openedAtMillis,
                                  double entryPrice, double exitPrice,
                                  long entryCandleMs, long exitCandleMs) {
         try {
@@ -1541,7 +1608,6 @@ public class OptionSelling implements Strategy {
             row.setSessionDate(sessionDate.toString());
             row.setClosedAtMillis(closedAtMillis);
             row.setOpenedAtMillis(openedAtMillis);
-            row.setEntryOiBias(entryOiBias == null || entryOiBias.isBlank() ? null : entryOiBias);
             row.setInstrument(instrumentFromSymbol(symbol));
             row.setQty(qty);
             row.setGrossPnl(round2(gross));
@@ -1982,6 +2048,12 @@ public class OptionSelling implements Strategy {
         public double low;
         public double close;
         public long   barStartMs;
+        /** Premium SuperTrend line value AT the breakdown bar. Snapshotted at seed
+         *  time so the fire()'s SL calc uses the ST value the trader saw when the
+         *  gate passed, not a fresh ST call at fire time (ATR ripples through the
+         *  fire bar and shifts the value). 0 = no snapshot (legacy trigger or
+         *  ST unavailable at seed time). */
+        public double premiumStLine;
 
         public static TriggerCandle of(Candle c) {
             TriggerCandle t = new TriggerCandle();
@@ -1989,6 +2061,11 @@ public class OptionSelling implements Strategy {
             t.low        = c.low();
             t.close      = c.close();
             t.barStartMs = c.startMillis();
+            return t;
+        }
+        public static TriggerCandle of(Candle c, double stLine) {
+            TriggerCandle t = of(c);
+            t.premiumStLine = stLine;
             return t;
         }
     }
@@ -2018,7 +2095,6 @@ public class OptionSelling implements Strategy {
         public boolean    breakevenMoved;
         public boolean fillResolved;
         public boolean isShort = true;
-        public String entryOiBias = "";
         public transient int slBreachStreak;
         public int    preAddQty;
         public double preAddEntry;

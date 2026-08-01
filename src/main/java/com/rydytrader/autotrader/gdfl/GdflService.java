@@ -2,7 +2,6 @@ package com.rydytrader.autotrader.gdfl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.rydytrader.autotrader.service.MarketDataService;
-import com.rydytrader.autotrader.service.OptionOiTracker;
 import com.rydytrader.autotrader.service.strategy.OptionSelling;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -62,7 +61,6 @@ public class GdflService {
     private final GdflSymbolMapper   mapper;
     private final MarketDataService  marketDataService;
     private final ObjectProvider<OptionSelling> optionSellingProvider;
-    private final ObjectProvider<OptionOiTracker> oiTrackerProvider;
     private final ScheduledExecutorService executor;
 
     private volatile GdflDataWebSocket wsClient;
@@ -88,13 +86,11 @@ public class GdflService {
     public GdflService(GdflProperties props,
                        GdflSymbolMapper mapper,
                        MarketDataService marketDataService,
-                       ObjectProvider<OptionSelling> optionSellingProvider,
-                       ObjectProvider<OptionOiTracker> oiTrackerProvider) {
+                       ObjectProvider<OptionSelling> optionSellingProvider) {
         this.props             = props;
         this.mapper            = mapper;
         this.marketDataService = marketDataService;
         this.optionSellingProvider   = optionSellingProvider;
-        this.oiTrackerProvider = oiTrackerProvider;
         this.executor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "gdfl-lifecycle");
             t.setDaemon(true);
@@ -239,23 +235,24 @@ public class GdflService {
             // WS must be up + authenticated.
             if (wsClient == null || !wsClient.isAuthenticated()) return;
 
-            // OI-tracker window — populated as early as 09:15 pre-warm by
-            // OptionOiSubscriber.onPreWarm. Subscribing here (not gated on ATM
-            // resolution) means every strike's OI baseline is captured from GDFL
-            // at 09:15, not source-swapped from Fyers at 09:18. Pre-warm ±10 = 42
-            // symbols, comfortably under GDFL's 50-symbol cap. subscribeOne is
-            // idempotent — the every-5-s poll doesn't re-send SubscribeRealtime.
+            // Pre-warm window — OptionSelling.warmupIfDue populates ±10 strikes
+            // (42 CE + PE symbols) at 09:15. Subscribe them all on GDFL so the
+            // 09:15-09:18 first bar has tick data for whichever strike ends up
+            // as ATM. Comfortably under GDFL's 50-symbol cap. subscribeOne is
+            // idempotent so the 5 s poll doesn't re-send SubscribeRealtime.
             //
-            // The ATM CE + PE aggregation legs are always inside the ±10 window,
-            // so they're subscribed here too — no separate aggregation-legs block
-            // is needed (the earlier gdfl.subscribe-side filter was retired once
-            // the strategy locked into GDFL-owned CE + PE + OI end-to-end).
-            OptionOiTracker oiTracker = oiTrackerProvider.getIfAvailable();
-            if (oiTracker != null) {
-                for (OptionOiTracker.StrikeSymbols ss : oiTracker.activeWindow()) {
-                    subscribeOne(ss.ceSymbol());
-                    subscribeOne(ss.peSymbol());
+            // Once OptionSelling.trimWarmingSet narrows to just the ATM pair,
+            // getPreWarmSymbols() returns those two — no separate ATM subscribe
+            // block needed.
+            OptionSelling strategy = optionSellingProvider.getIfAvailable();
+            if (strategy != null) {
+                for (String sym : strategy.getPreWarmSymbols()) {
+                    subscribeOne(sym);
                 }
+                // Always cover the resolved ATM pair (defence in depth — pre-warm
+                // list is empty once trimmed on some code paths).
+                subscribeOne(strategy.getCeSymbol());
+                subscribeOne(strategy.getPeSymbol());
             }
         } catch (Exception e) {
             log.warn("[Gdfl] atm-check loop threw: {}", e.getMessage());
@@ -305,9 +302,7 @@ public class GdflService {
         long   svt = root.path("ServerTime").asLong(0);      // GDFL dissemination time (epoch sec)
 
         // Market-hours gate — drop pre-market / post-market / stale-day ticks BEFORE
-        // they reach MarketDataService. Pre-market frames could otherwise seed
-        // OptionOiTracker with yesterday-EOD baselines and advance the countdown clock
-        // with a pre-09:15 timestamp. Uses ServerTime primarily (populated on every
+        // they reach MarketDataService. Uses ServerTime primarily (populated on every
         // frame); falls back to LastTradeTime, then wall-clock if neither is set.
         long tickSec = svt > 0 ? svt : (ltt > 0 ? ltt : System.currentTimeMillis() / 1000);
         ZonedDateTime tickZdt = Instant.ofEpochSecond(tickSec).atZone(IST);
@@ -324,15 +319,5 @@ public class GdflService {
         MarketDataService.LtpTick evt = new MarketDataService.LtpTick(
             fyersSym, ltp, atp, svt, ltt);
         marketDataService.pushLtpTick(evt);
-
-        // OI side-channel — same tick carries OpenInterest + OpenInterestChange. Fan
-        // out via pushOiTick so OptionOiTracker sees per-strike OI updates from GDFL
-        // (for altFeed-owned symbols, Fyers's OI is dropped in MarketDataService.onTick,
-        // so this is the only source). OpenInterestChange is captured on the OiTick for
-        // future consumers; the tracker itself still computes cumulative-since-baseline
-        // deltas independently, so a zero OpenInterestChange is harmless.
-        long oi       = root.path("OpenInterest").asLong(0);
-        long oiChange = root.path("OpenInterestChange").asLong(0);
-        if (oi > 0) marketDataService.pushOiTick(fyersSym, oi, svt, oiChange);
     }
 }
