@@ -1262,20 +1262,23 @@ public class OptionSelling implements Strategy {
             if (p != null && symbol.equals(p.symbol)) return;
         }
 
-        // Per-leg fire count gate — hard cap on CE / PE fires per day.
+        // Per-leg LOSS cap — no new entries after N losing exits on this side.
+        // Winning trades (VWAP_RECLAIM / ST_FLIP with profit) don't burn the
+        // cap; the trailing SL lets us take profit repeatedly without
+        // consuming the loss budget.
         boolean isCeLeg = symbol.equals(state.ceSymbol);
         int maxCe = riskSettings.getOptionSellingMaxCeTradesPerDay();
         int maxPe = riskSettings.getOptionSellingMaxPeTradesPerDay();
-        if (isCeLeg && maxCe > 0 && state.ceTradesToday >= maxCe) {
+        if (isCeLeg && maxCe > 0 && state.ceLossesToday >= maxCe) {
             event("[WARNING]", "Risk",
-                shortSym(symbol) + " — CE fire cap reached (" + state.ceTradesToday
-                + "/" + maxCe + "), skipping");
+                shortSym(symbol) + " — CE loss cap reached (" + state.ceLossesToday
+                + "/" + maxCe + " losses), skipping");
             return;
         }
-        if (!isCeLeg && maxPe > 0 && state.peTradesToday >= maxPe) {
+        if (!isCeLeg && maxPe > 0 && state.peLossesToday >= maxPe) {
             event("[WARNING]", "Risk",
-                shortSym(symbol) + " — PE fire cap reached (" + state.peTradesToday
-                + "/" + maxPe + "), skipping");
+                shortSym(symbol) + " — PE loss cap reached (" + state.peLossesToday
+                + "/" + maxPe + " losses), skipping");
             return;
         }
 
@@ -1381,8 +1384,8 @@ public class OptionSelling implements Strategy {
         eventAtDisplayTime("[SUCCESS]", "AUTO ENTRY",
             "sell " + shortSym(symbol) + " ×" + (qty / LOT_SIZE) + "L "
             + "@ " + round2(entryLtp) + " (SL " + round2(slLevel)
-            + ", " + (isCeLeg ? "CE " + state.ceTradesToday + "/" + maxCe
-                              : "PE " + state.peTradesToday + "/" + maxPe) + ")",
+            + ", " + (isCeLeg ? "CE losses " + state.ceLossesToday + "/" + maxCe
+                              : "PE losses " + state.peLossesToday + "/" + maxPe) + ")",
             entryCandle == null ? 0 : entryCandle.startMillis());
         saveToDisk();
     }
@@ -1506,6 +1509,13 @@ public class OptionSelling implements Strategy {
         while (state.todayClosedTrades.size() > 100) state.todayClosedTrades.remove(0);
 
         if (net < 0) state.consecutiveLosses++; else state.consecutiveLosses = 0;
+        // Bump the per-leg LOSS counter for the daily cap. Winners do NOT
+        // increment — a successful trailing-SL take-profit shouldn't burn
+        // the loss budget.
+        if (net < 0 && p.setup != null) {
+            if (p.setup == ActiveSetup.CE_SELL) state.ceLossesToday++;
+            if (p.setup == ActiveSetup.PE_SELL) state.peLossesToday++;
+        }
         eventAtDisplayTime(net >= 0 ? "[SUCCESS]" : "[WARNING]", "Exit",
             shortSym(symbol) + " closed (" + reason + ") net=" + round2(net) + " gross=" + round2(gross),
             exitCandleMs);
@@ -1595,6 +1605,8 @@ public class OptionSelling implements Strategy {
         state.tradesToday        = 0;
         state.ceTradesToday      = 0;
         state.peTradesToday      = 0;
+        state.ceLossesToday      = 0;
+        state.peLossesToday      = 0;
         state.consecutiveLosses  = 0;
 
         int eventsCleared = state.recentEvents.size();
@@ -1639,6 +1651,8 @@ public class OptionSelling implements Strategy {
         state.tradesToday        = 0;
         state.ceTradesToday      = 0;
         state.peTradesToday      = 0;
+        state.ceLossesToday      = 0;
+        state.peLossesToday      = 0;
         state.consecutiveLosses  = 0;
 
         long startOfTodayMillis = LocalDate.now(IST).atStartOfDay(IST).toInstant().toEpochMilli();
@@ -1687,6 +1701,8 @@ public class OptionSelling implements Strategy {
         state.tradesToday = 0;
         state.ceTradesToday = 0;
         state.peTradesToday = 0;
+        state.ceLossesToday = 0;
+        state.peLossesToday = 0;
         state.consecutiveLosses = 0;
         state.doneForDay = false;
         state.dailyLossLockout = false;
@@ -1718,6 +1734,8 @@ public class OptionSelling implements Strategy {
             state.tradesToday       = 0;
             state.ceTradesToday     = 0;
             state.peTradesToday     = 0;
+            state.ceLossesToday     = 0;
+            state.peLossesToday     = 0;
             state.consecutiveLosses = 0;
             state.doneForDay        = false;
             state.dailyLossLockout  = false;
@@ -1954,9 +1972,18 @@ public class OptionSelling implements Strategy {
     public static class State {
         public String dayKey = "";
         public int    tradesToday;
-        /** Per-leg fire counters for the per-day CE / PE trade caps. Reset on day rollover. */
+        /** Per-leg TOTAL fire counters — informational only (analytics + event
+         *  log). Reset on day rollover. */
         public int    ceTradesToday;
         public int    peTradesToday;
+        /** Per-leg LOSING trade counters — closes with netPnl < 0. These are
+         *  the counters gated by optionSellingMaxCe/PeTradesPerDay: once a leg
+         *  hits its loss cap for the day, no more entries fire on that side
+         *  even if the total-trades count is lower. Winning trades don't
+         *  consume the cap (trailing SL lets us capture profit without
+         *  burning the loss budget). Reset on day rollover. */
+        public int    ceLossesToday;
+        public int    peLossesToday;
         public int    consecutiveLosses;
         public boolean doneForDay;
         public Map<String, Position> openPositions = new ConcurrentHashMap<>();

@@ -246,7 +246,10 @@ public class OptionBuying implements Strategy {
 
             // 2. Entry gate.
             if (!inTradingWindow()) return;
-            if (state.tradesToday >= riskSettings.getOptionBuyingMaxTradesPerDay()) return;
+            // Loss cap — only losing trades (netPnl < 0) count. Winners don't
+            // burn the budget, so a trailing-SL take-profit doesn't block the
+            // next signal.
+            if (state.lossesToday >= riskSettings.getOptionBuyingMaxTradesPerDay()) return;
 
             List<Candle> bars = candleAggregator.getHistory(NIFTY_SYMBOL);
             if (bars.size() < MIN_BARS_FOR_INDICATORS) return;
@@ -364,7 +367,7 @@ public class OptionBuying implements Strategy {
             "BUY " + (bullish ? "CE " : "PE ") + shortSym(symbol)
             + " ×" + (qty / LOT_SIZE) + "L @ " + round2(entryLtp)
             + " (ATM " + row.resolvedStrike() + ", NIFTY " + round2(niftyLtp)
-            + ", trade " + state.tradesToday + "/" + riskSettings.getOptionBuyingMaxTradesPerDay() + ")");
+            + ", losses " + state.lossesToday + "/" + riskSettings.getOptionBuyingMaxTradesPerDay() + ")");
     }
 
     // ── Exits ───────────────────────────────────────────────────────────────
@@ -477,6 +480,10 @@ public class OptionBuying implements Strategy {
         state.todayClosedTrades.add(cycle);
         while (state.todayClosedTrades.size() > RECENT_CYCLES_LIMIT) state.todayClosedTrades.remove(0);
 
+        // Bump the daily LOSS counter when the close was a loss. Winners don't
+        // burn the cap.
+        if (net < 0) state.lossesToday++;
+
         event(net >= 0 ? "[SUCCESS]" : "[WARNING]", "Exit",
             shortSym(p.symbol) + " closed (" + reason + ") net=" + round2(net)
             + " gross=" + round2(gross) + " exit=" + round2(exitPrice));
@@ -546,6 +553,7 @@ public class OptionBuying implements Strategy {
         m.put("enabled",          isEnabled());
         m.put("state",            currentState());
         m.put("tradesToday",      state.tradesToday);
+        m.put("lossesToday",      state.lossesToday);
         m.put("maxTradesPerDay",  riskSettings.getOptionBuyingMaxTradesPerDay());
         m.put("doneForDay",       state.doneForDay);
         m.put("liveNetPnl",       round2(liveNetPnlToday()));
@@ -642,6 +650,7 @@ public class OptionBuying implements Strategy {
         if (today.equals(state.dayKey)) return;
         state.dayKey = today;
         state.tradesToday = 0;
+        state.lossesToday = 0;
         state.doneForDay  = false;
         state.todayClosedTrades.clear();
         if (state.recentEvents != null) state.recentEvents.clear();
@@ -714,6 +723,10 @@ public class OptionBuying implements Strategy {
     public static class State {
         public String dayKey = "";
         public int    tradesToday = 0;
+        /** LOSING trade count (netPnl < 0) — this is what optionBuyingMaxTradesPerDay
+         *  gates against. Winning trades don't burn the cap so a trailing-SL exit
+         *  with profit doesn't stop us from taking the next signal. */
+        public int    lossesToday = 0;
         public boolean doneForDay = false;
         public Map<String, Position> openPositions = new ConcurrentHashMap<>();
         public List<Map<String, Object>> todayClosedTrades = new ArrayList<>();
