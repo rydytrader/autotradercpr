@@ -238,9 +238,11 @@
                 <!-- NIFTY Spot — now a small tile on the right. -->
                 <div style="text-align:center;">
                     <div class="stat-label">NIFTY Spot</div>
-                    <div class="stat-value" id="statNiftyLtp" style="font-size:1.3rem; margin-top:4px; color:var(--accent-cyan);">—</div>
+                    <!-- LTP colour set by renderFutTickerCells based on change sign
+                         (green above y-close, red below, muted at flat). -->
+                    <div class="stat-value" id="statNiftyLtp" style="font-size:1.3rem; margin-top:4px;">—</div>
                     <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">
-                        <span id="statNiftyChg" style="font-weight:600;">—</span>
+                        <span id="statNiftyChg" style="font-weight:400;">—</span>
                     </div>
                 </div>
                 <!-- SuperTrend — NIFTY spot ST headline, CE + PE premium ST in the sub. -->
@@ -1077,23 +1079,31 @@
         var cardLtp = document.getElementById('statNiftyLtp');
         var cardChg = document.getElementById('statNiftyChg');
         var ltpText = v > 0 ? v.toFixed(2) : '—';
+        // Colour the LTP itself by change sign: green if above yesterday's
+        // close, red if below, neutral / muted at flat or pre-open.
+        var ltpColor = 'var(--text-primary)';
+        if (v > 0 && c > 0) ltpColor = 'var(--accent-green, #34d399)';
+        else if (v > 0 && c < 0) ltpColor = 'var(--accent-red, #f87171)';
         if (ltpEl) {
             ltpEl.textContent = ltpText;
             ltpEl.title = symbol || 'NIFTY spot index';
+            ltpEl.style.color = ltpColor;
         }
-        if (cardLtp) cardLtp.textContent = ltpText;
+        if (cardLtp) {
+            cardLtp.textContent = ltpText;
+            cardLtp.style.color = ltpColor;
+        }
 
+        // Change + % change — always muted grey per operator preference. The
+        // colour lives on the LTP value; the sub-line is informational only.
         var chgText = '';
-        var chgColor = '';
         if (v > 0 && !(c === 0 && p === 0)) {
             var sign = c > 0 ? '+' : (c < 0 ? '−' : '');
             var pctStr = p === 0 ? '' : ' (' + sign + Math.abs(p).toFixed(2) + '%)';
-            chgText  = sign + Math.abs(c).toFixed(2) + pctStr;
-            chgColor = c > 0 ? 'var(--accent-green, #34d399)'
-                     : (c < 0 ? 'var(--accent-red, #f87171)' : 'var(--text-muted)');
+            chgText = sign + Math.abs(c).toFixed(2) + pctStr;
         }
-        if (chgEl)  { chgEl.textContent  = chgText; chgEl.style.color  = chgColor; }
-        if (cardChg) { cardChg.textContent = chgText || '—'; cardChg.style.color = chgColor; }
+        if (chgEl)  { chgEl.textContent  = chgText; chgEl.style.color  = 'var(--text-muted)'; }
+        if (cardChg) { cardChg.textContent = chgText || '—'; cardChg.style.color = 'var(--text-muted)'; }
     }
 
     // ── Technicals tile poll ───────────────────────────────────────────────
