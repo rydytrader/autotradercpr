@@ -44,8 +44,6 @@
                       '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline for Home analytics. Default ₹10L.</div></div>' +
                       '<div class="sm-field"><label>Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Kill switch when net day P&L drops below this % of capital. 0 = off.</div></div>' +
                       '<div class="sm-field"><label>Max Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto from Capital × Risk %.</div></div>' +
-                      '<div class="sm-field"><label>Min SL (points above entry)</label><input type="number" id="sm-optionSellingMinSlPoints" step="1" min="0"><div class="sm-hint">SL is at least this many points above entry. Default 10.</div></div>' +
-                      '<div class="sm-field"><label>Max SL (points above entry)</label><input type="number" id="sm-optionSellingMaxSlPoints" step="1" min="0"><div class="sm-hint">SL is capped to this many points above entry. Default 20.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
@@ -252,9 +250,7 @@
         var g = id => document.getElementById(id);
         var body = {
             startingCapital:          parseFloat(g('sm-startingCapital').value) || 0,
-            portfolioMaxRiskPct:      parseFloat(g('sm-portfolioMaxRiskPct').value) || 0,
-            optionSellingMinSlPoints:       Math.max(0, parseFloat(g('sm-optionSellingMinSlPoints').value) || 0),
-            optionSellingMaxSlPoints:       Math.max(0, parseFloat(g('sm-optionSellingMaxSlPoints').value) || 0)
+            portfolioMaxRiskPct:      parseFloat(g('sm-portfolioMaxRiskPct').value) || 0
         };
         postSettings('/api/settings/risk', body);
     }
@@ -308,12 +304,8 @@
             var g = id => document.getElementById(id);
             var capInput = g('sm-startingCapital');
             var pctInput = g('sm-portfolioMaxRiskPct');
-            var slBufInput = g('sm-optionSellingMinSlPoints');
             if (capInput) capInput.value = d.startingCapital != null ? d.startingCapital : 1000000;
             if (pctInput) pctInput.value = d.portfolioMaxRiskPct != null ? d.portfolioMaxRiskPct : 0;
-            if (slBufInput) slBufInput.value = d.optionSellingMinSlPoints != null ? d.optionSellingMinSlPoints : 10.0;
-            var maxSlInput = g('sm-optionSellingMaxSlPoints');
-            if (maxSlInput) maxSlInput.value = d.optionSellingMaxSlPoints != null ? d.optionSellingMaxSlPoints : 20.0;
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {
                 updatePortfolioRiskHint(parseFloat(capInput.value) || 0, parseFloat(pctInput && pctInput.value) || 0);

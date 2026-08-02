@@ -52,10 +52,10 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li><b>S1 → invalidate</b>: otherwise the trigger is dropped.</li>
  * </ul>
  *
- * <p>Stop loss = max(trigger.high, {@code optionSellingMinSlPoints}). No target — every open
- * position exits on SL hit or timed squareoff at {@code optionSellingSquareOffTime}. CE and PE
- * can be short simultaneously; the combined (SL − entry) × qty must fit under
- * {@code portfolioMaxDailyLoss}.
+ * <p>Stop loss = trailing premium SuperTrend line. Exits are bar-close only:
+ * bar CLOSE &gt; VWAP (VWAP_RECLAIM), premium ST flips green (ST_FLIP), or
+ * timed squareoff at {@code optionSellingSquareOffTime}. No target, no
+ * tick-based SL. CE and PE can be short simultaneously.
  */
 @Service
 public class OptionSelling implements Strategy {
@@ -521,33 +521,11 @@ public class OptionSelling implements Strategy {
 
     @Override
     public void fastSlCheck() {
-        // Tick-based SL — fires on the first tick where LTP >= slLevel for
-        // a SHORT. slLevel is fixed at fire time (trigger.high clamped to
-        // [entry+minSl, entry+maxSl]) — does NOT trail. The parallel bar-
-        // close ST-flip-green exit runs in evaluateTrailingExit; whichever
-        // hits first wins the race.
-        if (state.openPositions.isEmpty()) return;
-        for (Position p : new java.util.ArrayList<>(state.openPositions.values())) {
-            if (p == null) continue;
-            if (p.setup == ActiveSetup.MANUAL) continue;
-            if (p.symbol == null || p.symbol.isBlank()) continue;
-            if (p.slLevel <= 0) continue;
-            double ltp = 0;
-            try { ltp = marketDataService.getLtp(p.symbol); } catch (Exception ignored) {}
-            if (ltp <= 0) continue;
-            if (ltp >= p.slLevel) {
-                long slBarStart = currentBarStartMs();
-                String wallClock = ZonedDateTime.now(IST).toLocalTime().withNano(0).toString();
-                eventAtDisplayTime("[WARNING]", "Exit",
-                    shortSym(p.symbol) + " SL_HIT @ " + round2(ltp)
-                    + " (sl=" + round2(p.slLevel) + ") @ " + wallClock,
-                    slBarStart);
-                // Poison this bar for the same symbol so processOptionBar
-                // doesn't immediately re-classify the SL bar as a new entry.
-                state.lastSlBarStartMsBySymbol.put(p.symbol, slBarStart);
-                closePosition(p, "SL_HIT");
-            }
-        }
+        // Tick-based SL retired. Exits are bar-close-only, evaluated in
+        // evaluateTrailingExit on every 3-min close of the position's
+        // symbol: VWAP_RECLAIM (close > VWAP) or ST_FLIP (premium ST
+        // turns green). slLevel trails the premium ST line for display /
+        // reference; no tick check against it.
     }
 
     // ── ATM change handler — no-op (retained as a harmless AtmTracker hook) ─
@@ -1130,14 +1108,16 @@ public class OptionSelling implements Strategy {
         return new EntryGateResult(true, premSt.line(), null);
     }
 
-    /** Bar-close ST-flip exit — runs on every 3-min close of a symbol we
-     *  have an open position on. If the premium SuperTrend flips from RED
-     *  to GREEN, exit at market with tag "ST_FLIP".
-     *
-     *  <p>SL is a separate FIXED price ({@code p.slLevel} = trigger.high
-     *  clamped) evaluated tick-based in {@link #fastSlCheck}. The two paths
-     *  race — whichever hits first wins. Mechanism is always ON (no operator
-     *  toggle). */
+    /** Runs on every 3-min close of a symbol we have an open position on.
+     *  Two exit signals + a trailing-SL housekeeping step, in order:
+     *  <ol>
+     *    <li>Bar CLOSE > VWAP → exit tagged "VWAP_RECLAIM" — the entry
+     *        condition (close below VWAP) is invalidated.</li>
+     *    <li>Premium ST flips RED → GREEN → exit tagged "ST_FLIP".</li>
+     *    <li>Else ST still red and line tightened → trail slLevel down
+     *        to the new ST line (display only, no tick check).</li>
+     *  </ol>
+     *  Bar-close only — no tick-based path. Mechanism is always ON. */
     private void evaluateTrailingExit(String symbol, Candle c) {
         Position openHere = null;
         for (Position p : state.openPositions.values()) {
@@ -1146,15 +1126,44 @@ public class OptionSelling implements Strategy {
             }
         }
         if (openHere == null) return;
+
+        // 1. VWAP reclaim — entry gate invalidated.
+        double vwap = 0;
+        try { vwap = marketDataService.getVwap(symbol); } catch (Exception ignored) {}
+        if (vwap > 0 && c.close() > vwap) {
+            eventAtDisplayTime("[INFO]", "Exit",
+                shortSym(symbol) + " close " + round2(c.close())
+                + " reclaimed VWAP " + round2(vwap) + " — exit (VWAP_RECLAIM)",
+                c.startMillis());
+            closePosition(openHere, "VWAP_RECLAIM");
+            return;
+        }
+
+        // 2 + 3. Premium ST — flip → exit; still red + tighter → trail.
         List<Candle> bars = candleAggregator.getHistory(symbol);
         com.rydytrader.autotrader.indicator.SuperTrend.State st =
             com.rydytrader.autotrader.indicator.SuperTrend.at(bars, SUPERTREND_ATR, SUPERTREND_MULT);
-        if (!st.available() || !st.isUp()) return;   // still red or warming — hold
+        if (!st.available()) return;   // warming — hold
 
-        eventAtDisplayTime("[INFO]", "Exit",
-            shortSym(symbol) + " premium ST flipped GREEN — exit (line=" + round2(st.line()) + ")",
-            c.startMillis());
-        closePosition(openHere, "ST_FLIP");
+        if (st.isUp()) {
+            eventAtDisplayTime("[INFO]", "Exit",
+                shortSym(symbol) + " premium ST flipped GREEN — exit (line=" + round2(st.line()) + ")",
+                c.startMillis());
+            closePosition(openHere, "ST_FLIP");
+            return;
+        }
+
+        // Trail slLevel to the current ST line if it tightened.
+        double newLine = st.line();
+        if (newLine > 0 && (openHere.slLevel <= 0 || newLine < openHere.slLevel)) {
+            double oldSl = openHere.slLevel;
+            openHere.slLevel = newLine;
+            eventAtDisplayTime("[INFO]", "Setup",
+                shortSym(symbol) + " SL trailed " + round2(oldSl) + " → " + round2(newLine)
+                + " (ST line)",
+                c.startMillis());
+            saveToDisk();
+        }
     }
 
     /** Blocking /history reconcile for {@code bar}. Returns the authoritative bar when
@@ -1288,21 +1297,23 @@ public class OptionSelling implements Strategy {
             return;
         }
 
-        // SL = entry candle HIGH, clamped to [entry + minSl, entry + maxSl].
-        // Fixed at fire time — does NOT trail. Tick-based check in
-        // fastSlCheck fires when LTP >= slLevel. The premium ST-flip-GREEN
-        // exit runs in parallel on each bar close; whichever hits first wins.
-        double minSl = Math.max(0, riskSettings.getOptionSellingMinSlPoints());
-        double maxSl = Math.max(minSl, riskSettings.getOptionSellingMaxSlPoints());
-        double slFloor = entryLtp + minSl;
-        double slCeil  = entryLtp + maxSl;
-        double slLevel = Math.max(trigger.high, slFloor);
-        if (slLevel > slCeil) slLevel = slCeil;
-        if (slLevel <= 0) {
-            event("[ERROR]", "AUTO ENTRY",
-                shortSym(symbol) + " — invalid SL level (trigger.high=" + trigger.high
-                + ", entry=" + entryLtp + ", minSl=" + minSl + ", maxSl=" + maxSl + ")");
-            return;
+        // Initial SL = premium SuperTrend line at fire. Trails down bar-by-bar
+        // in evaluateTrailingExit as the ST line ratchets tighter. Exits are
+        // bar-close only:
+        //   * bar CLOSE > VWAP → VWAP_RECLAIM (entry condition invalidated)
+        //   * premium ST flips GREEN → ST_FLIP
+        //   * timed squareoff at 15:25
+        // Whichever bar-close signal fires first wins. No tick-based SL.
+        //
+        // Safety: ST line for a downtrend sits ABOVE price, so
+        // trigger.premiumStLine > entry is the expected case. If the snapshot
+        // is missing / ST wasn't warm at seed time, fall back to trigger.high
+        // as a display value.
+        double slLevel;
+        if (trigger.premiumStLine > entryLtp) {
+            slLevel = trigger.premiumStLine;
+        } else {
+            slLevel = trigger.high > 0 ? trigger.high : entryLtp;
         }
 
         int qty = riskSettings.getOptionSellingLotsPerLeg() * LOT_SIZE;
@@ -1392,37 +1403,9 @@ public class OptionSelling implements Strategy {
                 p.fillResolved = true;
                 event("[INFO]", "Fill", shortSym(p.symbol) + " fill resolved — entry "
                     + round2(oldEntry) + " → " + round2(p.entryPrice) + " (qty=" + p.qty + ")");
-                // Re-clamp SL against the actual fill price if the original SL
-                // came from the min / max clamp (not from trigger.high directly).
-                // Rule per operator: if trigger.high sat inside [oldFloor, oldCeil]
-                // → trigger-dominated → leave SL alone. Otherwise SL was one of
-                // the clamps applied against the fire-time LTP; re-apply against
-                // the actual fill.
-                if (p.triggerHigh > 0 && !p.breakevenMoved) {
-                    double minSl = Math.max(0, riskSettings.getOptionSellingMinSlPoints());
-                    double maxSl = Math.max(minSl, riskSettings.getOptionSellingMaxSlPoints());
-                    double oldFloor = oldEntry + minSl;
-                    double oldCeil  = oldEntry + maxSl;
-                    boolean triggerDominated = p.triggerHigh >= oldFloor && p.triggerHigh <= oldCeil;
-                    if (!triggerDominated) {
-                        double newFloor = p.entryPrice + minSl;
-                        double newCeil  = p.entryPrice + maxSl;
-                        double reclampedSl = Math.max(p.triggerHigh, newFloor);
-                        if (reclampedSl > newCeil) reclampedSl = newCeil;
-                        reclampedSl = round2(reclampedSl);
-                        if (Math.abs(reclampedSl - p.slLevel) > 0.005) {
-                            double oldSl = p.slLevel;
-                            p.slLevel = reclampedSl;
-                            p.originalSlLevel = reclampedSl;
-                            event("[INFO]", "Fill", shortSym(p.symbol)
-                                + " SL re-clamped on fill "
-                                + round2(oldSl) + " → " + round2(p.slLevel)
-                                + " (trigger.high=" + round2(p.triggerHigh)
-                                + ", fill=" + round2(p.entryPrice)
-                                + ", min=" + minSl + ", max=" + maxSl + ")");
-                        }
-                    }
-                }
+                // No SL re-clamp — slLevel is the trailing premium ST line,
+                // not a min/max clamp against fill. Next bar close in
+                // evaluateTrailingExit will trail it further if ST tightens.
                 saveToDisk();
             } catch (Exception e) {
                 log.warn("[OptionSelling] fill lookup failed for {}: {}", p.entryOrderId, e.getMessage());
@@ -1950,7 +1933,6 @@ public class OptionSelling implements Strategy {
         risk.put("exposedRisk",         round2(exposedRiskNow()));
         risk.put("consumedRisk",        round2(consumedRiskNow()));
         risk.put("dailyRiskBudget",     round2(riskSettings.getPortfolioMaxDailyLoss()));
-        risk.put("optionSellingMinSlPoints",  round2(riskSettings.getOptionSellingMinSlPoints()));
         m.put("risk", risk);
 
         m.put("todayClosedTrades", new ArrayList<>(state.todayClosedTrades));

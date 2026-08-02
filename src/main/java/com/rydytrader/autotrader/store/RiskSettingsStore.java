@@ -36,12 +36,6 @@ public class RiskSettingsStore {
         volatile String  optionSellingTradingEndTime   = "14:30"; // no new signals after this time (IST); exits keep running
         volatile String  optionSellingSquareOffTime   = "15:25";
         volatile int     optionSellingMaxConcurrentPositions = 4; // hard cap on simultaneously-open positions
-        /** Min SL floor in option-premium points ABOVE entry. If (trigger.high − entry)
-         *  is smaller than this floor, the SL is raised to entry + minSlPoints. Default 10. */
-        volatile double optionSellingMinSlPoints = 10.0;
-        /** Max SL ceiling in option-premium points ABOVE entry. If (trigger.high − entry)
-         *  is larger than this cap, the SL is capped to entry + maxSlPoints. Default 20. */
-        volatile double optionSellingMaxSlPoints = 20.0;
         /** Hard cap on CE-side fires per session. Default 3. */
         volatile int    optionSellingMaxCeTradesPerDay = 3;
         /** Hard cap on PE-side fires per session. Default 3. */
@@ -414,8 +408,6 @@ public class RiskSettingsStore {
     public String  getOptionSellingTradingEndTime()   { return cfg().optionSellingTradingEndTime; }
     public String  getOptionSellingSquareOffTime()    { return cfg().optionSellingSquareOffTime; }
     public int     getOptionSellingMaxConcurrentPositions() { return cfg().optionSellingMaxConcurrentPositions; }
-    public double  getOptionSellingMinSlPoints()      { return cfg().optionSellingMinSlPoints; }
-    public double  getOptionSellingMaxSlPoints()      { return cfg().optionSellingMaxSlPoints; }
     public int     getOptionSellingMaxCeTradesPerDay(){ return cfg().optionSellingMaxCeTradesPerDay; }
     public int     getOptionSellingMaxPeTradesPerDay(){ return cfg().optionSellingMaxPeTradesPerDay; }
     // OPTION BUYING getters
@@ -615,8 +607,6 @@ public class RiskSettingsStore {
     public void setOptionSellingTradingEndTime(String v)      { cfg().optionSellingTradingEndTime = (v == null || v.isBlank()) ? "14:30" : v.trim(); }
     public void setOptionSellingSquareOffTime(String v)       { cfg().optionSellingSquareOffTime = v == null ? "" : v.trim(); }
     public void setOptionSellingMaxConcurrentPositions(int v) { cfg().optionSellingMaxConcurrentPositions = Math.max(1, v); }
-    public void setOptionSellingMinSlPoints(double v)         { cfg().optionSellingMinSlPoints = Math.max(0, v); }
-    public void setOptionSellingMaxSlPoints(double v)         { cfg().optionSellingMaxSlPoints = Math.max(0, v); }
     public void setOptionSellingMaxCeTradesPerDay(int v)      { cfg().optionSellingMaxCeTradesPerDay = Math.max(0, v); }
     public void setOptionSellingMaxPeTradesPerDay(int v)      { cfg().optionSellingMaxPeTradesPerDay = Math.max(0, v); }
     // OPTION BUYING setters
@@ -730,8 +720,6 @@ public class RiskSettingsStore {
     public String  getOptionSellingTradingEndTime(String mode)    { return cfgFor(mode).optionSellingTradingEndTime; }
     public String  getOptionSellingSquareOffTime(String mode)     { return cfgFor(mode).optionSellingSquareOffTime; }
     public int     getOptionSellingMaxConcurrentPositions(String mode) { return cfgFor(mode).optionSellingMaxConcurrentPositions; }
-    public double  getOptionSellingMinSlPoints(String mode)       { return cfgFor(mode).optionSellingMinSlPoints; }
-    public double  getOptionSellingMaxSlPoints(String mode)       { return cfgFor(mode).optionSellingMaxSlPoints; }
     public int     getOptionSellingMaxCeTradesPerDay(String mode) { return cfgFor(mode).optionSellingMaxCeTradesPerDay; }
     public int     getOptionSellingMaxPeTradesPerDay(String mode) { return cfgFor(mode).optionSellingMaxPeTradesPerDay; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
@@ -763,8 +751,6 @@ public class RiskSettingsStore {
     public void setOptionSellingTradingEndTime(String mode, String v)      { cfgFor(mode).optionSellingTradingEndTime = (v == null || v.isBlank()) ? "14:30" : v.trim(); }
     public void setOptionSellingSquareOffTime(String mode, String v)       { cfgFor(mode).optionSellingSquareOffTime = v == null ? "" : v.trim(); }
     public void setOptionSellingMaxConcurrentPositions(String mode, int v) { cfgFor(mode).optionSellingMaxConcurrentPositions = Math.max(1, v); }
-    public void setOptionSellingMinSlPoints(String mode, double v)         { cfgFor(mode).optionSellingMinSlPoints = Math.max(0, v); }
-    public void setOptionSellingMaxSlPoints(String mode, double v)         { cfgFor(mode).optionSellingMaxSlPoints = Math.max(0, v); }
     public void setOptionSellingMaxCeTradesPerDay(String mode, int v)      { cfgFor(mode).optionSellingMaxCeTradesPerDay = Math.max(0, v); }
     public void setOptionSellingMaxPeTradesPerDay(String mode, int v)      { cfgFor(mode).optionSellingMaxPeTradesPerDay = Math.max(0, v); }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
@@ -806,8 +792,6 @@ public class RiskSettingsStore {
             upsert("optionSellingTradingEndTime",    c.optionSellingTradingEndTime);
             upsert("optionSellingSquareOffTime",     c.optionSellingSquareOffTime);
             upsert("optionSellingMaxConcurrentPositions", String.valueOf(c.optionSellingMaxConcurrentPositions));
-            upsert("optionSellingMinSlPoints",       String.valueOf(c.optionSellingMinSlPoints));
-            upsert("optionSellingMaxSlPoints",       String.valueOf(c.optionSellingMaxSlPoints));
             upsert("optionSellingMaxCeTradesPerDay", String.valueOf(c.optionSellingMaxCeTradesPerDay));
             upsert("optionSellingMaxPeTradesPerDay", String.valueOf(c.optionSellingMaxPeTradesPerDay));
             upsert("optionBuyingLotsPerLeg",          String.valueOf(c.optionBuyingLotsPerLeg));
@@ -987,8 +971,8 @@ public class RiskSettingsStore {
                          "camarillaTradingEndTime"    -> c.optionSellingTradingEndTime = v;
                     case "optionSellingSquareOffTime",
                          "camarillaSquareOffTime"     -> c.optionSellingSquareOffTime = v;
-                    case "optionSellingMinSlPoints"         -> c.optionSellingMinSlPoints = Math.max(0, Double.parseDouble(v));
-                    case "optionSellingMaxSlPoints"         -> c.optionSellingMaxSlPoints = Math.max(0, Double.parseDouble(v));
+                    case "optionSellingMinSlPoints",
+                         "optionSellingMaxSlPoints" -> { /* SL clamps retired — SL is now trailing ST line; silently consume legacy rows */ }
                     case "optionSellingMaxCeTradesPerDay"   -> c.optionSellingMaxCeTradesPerDay = Math.max(0, Integer.parseInt(v));
                     case "optionSellingMaxPeTradesPerDay"   -> c.optionSellingMaxPeTradesPerDay = Math.max(0, Integer.parseInt(v));
                     case "optionSellingOiStrikesEachSide",

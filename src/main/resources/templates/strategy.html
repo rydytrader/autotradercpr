@@ -433,22 +433,26 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-red, #f87171);"></span> Stop loss</h2>
         <p class="doc-p">
-            SL price = <code>max(trigger.high, optionSellingMinSlPoints)</code>. The
-            <em>Min SL floor</em> setting (default 10 option points, configurable in
-            Settings → Portfolio Risk) is the floor when the trigger candle's high is
-            smaller than the desired minimum SL — a tiny trigger candle would otherwise
-            create a stop too tight to survive normal noise.
+            SL = <strong>trailing premium SuperTrend line</strong>. Set at fire time to
+            the premium ST(10, 3) line value on the qualifying bar, then trailed down on
+            each subsequent 3-min close as the ST line ratchets tighter. Never loosens.
+            Displayed for reference — no tick check runs against it.
         </p>
         <p class="doc-p">
-            SL is monitored <strong>tick-based inside the strategy</strong> at the fast
-            scheduler cadence (~500 ms). On any LTP tick where the option's live price
-            reaches the SL level, the strategy fires a market BUY to close the short.
-            No broker stop-loss order is placed — this guarantees a market fill even on
-            gap moves or a thin order book.
+            <strong>Exits are bar-close only</strong> (evaluated on each 3-min close
+            of the position's leg symbol). Whichever fires first wins:
         </p>
+        <ul class="doc-list">
+            <li><code>VWAP_RECLAIM</code> — bar CLOSE &gt; VWAP. Entry condition (close
+                below VWAP) is invalidated, exit at market.</li>
+            <li><code>ST_FLIP</code> — premium SuperTrend flips from RED to GREEN.
+                Trend supporting the short has ended, exit at market.</li>
+            <li><code>TIMED_EXIT</code> — clock reaches <code>optionSellingSquareOffTime</code>
+                (default 15:25); every open leg is flattened.</li>
+        </ul>
         <p class="doc-p">
-            <strong>No target</strong> — every open position is held until SL hit or timed
-            squareoff. There is no take-profit level.
+            <strong>No target, no tick-based SL, no min/max clamps</strong> — bar-close
+            exits are the only mechanism.
         </p>
     </div>
 

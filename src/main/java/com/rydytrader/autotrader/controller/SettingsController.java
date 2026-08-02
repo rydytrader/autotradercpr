@@ -39,8 +39,6 @@ public class SettingsController {
         result.put("optionSellingTradingEndTime",     riskSettings.getOptionSellingTradingEndTime(effectiveMode));
         result.put("optionSellingSquareOffTime",      riskSettings.getOptionSellingSquareOffTime(effectiveMode));
         result.put("optionSellingMaxConcurrentPositions", riskSettings.getOptionSellingMaxConcurrentPositions(effectiveMode));
-        result.put("optionSellingMinSlPoints",        riskSettings.getOptionSellingMinSlPoints(effectiveMode));
-        result.put("optionSellingMaxSlPoints",        riskSettings.getOptionSellingMaxSlPoints(effectiveMode));
         result.put("optionSellingMaxCeTradesPerDay",  riskSettings.getOptionSellingMaxCeTradesPerDay(effectiveMode));
         result.put("optionSellingMaxPeTradesPerDay",  riskSettings.getOptionSellingMaxPeTradesPerDay(effectiveMode));
         // OPTION BUYING (Ganesan 4-indicator framework — coexists with OPTION SELLING)
@@ -93,8 +91,6 @@ public class SettingsController {
             if (body.containsKey("optionSellingTradingEndTime"))    riskSettings.setOptionSellingTradingEndTime(effectiveMode, body.get("optionSellingTradingEndTime").toString());
             if (body.containsKey("optionSellingSquareOffTime"))     riskSettings.setOptionSellingSquareOffTime(effectiveMode, body.get("optionSellingSquareOffTime").toString());
             if (body.containsKey("optionSellingMaxConcurrentPositions")) riskSettings.setOptionSellingMaxConcurrentPositions(effectiveMode, Integer.parseInt(body.get("optionSellingMaxConcurrentPositions").toString()));
-            if (body.containsKey("optionSellingMinSlPoints"))            riskSettings.setOptionSellingMinSlPoints(effectiveMode, Double.parseDouble(body.get("optionSellingMinSlPoints").toString()));
-            if (body.containsKey("optionSellingMaxSlPoints"))            riskSettings.setOptionSellingMaxSlPoints(effectiveMode, Double.parseDouble(body.get("optionSellingMaxSlPoints").toString()));
             if (body.containsKey("optionSellingMaxCeTradesPerDay"))      riskSettings.setOptionSellingMaxCeTradesPerDay(effectiveMode, Integer.parseInt(body.get("optionSellingMaxCeTradesPerDay").toString()));
             if (body.containsKey("optionSellingMaxPeTradesPerDay"))      riskSettings.setOptionSellingMaxPeTradesPerDay(effectiveMode, Integer.parseInt(body.get("optionSellingMaxPeTradesPerDay").toString()));
             // SuperTrend params (Atr / Mult / Spot Atr / Spot Mult) intentionally not
