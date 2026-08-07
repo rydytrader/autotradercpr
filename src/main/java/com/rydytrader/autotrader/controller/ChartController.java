@@ -58,6 +58,38 @@ public class ChartController {
         return m;
     }
 
+    /** Tick block for option strikes. Fyers HSM delta packets don't carry prev_close
+     *  for freshly-subscribed option symbols, so {@link MarketDataService#getChange}
+     *  stays at 0 for the whole session. Instead compute chg / chp as **session change**
+     *  — LTP relative to the OPEN of today's first 1-min bar for the strike (matches
+     *  what most option chart UIs display intraday). Falls back to the current in-
+     *  progress bucket's open when no bar has closed yet, and to MarketDataService's
+     *  values when the aggregator has no bars at all. */
+    private Map<String, Object> optionTickBlock(String fyersSymbol) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        if (fyersSymbol == null || fyersSymbol.isBlank()) return m;
+        double ltp = marketDataService.getLtp(fyersSymbol);
+        m.put("ltp", round2(ltp));
+        double sessionOpen = 0.0;
+        List<Candle> hist = candleAggregator.getHistory(fyersSymbol);
+        if (hist != null && !hist.isEmpty()) {
+            sessionOpen = hist.get(0).open();
+        } else {
+            Candle cur = candleAggregator.getCurrentBucket(fyersSymbol);
+            if (cur != null) sessionOpen = cur.open();
+        }
+        if (ltp > 0 && sessionOpen > 0) {
+            double ch  = ltp - sessionOpen;
+            double chp = (ch / sessionOpen) * 100.0;
+            m.put("ch",  round2(ch));
+            m.put("chp", round2(chp));
+        } else {
+            m.put("ch",  round2(marketDataService.getChange(fyersSymbol)));
+            m.put("chp", round2(marketDataService.getChangePercent(fyersSymbol)));
+        }
+        return m;
+    }
+
     private static double round2(double v) {
         return Math.round(v * 100.0) / 100.0;
     }
@@ -91,8 +123,8 @@ public class ChartController {
         // chart page shows NIFTY / CE / PE values instantly even when the ticker SSE
         // hasn't pushed anything yet (initial load, off-hours, or paused feed).
         out.put("niftyTick", tickBlock(NIFTY_SYMBOL));
-        out.put("ceTick",    tickBlock(ceSymbol));
-        out.put("peTick",    tickBlock(peSymbol));
+        out.put("ceTick",    optionTickBlock(ceSymbol));
+        out.put("peTick",    optionTickBlock(peSymbol));
         // Active SL levels for the CE / PE legs — drives a horizontal SL price line
         // on the corresponding chart. Zero when no position is open on that side.
         out.put("ceSl", strat == null ? 0.0 : round2(strat.getOpenSlLevel(ceSymbol)));
