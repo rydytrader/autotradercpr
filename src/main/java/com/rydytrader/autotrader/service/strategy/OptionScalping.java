@@ -967,8 +967,24 @@ public class OptionScalping implements Strategy {
 
     // ── Trigger-candle FSM ─────────────────────────────────────────────────
 
-    /** Per-option 3-min bar walk. Trigger-candle FSM described at the class-level Javadoc. */
+    /** TEST MODE — entry / exit FSM DISABLED.
+     *
+     *  <p>Right now this branch only validates the DATA PIPELINE:
+     *  pre-market subscribe at 09:10, 1-min bar aggregation, 09:16 ATM
+     *  lock, 1 ITM CE / PE selection. No orders should fire.
+     *
+     *  <p>To re-enable, remove the early return below. The rest of the
+     *  method (VWAP-break + Premium ST + Spot ST gates, trailing SL,
+     *  ST-flip exit, VWAP-reclaim exit) is inherited from the old
+     *  OPTION SELLING implementation and will need to be rewritten to
+     *  match the scalping spec the operator will define. */
     private void processOptionBar(String symbol, Candle c) {
+        // TEST MODE guard — do nothing. Bar close still reaches this method
+        // (which proves the aggregator is emitting bars for the leg) but
+        // no gates evaluate and no orders fire.
+        if (true) return;
+        // Original OPTION SELLING FSM below — kept for reference; will be
+        // rewritten in a follow-up with the scalping entry / exit rules.
         // Bar-level gate: skip bars whose START is before the configured
         // optionScalpingTradingStartTime. "Start = 09:18" means the 09:18 bar (closes
         // at 09:21) is the first bar the FSM sees; the 09:15 opening bar is
@@ -1276,8 +1292,15 @@ public class OptionScalping implements Strategy {
 
     /** Fire a SHORT on the option leg. SL price is clamped to [entry+minSl, entry+maxSl].
      *  Per-leg CE / PE trade counters cap fires per day. No target order — position exits
-     *  on tick-based SL hit or timed squareoff. */
+     *  on tick-based SL hit or timed squareoff.
+     *
+     *  <p>TEST MODE — currently short-circuits to place no orders. See
+     *  processOptionBar for the plumbing-only rationale. */
     private void fire(String symbol, Candle entryCandle, TriggerCandle trigger) {
+        // TEST MODE — no orders. processOptionBar already short-circuits so
+        // this method shouldn't be reached; the guard here is belt-and-suspenders
+        // in case some future path calls fire() directly.
+        if (true) return;
         if (!canFireNewEntry()) return;
         if (state.dailyLossLockout) return;
         for (Position p : state.openPositions.values()) {
