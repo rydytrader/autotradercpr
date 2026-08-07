@@ -207,25 +207,28 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot"></span> Overview</h2>
         <p class="doc-p">
-            The bot sells <strong>NIFTY weekly ATM options</strong> on their own 3-min
-            timeframe. Each session locks in TWO legs at first bar close: the
-            <strong>ATM CE</strong> and the <strong>ATM PE</strong> at the strike nearest to
-            the first 3-min NIFTY close (rounded to 50). Every trade is a
-            <strong>premium sell</strong> — bearish thesis, want premium to decay.
+            The bot scalps <strong>NIFTY weekly options</strong> on the
+            <strong>1-minute</strong> timeframe. Each session locks in TWO legs at
+            the first 1-min bar close (09:16): the <strong>1 ITM CE</strong> at strike
+            <code>(ATM − 50)</code> and the <strong>1 ITM PE</strong> at strike
+            <code>(ATM + 50)</code>, where ATM is the round-to-50 of the 09:15 → 09:16
+            NIFTY close.
         </p>
         <p class="doc-p">
-            Each option's own <strong>session VWAP</strong> (the NSE-cumulative ATP the
-            broker streams for that symbol) is the anchor. A 3-min bar that closes below
-            VWAP seeds a <em>trigger candle</em>. If the very next 3-min bar closes below
-            the trigger's low, the bot sells that leg. CE and PE run independent FSMs and
-            can both be short at the same time; their combined worst-case loss is bounded
-            by the portfolio-max-daily-loss cap.
+            Data pipeline is designed for first-bar accuracy: at
+            <strong>09:10 IST</strong> the bot subscribes ±10 strikes to the GDFL WS
+            using yesterday's NIFTY close as an anchor. When the exchange opens at
+            09:15, every leg's first tick lands in an already-live subscription — no
+            hand-shake delay, no partial first bar. The 1 ITM CE and PE that end up
+            being the trading pair additionally get GDFL <em>SubscribeSnapshot</em>
+            after the 09:16 ATM lock, plus a one-shot <em>GetHistory</em> to backfill
+            the 09:15 → 09:16 first bar. OHLC on the trading pair therefore matches
+            TradingView tick-for-tick.
         </p>
         <p class="doc-p">
-            One-shot per leg per day — once a leg's position closes (SL hit or timed
-            squareoff), the FSM can seed again on later bars, but there's no re-entry
-            latch. No target orders — every position is held until SL hit or the
-            timed squareoff at the configured cutoff.
+            Entry / exit rules — <em>TEST MODE</em>: the FSM is currently disabled
+            while the data pipeline is validated. No orders will fire until the
+            operator specs the scalping entry / exit rules and the FSM is re-enabled.
         </p>
     </div>
 
@@ -233,18 +236,26 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-amber, #fbbf24);"></span> Session flow</h2>
         <ul class="doc-list">
-            <li><strong>09:15 IST — market open.</strong> Bot subscribes NIFTY spot to the 3-min
-                candle feed. No entries yet.</li>
-            <li><strong>~09:18 IST — first 3-min NIFTY bar closes.</strong> The bar's close price
-                is snapshotted, rounded to the nearest 50-point strike, and the ATM CE + ATM PE
-                symbols are resolved from the weekly chain. Both legs are subscribed to the 3-min
-                feed and locked for the rest of the session.</li>
-            <li><strong>From Trading Start (default 09:18 IST) onward.</strong> Every 3-min bar
-                close on either option runs the trigger-candle FSM below. Only bearish sells fire.</li>
-            <li><strong>Trading End (default 14:30 IST).</strong> No new entries after this time.
-                Existing positions keep being managed.</li>
-            <li><strong>Squareoff (default 15:25 IST).</strong> Any remaining open positions are
-                flattened at market.</li>
+            <li><strong>09:10 IST — pre-market subscribe.</strong> Bot rounds yesterday's
+                NIFTY close to a 50-point base ATM, subscribes ±10 strikes (42 CE + PE
+                symbols) to the GDFL WS and registers CandleAggregator listeners for each.
+                Both feeds are live BEFORE the exchange opens.</li>
+            <li><strong>09:15 IST — market open.</strong> Every leg's first tick lands in
+                an already-wired subscription; the 09:15 → 09:16 first 1-min bar builds
+                without any hand-shake loss.</li>
+            <li><strong>09:16 IST — first 1-min NIFTY bar closes.</strong> The bar's close
+                is snapshotted, rounded to a 50-point strike (ATM), and the trading pair
+                is derived: CE = <code>(ATM − 50)</code>, PE = <code>(ATM + 50)</code> —
+                both 1 ITM. The 40 non-trading strikes stay subscribed for chart display.
+                The 2 trading legs additionally get GDFL <em>SubscribeSnapshot</em> +
+                one <em>GetHistory</em> call for canonical OHLC.</li>
+            <li><strong>From Trading Start (default 09:16 IST) onward.</strong> Every 1-min
+                bar close on either trading leg would run the entry FSM — CURRENTLY
+                DISABLED (TEST MODE).</li>
+            <li><strong>Trading End (default 14:30 IST).</strong> No new entries after
+                this time.</li>
+            <li><strong>Squareoff (default 15:25 IST).</strong> Any remaining open
+                positions are flattened at market.</li>
         </ul>
     </div>
 
