@@ -271,10 +271,12 @@ public class GdflService {
                 // list is empty once trimmed on some code paths).
                 subscribeOne(strategy.getCeSymbol());
                 subscribeOne(strategy.getPeSymbol());
-                // Trading pair also gets SubscribeSnapshot for canonical OHLC
-                // bars + GetHistory for the first-bar backfill. Idempotent —
-                // won't re-send once the two per-day dedupe sets are populated.
-                subscribeSnapshotForTradingPair();
+                // SubscribeSnapshot + GetHistory backfill for the trading pair
+                // temporarily DISABLED — operator wants to test whether the 3
+                // client-side aggregation fixes (OPEN by earliest-LTT, CLOSE
+                // by latest-LTT, grace window 1500ms) alone are enough to
+                // match TradingView. Re-enable by uncommenting.
+                // subscribeSnapshotForTradingPair();
             }
         } catch (Exception e) {
             log.warn("[Gdfl] atm-check loop threw: {}", e.getMessage());
