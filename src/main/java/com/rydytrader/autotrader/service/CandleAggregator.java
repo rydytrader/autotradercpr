@@ -50,7 +50,7 @@ public class CandleAggregator {
 
     private static final Logger log = LoggerFactory.getLogger(CandleAggregator.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    public  static final int    BUCKET_MINUTES = 3;
+    public  static final int    BUCKET_MINUTES = 1;
     /** NSE market open in minutes-of-day (IST). Bucket boundaries are computed relative
      *  to this so the first bar spans 09:15→09:15+BUCKET_MINUTES (at 3-min:
      *  09:15→09:18). */

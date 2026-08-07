@@ -580,25 +580,36 @@ public class OptionScalping implements Strategy {
      *  per-key subscription cap. */
     private static final int PRE_WARM_STRIKES_EACH_SIDE = 10;
     private static final LocalTime MARKET_OPEN_IST      = LocalTime.of(9, 15);
-    // 3-min bars close at 09:18, so pre-warm hands off to resolveAtmFromFirstBar
-    // right when the first bar closes. Update this constant if BUCKET_MINUTES
-    // changes.
-    private static final LocalTime PRE_WARM_CUTOFF_IST  = LocalTime.of(9, 18);
+    /** Pre-market subscribe window opens at 09:10 IST — 5 min before market
+     *  open. This lets both Fyers WS and CandleAggregator listeners settle
+     *  BEFORE the first tick lands at 09:15, so the 09:15→09:16 first 1-min
+     *  bar is fully-formed instead of a partial synthetic. */
+    private static final LocalTime PRE_WARM_OPEN_IST    = LocalTime.of(9, 10);
+    /** Pre-warm window closes at market open — after 09:15 the first 1-min bar
+     *  is already being aggregated live; resolveAtmFromFirstBar takes over at
+     *  its 09:16 close. */
+    private static final LocalTime PRE_WARM_CUTOFF_IST  = LocalTime.of(9, 15);
 
     /** Called from {@link #tick()} on the 5 s slow loop. Subscribes ±10 strikes of ATM
-     *  candidate legs so the aggregator has 2 min of tick history for whichever strike
-     *  ends up being the 09:18 ATM. Idempotent — same-day short-circuits. */
+     *  candidate legs at 09:10 IST (BEFORE market open) so that when the first exchange
+     *  tick lands at 09:15, both Fyers WS and CandleAggregator listeners are already
+     *  in place. Prevents the historical "first bar was partial because subscribe
+     *  hand-shake took 200-1000 ms" bug. Idempotent — same-day short-circuits. */
     private synchronized void warmupIfDue() {
         if (!isEnabled()) return;
         LocalTime now = ZonedDateTime.now(IST).toLocalTime();
-        if (now.isBefore(MARKET_OPEN_IST)) return;                    // too early
-        if (!now.isBefore(PRE_WARM_CUTOFF_IST)) return;               // too late — resolveAtmFromFirstBar will handle it
+        if (now.isBefore(PRE_WARM_OPEN_IST)) return;                  // too early — window opens at 09:10
+        if (!now.isBefore(PRE_WARM_CUTOFF_IST)) return;               // too late — first bar is being aggregated live
         if (state.ceSymbol != null && !state.ceSymbol.isBlank()) return;  // ATM already resolved
         if (!state.warmingStrikes.isEmpty()) return;                  // already warming
         String today = LocalDate.now(IST).toString();
         if (today.equals(state.preWarmDayKey)) return;                // already ran today
+        // Anchor to yesterday's close — NIFTY spot doesn't tick pre-market so
+        // getLtp() returns 0 before 09:15. getDisplayLtp() reads the same map
+        // without the today-date guard, giving us yesterday's last tick.
+        // ±10 strikes (±500 pts) comfortably covers any overnight gap.
         double niftyLtp;
-        try { niftyLtp = marketDataService.getLtp(NIFTY_SYMBOL); }
+        try { niftyLtp = marketDataService.getDisplayLtp(NIFTY_SYMBOL); }
         catch (Exception e) { return; }
         if (niftyLtp <= 0) return;                                     // WS not warm yet
 
@@ -756,11 +767,12 @@ public class OptionScalping implements Strategy {
         }
     }
 
-    /** First 3-min NIFTY spot bar close of the day. Rounds close to the nearest 50-point
-     *  strike, picks the ATM CE + PE symbols. Fast path: pre-warm already subscribed the
-     *  target strike (~99% of days). Slow path: the strike fell outside the ±10 pre-warm
-     *  window (extreme open) — subscribe fresh and log a warning (that bar's OHLC will be
-     *  partial). Idempotent — no-op if today's ATM is already resolved. */
+    /** First 1-min NIFTY spot bar close of the day (09:15 → 09:16). Rounds close to
+     *  the nearest 50-point strike to get the ATM, then picks 1 ITM CE (strike
+     *  ATM − 50) and 1 ITM PE (strike ATM + 50). Since pre-warm ran at 09:10 and
+     *  subscribed ±10 strikes, both ITM legs have a fully-formed 09:15 → 09:16
+     *  bar — no partial-first-bar problem. Idempotent — no-op if today's contracts
+     *  are already picked. */
     private synchronized void resolveAtmFromFirstBar(Candle c) {
         String today = LocalDate.now(IST).toString();
         if (today.equals(state.sessionSetupDayKey) && state.atmStrike > 0
@@ -770,68 +782,78 @@ public class OptionScalping implements Strategy {
         }
         double close = c.close();
         if (close <= 0) return;
-        long strike = Math.round(close / (double) STRIKE_STEP) * STRIKE_STEP;
+        long atmStrike = Math.round(close / (double) STRIKE_STEP) * STRIKE_STEP;
 
-        String ce = state.warmingCeByStrike.get(strike);
-        String pe = state.warmingPeByStrike.get(strike);
+        // 1 ITM offsets: CE ITM = ATM − 50 (strike below spot); PE ITM = ATM + 50
+        // (strike above spot). "Deeper in the money" for both sides — higher intrinsic.
+        long ceItmStrike = atmStrike - STRIKE_STEP;
+        long peItmStrike = atmStrike + STRIKE_STEP;
+
+        String ce = state.warmingCeByStrike.get(ceItmStrike);
+        String pe = state.warmingPeByStrike.get(peItmStrike);
 
         if (ce != null && !ce.isBlank() && pe != null && !pe.isBlank()) {
-            // Fast path — pre-warm hit. The strike was subscribed at 09:15 so the
-            // 09:18-09:21 aggregator bucket has been continuously sampling since ~09:15.
+            // Fast path — pre-warm hit. Both ITM strikes were subscribed at 09:10
+            // so their 09:15 → 09:16 aggregator bucket is fully formed.
             state.firstBarCloseSymbol = NIFTY_SYMBOL;
             state.firstBarClose       = close;
-            state.atmStrike           = strike;
+            state.atmStrike           = atmStrike;
             state.ceSymbol            = ce;
             state.peSymbol            = pe;
             state.ceRefLtp            = safeLtp(ce);
             state.peRefLtp            = safeLtp(pe);
             state.sessionSetupDayKey  = today;
             trimWarmingSet();
-            // ATM lock is special-cased to display the bar CLOSE (bar start + 2 min)
-            // rather than the bar OPEN — the "lock" conceptually happens AT the boundary
-            // when the first NIFTY bar closes, not inside the bar itself. Shows "09:18"
-            // for the first bar closing, not "09:15".
             eventAtDisplayTime("[INFO]", "Setup",
-                "NIFTY ATM Resolved (pre-warm HIT) — CE " + strike + " (" + shortSym(ce)
-                + ") | PE " + strike + " (" + shortSym(pe) + ")",
-                c.startMillis() + 2 * 60 * 1000L);
+                "NIFTY ATM " + atmStrike + " (close " + round2(close) + ") — 1 ITM CE " + ceItmStrike
+                + " (" + shortSym(ce) + ") | 1 ITM PE " + peItmStrike + " (" + shortSym(pe) + ")",
+                c.startMillis() + 60 * 1000L);
             saveToDisk();
             backfillLegHistory(ce);
             backfillLegHistory(pe);
             return;
         }
 
-        // Slow path — extreme move outside the ±10 pre-warm window, OR pre-warm never ran
-        // (fresh install, no market-open tick received in time). Warn and subscribe fresh.
+        // Slow path — the ITM strikes fell outside the ±10 pre-warm window
+        // (extreme overnight gap) OR pre-warm never ran (fresh install / bot
+        // started after 09:15). Fetch chain live and subscribe fresh; the
+        // 09:15 → 09:16 bar may be partial in that case.
         if (!state.warmingStrikes.isEmpty()) {
             event("[WARNING]", "Setup",
-                "NIFTY ATM " + strike + " outside pre-warm window — resolving fresh "
-                + "(first bar OHLC may be partial)");
+                "1 ITM strikes CE=" + ceItmStrike + " PE=" + peItmStrike
+                + " outside pre-warm window — resolving fresh (first bar may be partial)");
         }
-        BalancedAtmSelector.StrikeAtLevel row = atmSelector.resolveStrikeAtLevel(close);
-        if (row == null || row.ceSymbol() == null || row.peSymbol() == null
-            || row.ceSymbol().isBlank() || row.peSymbol().isBlank()) {
-            log.debug("[OptionScalping] ATM resolution deferred — chain row null for close {}", close);
+        java.util.NavigableMap<Long, BalancedAtmSelector.ChainStrike> chain;
+        try { chain = atmSelector.fetchChainStrikes(); }
+        catch (Exception e) {
+            log.warn("[OptionScalping] ATM resolution failed — chain fetch: {}", e.getMessage());
+            return;
+        }
+        BalancedAtmSelector.ChainStrike ceRow = chain == null ? null : chain.get(ceItmStrike);
+        BalancedAtmSelector.ChainStrike peRow = chain == null ? null : chain.get(peItmStrike);
+        if (ceRow == null || peRow == null
+            || ceRow.ceSymbol() == null || ceRow.ceSymbol().isBlank()
+            || peRow.peSymbol() == null || peRow.peSymbol().isBlank()) {
+            log.debug("[OptionScalping] ATM resolution deferred — chain missing ITM strikes for close {}", close);
             return;
         }
 
         state.firstBarCloseSymbol = NIFTY_SYMBOL;
         state.firstBarClose       = close;
-        state.atmStrike           = row.resolvedStrike() > 0 ? row.resolvedStrike() : strike;
-        state.ceSymbol            = row.ceSymbol();
-        state.peSymbol            = row.peSymbol();
-        state.ceRefLtp            = row.ceLtp();
-        state.peRefLtp            = row.peLtp();
+        state.atmStrike           = atmStrike;
+        state.ceSymbol            = ceRow.ceSymbol();
+        state.peSymbol            = peRow.peSymbol();
+        state.ceRefLtp            = ceRow.ceLtp();
+        state.peRefLtp            = peRow.peLtp();
         state.sessionSetupDayKey  = today;
 
         ensureSessionLegsSubscribed();
-        trimWarmingSet();  // drop the useless pre-warm (its ATM guess was wrong)
-        // Same special-case as the fast path above — display bar CLOSE (09:18), not
-        // bar OPEN (09:15), for the ATM lock event.
+        trimWarmingSet();
         eventAtDisplayTime("[INFO]", "Setup",
-            "NIFTY ATM Resolved — CE " + state.atmStrike + " (" + shortSym(state.ceSymbol)
-            + ") | PE " + state.atmStrike + " (" + shortSym(state.peSymbol) + ")",
-            c.startMillis() + 2 * 60 * 1000L);
+            "NIFTY ATM " + atmStrike + " (close " + round2(close) + ") — 1 ITM CE " + ceItmStrike
+            + " (" + shortSym(state.ceSymbol)
+            + ") | 1 ITM PE " + peItmStrike + " (" + shortSym(state.peSymbol) + ")",
+            c.startMillis() + 60 * 1000L);
         saveToDisk();
         backfillLegHistory(state.ceSymbol);
         backfillLegHistory(state.peSymbol);

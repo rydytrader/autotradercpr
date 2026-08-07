@@ -47,7 +47,7 @@ public class HistoryReconcileService {
     private static final Logger log = LoggerFactory.getLogger(HistoryReconcileService.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     /** Fyers /history resolution for our 3-min bars. */
-    private static final String RESOLUTION = "3";
+    private static final String RESOLUTION = "1";
     /** How many polls to make before giving up. Observed: Fyers publishes just-closed
      *  3-min bars via /history within <100 ms — attempt 1 succeeds essentially every
      *  time. 2 × 500 ms retry gap gives Fyers enough time to publish on the rare miss
@@ -123,7 +123,7 @@ public class HistoryReconcileService {
      *  {@code barStartMs + BUCKET_LENGTH_MS}. Used to log how many ms after bar-end the
      *  reconcile call started, so the operator can distinguish "we called too early" from
      *  "Fyers is slow." */
-    private static final long BUCKET_LENGTH_MS = 2 * 60 * 1000L;
+    private static final long BUCKET_LENGTH_MS = 60 * 1000L;   // 1-min bars
 
     /** Fires the blocking fetch on {@link #asyncExecutor} and delivers the result to
      *  {@code onResult} (which may receive {@code null} on failure — always guarded).
