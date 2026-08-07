@@ -9,6 +9,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.net.URI;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 import java.util.function.Consumer;
 
@@ -55,6 +58,16 @@ public class GdflDataWebSocket extends WebSocketClient {
     private final Runnable onDisconnect;
 
     private volatile boolean authenticated = false;
+
+    /** Bounded ring of raw JSON frames whose {@code MessageType} isn't one of the
+     *  well-known types handled below. Populated in {@link #onMessage} so a
+     *  diagnostic controller can pull the most-recent server responses without
+     *  needing custom listener plumbing per message type. Useful for probing
+     *  {@code GetInstrumentsOnSearch} / {@code GetLastQuoteShort} / any GDFL
+     *  request-response we haven't hooked into the ticker path. */
+    private static final int UNKNOWN_FRAMES_CAP = 40;
+    private final Deque<String> unknownFrames = new ArrayDeque<>(UNKNOWN_FRAMES_CAP + 1);
+    private final Object unknownFramesLock = new Object();
 
     /** {@code gdflSymbols} may be empty at construction time — {@link GdflService}
      *  keeps it empty and calls {@link #subscribeSymbol} dynamically once OptionScalping
@@ -169,7 +182,42 @@ public class GdflDataWebSocket extends WebSocketClient {
         }
 
         // Subscribe / unsubscribe ACKs and any error frames — log for now, don't crash.
+        // Also stash the raw payload in a bounded ring so a diagnostic controller can
+        // pull the most-recent server responses (e.g. GetInstrumentsOnSearch result).
         log.debug("[GdflWS] frame type={} body={}", type, message);
+        synchronized (unknownFramesLock) {
+            unknownFrames.addLast(message);
+            while (unknownFrames.size() > UNKNOWN_FRAMES_CAP) unknownFrames.removeFirst();
+        }
+    }
+
+    /** Returns a snapshot of the most-recent unhandled server frames (newest last),
+     *  bounded by {@link #UNKNOWN_FRAMES_CAP}. Used by the diagnostic controller to
+     *  read back responses to probing requests like {@link #sendRawMessage}. */
+    public List<String> getRecentUnknownFrames() {
+        synchronized (unknownFramesLock) {
+            return new ArrayList<>(unknownFrames);
+        }
+    }
+
+    /** Sends an arbitrary JSON payload — for probing GDFL messages we don't have a
+     *  dedicated helper for (e.g. GetInstrumentsOnSearch to discover the NIFTY index
+     *  identifier). Returns {@code true} when the send completed. Caller is
+     *  responsible for message formatting. */
+    public boolean sendRawMessage(String jsonPayload) {
+        if (jsonPayload == null || jsonPayload.isBlank()) return false;
+        if (!authenticated) {
+            log.warn("[GdflWS] raw send requested but not authenticated yet — skipping");
+            return false;
+        }
+        try {
+            send(jsonPayload);
+            log.info("[GdflWS] raw send: {}", jsonPayload);
+            return true;
+        } catch (Exception e) {
+            log.warn("[GdflWS] raw send failed: {}", e.getMessage());
+            return false;
+        }
     }
 
     private void subscribeAll() {

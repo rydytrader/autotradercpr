@@ -152,6 +152,22 @@ public class GdflService {
         return wsClient != null && wsClient.isAuthenticated() ? "CONNECTED" : "CONNECTING";
     }
 
+    /** Diagnostic — sends an arbitrary GDFL message payload over the current WS.
+     *  Returns {@code false} when disabled, disconnected, or the send failed.
+     *  See {@link GdflDataWebSocket#sendRawMessage}. */
+    public boolean sendRaw(String jsonPayload) {
+        if (wsClient == null) return false;
+        return wsClient.sendRawMessage(jsonPayload);
+    }
+
+    /** Diagnostic — recent GDFL frames whose MessageType wasn't a well-known
+     *  ticker / OHLC / ACK type. Response frames for request-response calls
+     *  (e.g. GetInstrumentsOnSearch) land here. Newest last. */
+    public List<String> recentUnknownFrames() {
+        if (wsClient == null) return List.of();
+        return wsClient.getRecentUnknownFrames();
+    }
+
     @PreDestroy
     public void shutdown() {
         // Set BEFORE closing the socket so the onDisconnect callback
