@@ -10,7 +10,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * source. When {@link #enabled} is {@code false} (default), no WS connection is opened
  * and the Fyers feed remains the sole source for every symbol.
  *
- * <p>Subscription happens DYNAMICALLY once {@code OptionSelling} resolves the day's ATM CE
+ * <p>Subscription happens DYNAMICALLY once {@code OptionScalping} resolves the day's ATM CE
  * and PE (~09:18 IST). The two Fyers symbols carry the expiry embedded, so
  * {@code GdflSymbolMapper} decodes it from the string itself — no operator config for
  * the weekly expiry rollover.
@@ -37,7 +37,7 @@ public class GdflProperties {
     /** Seconds between reconnect attempts on disconnect. */
     private int reconnectDelaySeconds = 5;
 
-    /** How often to poll {@code OptionSelling} for the resolved ATM. Once the CE/PE symbols
+    /** How often to poll {@code OptionScalping} for the resolved ATM. Once the CE/PE symbols
      *  appear, GdflService subscribes them and stops polling for the day. */
     private int atmPollIntervalSeconds = 5;
 

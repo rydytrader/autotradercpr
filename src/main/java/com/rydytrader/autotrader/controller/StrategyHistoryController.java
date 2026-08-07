@@ -21,7 +21,7 @@ import java.util.Map;
 /**
  * Per-strategy history endpoints. The {@code strategyId} path variable is resolved
  * against every registered {@link Strategy} bean via bean-id-keyed {@code Map<String,
- * Strategy>} injection, so today's live overlay works for OPTION SELLING, OPTION
+ * Strategy>} injection, so today's live overlay works for OPTION SCALPING, OPTION
  * BUYING, and any future strategy without controller changes.
  */
 @RestController
@@ -73,7 +73,7 @@ public class StrategyHistoryController {
             totalNet     += s.getNetPnl();
             totalRolls   += s.getRolls();
         }
-        // 2. OptionSelling (and any other cycle-based strategies) persist per-cycle trade rows
+        // 2. OptionScalping (and any other cycle-based strategies) persist per-cycle trade rows
         // instead of session rows. Aggregate those by sessionDate into session-shaped maps
         // so the calendar's yearly view + day modal see real data. ONLY emit a row for
         // dates that don't already have a legacy session row, so we don't double-count.

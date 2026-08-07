@@ -1,7 +1,7 @@
 // ── Historical Chart modal ─────────────────────────────────────────────
 // Opens from the calendar page when the operator clicks the chart-icon
 // button in a day cell. Fetches /api/chart/historical?date=YYYY-MM-DD
-// and /api/strategies/option-selling/trades?date=… together, renders ATM CE
+// and /api/strategies/option-scalping/trades?date=… together, renders ATM CE
 // and ATM PE as two stacked TradingView Lightweight Charts panels
 // (candlestick + VWAP overlay, same look as the live /chart page).
 // Each entry from that session gets an ↑ marker on the bar it fired
@@ -199,7 +199,7 @@ window.HistoricalChartModal = (function() {
         // Parallel fetch — chart snapshot + trades for the same session. Trades
         // drive the entry / exit markers on the CE / PE panels.
         var chartUrl  = '/api/chart/historical?date=' + encodeURIComponent(dateStr);
-        var tradesUrl = '/api/strategies/option-selling/trades?date=' + encodeURIComponent(dateStr);
+        var tradesUrl = '/api/strategies/option-scalping/trades?date=' + encodeURIComponent(dateStr);
         Promise.all([
             fetch(chartUrl).then(function(r) { return r.status === 404 ? null : r.json(); }),
             fetch(tradesUrl).then(function(r) { return r.ok ? r.json() : { trades: [] }; })

@@ -24,7 +24,7 @@ import java.util.function.Consumer;
  * Fetches the exchange-authoritative OHLC for a just-closed 3-min bar from Fyers
  * {@code /data/history}. Local {@link CandleAggregator} bars are built from throttled WS
  * snapshots (~4 Hz) and can drift a few points from the true bar (open miss, brief-wick
- * high miss). The trigger-candle FSM in {@code OptionSelling} relies on {@code trigger.low}
+ * high miss). The trigger-candle FSM in {@code OptionScalping} relies on {@code trigger.low}
  * (SL floor) and the confirmation-candle close for its fire/no-fire decision — both need
  * to be authoritative for the FSM to match a TradingView chart.
  *
@@ -254,7 +254,7 @@ public class HistoryReconcileService {
             double low   = row.get(3).asDouble(0);
             double close = row.get(4).asDouble(0);
             long   vol   = row.size() >= 6 ? row.get(5).asLong(0) : 0L;
-            // /history doesn't publish VWAP — keep it at 0. OptionSelling reads VWAP from
+            // /history doesn't publish VWAP — keep it at 0. OptionScalping reads VWAP from
             // MarketDataService directly, not from the candle, so this is a no-op.
             return new Candle(open, high, low, close, vol, barStartMs, 0.0);
         }

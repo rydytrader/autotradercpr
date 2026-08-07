@@ -169,7 +169,7 @@
                 <span class="ah-stat-label" style="font-weight:700;">Strategy</span>
                 <div class="pill-row" id="strategyPills">
                     <button class="scope-pill active" data-strategy="all"             title="Combined stats across both strategies.">All</button>
-                    <button class="scope-pill"        data-strategy="option-selling"  title="OPTION SELLING only — VWAP + Premium ST short setups.">OPTION SELLING</button>
+                    <button class="scope-pill"        data-strategy="option-scalping"  title="OPTION SCALPING only — VWAP + Premium ST short setups.">OPTION SCALPING</button>
                     <button class="scope-pill"        data-strategy="option-buying"   title="OPTION BUYING only — ST + RSI + BB + Pivots long setups.">OPTION BUYING</button>
                 </div>
             </div>
@@ -441,7 +441,7 @@
     // ── Selectors ────────────────────────────────────────────────────────────
     var currentPeriod   = 'today';
     // Strategy filter — driven by the Strategy pill row. Values: 'all',
-    // 'option-selling', 'option-buying'. Passed as strategyId to the
+    // 'option-scalping', 'option-buying'. Passed as strategyId to the
     // /api/analytics/* endpoints which already filter by it.
     var currentStrategy = 'all';
     var currentIncludeAdjustments = false;   // Options Terminal removed — always off
@@ -540,7 +540,7 @@
         return { from: pickedYear + '-01-01', to: pickedYear + '-12-31' };
     }
 
-    // Strategy-pill injection retired (Commit A) — OptionSelling is the only strategy now, so
+    // Strategy-pill injection retired (Commit A) — OptionScalping is the only strategy now, so
     // the scope picker just defaults to "all" and there's nothing to inject. Commit B may
     // add a single CAMARILLA pill for label parity if needed.
 

@@ -2,7 +2,7 @@ package com.rydytrader.autotrader.gdfl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.rydytrader.autotrader.service.MarketDataService;
-import com.rydytrader.autotrader.service.strategy.OptionSelling;
+import com.rydytrader.autotrader.service.strategy.OptionScalping;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
@@ -34,8 +34,8 @@ import java.util.concurrent.TimeUnit;
  *   <li>{@link #boot()} opens the WS connection at Spring startup (if
  *       {@code gdfl.enabled=true}) and completes the {@code Authenticate} handshake.</li>
  *   <li>An in-process poller runs every {@code gdfl.atmPollIntervalSeconds} seconds.
- *       As soon as {@link OptionSelling#getCeSymbol()} + {@link OptionSelling#getPeSymbol()} are
- *       non-blank (i.e. OptionSelling has resolved the day's ATM at ~09:18 IST — either from
+ *       As soon as {@link OptionScalping#getCeSymbol()} + {@link OptionScalping#getPeSymbol()} are
+ *       non-blank (i.e. OptionScalping has resolved the day's ATM at ~09:18 IST — either from
  *       its own first-bar close or from a mid-day operator override), the poller
  *       converts the two Fyers-format symbols to GDFL contractwise identifiers via
  *       {@link GdflSymbolMapper}, sends {@code SubscribeRealtime} for each, and stops
@@ -60,7 +60,7 @@ public class GdflService {
     private final GdflProperties     props;
     private final GdflSymbolMapper   mapper;
     private final MarketDataService  marketDataService;
-    private final ObjectProvider<OptionSelling> optionSellingProvider;
+    private final ObjectProvider<OptionScalping> optionScalpingProvider;
     private final ScheduledExecutorService executor;
 
     private volatile GdflDataWebSocket wsClient;
@@ -86,11 +86,11 @@ public class GdflService {
     public GdflService(GdflProperties props,
                        GdflSymbolMapper mapper,
                        MarketDataService marketDataService,
-                       ObjectProvider<OptionSelling> optionSellingProvider) {
+                       ObjectProvider<OptionScalping> optionScalpingProvider) {
         this.props             = props;
         this.mapper            = mapper;
         this.marketDataService = marketDataService;
-        this.optionSellingProvider   = optionSellingProvider;
+        this.optionScalpingProvider   = optionScalpingProvider;
         this.executor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "gdfl-lifecycle");
             t.setDaemon(true);
@@ -214,7 +214,7 @@ public class GdflService {
     }
 
     /** Fires every {@code gdfl.atmPollIntervalSeconds}. Discovers today's ATM CE + PE
-     *  from OptionSelling and issues SubscribeRealtime for each — once and only once per day. */
+     *  from OptionScalping and issues SubscribeRealtime for each — once and only once per day. */
     private void checkAtmAndSubscribe() {
         try {
             // Only makes sense during market hours + a small warm-up window.
@@ -235,16 +235,16 @@ public class GdflService {
             // WS must be up + authenticated.
             if (wsClient == null || !wsClient.isAuthenticated()) return;
 
-            // Pre-warm window — OptionSelling.warmupIfDue populates ±10 strikes
+            // Pre-warm window — OptionScalping.warmupIfDue populates ±10 strikes
             // (42 CE + PE symbols) at 09:15. Subscribe them all on GDFL so the
             // 09:15-09:18 first bar has tick data for whichever strike ends up
             // as ATM. Comfortably under GDFL's 50-symbol cap. subscribeOne is
             // idempotent so the 5 s poll doesn't re-send SubscribeRealtime.
             //
-            // Once OptionSelling.trimWarmingSet narrows to just the ATM pair,
+            // Once OptionScalping.trimWarmingSet narrows to just the ATM pair,
             // getPreWarmSymbols() returns those two — no separate ATM subscribe
             // block needed.
-            OptionSelling strategy = optionSellingProvider.getIfAvailable();
+            OptionScalping strategy = optionScalpingProvider.getIfAvailable();
             if (strategy != null) {
                 for (String sym : strategy.getPreWarmSymbols()) {
                     subscribeOne(sym);

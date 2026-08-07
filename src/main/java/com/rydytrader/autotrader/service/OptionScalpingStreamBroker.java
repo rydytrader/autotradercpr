@@ -2,7 +2,7 @@ package com.rydytrader.autotrader.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.rydytrader.autotrader.service.strategy.OptionSelling;
+import com.rydytrader.autotrader.service.strategy.OptionScalping;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -23,22 +23,22 @@ import java.util.concurrent.CopyOnWriteArrayList;
  * also emits the latest payload so LTP/MTM keep refreshing on the open positions even when
  * no state mutation is happening.
  *
- * <p>The {@link OptionSelling} strategy is injected lazily via {@link ObjectProvider} to break the
- * OptionSelling → Broker → OptionSelling circular dependency on bean construction.
+ * <p>The {@link OptionScalping} strategy is injected lazily via {@link ObjectProvider} to break the
+ * OptionScalping → Broker → OptionScalping circular dependency on bean construction.
  */
 @Service
-public class OptionSellingStreamBroker {
+public class OptionScalpingStreamBroker {
 
-    private static final Logger log = LoggerFactory.getLogger(OptionSellingStreamBroker.class);
+    private static final Logger log = LoggerFactory.getLogger(OptionScalpingStreamBroker.class);
 
-    private final ObjectProvider<OptionSelling> optionSellingProvider;
+    private final ObjectProvider<OptionScalping> optionScalpingProvider;
     private final ObjectMapper mapper = new ObjectMapper()
         .registerModule(new JavaTimeModule())
         .findAndRegisterModules();
     private final List<SseEmitter> emitters = new CopyOnWriteArrayList<>();
 
-    public OptionSellingStreamBroker(ObjectProvider<OptionSelling> optionSellingProvider) {
-        this.optionSellingProvider = optionSellingProvider;
+    public OptionScalpingStreamBroker(ObjectProvider<OptionScalping> optionScalpingProvider) {
+        this.optionScalpingProvider = optionScalpingProvider;
     }
 
     public void addEmitter(SseEmitter e) {
@@ -67,7 +67,7 @@ public class OptionSellingStreamBroker {
             String json = mapper.writeValueAsString(payload);
             e.send(SseEmitter.event().name("state").data(json));
         } catch (Exception ex) {
-            log.warn("[OptionSellingStream] initial snapshot send failed: {}", ex.getMessage());
+            log.warn("[OptionScalpingStream] initial snapshot send failed: {}", ex.getMessage());
             emitters.remove(e);
         }
     }
@@ -78,7 +78,7 @@ public class OptionSellingStreamBroker {
         String json;
         try { json = mapper.writeValueAsString(payload); }
         catch (Exception e) {
-            log.warn("[OptionSellingStream] serialize failed (heartbeat will skip): {}", e.getMessage());
+            log.warn("[OptionScalpingStream] serialize failed (heartbeat will skip): {}", e.getMessage());
             return;
         }
         for (SseEmitter e : emitters) {
@@ -87,16 +87,16 @@ public class OptionSellingStreamBroker {
                 emitters.remove(e);
                 try { e.complete(); } catch (Exception ignored) {}
             } catch (Exception ex) {
-                log.debug("[OptionSellingStream] emitter send failed (removing): {}", ex.getMessage());
+                log.debug("[OptionScalpingStream] emitter send failed (removing): {}", ex.getMessage());
                 emitters.remove(e);
             }
         }
     }
 
     private Map<String, Object> currentState() {
-        OptionSelling c = optionSellingProvider.getIfAvailable();
+        OptionScalping c = optionScalpingProvider.getIfAvailable();
         if (c == null) return null;
         try { return c.dashboardState(); }
-        catch (Exception e) { log.warn("[OptionSellingStream] dashboardState threw: {}", e.getMessage()); return null; }
+        catch (Exception e) { log.warn("[OptionScalpingStream] dashboardState threw: {}", e.getMessage()); return null; }
     }
 }

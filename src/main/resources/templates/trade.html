@@ -207,7 +207,7 @@
     <!-- ── Overview hero — big NIFTY on the left, tiles on the right, ──────
          Technicals chip row across the bottom. Mirrors home.html's Overview
          card shape. Everything on this card updates live (NIFTY LTP via
-         ticker SSE, P&L / risk via /api/option-selling/state SSE, clock on
+         ticker SSE, P&L / risk via /api/option-scalping/state SSE, clock on
          a 1 s local tick, indicators via a 3 s poll). -->
     <div class="section-card fade-in" style="margin-bottom:20px;">
         <div class="section-header">
@@ -441,7 +441,7 @@
         var enabled = !!t.checked;
         label.textContent = enabled ? 'Trading ON' : 'Trading OFF';
         wrap.classList.toggle('disabled', !enabled);
-        fetch('/api/option-selling/enable', {
+        fetch('/api/option-scalping/enable', {
             method: 'POST',
             headers: csrfHeaders(),
             body: JSON.stringify({ enabled: enabled })
@@ -457,7 +457,7 @@
             danger:       true
         }).then(function(ok) {
             if (!ok) return;
-            fetch('/api/option-selling/squareoff', {
+            fetch('/api/option-scalping/squareoff', {
                 method: 'POST',
                 headers: csrfHeaders(),
                 body: '{}'
@@ -473,7 +473,7 @@
             danger:       true
         }).then(function(ok) {
             if (!ok) return;
-            fetch('/api/option-selling/squareoff', {
+            fetch('/api/option-scalping/squareoff', {
                 method: 'POST',
                 headers: csrfHeaders(),
                 body: JSON.stringify({ symbol: symbol })
@@ -493,16 +493,16 @@
         renderKillSwitch(d);
         // v2 header — NIFTY spot LTP + change + %change. No VWAP (index doesn't
         // have a meaningful VWAP; the gate was retired).
-        if (d.optionSelling) {
+        if (d.optionScalping) {
             // perSymbolLevels is retired (no pivots in the ATM VWAP strategy).
-            renderFutTickerCells(d.optionSelling.futLtp, d.optionSelling.futChange,
-                d.optionSelling.futChangePct, d.optionSelling.futSymbol, null);
+            renderFutTickerCells(d.optionScalping.futLtp, d.optionScalping.futChange,
+                d.optionScalping.futChangePct, d.optionScalping.futSymbol, null);
         }
         // (Market Clock card ticks independently on a 1 s interval — see updateMarketClock())
     }
 
     function renderHeader(d) {
-        // Initial / fallback render from the option-selling state stream (2 s heartbeat).
+        // Initial / fallback render from the option-scalping state stream (2 s heartbeat).
         // VIX still rides the per-tick ticker SSE.
         var vxEl  = document.getElementById('hdrVix');
         if (vxEl)  vxEl.textContent  = d.indiaVix  != null ? Number(d.indiaVix).toFixed(2)  : '—';
@@ -577,8 +577,8 @@
     }
 
     /** Fetch OPTION BUYING's state and merge its open positions + today's
-     *  closed cycles + event log INTO the OPTION SELLING state object that
-     *  `applyState` renders. OPTION SELLING is the "primary" strategy on this
+     *  closed cycles + event log INTO the OPTION SCALPING state object that
+     *  `applyState` renders. OPTION SCALPING is the "primary" strategy on this
      *  page (its stats power the hero tiles); OPTION BUYING gets folded into
      *  the merged position + event views without disturbing them. */
     function mergeOptionBuyingInto(sellingState) {
@@ -587,7 +587,7 @@
             .then(function(buying) {
                 var sellingPositions = (sellingState.openPositions || []).map(function(p) {
                     var q = Object.assign({}, p);
-                    q.__strategyId = 'option-selling';
+                    q.__strategyId = 'option-scalping';
                     return q;
                 });
                 var buyingPositions = ((buying && buying.openPositions) || []).map(function(p) {
@@ -621,7 +621,7 @@
                 // event-log renderer can prefix the source with the strategy pill.
                 var mergedEvents = (sellingState.recentEvents || []).map(function(e) {
                     var q = Object.assign({}, e);
-                    q.__strategyId = 'option-selling';
+                    q.__strategyId = 'option-scalping';
                     return q;
                 });
                 if (buying && buying.recentEvents) {
@@ -641,7 +641,7 @@
     }
 
     function loadState() {
-        fetch('/api/option-selling/state').then(function(r) { return r.json(); })
+        fetch('/api/option-scalping/state').then(function(r) { return r.json(); })
             .then(mergeOptionBuyingInto)
             .then(applyState)
             .catch(function() {});
@@ -659,12 +659,12 @@
     }
     function startStream() {
         try {
-            sseStream = new EventSource('/api/option-selling/stream');
+            sseStream = new EventSource('/api/option-scalping/stream');
             sseStream.addEventListener('state', function(ev) {
                 stopPollFallback();
                 try {
                     var sellingState = JSON.parse(ev.data);
-                    // OPTION SELLING pushes via SSE, OPTION BUYING doesn't — fetch it here.
+                    // OPTION SCALPING pushes via SSE, OPTION BUYING doesn't — fetch it here.
                     mergeOptionBuyingInto(sellingState).then(applyState);
                 } catch (e) {}
             });
@@ -738,7 +738,7 @@
         } else {
             tbody.innerHTML = positions.map(function(p, i) {
                 var pnl = Number(p.mtm || 0);
-                var strategyId = p.__strategyId || 'option-selling';
+                var strategyId = p.__strategyId || 'option-scalping';
                 // BUY position when either isShort=false or the row comes from
                 // OPTION BUYING (which flags side="CE_BUY"/"PE_BUY"). Otherwise SELL.
                 var isBuy = (p.isShort === false)
@@ -768,12 +768,12 @@
         }
     }
 
-    /** Small colored pill for the Strategy column. OPTION SELLING → amber
+    /** Small colored pill for the Strategy column. OPTION SCALPING → amber
      *  (theta/sell), OPTION BUYING → cyan (matches the entry-line color on
      *  the chart), MANUAL / unknown → grey. */
     function strategyPill(strategyId) {
         var id = String(strategyId || '').toLowerCase();
-        if (id === 'option-selling') {
+        if (id === 'option-scalping') {
             return '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;color:#fbbf24;background:rgba(251,191,36,0.10);border:1px solid rgba(251,191,36,0.35);">SELL</span>';
         }
         if (id === 'option-buying') {
@@ -873,7 +873,7 @@
     }
 
     // ── Tick-level position LTP / P&L update via the shared ticker SSE ──────
-    // The option-selling state stream pushes every 2 s. To get sub-second LTP/P&L
+    // The option-scalping state stream pushes every 2 s. To get sub-second LTP/P&L
     // refresh, we tap the same ticker channel used by the scrolling ticker —
     // it streams every WS tick for every subscribed symbol (including position
     // legs). For each tick that matches an open position, surgically update
@@ -890,7 +890,7 @@
         if (rowIdx < 0) return false;
         var p = positions[rowIdx];
         // OPTION BUYING positions are LONG (side ends with _BUY, or isShort=false);
-        // OPTION SELLING positions are SHORT. Flip P&L sign accordingly.
+        // OPTION SCALPING positions are SHORT. Flip P&L sign accordingly.
         var isBuy = (p.isShort === false)
             || (typeof p.side === 'string' && p.side.indexOf('_BUY') >= 0);
         var newMtm = isBuy
@@ -1114,7 +1114,7 @@
     //   RSI        → 14-period value coloured on 30 / 70 thresholds
     // Two parallel fetches:
     //   /api/option-buying/indicators — NIFTY ST/RSI/BB/pivots
-    //   /api/option-selling/indicators — ATM CE / PE premium ST
+    //   /api/option-scalping/indicators — ATM CE / PE premium ST
     function pollNiftyTechnicals() {
         if (document.visibilityState !== 'visible') return;
 
@@ -1188,7 +1188,7 @@
             .catch(function() { /* silent */ });
 
         // ATM CE + PE premium ST → SuperTrend tile's sub line.
-        fetch('/api/option-selling/indicators')
+        fetch('/api/option-scalping/indicators')
             .then(function(r) { return r.ok ? r.json() : null; })
             .then(function(d) {
                 if (!d) return;

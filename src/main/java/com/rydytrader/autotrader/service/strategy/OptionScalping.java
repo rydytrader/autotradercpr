@@ -7,7 +7,7 @@ import com.rydytrader.autotrader.dto.OrderDTO;
 import com.rydytrader.autotrader.entity.StrategyTradeEntity;
 import com.rydytrader.autotrader.repository.StrategyTradeRepository;
 import com.rydytrader.autotrader.service.AtmTracker;
-import com.rydytrader.autotrader.service.OptionSellingStreamBroker;
+import com.rydytrader.autotrader.service.OptionScalpingStreamBroker;
 import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.service.EventService;
 import com.rydytrader.autotrader.service.MarketDataService;
@@ -35,11 +35,11 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * NIFTY ATM 3-min VWAP option-selling strategy.
+ * NIFTY ATM 3-min VWAP option-scalping strategy.
  *
  * <p>First 3-min NIFTY spot bar close (~09:18 IST) captures the close price and locks
  * today's ATM strike (round to nearest 50). The strike's CE and PE symbols become the
- * two option legs for the session. From {@code optionSellingTradingStartTime} onward (default
+ * two option legs for the session. From {@code optionScalpingTradingStartTime} onward (default
  * 09:30 IST), each option's 3-min bar closes drive a trigger-candle state machine:
  *
  * <ul>
@@ -54,21 +54,21 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>Stop loss = trailing premium SuperTrend line. Exits are bar-close only:
  * bar CLOSE &gt; VWAP (VWAP_RECLAIM), premium ST flips green (ST_FLIP), or
- * timed squareoff at {@code optionSellingSquareOffTime}. No target, no
+ * timed squareoff at {@code optionScalpingSquareOffTime}. No target, no
  * tick-based SL. CE and PE can be short simultaneously.
  */
 @Service
-public class OptionSelling implements Strategy {
+public class OptionScalping implements Strategy {
 
-    private static final Logger log = LoggerFactory.getLogger(OptionSelling.class);
-    private static final String STRATEGY_ID = "option-selling";
+    private static final Logger log = LoggerFactory.getLogger(OptionScalping.class);
+    private static final String STRATEGY_ID = "option-scalping";
     /** Strategy ID written to DB rows for MANUAL-tagged trades. Analytics, calendar
      *  day-modal, and Trade Log filter on this string so manual scalps stay distinguishable
      *  from algorithm trades while still aggregating into the same portfolio totals. */
     public  static final String MANUAL_STRATEGY_ID = "manual";
     private static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    private static final String STATE_FILE = "../store/cache/option-selling-state.json";
+    private static final String STATE_FILE = "../store/cache/option-scalping-state.json";
     /** NIFTY option lot size — 65 (post 2025 revision). */
     private static final int    LOT_SIZE = 65;
     /** NIFTY option premium tick size — the minimum tradable price. */
@@ -127,13 +127,13 @@ public class OptionSelling implements Strategy {
     private final EventService          eventService;
     private final RiskSettingsStore     riskSettings;
     private final ObjectProvider<StrategyTradeRepository> tradeRepoProvider;
-    private final ObjectProvider<OptionSellingStreamBroker>     streamBrokerProvider;
+    private final ObjectProvider<OptionScalpingStreamBroker>     streamBrokerProvider;
     /** Fyers /history reconcile — swaps our WS-aggregated bar OHLC with the exchange-
      *  authoritative bar before the FSM commits to a fire/no-fire decision. Also used
      *  to backfill yesterday's session for NIFTY spot + ATM CE/PE so the SuperTrend
      *  indicator has 11+ bars available at 09:18 instead of waiting until ~09:48
      *  live-only warm-up. Provider so a stripped-down test context without the Fyers
-     *  client can still boot OptionSelling. */
+     *  client can still boot OptionScalping. */
     private final ObjectProvider<com.rydytrader.autotrader.service.HistoryReconcileService> historyReconcileProvider;
     /** GDFL config — read to skip Fyers WS + aggregator subscribes for option strikes
      *  when GDFL owns those symbols. Provider so the strategy still boots when the
@@ -157,7 +157,7 @@ public class OptionSelling implements Strategy {
      *  seeded / invalidated events fired N times. Cleared on day rollover, kill switch,
      *  logout — anywhere the session's option legs are released. */
     private final java.util.Set<String> aggregatorSubscribedSymbols = ConcurrentHashMap.newKeySet();
-    public OptionSelling(CandleAggregator candleAggregator,
+    public OptionScalping(CandleAggregator candleAggregator,
                    AtmTracker atmTracker,
                    BalancedAtmSelector atmSelector,
                    MarketDataService marketDataService,
@@ -165,7 +165,7 @@ public class OptionSelling implements Strategy {
                    EventService eventService,
                    RiskSettingsStore riskSettings,
                    ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
-                   ObjectProvider<OptionSellingStreamBroker> streamBrokerProvider,
+                   ObjectProvider<OptionScalpingStreamBroker> streamBrokerProvider,
                    ObjectProvider<com.rydytrader.autotrader.service.HistoryReconcileService> historyReconcileProvider,
                    ObjectProvider<com.rydytrader.autotrader.gdfl.GdflProperties> gdflPropertiesProvider) {
         this.candleAggregator           = candleAggregator;
@@ -231,7 +231,7 @@ public class OptionSelling implements Strategy {
     /** Push the latest dashboard state to every SSE-connected browser. No-op when no clients. */
     private void publishStream() {
         try {
-            OptionSellingStreamBroker b = streamBrokerProvider == null ? null : streamBrokerProvider.getIfAvailable();
+            OptionScalpingStreamBroker b = streamBrokerProvider == null ? null : streamBrokerProvider.getIfAvailable();
             if (b != null) b.publish();
         } catch (Exception ignored) {}
     }
@@ -250,7 +250,7 @@ public class OptionSelling implements Strategy {
         candleAggregator.subscribe(NIFTY_SYMBOL, c -> onCandleClose(NIFTY_SYMBOL, c));
         try { marketDataService.subscribeAdditional(java.util.List.of(NIFTY_SYMBOL)); }
         catch (Exception ignored) {}
-        log.info("[OptionSelling] boot — NIFTY spot subscribed: {}", NIFTY_SYMBOL);
+        log.info("[OptionScalping] boot — NIFTY spot subscribed: {}", NIFTY_SYMBOL);
 
         // Backfill yesterday's session on NIFTY spot so Gate C (spot SuperTrend)
         // is warm the moment the first 09:18 bar closes. Index /history is very
@@ -267,15 +267,15 @@ public class OptionSelling implements Strategy {
 
         // If today's ATM is already resolved (mid-day restart), re-subscribe the two option legs.
         try { ensureSessionLegsSubscribed(); }
-        catch (Exception e) { log.warn("[OptionSelling] session-legs boot re-subscribe failed: {}", e.getMessage()); }
+        catch (Exception e) { log.warn("[OptionScalping] session-legs boot re-subscribe failed: {}", e.getMessage()); }
 
         // If pre-warm was in progress before the crash (09:15-09:18 window), re-subscribe.
         try { resumeWarmingIfNeeded(); }
-        catch (Exception e) { log.warn("[OptionSelling] resume-warming failed: {}", e.getMessage()); }
+        catch (Exception e) { log.warn("[OptionScalping] resume-warming failed: {}", e.getMessage()); }
 
-        log.info("[OptionSelling] booted — enabled={}, lots={}, squareoff={}, restoredPositions={}",
-            riskSettings.isOptionSellingEnabled(), riskSettings.getOptionSellingLotsPerLeg(),
-            riskSettings.getOptionSellingSquareOffTime(), state.openPositions.size());
+        log.info("[OptionScalping] booted — enabled={}, lots={}, squareoff={}, restoredPositions={}",
+            riskSettings.isOptionScalpingEnabled(), riskSettings.getOptionScalpingLotsPerLeg(),
+            riskSettings.getOptionScalpingSquareOffTime(), state.openPositions.size());
     }
 
     private void pruneStaleEventsBeforeToday() {
@@ -288,7 +288,7 @@ public class OptionSelling implements Strategy {
         });
         int removed = before - state.recentEvents.size();
         if (removed > 0) {
-            log.info("[OptionSelling] pruned {} stale event(s) from before today's 00:00 IST", removed);
+            log.info("[OptionScalping] pruned {} stale event(s) from before today's 00:00 IST", removed);
             saveToDisk();
             publishStream();
         }
@@ -325,11 +325,11 @@ public class OptionSelling implements Strategy {
             }
             if (patched > 0) {
                 repo.saveAll(rows);
-                log.info("[OptionSelling] backfilled symbol/setup on {} legacy DB row(s) for {}",
+                log.info("[OptionScalping] backfilled symbol/setup on {} legacy DB row(s) for {}",
                     patched, state.dayKey);
             }
         } catch (Exception e) {
-            log.warn("[OptionSelling] backfill failed: {}", e.getMessage());
+            log.warn("[OptionScalping] backfill failed: {}", e.getMessage());
         }
     }
 
@@ -412,7 +412,7 @@ public class OptionSelling implements Strategy {
         if (state.doneForDay) return "DONE_FOR_DAY";
         return state.openPositions.isEmpty() ? "IDLE" : "OPEN(" + state.openPositions.size() + ")";
     }
-    @Override public boolean isEnabled() { return riskSettings.isOptionSellingEnabled(); }
+    @Override public boolean isEnabled() { return riskSettings.isOptionScalpingEnabled(); }
 
     @Override
     public boolean forceClose(String reason) {
@@ -609,11 +609,11 @@ public class OptionSelling implements Strategy {
         java.util.NavigableMap<Long, BalancedAtmSelector.ChainStrike> chain;
         try { chain = atmSelector.fetchChainStrikes(); }
         catch (Exception e) {
-            log.warn("[OptionSelling] pre-warm chain fetch failed: {}", e.getMessage());
+            log.warn("[OptionScalping] pre-warm chain fetch failed: {}", e.getMessage());
             return;
         }
         if (chain == null || chain.isEmpty()) {
-            log.warn("[OptionSelling] pre-warm skipped — empty chain response");
+            log.warn("[OptionScalping] pre-warm skipped — empty chain response");
             return;
         }
 
@@ -633,7 +633,7 @@ public class OptionSelling implements Strategy {
         }
 
         if (subs.isEmpty()) {
-            log.warn("[OptionSelling] pre-warm found no quoted strikes near {} (range {}–{})",
+            log.warn("[OptionScalping] pre-warm found no quoted strikes near {} (range {}–{})",
                 baseAtm, lo, hi);
             return;
         }
@@ -811,7 +811,7 @@ public class OptionSelling implements Strategy {
         BalancedAtmSelector.StrikeAtLevel row = atmSelector.resolveStrikeAtLevel(close);
         if (row == null || row.ceSymbol() == null || row.peSymbol() == null
             || row.ceSymbol().isBlank() || row.peSymbol().isBlank()) {
-            log.debug("[OptionSelling] ATM resolution deferred — chain row null for close {}", close);
+            log.debug("[OptionScalping] ATM resolution deferred — chain row null for close {}", close);
             return;
         }
 
@@ -849,7 +849,7 @@ public class OptionSelling implements Strategy {
         java.time.LocalDate yday = previousTradingDay();
         hist.fetchDayRangeAsync(symbol, yday, yday, bars -> {
             if (bars == null || bars.isEmpty()) {
-                log.info("[OptionSelling] backfill empty for {} on {} — SuperTrend will warm live", symbol, yday);
+                log.info("[OptionScalping] backfill empty for {} on {} — SuperTrend will warm live", symbol, yday);
                 return;
             }
             candleAggregator.prependHistory(symbol, bars);
@@ -948,7 +948,7 @@ public class OptionSelling implements Strategy {
     /** Per-option 3-min bar walk. Trigger-candle FSM described at the class-level Javadoc. */
     private void processOptionBar(String symbol, Candle c) {
         // Bar-level gate: skip bars whose START is before the configured
-        // optionSellingTradingStartTime. "Start = 09:18" means the 09:18 bar (closes
+        // optionScalpingTradingStartTime. "Start = 09:18" means the 09:18 bar (closes
         // at 09:21) is the first bar the FSM sees; the 09:15 opening bar is
         // pre-start and ignored — no seed, no fire, no promote, no invalidate.
         //
@@ -958,7 +958,7 @@ public class OptionSelling implements Strategy {
         // because its close event fires at wall clock 09:18:XX, which is not
         // before 09:18. OI subscription, pre-warm, and ATM resolution live
         // outside processOptionBar so they continue running from 09:15.
-        String startHhmm = riskSettings.getOptionSellingTradingStartTime();
+        String startHhmm = riskSettings.getOptionScalpingTradingStartTime();
         if (startHhmm != null && !startHhmm.isBlank()) {
             LocalTime startCfg = null;
             try { startCfg = LocalTime.parse(startHhmm); }
@@ -1186,7 +1186,7 @@ public class OptionSelling implements Strategy {
         Candle auth;
         try { auth = svc.fetchAuthoritative(symbol, bar.startMillis()); }
         catch (Exception e) {
-            log.warn("[OptionSelling] reconcile threw for {} bar {}: {}", symbol, bar.startMillis(), e.getMessage());
+            log.warn("[OptionScalping] reconcile threw for {} bar {}: {}", symbol, bar.startMillis(), e.getMessage());
             return bar;
         }
         if (auth == null) {
@@ -1206,21 +1206,21 @@ public class OptionSelling implements Strategy {
         // Best-effort — a miss just leaves the local bar visible on the chart while the
         // FSM still uses the authoritative value returned below.
         try { candleAggregator.updateHistoryEntry(symbol, auth); }
-        catch (Exception e) { log.warn("[OptionSelling] history-ring update failed for {}: {}", symbol, e.getMessage()); }
+        catch (Exception e) { log.warn("[OptionScalping] history-ring update failed for {}: {}", symbol, e.getMessage()); }
         return auth;
     }
 
 
     private boolean canFireNewEntry() {
         LocalTime now = ZonedDateTime.now(IST).toLocalTime();
-        String startHhmm = riskSettings.getOptionSellingTradingStartTime();
+        String startHhmm = riskSettings.getOptionScalpingTradingStartTime();
         if (startHhmm != null && !startHhmm.isBlank()) {
             try {
                 LocalTime start = LocalTime.parse(startHhmm);
                 if (now.isBefore(start)) return false;
             } catch (Exception ignored) {}
         }
-        String endHhmm = riskSettings.getOptionSellingTradingEndTime();
+        String endHhmm = riskSettings.getOptionScalpingTradingEndTime();
         if (endHhmm != null && !endHhmm.isBlank()) {
             try {
                 LocalTime end = LocalTime.parse(endHhmm);
@@ -1267,8 +1267,8 @@ public class OptionSelling implements Strategy {
         // cap; the trailing SL lets us take profit repeatedly without
         // consuming the loss budget.
         boolean isCeLeg = symbol.equals(state.ceSymbol);
-        int maxCe = riskSettings.getOptionSellingMaxCeTradesPerDay();
-        int maxPe = riskSettings.getOptionSellingMaxPeTradesPerDay();
+        int maxCe = riskSettings.getOptionScalpingMaxCeTradesPerDay();
+        int maxPe = riskSettings.getOptionScalpingMaxPeTradesPerDay();
         if (isCeLeg && maxCe > 0 && state.ceLossesToday >= maxCe) {
             event("[WARNING]", "Risk",
                 shortSym(symbol) + " — CE loss cap reached (" + state.ceLossesToday
@@ -1319,7 +1319,7 @@ public class OptionSelling implements Strategy {
             slLevel = trigger.high > 0 ? trigger.high : entryLtp;
         }
 
-        int qty = riskSettings.getOptionSellingLotsPerLeg() * LOT_SIZE;
+        int qty = riskSettings.getOptionScalpingLotsPerLeg() * LOT_SIZE;
 
         // Combined-risk gate — projected exposure after this entry must fit under portfolioMaxDailyLoss.
         if (maxRisk > 0) {
@@ -1342,7 +1342,7 @@ public class OptionSelling implements Strategy {
             }
         }
 
-        String productType = riskSettings.getOptionSellingOrderType();
+        String productType = riskSettings.getOptionScalpingOrderType();
         OrderDTO order = orderService.placeOrder(symbol, qty, -1, 0, productType);
         if (order == null || order.getId() == null || order.getId().isEmpty()) {
             event("[ERROR]", "AUTO ENTRY", "entry order rejected for " + shortSym(symbol));
@@ -1411,7 +1411,7 @@ public class OptionSelling implements Strategy {
                 // evaluateTrailingExit will trail it further if ST tightens.
                 saveToDisk();
             } catch (Exception e) {
-                log.warn("[OptionSelling] fill lookup failed for {}: {}", p.entryOrderId, e.getMessage());
+                log.warn("[OptionScalping] fill lookup failed for {}: {}", p.entryOrderId, e.getMessage());
             }
         }
     }
@@ -1420,7 +1420,7 @@ public class OptionSelling implements Strategy {
 
     public synchronized void watchSquareoff() {
         if (state.openPositions.isEmpty()) return;
-        String hhmm = riskSettings.getOptionSellingSquareOffTime();
+        String hhmm = riskSettings.getOptionScalpingSquareOffTime();
         if (hhmm == null || hhmm.isBlank()) return;
         LocalTime cutoff;
         try { cutoff = LocalTime.parse(hhmm); }
@@ -1440,7 +1440,7 @@ public class OptionSelling implements Strategy {
         if (p == null) return false;
         String symbol = p.symbol;
         String productType = (p.productType == null || p.productType.isBlank())
-            ? riskSettings.getOptionSellingOrderType()
+            ? riskSettings.getOptionScalpingOrderType()
             : p.productType;
         int closeSide = p.isShort ? +1 : -1;
         OrderDTO close = orderService.placeExitOrder(symbol, p.qty, closeSide, productType);
@@ -1467,7 +1467,7 @@ public class OptionSelling implements Strategy {
             try { exitPrice = marketDataService.getLtp(symbol); }
             catch (Exception ignored) {}
             if (exitPrice > 0) {
-                log.warn("[OptionSelling] exit fill not resolved for order {} on {} — persisting LTP {} as fallback",
+                log.warn("[OptionScalping] exit fill not resolved for order {} on {} — persisting LTP {} as fallback",
                     exitOrderId, symbol, round2(exitPrice));
             }
         }
@@ -1566,7 +1566,7 @@ public class OptionSelling implements Strategy {
             row.setExitCandleMs (exitCandleMs  > 0 ? exitCandleMs  : null);
             repo.save(row);
         } catch (Exception e) {
-            log.warn("[OptionSelling] persist trade failed: {}", e.getMessage());
+            log.warn("[OptionScalping] persist trade failed: {}", e.getMessage());
         }
     }
 
@@ -1620,10 +1620,10 @@ public class OptionSelling implements Strategy {
             StrategyTradeRepository repo = tradeRepoProvider == null ? null : tradeRepoProvider.getIfAvailable();
             if (repo != null) {
                 dbCleared = repo.deleteAllRows();
-                log.warn("[OptionSelling] clearAllRecords — DB deleteAllRows wiped {} rows", dbCleared);
+                log.warn("[OptionScalping] clearAllRecords — DB deleteAllRows wiped {} rows", dbCleared);
             }
         } catch (Exception e) {
-            log.warn("[OptionSelling] clearAllRecords DB wipe failed: {}", e.getMessage());
+            log.warn("[OptionScalping] clearAllRecords DB wipe failed: {}", e.getMessage());
         }
 
         event("[WARNING]", "Maintenance",
@@ -1631,7 +1631,7 @@ public class OptionSelling implements Strategy {
             + " events=" + eventsCleared
             + " dbRows=" + dbCleared
             + " (open positions preserved)");
-        log.warn("[OptionSelling] clearAllRecords — cycles={} events={} dbRows={} prevTradesToday={} prevConsLoss={}",
+        log.warn("[OptionScalping] clearAllRecords — cycles={} events={} dbRows={} prevTradesToday={} prevConsLoss={}",
             cyclesCleared, eventsCleared, dbCleared, prevTradesToday, prevConsecutiveLoss);
         publishStream();
 
@@ -1672,7 +1672,7 @@ public class OptionSelling implements Strategy {
                 dbCleared = repo.deleteBySessionDate(LocalDate.now(IST).toString());
             }
         } catch (Exception e) {
-            log.warn("[OptionSelling] clearTodayRecords DB wipe failed: {}", e.getMessage());
+            log.warn("[OptionScalping] clearTodayRecords DB wipe failed: {}", e.getMessage());
         }
 
         event("[WARNING]", "Maintenance",
@@ -1680,7 +1680,7 @@ public class OptionSelling implements Strategy {
             + " events=" + eventsCleared
             + " dbRows=" + dbCleared
             + " (open positions preserved)");
-        log.warn("[OptionSelling] clearTodayRecords — cycles={} events={} dbRows={} prevTradesToday={} prevConsLoss={}",
+        log.warn("[OptionScalping] clearTodayRecords — cycles={} events={} dbRows={} prevTradesToday={} prevConsLoss={}",
             cyclesCleared, eventsCleared, dbCleared, prevTradesToday, prevConsecutiveLoss);
         publishStream();
 
@@ -1696,7 +1696,7 @@ public class OptionSelling implements Strategy {
     @Scheduled(cron = "0 0 6 * * *", zone = "Asia/Kolkata")
     public synchronized void scheduledDailyReset() {
         String today = LocalDate.now(IST).toString();
-        log.info("[OptionSelling] 06:00 IST daily reset — clearing events + today's trades (was dayKey={})", state.dayKey);
+        log.info("[OptionScalping] 06:00 IST daily reset — clearing events + today's trades (was dayKey={})", state.dayKey);
         state.dayKey = today;
         state.tradesToday = 0;
         state.ceTradesToday = 0;
@@ -1844,7 +1844,7 @@ public class OptionSelling implements Strategy {
         out.put(prefix + "StIsUp",   st.available() && st.isUp());
     }
 
-    // ── Dashboard payload (consumed by OptionSellingController + Trade page) ─────
+    // ── Dashboard payload (consumed by OptionScalpingController + Trade page) ─────
 
     public synchronized Map<String, Object> dashboardState() {
         rolloverIfNewDay();
@@ -1907,7 +1907,7 @@ public class OptionSelling implements Strategy {
         vwap.put("peSymbol", "");
         vwap.put("ceVwap",   round2(safeVwap(state.ceSymbol)));
         vwap.put("peVwap",   round2(safeVwap(state.peSymbol)));
-        m.put("optionSelling", vwap);
+        m.put("optionScalping", vwap);
 
         // Open positions
         List<Map<String, Object>> rows = new ArrayList<>();
@@ -1977,7 +1977,7 @@ public class OptionSelling implements Strategy {
         public int    ceTradesToday;
         public int    peTradesToday;
         /** Per-leg LOSING trade counters — closes with netPnl < 0. These are
-         *  the counters gated by optionSellingMaxCe/PeTradesPerDay: once a leg
+         *  the counters gated by optionScalpingMaxCe/PeTradesPerDay: once a leg
          *  hits its loss cap for the day, no more entries fire on that side
          *  even if the total-trades count is lower. Winning trades don't
          *  consume the cap (trailing SL lets us capture profit without
@@ -2101,7 +2101,7 @@ public class OptionSelling implements Strategy {
     // ── Event log ────────────────────────────────────────────────────────────
 
     /** Public event-log wrapper for external callers (e.g. the kill-switch toggle in
-     *  OptionSellingController). Pushes into {@code state.recentEvents} for the Trade page
+     *  OptionScalpingController). Pushes into {@code state.recentEvents} for the Trade page
      *  event-log widget and mirrors the line to {@link EventService}. */
     public void postEvent(String severity, String source, String message) {
         event(severity, source, message);
@@ -2131,7 +2131,7 @@ public class OptionSelling implements Strategy {
         e.put("message",  message);
         state.recentEvents.add(0, e);
         while (state.recentEvents.size() > RECENT_EVENTS_LIMIT) state.recentEvents.remove(state.recentEvents.size() - 1);
-        if (eventService != null) eventService.log(severity + " [option-selling:" + source + "] " + message);
+        if (eventService != null) eventService.log(severity + " [option-scalping:" + source + "] " + message);
         publishStream();
     }
 
@@ -2156,7 +2156,7 @@ public class OptionSelling implements Strategy {
                 migrateOpenPositionsKeyFormat();
             }
         } catch (IOException e) {
-            log.warn("[OptionSelling] failed to load state: {}", e.getMessage());
+            log.warn("[OptionScalping] failed to load state: {}", e.getMessage());
         }
     }
 
@@ -2166,7 +2166,7 @@ public class OptionSelling implements Strategy {
             state.openPositions.values().removeIf(p -> p == null || p.setup == null);
             int after = state.openPositions.size();
             if (after != before) {
-                log.info("[OptionSelling] purged {} retired-setup entries from openPositions",
+                log.info("[OptionScalping] purged {} retired-setup entries from openPositions",
                     before - after);
             }
         }
@@ -2186,7 +2186,7 @@ public class OptionSelling implements Strategy {
             migrated.put(posKey(pos), pos);
         }
         state.openPositions = migrated;
-        log.info("[OptionSelling] migrated {} openPositions entries to composite keys",
+        log.info("[OptionScalping] migrated {} openPositions entries to composite keys",
             migrated.size());
     }
 
@@ -2199,7 +2199,7 @@ public class OptionSelling implements Strategy {
             Files.writeString(tmp, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(state));
             com.rydytrader.autotrader.util.FileIoUtils.atomicMoveWithRetry(tmp, dst);
         } catch (IOException e) {
-            log.warn("[OptionSelling] failed to save state: {}", e.getMessage());
+            log.warn("[OptionScalping] failed to save state: {}", e.getMessage());
         }
     }
 

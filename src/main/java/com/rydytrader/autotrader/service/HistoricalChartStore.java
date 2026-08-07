@@ -6,7 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.rydytrader.autotrader.dto.Candle;
-import com.rydytrader.autotrader.service.strategy.OptionSelling;
+import com.rydytrader.autotrader.service.strategy.OptionScalping;
 import com.rydytrader.autotrader.util.FileIoUtils;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
@@ -64,12 +64,12 @@ public class HistoricalChartStore {
         .setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
     private final CandleAggregator          candleAggregator;
-    private final ObjectProvider<OptionSelling>   optionSellingProvider;
+    private final ObjectProvider<OptionScalping>   optionScalpingProvider;
 
     public HistoricalChartStore(CandleAggregator candleAggregator,
-                                ObjectProvider<OptionSelling> optionSellingProvider) {
+                                ObjectProvider<OptionScalping> optionScalpingProvider) {
         this.candleAggregator = candleAggregator;
-        this.optionSellingProvider  = optionSellingProvider;
+        this.optionScalpingProvider  = optionScalpingProvider;
     }
 
     /** DTO written to disk. */
@@ -112,9 +112,9 @@ public class HistoricalChartStore {
      *  same file on repeat call). Callable manually via REST if needed. */
     public synchronized void saveTodaySnapshot() {
         String today = LocalDate.now(IST).toString();
-        OptionSelling atm = optionSellingProvider.getIfAvailable();
+        OptionScalping atm = optionScalpingProvider.getIfAvailable();
         if (atm == null) {
-            log.warn("[HistoricalChartStore] skip save — OptionSelling bean unavailable");
+            log.warn("[HistoricalChartStore] skip save — OptionScalping bean unavailable");
             return;
         }
         DailySnapshot snap = new DailySnapshot();

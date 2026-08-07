@@ -209,7 +209,7 @@ public class AnalyticsService {
         // exactly. The calendar year cards read these to populate per-month stat
         // cells without relying on the strategy-history endpoint (which can return
         // empty rows for dates where a legacy session entity exists alongside real
-        // OptionSelling trades).
+        // OptionScalping trades).
         for (Trade t : trades) {
             String date = t.sessionDate();
             if (date == null || date.length() < 7) continue;
@@ -356,7 +356,7 @@ public class AnalyticsService {
 
         // Iterate every registered strategy independently. Each contributes its own
         // ring of today-closed cycles + its own OPEN_POSITION_MTM remainder so today's
-        // analytics rolls up across BOTH OPTION SELLING and OPTION BUYING once the
+        // analytics rolls up across BOTH OPTION SCALPING and OPTION BUYING once the
         // second strategy lands.
         for (Strategy strat : strategies.values()) {
             if (strat == null) continue;
@@ -445,7 +445,7 @@ public class AnalyticsService {
     }
 
     private LocalDate currentExpiryStart(LocalDate today) {
-        // OptionSelling doesn't pin to a specific weekly expiry — it trades whatever this week's
+        // OptionScalping doesn't pin to a specific weekly expiry — it trades whatever this week's
         // weekly is. The "current expiry" period therefore just rolls back 7 days from today.
         return today.minusDays(7);
     }

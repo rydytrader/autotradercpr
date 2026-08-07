@@ -28,7 +28,7 @@ import java.util.function.Consumer;
  * start time and held fixed for the rest of the session.
  *
  * <p>The ATM is resolved once per session — on the first NIFTY tick at or after
- * {@code optionSellingTradingStartTime} (default 09:30 IST, configurable in
+ * {@code optionScalpingTradingStartTime} (default 09:30 IST, configurable in
  * Settings) — and held fixed for the entire trading day. There is no intraday
  * drift check. If NIFTY moves 200 points by midday, the ATM the strategy was
  * set up around at start time stays the strategy's anchor. The watchlist, OI
@@ -41,7 +41,7 @@ import java.util.function.Consumer;
  *       NIFTY settle before locking the ATM avoids anchoring on a wick / gap
  *       that doesn't represent the day's true tradeable range.</li>
  *   <li>The strategy doesn't need it earlier — entry detection
- *       starts only after the same {@code optionSellingTradingStartTime} gate.</li>
+ *       starts only after the same {@code optionScalpingTradingStartTime} gate.</li>
  *   <li>NSE-cumulative VWAP (used by the L4/VWAP breakdown filter) starts
  *       accumulating at 09:15 regardless of when we subscribe, so the late
  *       subscribe loses no VWAP history.</li>
@@ -194,7 +194,7 @@ public class AtmTracker {
 
     /** Resolve the ATM from the current NIFTY LTP and fire the bootstrap event.
      *  No-op when already baselined (the lock is intentional — no drift), before
-     *  the configured {@code optionSellingTradingStartTime}, after 15:30 IST, or when
+     *  the configured {@code optionScalpingTradingStartTime}, after 15:30 IST, or when
      *  the spot can't be read yet. */
     private void tryResolveOnce() {
         if (baselineAtm > 0) return;
@@ -205,7 +205,7 @@ public class AtmTracker {
         // start time (default 09:30). Parsed every poll so a settings edit at
         // 09:18 still applies to today's resolution. Malformed/missing values
         // fall back to 09:15 — same as the legacy behaviour, fail-safe.
-        LocalTime startTime = parseStartTime(riskSettings.getOptionSellingTradingStartTime());
+        LocalTime startTime = parseStartTime(riskSettings.getOptionScalpingTradingStartTime());
         if (t.isBefore(startTime)) return;
 
         double spot;
@@ -226,7 +226,7 @@ public class AtmTracker {
     }
 
     /** Atomically write the current baseline + today's IST date to the
-     *  restore file. Same tmp+move pattern the OptionSelling state uses. Silent on
+     *  restore file. Same tmp+move pattern the OptionScalping state uses. Silent on
      *  failure — disk is a recovery aid, not a correctness dependency. */
     private void saveToDisk() {
         try {

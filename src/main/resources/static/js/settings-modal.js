@@ -18,15 +18,15 @@
                 '</div>' +
                 '<div id="sm-tabstrip" style="display:flex;border-bottom:1px solid var(--border);padding:0 24px;overflow-x:auto;"></div>' +
                 '<div class="sm-body" id="sm-body" style="flex:1;overflow-y:auto;padding:20px 24px;">' +
-                  '<div class="sm-pane" data-pane="option-selling" style="display:none;">' +
+                  '<div class="sm-pane" data-pane="option-scalping" style="display:none;">' +
                     '<div class="sm-grid-2col">' +
-                      '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-optionSellingLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 65 NIFTY.</div></div>' +
-                      '<div class="sm-field"><label>Order Type</label><select id="sm-optionSellingOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select></div>' +
-                      '<div class="sm-field"><label>Trading Start (HH:mm IST)</label><input type="time" id="sm-optionSellingTradingStartTime" step="60"><div class="sm-hint">Entries fire only after this time. Default 09:18 — first fire opportunity at 09:24 (3-min bars).</div></div>' +
-                      '<div class="sm-field"><label>Trading End (HH:mm IST)</label><input type="time" id="sm-optionSellingTradingEndTime" step="60"><div class="sm-hint">No new entries after this time. Default 14:30.</div></div>' +
-                      '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-optionSellingSquareOffTime" step="60"><div class="sm-hint">Hard exit if SL didn\'t trigger. Default 15:25.</div></div>' +
-                      '<div class="sm-field"><label>Max CE trades/day</label><input type="number" id="sm-optionSellingMaxCeTradesPerDay" step="1" min="0"><div class="sm-hint">Hard cap on CE-side fires. Default 3.</div></div>' +
-                      '<div class="sm-field"><label>Max PE trades/day</label><input type="number" id="sm-optionSellingMaxPeTradesPerDay" step="1" min="0"><div class="sm-hint">Hard cap on PE-side fires. Default 3.</div></div>' +
+                      '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-optionScalpingLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 65 NIFTY.</div></div>' +
+                      '<div class="sm-field"><label>Order Type</label><select id="sm-optionScalpingOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select></div>' +
+                      '<div class="sm-field"><label>Trading Start (HH:mm IST)</label><input type="time" id="sm-optionScalpingTradingStartTime" step="60"><div class="sm-hint">Entries fire only after this time. Default 09:18 — first fire opportunity at 09:24 (3-min bars).</div></div>' +
+                      '<div class="sm-field"><label>Trading End (HH:mm IST)</label><input type="time" id="sm-optionScalpingTradingEndTime" step="60"><div class="sm-hint">No new entries after this time. Default 14:30.</div></div>' +
+                      '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-optionScalpingSquareOffTime" step="60"><div class="sm-hint">Hard exit if SL didn\'t trigger. Default 15:25.</div></div>' +
+                      '<div class="sm-field"><label>Max CE trades/day</label><input type="number" id="sm-optionScalpingMaxCeTradesPerDay" step="1" min="0"><div class="sm-hint">Hard cap on CE-side fires. Default 3.</div></div>' +
+                      '<div class="sm-field"><label>Max PE trades/day</label><input type="number" id="sm-optionScalpingMaxPeTradesPerDay" step="1" min="0"><div class="sm-hint">Hard cap on PE-side fires. Default 3.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="option-buying" style="display:none;">' +
@@ -146,7 +146,7 @@
         var strip = document.getElementById('sm-tabstrip');
         if (!strip) return;
         var html = '';
-        html += '<button class="sm-tab" data-tab="option-selling">OPTION SELLING</button>';
+        html += '<button class="sm-tab" data-tab="option-scalping">OPTION SCALPING</button>';
         html += '<button class="sm-tab" data-tab="option-buying">OPTION BUYING</button>';
         html += '<button class="sm-tab" data-tab="portfolio-risk">RISK</button>';
         html += '<button class="sm-tab" data-tab="charges">CHARGES</button>';
@@ -165,9 +165,9 @@
             b.classList.toggle('active', b.getAttribute('data-tab') === tab);
         });
         modalEl.querySelectorAll('.sm-pane').forEach(function(p) { p.style.display = 'none'; });
-        if (tab === 'option-selling') {
-            var cp = modalEl.querySelector('[data-pane="option-selling"]'); if (cp) cp.style.display = '';
-            loadOptionSellingValues();
+        if (tab === 'option-scalping') {
+            var cp = modalEl.querySelector('[data-pane="option-scalping"]'); if (cp) cp.style.display = '';
+            loadOptionScalpingValues();
         } else if (tab === 'option-buying') {
             var ob = modalEl.querySelector('[data-pane="option-buying"]'); if (ob) ob.style.display = '';
             loadOptionBuyingValues();
@@ -185,7 +185,7 @@
     }
 
     function saveSettings() {
-        if (activeTab === 'option-selling') return saveOptionSellingTab();
+        if (activeTab === 'option-scalping') return saveOptionScalpingTab();
         if (activeTab === 'option-buying')  return saveOptionBuyingTab();
         if (activeTab === 'portfolio-risk') return savePortfolioRiskTab();
         if (activeTab === 'charges')        return saveChargesTab();
@@ -193,30 +193,30 @@
         showBanner('No save action for this tab.', 'info');
     }
 
-    function loadOptionSellingValues() {
+    function loadOptionScalpingValues() {
         fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
             var g = id => document.getElementById(id);
-            if (g('sm-optionSellingLotsPerLeg'))        g('sm-optionSellingLotsPerLeg').value = d.optionSellingLotsPerLeg != null ? d.optionSellingLotsPerLeg : 1;
-            if (g('sm-optionSellingOrderType'))         g('sm-optionSellingOrderType').value = d.optionSellingOrderType || 'INTRADAY';
-            if (g('sm-optionSellingTradingStartTime'))  g('sm-optionSellingTradingStartTime').value = d.optionSellingTradingStartTime || '09:18';
-            if (g('sm-optionSellingTradingEndTime'))    g('sm-optionSellingTradingEndTime').value = d.optionSellingTradingEndTime || '14:30';
-            if (g('sm-optionSellingSquareOffTime'))     g('sm-optionSellingSquareOffTime').value = d.optionSellingSquareOffTime || '15:25';
-            if (g('sm-optionSellingMaxCeTradesPerDay')) g('sm-optionSellingMaxCeTradesPerDay').value = d.optionSellingMaxCeTradesPerDay != null ? d.optionSellingMaxCeTradesPerDay : 3;
-            if (g('sm-optionSellingMaxPeTradesPerDay')) g('sm-optionSellingMaxPeTradesPerDay').value = d.optionSellingMaxPeTradesPerDay != null ? d.optionSellingMaxPeTradesPerDay : 3;
+            if (g('sm-optionScalpingLotsPerLeg'))        g('sm-optionScalpingLotsPerLeg').value = d.optionScalpingLotsPerLeg != null ? d.optionScalpingLotsPerLeg : 1;
+            if (g('sm-optionScalpingOrderType'))         g('sm-optionScalpingOrderType').value = d.optionScalpingOrderType || 'INTRADAY';
+            if (g('sm-optionScalpingTradingStartTime'))  g('sm-optionScalpingTradingStartTime').value = d.optionScalpingTradingStartTime || '09:18';
+            if (g('sm-optionScalpingTradingEndTime'))    g('sm-optionScalpingTradingEndTime').value = d.optionScalpingTradingEndTime || '14:30';
+            if (g('sm-optionScalpingSquareOffTime'))     g('sm-optionScalpingSquareOffTime').value = d.optionScalpingSquareOffTime || '15:25';
+            if (g('sm-optionScalpingMaxCeTradesPerDay')) g('sm-optionScalpingMaxCeTradesPerDay').value = d.optionScalpingMaxCeTradesPerDay != null ? d.optionScalpingMaxCeTradesPerDay : 3;
+            if (g('sm-optionScalpingMaxPeTradesPerDay')) g('sm-optionScalpingMaxPeTradesPerDay').value = d.optionScalpingMaxPeTradesPerDay != null ? d.optionScalpingMaxPeTradesPerDay : 3;
         }).catch(function() {});
     }
 
-    function saveOptionSellingTab() {
+    function saveOptionScalpingTab() {
         var g = id => document.getElementById(id);
         var body = {
-            optionSellingLotsPerLeg:         parseInt(g('sm-optionSellingLotsPerLeg').value, 10) || 1,
-            optionSellingOrderType:          g('sm-optionSellingOrderType').value,
-            optionSellingTradingStartTime:   (g('sm-optionSellingTradingStartTime').value || '').trim(),
-            optionSellingTradingEndTime:     (g('sm-optionSellingTradingEndTime').value || '').trim(),
-            optionSellingSquareOffTime:      (g('sm-optionSellingSquareOffTime').value || '').trim(),
-            optionSellingMaxCeTradesPerDay:  parseInt(g('sm-optionSellingMaxCeTradesPerDay').value, 10) || 0,
-            optionSellingMaxPeTradesPerDay:  parseInt(g('sm-optionSellingMaxPeTradesPerDay').value, 10) || 0
+            optionScalpingLotsPerLeg:         parseInt(g('sm-optionScalpingLotsPerLeg').value, 10) || 1,
+            optionScalpingOrderType:          g('sm-optionScalpingOrderType').value,
+            optionScalpingTradingStartTime:   (g('sm-optionScalpingTradingStartTime').value || '').trim(),
+            optionScalpingTradingEndTime:     (g('sm-optionScalpingTradingEndTime').value || '').trim(),
+            optionScalpingSquareOffTime:      (g('sm-optionScalpingSquareOffTime').value || '').trim(),
+            optionScalpingMaxCeTradesPerDay:  parseInt(g('sm-optionScalpingMaxCeTradesPerDay').value, 10) || 0,
+            optionScalpingMaxPeTradesPerDay:  parseInt(g('sm-optionScalpingMaxPeTradesPerDay').value, 10) || 0
         };
         postSettings('/api/settings/risk', body);
     }
@@ -351,12 +351,12 @@
             buildTabs();
             loadChargesValues();
             modalEl.dataset.tabsBuilt = '1';
-            switchTab('option-selling');
+            switchTab('option-scalping');
         } else {
-            if (activeTab === 'option-selling')             loadOptionSellingValues();
+            if (activeTab === 'option-scalping')             loadOptionScalpingValues();
             else if (activeTab === 'portfolio-risk') loadPortfolioRiskValues();
             else if (activeTab === 'charges')        loadChargesValues();
-            else                                     switchTab('option-selling');
+            else                                     switchTab('option-scalping');
         }
     }
 

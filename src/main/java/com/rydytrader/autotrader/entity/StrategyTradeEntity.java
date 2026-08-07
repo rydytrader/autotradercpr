@@ -35,7 +35,7 @@ public class StrategyTradeEntity {
     private String symbol;
 
     /** The setup that opened this cycle — {@code CE_SELL} or {@code PE_SELL} for
-     *  current OptionSelling trades. Historic Camarilla-era rows carry the retired
+     *  current OptionScalping trades. Historic Camarilla-era rows carry the retired
      *  {@code H3_REVERSAL} / {@code L4_BREAKDOWN} / {@code H4_BREAKOUT} /
      *  {@code L3_REVERSAL} / {@code VWAP_BREAKDOWN} values. Nullable for legacy
      *  rows persisted before this column existed — readers backfill from the
