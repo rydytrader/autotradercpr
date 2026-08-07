@@ -66,14 +66,15 @@ public class CandleAggregator {
      *  active. See {@link #GRACE_MS}. */
     private final Map<String, PendingBucket> pendingBySymbol = new ConcurrentHashMap<>();
     /** How long a pending bucket stays open after its bar boundary to absorb
-     *  late-arriving LTT ticks. Set to 0 — bar closes fire the instant a
-     *  boundary tick arrives, no wait. The strategy entry gate cares only
-     *  about the close price relative to VWAP (and the bar high for SL calc)
-     *  — a late LTT that would have shifted OHLC by a fraction of a point
-     *  is not worth 3 s of entry latency. If a subsequent bar boundary is
-     *  crossed while a pending is still open (only possible when GRACE_MS
-     *  > 0), the pending is emitted immediately. */
-    private static final long GRACE_MS = 0;
+     *  late-arriving LTT ticks. Set to 1500 ms — enough to catch the tail of
+     *  GDFL's throttled tick stream (typical straggler latency 200-800 ms) so
+     *  a late tick whose LTT falls in the just-closed bar merges into the
+     *  bar's OHLC instead of being dropped as stale. Close listener still
+     *  fires immediately on boundary; the grace merge silently corrects the
+     *  bar in the history ring for subsequent readers (chart, /history poll,
+     *  indicator recomputes). If a subsequent bar boundary is crossed while
+     *  a pending is still open, the pending is emitted immediately. */
+    private static final long GRACE_MS = 1500;
     private final Map<String, CopyOnWriteArrayList<Consumer<Candle>>> listenersBySymbol = new ConcurrentHashMap<>();
     /** Closed 3-min candles per symbol, kept in a bounded FIFO ring. Populated by
      *  {@link #appendHistoryAndFire} so the chart page can render the day's session without a
@@ -516,10 +517,18 @@ public class CandleAggregator {
             // that's still in its grace window. Merge into pending's OHLC instead
             // of dropping. The pending bar's close is emitted later by sample()
             // when grace expires (or by a subsequent boundary crossing).
+            // Same LTT-ordering rules as the within-bucket branch below.
             if (pb != null && pb.bucket.currentBucketMinute == bucketStart && nowMs < pb.graceExpireMs) {
                 if (ltp > pb.bucket.highPx) pb.bucket.highPx = ltp;
                 if (ltp < pb.bucket.lowPx)  pb.bucket.lowPx  = ltp;
-                pb.bucket.closePx = ltp;
+                if (tickSec > 0 && (pb.bucket.openLttSec == 0 || tickSec < pb.bucket.openLttSec)) {
+                    pb.bucket.openPx = ltp;
+                    pb.bucket.openLttSec = tickSec;
+                }
+                if (tickSec == 0 || tickSec >= pb.bucket.closeLttSec) {
+                    pb.bucket.closePx = ltp;
+                    if (tickSec > 0) pb.bucket.closeLttSec = tickSec;
+                }
                 if (t.atp() > 0) pb.bucket.vwapLast = t.atp();
                 pb.bucket.tickCount++;
                 log.debug("[CandleAggregator] {} GRACE ABSORB — bucketStart={} ltp={} lttTime={} eftTime={} localTime={} graceLeftMs={}",
@@ -553,7 +562,7 @@ public class CandleAggregator {
             }
 
             if (b.currentBucketMinute < 0) {
-                b.start(bucketStart, ltp, ZonedDateTime.now(IST));
+                b.start(bucketStart, ltp, tickSec, ZonedDateTime.now(IST));
                 if (t.atp() > 0) b.vwapLast = t.atp();
             } else if (bucketStart < b.currentBucketMinute) {
                 // Backward roll — bucket older than active but not older than wall
@@ -579,12 +588,27 @@ public class CandleAggregator {
                     preemptedPending = snapshot(b);
                 }
                 b.reset();
-                b.start(bucketStart, ltp, ZonedDateTime.now(IST));
+                b.start(bucketStart, ltp, tickSec, ZonedDateTime.now(IST));
                 if (t.atp() > 0) b.vwapLast = t.atp();
             } else {
+                // Within-bucket update. Highs / lows are order-independent.
+                // OPEN / CLOSE MUST respect LTT ordering: under GDFL throttling
+                // ticks arrive out-of-LTT-order. A later-arriving tick with an
+                // EARLIER LTT than openLttSec belongs before the current open —
+                // correct open to that tick's LTP. A tick with LTT strictly
+                // AFTER closeLttSec is a new "latest" trade — correct close.
                 if (ltp > b.highPx) b.highPx = ltp;
                 if (ltp < b.lowPx)  b.lowPx  = ltp;
-                b.closePx = ltp;
+                if (tickSec > 0 && (b.openLttSec == 0 || tickSec < b.openLttSec)) {
+                    b.openPx = ltp;
+                    b.openLttSec = tickSec;
+                }
+                if (tickSec == 0 || tickSec >= b.closeLttSec) {
+                    // tickSec==0: no LTT available — accept as "latest" (fallback).
+                    // tickSec>=closeLttSec: legitimately equal-or-newer trade time.
+                    b.closePx = ltp;
+                    if (tickSec > 0) b.closeLttSec = tickSec;
+                }
                 if (t.atp() > 0) b.vwapLast = t.atp();
                 b.tickCount++;
             }
@@ -644,7 +668,62 @@ public class CandleAggregator {
             existing.close(), merged.close());
     }
 
-    /** Closed 3-min candles for {@code symbol} in chronological order. Empty when the
+    /** Overwrite-or-insert a canonical OHLC bar (typically from GDFL
+     *  SnapshotResult / HistoryResult — server-side aggregated, so matches
+     *  TradingView). Unlike {@link #updateHistoryEntry} which only replaces
+     *  existing rows, this one INSERTS in chronological order when no row
+     *  exists at the bar's startMillis. Preserves aggregator's VWAP on the
+     *  matching row when the canonical bar has vwap=0 (GDFL's OHLC frames
+     *  don't publish session VWAP; we use per-symbol ATP for that).
+     *
+     *  <p>Does NOT re-fire close listeners — this is a "correct the closed
+     *  bar the operator sees on the chart" path, not a "fire the FSM again"
+     *  path. Tick-aggregated close listeners have already run once. */
+    public void overwriteBar(String symbol, Candle canonical) {
+        if (symbol == null || symbol.isBlank() || canonical == null) return;
+        long targetStart = canonical.startMillis();
+        if (targetStart <= 0) return;
+        Deque<Candle> ring = historyBySymbol.computeIfAbsent(symbol, k -> new ConcurrentLinkedDeque<>());
+        synchronized (ring) {
+            List<Candle> snapshot = new ArrayList<>(ring);
+            int foundIdx = -1;
+            int insertIdx = snapshot.size();   // default: append
+            for (int i = snapshot.size() - 1; i >= 0; i--) {
+                long s = snapshot.get(i).startMillis();
+                if (s == targetStart) { foundIdx = i; break; }
+                if (s < targetStart)  { insertIdx = i + 1; break; }
+                insertIdx = i;   // canonical is older than snapshot.get(i)
+            }
+            Candle merged;
+            if (foundIdx >= 0) {
+                Candle existing = snapshot.get(foundIdx);
+                merged = new Candle(
+                    canonical.open(), canonical.high(), canonical.low(), canonical.close(),
+                    canonical.volume() > 0 ? canonical.volume() : existing.volume(),
+                    existing.startMillis(),
+                    canonical.vwap() > 0 ? canonical.vwap() : existing.vwap());
+                snapshot.set(foundIdx, merged);
+                log.info("[CandleAggregator] {} canonical OVERWRITE at index {}/{} startMillis={} — o {}→{} h {}→{} l {}→{} c {}→{}",
+                    symbol, foundIdx, snapshot.size() - 1, targetStart,
+                    existing.open(),  merged.open(),
+                    existing.high(),  merged.high(),
+                    existing.low(),   merged.low(),
+                    existing.close(), merged.close());
+            } else {
+                merged = canonical;
+                snapshot.add(insertIdx, merged);
+                log.info("[CandleAggregator] {} canonical INSERT at index {}/{} startMillis={} — {} / {} / {} / {}",
+                    symbol, insertIdx, snapshot.size() - 1, targetStart,
+                    merged.open(), merged.high(), merged.low(), merged.close());
+            }
+            ring.clear();
+            ring.addAll(snapshot);
+            while (ring.size() > HISTORY_CAP) ring.pollFirst();
+        }
+        dirty = true;
+    }
+
+    /** Closed candles for {@code symbol} in chronological order. Empty when the
      *  symbol hasn't rolled a bucket yet (freshly subscribed, or pre-market boot). */
     public List<Candle> getHistory(String symbol) {
         Deque<Candle> ring = historyBySymbol.get(symbol);
@@ -721,6 +800,16 @@ public class CandleAggregator {
         int currentBucketMinute = -1;
         long currentBucketStartMs = 0;
         double openPx = 0, highPx = 0, lowPx = 0, closePx = 0;
+        /** LTT (LastTradedTime, exchange authoritative) of the tick that currently
+         *  owns {@link #openPx}. Under GDFL throttling ticks arrive out-of-LTT-order —
+         *  we need to remember which LTT set the open so a later-arriving tick with
+         *  an EARLIER LTT can correct it. 0 means "no tick has been recorded yet". */
+        long openLttSec = 0;
+        /** LTT of the tick that currently owns {@link #closePx}. A tick arriving now
+         *  with an EARLIER LTT than closeLttSec means its trade happened before the
+         *  current close-owner's; we must not use it to overwrite close (that would
+         *  regress the bar). */
+        long closeLttSec = 0;
         /** Session VWAP as of the most recent sample. Preserved across bucket rolls so
          *  the overlay curve stays continuous (VWAP is cumulative-since-open, not
          *  per-bar). */
@@ -730,7 +819,7 @@ public class CandleAggregator {
          *  throttle or genuinely quiet market window). */
         int tickCount = 0;
 
-        void start(int bucketStart, double ltp, ZonedDateTime nowIst) {
+        void start(int bucketStart, double ltp, long tickLttSec, ZonedDateTime nowIst) {
             currentBucketMinute  = bucketStart;
             ZonedDateTime bucketStartTime = nowIst.withHour(bucketStart / 60)
                 .withMinute(bucketStart % 60)
@@ -741,6 +830,8 @@ public class CandleAggregator {
             highPx  = ltp;
             lowPx   = ltp;
             closePx = ltp;
+            openLttSec  = tickLttSec;
+            closeLttSec = tickLttSec;
             tickCount = 1;   // start() is called ON the first tick of the bucket
             // vwapLast intentionally NOT reset — VWAP is a running session metric.
         }
@@ -749,6 +840,7 @@ public class CandleAggregator {
             currentBucketMinute = -1;
             currentBucketStartMs = 0;
             openPx = highPx = lowPx = closePx = 0;
+            openLttSec = closeLttSec = 0;
             vwapLast = 0;
             tickCount = 0;
         }

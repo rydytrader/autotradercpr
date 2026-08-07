@@ -1,6 +1,8 @@
 package com.rydytrader.autotrader.gdfl;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.rydytrader.autotrader.dto.Candle;
+import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.strategy.OptionScalping;
 import jakarta.annotation.PostConstruct;
@@ -60,8 +62,16 @@ public class GdflService {
     private final GdflProperties     props;
     private final GdflSymbolMapper   mapper;
     private final MarketDataService  marketDataService;
+    private final CandleAggregator   candleAggregator;
     private final ObjectProvider<OptionScalping> optionScalpingProvider;
     private final ScheduledExecutorService executor;
+    /** GDFL symbols we've already sent SubscribeSnapshot for TODAY (the trading
+     *  pair — ATM CE + PE resolved at 09:16). Prevents the ATM-check poll from
+     *  re-subscribing every 5 seconds. Reset on day rollover + fresh connect. */
+    private final Set<String> snapshotSubscribedGdflSymbols = new HashSet<>();
+    /** GDFL symbols we've already fired GetHistory for TODAY (backfilling the
+     *  09:15 → 09:16 first bar for the trading pair). */
+    private final Set<String> historyFetchedGdflSymbols = new HashSet<>();
 
     private volatile GdflDataWebSocket wsClient;
     /** Which GDFL identifiers we've already sent SubscribeRealtime for TODAY. Reset at
@@ -86,10 +96,12 @@ public class GdflService {
     public GdflService(GdflProperties props,
                        GdflSymbolMapper mapper,
                        MarketDataService marketDataService,
+                       CandleAggregator candleAggregator,
                        ObjectProvider<OptionScalping> optionScalpingProvider) {
         this.props             = props;
         this.mapper            = mapper;
         this.marketDataService = marketDataService;
+        this.candleAggregator  = candleAggregator;
         this.optionScalpingProvider   = optionScalpingProvider;
         this.executor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "gdfl-lifecycle");
@@ -186,7 +198,7 @@ public class GdflService {
             scheduleReconnect();
         };
         wsClient = new GdflDataWebSocket(endpoint, props.getApiKey(), props.getExchange(),
-            new ArrayList<>(), this::onGdflTick, onDisconnect);
+            new ArrayList<>(), this::onGdflTick, this::onGdflOhlcBar, onDisconnect);
         wsClient.setConnectionLostTimeout(30);
         try {
             boolean connected = wsClient.connectBlocking(15, TimeUnit.SECONDS);
@@ -231,6 +243,8 @@ public class GdflService {
             String today = LocalDate.now(IST).toString();
             if (!today.equals(subscribedDayKey)) {
                 subscribedGdflSymbols.clear();
+                snapshotSubscribedGdflSymbols.clear();
+                historyFetchedGdflSymbols.clear();
                 mapper.clear();
                 marketDataService.clearAltFeedOwnedSymbols();
                 subscribedDayKey = today;
@@ -257,6 +271,10 @@ public class GdflService {
                 // list is empty once trimmed on some code paths).
                 subscribeOne(strategy.getCeSymbol());
                 subscribeOne(strategy.getPeSymbol());
+                // Trading pair also gets SubscribeSnapshot for canonical OHLC
+                // bars + GetHistory for the first-bar backfill. Idempotent —
+                // won't re-send once the two per-day dedupe sets are populated.
+                subscribeSnapshotForTradingPair();
             }
         } catch (Exception e) {
             log.warn("[Gdfl] atm-check loop threw: {}", e.getMessage());
@@ -323,5 +341,83 @@ public class GdflService {
         MarketDataService.LtpTick evt = new MarketDataService.LtpTick(
             fyersSym, ltp, atp, svt, ltt);
         marketDataService.pushLtpTick(evt);
+    }
+
+    /** Fires for each GDFL server-side aggregated OHLC bar — one on every bar
+     *  close for symbols we've SubscribeSnapshot'd, and each row of a GetHistory
+     *  response. Frame schema per GDFL docs:
+     *  <ul>
+     *    <li>{@code Exchange}, {@code InstrumentIdentifier} — stamped by
+     *        {@link GdflDataWebSocket#onMessage} even when the row itself
+     *        omits them (GetHistory nests them at the top level).</li>
+     *    <li>{@code LastTradeTime} — bar CLOSE epoch (seconds). We subtract
+     *        the bar length to derive startMillis.</li>
+     *    <li>{@code Open}, {@code High}, {@code Low}, {@code Close},
+     *        {@code TradedQty}, {@code OpenInterest}.</li>
+     *  </ul>
+     *  We map the GDFL symbol back to its Fyers form (that's the key
+     *  {@link CandleAggregator} uses) and hand the canonical bar to
+     *  {@link CandleAggregator#overwriteBar} which replaces whatever
+     *  tick-aggregated bar we already had for that timestamp. */
+    private void onGdflOhlcBar(JsonNode root) {
+        String gdflSym = root.path("InstrumentIdentifier").asText("");
+        if (gdflSym.isBlank()) return;
+        String fyersSym = mapper.gdflToFyers(gdflSym);
+        if (fyersSym == null || fyersSym.isBlank()) {
+            log.debug("[Gdfl] OHLC bar for unmapped symbol {} — ignored", gdflSym);
+            return;
+        }
+        long closeSec = root.path("LastTradeTime").asLong(0);
+        double open   = root.path("Open").asDouble(0);
+        double high   = root.path("High").asDouble(0);
+        double low    = root.path("Low").asDouble(0);
+        double close  = root.path("Close").asDouble(0);
+        long   volume = root.path("TradedQty").asLong(0);
+        if (closeSec <= 0 || open <= 0 || high <= 0 || low <= 0 || close <= 0) {
+            log.debug("[Gdfl] OHLC bar for {} malformed — skipping ({})", fyersSym, root);
+            return;
+        }
+        // LastTradeTime is the bar CLOSE. Our aggregator keys bars by OPEN
+        // (startMillis) — subtract one bar length to convert.
+        long barLengthSec = 60L * CandleAggregator.BUCKET_MINUTES;
+        long startMs = (closeSec - barLengthSec) * 1000L;
+        Candle canonical = new Candle(open, high, low, close, volume, startMs, 0.0);
+        candleAggregator.overwriteBar(fyersSym, canonical);
+    }
+
+    /** Called by the 5 s ATM-check poll once OptionScalping has locked the
+     *  trading pair (CE + PE symbols non-blank). Sends {@code SubscribeSnapshot}
+     *  for each leg — GDFL pushes {@code SnapshotResult} frames on every bar
+     *  close, giving us canonical server-side aggregated OHLC that matches
+     *  TradingView. Also fires a one-shot {@code GetHistory} per leg to
+     *  backfill the 09:15 → 09:16 first bar which the snapshot push misses
+     *  (we subscribe AFTER it closes). Idempotent — the sent-today dedupe
+     *  sets stop repeats within the session. */
+    private void subscribeSnapshotForTradingPair() {
+        if (wsClient == null || !wsClient.isAuthenticated()) return;
+        OptionScalping strategy = optionScalpingProvider.getIfAvailable();
+        if (strategy == null) return;
+        String ceFy = strategy.getCeSymbol();
+        String peFy = strategy.getPeSymbol();
+        subscribeSnapshotAndBackfill(ceFy);
+        subscribeSnapshotAndBackfill(peFy);
+    }
+
+    private void subscribeSnapshotAndBackfill(String fyersSym) {
+        if (fyersSym == null || fyersSym.isBlank()) return;
+        String gdflSym = mapper.fyersToGdfl(fyersSym);
+        if (gdflSym == null || gdflSym.isBlank()) return;
+        if (!snapshotSubscribedGdflSymbols.contains(gdflSym)) {
+            if (wsClient.subscribeSnapshot(gdflSym, "MINUTE", CandleAggregator.BUCKET_MINUTES)) {
+                snapshotSubscribedGdflSymbols.add(gdflSym);
+            }
+        }
+        if (!historyFetchedGdflSymbols.contains(gdflSym)) {
+            // Ask for the last 5 bars — covers the just-closed first bar plus
+            // a small buffer in case the caller ran a minute or two late.
+            if (wsClient.getHistory(gdflSym, "MINUTE", CandleAggregator.BUCKET_MINUTES, 5)) {
+                historyFetchedGdflSymbols.add(gdflSym);
+            }
+        }
     }
 }
