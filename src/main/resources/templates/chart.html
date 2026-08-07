@@ -591,10 +591,14 @@
             // Option ticks aren't in the shared ticker SSE (filtered server-side), so
             // this /symbols poll is the only source of live CE/PE prices in the chart
             // headers.
+            // Always call setHeaderCells so the price + change spans render
+            // gracefully as "—" before the leg is subscribed / ticks flow.
+            // Prior gate `if (cet.ltp)` left ceChg completely empty until
+            // the first tick — operator saw only the strike, no change.
             var cet = d.ceTick || {};
-            if (cet.ltp) setHeaderCells('cePrice', 'ceChg', cet.ltp, cet.ch, cet.chp, 1);
+            setHeaderCells('cePrice', 'ceChg', cet.ltp, cet.ch, cet.chp, 1);
             var pet = d.peTick || {};
-            if (pet.ltp) setHeaderCells('pePrice', 'peChg', pet.ltp, pet.ch, pet.chp, 1);
+            setHeaderCells('pePrice', 'peChg', pet.ltp, pet.ch, pet.chp, 1);
             // Overlay the active SL as a dashed horizontal price line on the CE / PE
             // charts. Reads d.ceSl / d.peSl from OptionScalping's live position state — zero
             // when no position is open on that side, so the line is removed cleanly.
@@ -689,13 +693,19 @@
     function setHeaderCells(priceElId, chgElId, ltp, ch, chp, decimals) {
         var pEl = document.getElementById(priceElId);
         var cEl = document.getElementById(chgElId);
-        if (pEl && typeof ltp === 'number' && ltp > 0) pEl.textContent = ltp.toFixed(decimals);
+        var v   = Number(ltp || 0);
+        if (pEl) pEl.textContent = v > 0 ? v.toFixed(decimals) : '—';
         if (cEl) {
             var diff = Number(ch || 0);
             var pct  = Number(chp || 0);
-            var sign = diff >= 0 ? '+' : '';
-            cEl.textContent = sign + diff.toFixed(2) + ' (' + sign + pct.toFixed(2) + '%)';
-            cEl.className = 'chart-hdr-chg ' + pnlClass(diff);
+            if (v <= 0 || (diff === 0 && pct === 0)) {
+                cEl.textContent = '—';
+                cEl.className   = 'chart-hdr-chg';
+            } else {
+                var sign = diff >= 0 ? '+' : '';
+                cEl.textContent = sign + diff.toFixed(2) + ' (' + sign + pct.toFixed(2) + '%)';
+                cEl.className   = 'chart-hdr-chg ' + pnlClass(diff);
+            }
         }
     }
     // Welcome-line reload also runs on interval so tab-switch back reflects any user change.
