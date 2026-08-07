@@ -576,16 +576,15 @@
     function refreshSymbols() {
         fetch('/api/chart/symbols').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
-            var atm = d.atmStrike || 0;
             var ce  = d.ceSymbol  || '';
             var pe  = d.peSymbol  || '';
-            // Panel titles now carry the strike inline — no separate ATM display in the
-            // welcome block. Strike is the same for both legs by definition.
+            // Panel titles carry the LEG's own strike inline — trading pair is
+            // 1 ITM on both sides, so CE = (ATM − 50) and PE = (ATM + 50) are
+            // different numbers, exposed as ceStrike / peStrike from the backend.
             var ceStrikeEl = document.getElementById('ceStrikeLabel');
             var peStrikeEl = document.getElementById('peStrikeLabel');
-            var strikeText = atm > 0 ? String(atm) : '—';
-            if (ceStrikeEl) ceStrikeEl.textContent = strikeText;
-            if (peStrikeEl) peStrikeEl.textContent = strikeText;
+            if (ceStrikeEl) ceStrikeEl.textContent = d.ceStrike > 0 ? String(d.ceStrike) : '—';
+            if (peStrikeEl) peStrikeEl.textContent = d.peStrike > 0 ? String(d.peStrike) : '—';
             currentCeSym = ce;
             currentPeSym = pe;
             // Prime the CE / PE header LTP + change cells from the in-memory tick cache.

@@ -76,7 +76,15 @@ public class ChartController {
         long   atmStrike = strat == null ? 0  : strat.getAtmStrike();
         String ceSymbol  = strat == null ? "" : strat.getCeSymbol();
         String peSymbol  = strat == null ? "" : strat.getPeSymbol();
+        // Trading pair strikes derived off the locked ATM: 1 ITM on both sides.
+        // CE = strike (ATM − 50), PE = strike (ATM + 50). Chart uses these to
+        // label the CE / PE panels — panels are for the ACTUAL contracts
+        // traded, not the ATM anchor.
+        long ceStrike = atmStrike > 0 ? atmStrike - 50 : 0;
+        long peStrike = atmStrike > 0 ? atmStrike + 50 : 0;
         out.put("atmStrike", atmStrike);
+        out.put("ceStrike",  ceStrike);
+        out.put("peStrike",  peStrike);
         out.put("ceSymbol",  ceSymbol);
         out.put("peSymbol",  peSymbol);
         // Prime the header cells with the last-known WS-cached tick per symbol so the
