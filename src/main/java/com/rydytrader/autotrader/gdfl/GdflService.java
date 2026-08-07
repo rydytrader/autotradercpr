@@ -217,9 +217,13 @@ public class GdflService {
      *  from OptionScalping and issues SubscribeRealtime for each — once and only once per day. */
     private void checkAtmAndSubscribe() {
         try {
-            // Only makes sense during market hours + a small warm-up window.
+            // Window opens at 09:10 IST — aligned with OptionScalping.warmupIfDue's
+            // pre-market subscribe window. Subscribing the ±10 pre-warm strikes to
+            // GDFL BEFORE 09:15 means the exchange's first tick lands in an
+            // already-subscribed slot (no first-bar-partial). Closes at 15:31
+            // (~1 min past market close) to catch the final flush.
             LocalTime now = ZonedDateTime.now(IST).toLocalTime();
-            if (now.isBefore(LocalTime.of(9, 15)) || now.isAfter(LocalTime.of(15, 31))) return;
+            if (now.isBefore(LocalTime.of(9, 10)) || now.isAfter(LocalTime.of(15, 31))) return;
 
             // Day rollover — clear yesterday's subscriptions and reverse map + release
             // any alternate-feed ownership on Fyers's side so yesterday's ATM symbol
@@ -236,14 +240,14 @@ public class GdflService {
             if (wsClient == null || !wsClient.isAuthenticated()) return;
 
             // Pre-warm window — OptionScalping.warmupIfDue populates ±10 strikes
-            // (42 CE + PE symbols) at 09:15. Subscribe them all on GDFL so the
-            // 09:15-09:18 first bar has tick data for whichever strike ends up
-            // as ATM. Comfortably under GDFL's 50-symbol cap. subscribeOne is
-            // idempotent so the 5 s poll doesn't re-send SubscribeRealtime.
+            // (42 CE + PE symbols) at 09:10 IST. Subscribe them all on GDFL so
+            // the 09:15 → 09:16 first 1-min bar has tick data for whichever
+            // strike ends up being the ATM anchor. Comfortably under GDFL's
+            // 50-symbol cap. subscribeOne is idempotent so the 5 s poll doesn't
+            // re-send SubscribeRealtime.
             //
-            // Once OptionScalping.trimWarmingSet narrows to just the ATM pair,
-            // getPreWarmSymbols() returns those two — no separate ATM subscribe
-            // block needed.
+            // Once OptionScalping.trimWarmingSet narrows to just the 1 ITM
+            // CE + PE pair (at 09:16), getPreWarmSymbols() returns those two.
             OptionScalping strategy = optionScalpingProvider.getIfAvailable();
             if (strategy != null) {
                 for (String sym : strategy.getPreWarmSymbols()) {
