@@ -167,7 +167,7 @@ public class OptionBuying implements Strategy {
     @Override public String id()          { return STRATEGY_ID; }
     @Override public String displayName() { return "OPTION BUYING"; }
     @Override public String description() { return "NIFTY 3-min · 4-indicator (ST/RSI/Pivots/BB) · CE/PE long"; }
-    @Override public boolean isEnabled()  { return true; }   // always on — no kill switch
+    @Override public boolean isEnabled()  { return riskSettings.isOptionBuyingEnabled(); }
 
     @Override public String currentState() {
         if (state.openPositions.isEmpty()) return "IDLE";

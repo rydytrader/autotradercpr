@@ -1,8 +1,10 @@
 package com.rydytrader.autotrader.controller;
 
 import com.rydytrader.autotrader.service.strategy.OptionBuying;
+import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
@@ -16,18 +18,20 @@ import java.util.Map;
  *   <li>{@code POST /api/option-buying/squareoff} — flatten every open position.</li>
  *   <li>{@code POST /api/option-buying/reset}     — recovery: drop in-memory positions
  *       without exit orders (in case broker is out of sync).</li>
+ *   <li>{@code POST /api/option-buying/enable}    — kill-switch toggle. Existing
+ *       open positions keep running; only new entries are blocked when disabled.</li>
  * </ul>
- *
- * <p>Strategy is always enabled — no kill-switch endpoint. Use /squareoff or
- * /reset for emergency stops.
  */
 @RestController
 public class OptionBuyingController {
 
-    private final OptionBuying strategy;
+    private final OptionBuying      strategy;
+    private final RiskSettingsStore riskSettings;
 
-    public OptionBuyingController(OptionBuying strategy) {
-        this.strategy = strategy;
+    public OptionBuyingController(OptionBuying strategy,
+                                   RiskSettingsStore riskSettings) {
+        this.strategy     = strategy;
+        this.riskSettings = riskSettings;
     }
 
     @GetMapping("/api/option-buying/state")
@@ -55,6 +59,14 @@ public class OptionBuyingController {
         strategy.resetToIdle("MANUAL");
         return Map.of("ok", true);
     }
-    // /enable endpoint retired — OPTION BUYING is always enabled. Use
-    // /squareoff or /reset for emergency stops.
+
+    @PostMapping("/api/option-buying/enable")
+    public Map<String, Object> setEnabled(@RequestBody Map<String, Object> body) {
+        Object v = body == null ? null : body.get("enabled");
+        boolean enabled = (v instanceof Boolean) ? (Boolean) v
+            : v != null && Boolean.parseBoolean(v.toString());
+        riskSettings.setOptionBuyingEnabled(enabled);
+        riskSettings.save();
+        return Map.of("ok", true, "enabled", enabled);
+    }
 }

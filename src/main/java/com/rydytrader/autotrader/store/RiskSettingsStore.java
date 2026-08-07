@@ -45,6 +45,9 @@ public class RiskSettingsStore {
         // On a bullish 4-of-4 setup: buy today's ATM CE (fresh ATM from NIFTY
         // LTP at fire time). On bearish: buy today's ATM PE. Exit on
         // SuperTrend flip (bar close on wrong side of the ST line).
+        /** Master kill switch. When OFF the strategy skips new entries;
+         *  existing open positions keep being managed to exit. Default ON. */
+        volatile boolean optionBuyingEnabled           = true;
         volatile int     optionBuyingLotsPerLeg        = 1;
         volatile String  optionBuyingOrderType         = "INTRADAY"; // INTRADAY | OVERNIGHT
         volatile String  optionBuyingTradingStartTime  = "09:24";    // earliest fire (close of 09:21 bar)
@@ -411,6 +414,7 @@ public class RiskSettingsStore {
     public int     getOptionSellingMaxCeTradesPerDay(){ return cfg().optionSellingMaxCeTradesPerDay; }
     public int     getOptionSellingMaxPeTradesPerDay(){ return cfg().optionSellingMaxPeTradesPerDay; }
     // OPTION BUYING getters
+    public boolean isOptionBuyingEnabled()             { return cfg().optionBuyingEnabled; }
     public int     getOptionBuyingLotsPerLeg()         { return cfg().optionBuyingLotsPerLeg; }
     public String  getOptionBuyingOrderType()          { return cfg().optionBuyingOrderType; }
     public String  getOptionBuyingTradingStartTime()   { return cfg().optionBuyingTradingStartTime; }
@@ -610,6 +614,7 @@ public class RiskSettingsStore {
     public void setOptionSellingMaxCeTradesPerDay(int v)      { cfg().optionSellingMaxCeTradesPerDay = Math.max(0, v); }
     public void setOptionSellingMaxPeTradesPerDay(int v)      { cfg().optionSellingMaxPeTradesPerDay = Math.max(0, v); }
     // OPTION BUYING setters
+    public void setOptionBuyingEnabled(boolean v)             { cfg().optionBuyingEnabled = v; }
     public void setOptionBuyingLotsPerLeg(int v)              { cfg().optionBuyingLotsPerLeg = Math.max(1, v); }
     public void setOptionBuyingOrderType(String v)            { cfg().optionBuyingOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
     public void setOptionBuyingTradingStartTime(String v)     { cfg().optionBuyingTradingStartTime = (v == null || v.isBlank()) ? "09:24" : v.trim(); }
@@ -794,6 +799,7 @@ public class RiskSettingsStore {
             upsert("optionSellingMaxConcurrentPositions", String.valueOf(c.optionSellingMaxConcurrentPositions));
             upsert("optionSellingMaxCeTradesPerDay", String.valueOf(c.optionSellingMaxCeTradesPerDay));
             upsert("optionSellingMaxPeTradesPerDay", String.valueOf(c.optionSellingMaxPeTradesPerDay));
+            upsert("optionBuyingEnabled",             String.valueOf(c.optionBuyingEnabled));
             upsert("optionBuyingLotsPerLeg",          String.valueOf(c.optionBuyingLotsPerLeg));
             upsert("optionBuyingOrderType",            c.optionBuyingOrderType);
             upsert("optionBuyingTradingStartTime",     c.optionBuyingTradingStartTime);
@@ -989,7 +995,7 @@ public class RiskSettingsStore {
                     case "optionSellingRetestEntryEnabled"  -> { /* retest folded into Gate A — silently consume legacy rows */ }
                     case "optionSellingMaxConcurrentPositions",
                          "camarillaMaxConcurrentPositions" -> c.optionSellingMaxConcurrentPositions = Integer.parseInt(v);
-                    case "optionBuyingEnabled"           -> { /* always on — silently consume legacy rows */ }
+                    case "optionBuyingEnabled"           -> c.optionBuyingEnabled = Boolean.parseBoolean(v);
                     case "optionBuyingLotsPerLeg"        -> c.optionBuyingLotsPerLeg = Math.max(1, Integer.parseInt(v));
                     case "optionBuyingOrderType"         -> c.optionBuyingOrderType = v;
                     case "optionBuyingTradingStartTime"  -> c.optionBuyingTradingStartTime = v;

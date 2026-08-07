@@ -31,6 +31,7 @@
                   '</div>' +
                   '<div class="sm-pane" data-pane="option-buying" style="display:none;">' +
                     '<div class="sm-grid-2col">' +
+                      '<div class="sm-field"><label><input type="checkbox" id="sm-optionBuyingEnabled" style="margin-right:6px;vertical-align:middle;">Strategy enabled</label><div class="sm-hint">Master kill switch. When OFF, no new option-buy entries fire; existing positions keep being managed.</div></div>' +
                       '<div class="sm-field"><label>Lots per Trade</label><input type="number" id="sm-optionBuyingLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 65 NIFTY. Each fire buys this many lots of the ATM CE (bullish) or ATM PE (bearish).</div></div>' +
                       '<div class="sm-field"><label>Order Type</label><select id="sm-optionBuyingOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select></div>' +
                       '<div class="sm-field"><label>Trading Start (HH:mm IST)</label><input type="time" id="sm-optionBuyingTradingStartTime" step="60"><div class="sm-hint">Entries fire only after this time. Default 09:24 — earliest fire opportunity on 3-min bars (close of 09:21 bar).</div></div>' +
@@ -224,6 +225,7 @@
         fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
             var g = id => document.getElementById(id);
+            if (g('sm-optionBuyingEnabled'))         g('sm-optionBuyingEnabled').checked = d.optionBuyingEnabled !== false;
             if (g('sm-optionBuyingLotsPerLeg'))      g('sm-optionBuyingLotsPerLeg').value = d.optionBuyingLotsPerLeg != null ? d.optionBuyingLotsPerLeg : 1;
             if (g('sm-optionBuyingOrderType'))       g('sm-optionBuyingOrderType').value = d.optionBuyingOrderType || 'INTRADAY';
             if (g('sm-optionBuyingTradingStartTime'))g('sm-optionBuyingTradingStartTime').value = d.optionBuyingTradingStartTime || '09:24';
@@ -236,6 +238,7 @@
     function saveOptionBuyingTab() {
         var g = id => document.getElementById(id);
         var body = {
+            optionBuyingEnabled:           !!(g('sm-optionBuyingEnabled') && g('sm-optionBuyingEnabled').checked),
             optionBuyingLotsPerLeg:        parseInt(g('sm-optionBuyingLotsPerLeg').value, 10) || 1,
             optionBuyingOrderType:         g('sm-optionBuyingOrderType').value,
             optionBuyingTradingStartTime:  (g('sm-optionBuyingTradingStartTime').value || '').trim(),
