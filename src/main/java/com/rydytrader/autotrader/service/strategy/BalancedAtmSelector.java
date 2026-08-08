@@ -1,13 +1,14 @@
 package com.rydytrader.autotrader.service.strategy;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.rydytrader.autotrader.config.FyersProperties;
-import com.rydytrader.autotrader.fyers.FyersClientRouter;
-import com.rydytrader.autotrader.store.TokenStore;
+import com.rydytrader.autotrader.service.MarketDataService;
+import com.rydytrader.autotrader.service.MarketHolidayService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Map;
 import java.util.NavigableMap;
 import java.util.TreeMap;
@@ -27,6 +28,13 @@ import java.util.TreeMap;
  *       level, returns the nearest tradable strike along with its CE+PE symbols and
  *       current LTPs.</li>
  * </ul>
+ *
+ * <p>Since the strip-Fyers-data refactor, chain data is synthesized locally — strikes are
+ * enumerated around a base ATM (NIFTY step = 50) and the Fyers option-symbol string is
+ * built directly from the current-week Tuesday expiry (SEBI's weekly-expiry rule; walked
+ * back one trading day when Tuesday is an NSE holiday). LTPs come from
+ * {@link MarketDataService#getLtp}, which is populated by whatever tick feed is currently
+ * subscribed (GDFL in production). Strikes that haven't been subscribed yet return LTP=0.
  */
 @Service
 public class BalancedAtmSelector {
@@ -34,17 +42,17 @@ public class BalancedAtmSelector {
     private static final Logger log = LoggerFactory.getLogger(BalancedAtmSelector.class);
     private static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
     private static final long   STRIKE_STEP  = 50L;
+    /** Number of strike steps on each side of ATM to synthesize per chain fetch. */
+    private static final int    CHAIN_HALF_WIDTH = 30;
+    private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
-    private final FyersClientRouter fyersClient;
-    private final TokenStore        tokenStore;
-    private final FyersProperties   fyersProperties;
+    private final MarketDataService     marketDataService;
+    private final MarketHolidayService  marketHolidayService;
 
-    public BalancedAtmSelector(FyersClientRouter fyersClient,
-                               TokenStore tokenStore,
-                               FyersProperties fyersProperties) {
-        this.fyersClient     = fyersClient;
-        this.tokenStore      = tokenStore;
-        this.fyersProperties = fyersProperties;
+    public BalancedAtmSelector(MarketDataService marketDataService,
+                               MarketHolidayService marketHolidayService) {
+        this.marketDataService     = marketDataService;
+        this.marketHolidayService  = marketHolidayService;
     }
 
     /** Outcome of one ATM selection. {@code spotAtm} is the naïve spot/50 baseline — kept
@@ -90,9 +98,10 @@ public class BalancedAtmSelector {
         if (chain == null || chain.isEmpty()) return null;
 
         ChainRow atmRow = chain.get(spotAtm);
-        if (atmRow == null || atmRow.ce <= 0 || atmRow.pe <= 0) {
-            log.warn("[atm-selector] spot-ATM strike {} missing or unquoted in chain — skipping",
-                spotAtm);
+        if (atmRow == null
+            || atmRow.ceSym == null || atmRow.ceSym.isEmpty()
+            || atmRow.peSym == null || atmRow.peSym.isEmpty()) {
+            log.warn("[atm-selector] spot-ATM strike {} missing in chain — skipping", spotAtm);
             return null;
         }
 
@@ -108,10 +117,9 @@ public class BalancedAtmSelector {
     }
 
     /**
-     * Pick the strike closest to {@code level} that has BOTH CE and PE quoted, and return its
-     * symbols + LTPs. Used by the ATM VWAP strategy to translate the first-bar-close NIFTY
-     * price into the ATM option pair. Returns {@code null} when the chain is empty or no
-     * quoted strike exists.
+     * Pick the strike closest to {@code level} that has BOTH CE and PE symbols, and return
+     * its symbols + LTPs. Used by the ATM VWAP strategy to translate the first-bar-close
+     * NIFTY price into the ATM option pair. Returns {@code null} when the chain is empty.
      */
     public StrikeAtLevel resolveStrikeAtLevel(double level) {
         if (level <= 0) return null;
@@ -121,7 +129,7 @@ public class BalancedAtmSelector {
         long rounded = Math.round(level / (double) STRIKE_STEP) * STRIKE_STEP;
         long chosen = nearestStrikeWithBothLegs(chain, rounded);
         if (chosen <= 0) {
-            log.warn("[atm-selector] resolveStrikeAtLevel({}): no quoted strike found", level);
+            log.warn("[atm-selector] resolveStrikeAtLevel({}): no strike found in synthetic chain", level);
             return null;
         }
         ChainRow row = chain.get(chosen);
@@ -140,9 +148,9 @@ public class BalancedAtmSelector {
      *       returns the lowest strike &ge; level. CE at that strike is OTM when spot &lt; level.</li>
      * </ul>
      *
-     * <p>If the computed floor/ceil strike isn't quoted in the current chain,
-     * {@link #nearestStrikeWithBothLegs} walks outward to the nearest liquid strike — same
-     * safe-fallback behaviour as {@link #resolveStrikeAtLevel}.
+     * <p>If the computed floor/ceil strike isn't in the synthetic chain window,
+     * {@link #nearestStrikeWithBothLegs} walks outward to the nearest available strike —
+     * same safe-fallback behaviour as {@link #resolveStrikeAtLevel}.
      *
      * <p>For an unrecognised side, falls back to {@link #resolveStrikeAtLevel}.
      */
@@ -150,11 +158,8 @@ public class BalancedAtmSelector {
         return resolveOtmStrikeAtLevel(NIFTY_SYMBOL, STRIKE_STEP, level, side);
     }
 
-    /** Per-instrument overload — takes the spot symbol + strike step so the
-     *  same routine works for both NIFTY (STRIKE_STEP=50, weekly chain) and
-     *  BANKNIFTY (STRIKE_STEP=100, monthly chain). Fyers returns the nearest
-     *  expiry when the timestamp param is empty, which naturally picks
-     *  BankNifty's monthly chain. */
+    /** Per-instrument overload — takes the spot symbol + strike step. Kept for signature
+     *  compatibility; only NIFTY is exercised today (STRIKE_STEP=50, weekly chain). */
     public StrikeAtLevel resolveOtmStrikeAtLevel(String spotSymbol, long strikeStep,
                                                   double level, String side) {
         if (level <= 0) return null;
@@ -170,7 +175,7 @@ public class BalancedAtmSelector {
         if (chain == null || chain.isEmpty()) return null;
         long chosen = nearestStrikeWithBothLegs(chain, targetStrike);
         if (chosen <= 0) {
-            log.warn("[atm-selector] resolveOtmStrikeAtLevel({}, {}, {}): no quoted strike found",
+            log.warn("[atm-selector] resolveOtmStrikeAtLevel({}, {}, {}): no strike found in synthetic chain",
                 spotSymbol, level, side);
             return null;
         }
@@ -178,8 +183,10 @@ public class BalancedAtmSelector {
         return new StrikeAtLevel(level, chosen, row.ceSym, row.peSym, row.ce, row.pe);
     }
 
-    /** Walk outward from {@code requested} until we find a strike whose CE AND PE are both
-     *  quoted (non-empty symbol, positive LTP). Returns 0 when none in the chain qualifies. */
+    /** Walk outward from {@code requested} until we find a strike whose CE AND PE symbols
+     *  are populated. With the synthetic chain every strike inside the window is populated,
+     *  so this typically returns {@code requested} directly; the walk only kicks in when the
+     *  requested strike is outside the ±{@value #CHAIN_HALF_WIDTH} window. */
     private long nearestStrikeWithBothLegs(NavigableMap<Long, ChainRow> chain, long requested) {
         if (chain.containsKey(requested) && isQuoted(chain.get(requested))) return requested;
         Long above = chain.higherKey(requested);
@@ -200,16 +207,16 @@ public class BalancedAtmSelector {
 
     private static boolean isQuoted(ChainRow row) {
         if (row == null) return false;
-        return row.ce > 0 && row.pe > 0
-            && row.ceSym != null && !row.ceSym.isEmpty()
+        // Synthetic-chain era: "quoted" == symbols populated. LTPs may still be 0 for
+        // strikes that haven't been subscribed on the tick feed yet.
+        return row.ceSym != null && !row.ceSym.isEmpty()
             && row.peSym != null && !row.peSym.isEmpty();
     }
 
-    /** Public bulk-fetch entry point: returns the entire current chain as a NavigableMap
+    /** Public bulk-fetch entry point: returns the entire synthetic chain (ATM ± 30 strikes)
      *  keyed by strike. Cross-package callers use this when they want to walk MANY strikes
-     *  from a single chain response instead of calling {@link #resolveStrikeAtLevel(double)}
-     *  once per strike (which would re-fetch the chain every time). Returns an empty map
-     *  when the chain is unavailable. */
+     *  from a single response instead of calling {@link #resolveStrikeAtLevel(double)}
+     *  once per strike. Returns an empty map when NIFTY spot LTP is unavailable. */
     public NavigableMap<Long, ChainStrike> fetchChainStrikes() {
         NavigableMap<Long, ChainRow> raw = fetchChain();
         NavigableMap<Long, ChainStrike> out = new TreeMap<>();
@@ -232,38 +239,81 @@ public class BalancedAtmSelector {
         return fetchChain(NIFTY_SYMBOL);
     }
 
-    /** Per-symbol chain fetch. Empty {@code expiryTs} → Fyers returns nearest
-     *  expiry, which naturally maps to NIFTY weekly OR BANKNIFTY monthly
-     *  depending on the symbol. */
+    /** Per-symbol synthetic chain build. Enumerates strikes ATM ± {@value #CHAIN_HALF_WIDTH}
+     *  from the current NIFTY spot LTP, synthesizes each CE/PE symbol using this week's
+     *  Tuesday expiry, and reads any available LTP from {@link MarketDataService}. */
     private NavigableMap<Long, ChainRow> fetchChain(String spotSymbol) {
-        try {
-            String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
-            JsonNode root = fyersClient.getOptionChain(spotSymbol, 30, auth);
-            if (root == null) return null;
-            JsonNode data = root.has("data") ? root.get("data") : null;
-            JsonNode chain = data != null && data.has("optionsChain") ? data.get("optionsChain")
-                : (root.has("optionsChain") ? root.get("optionsChain") : null);
-            if (chain == null || !chain.isArray()) return null;
-
-            NavigableMap<Long, ChainRow> byStrike = new TreeMap<>();
-            for (JsonNode row : chain) {
-                double strikeD = row.has("strike_price") ? row.get("strike_price").asDouble()
-                    : row.has("strikePrice") ? row.get("strikePrice").asDouble() : 0;
-                if (strikeD <= 0) continue;
-                String optType = row.has("option_type") ? row.get("option_type").asText()
-                    : row.has("optionType") ? row.get("optionType").asText() : "";
-                if (optType.isEmpty()) continue;
-                String sym = row.has("symbol") ? row.get("symbol").asText() : "";
-                double ltp = row.has("ltp") ? row.get("ltp").asDouble()
-                    : row.has("lp") ? row.get("lp").asDouble() : 0;
-                long strike = Math.round(strikeD);
-                ChainRow r = byStrike.computeIfAbsent(strike, k -> new ChainRow());
-                if ("CE".equalsIgnoreCase(optType)) { r.ce = ltp; r.ceSym = sym; }
-                else if ("PE".equalsIgnoreCase(optType)) { r.pe = ltp; r.peSym = sym; }
-            }
+        NavigableMap<Long, ChainRow> byStrike = new TreeMap<>();
+        double spot = marketDataService.getLtp(spotSymbol);
+        if (spot <= 0) spot = marketDataService.getDisplayLtp(spotSymbol);
+        if (spot <= 0) {
+            log.debug("[atm-selector] synthetic chain skipped — no spot LTP for {}", spotSymbol);
             return byStrike;
+        }
+        long baseAtm = Math.round(spot / (double) STRIKE_STEP) * STRIKE_STEP;
+        String expiryTag = currentWeeklyExpiryTag();
+        if (expiryTag == null) {
+            log.warn("[atm-selector] synthetic chain skipped — could not resolve weekly expiry tag");
+            return byStrike;
+        }
+        String underlying = underlyingFromSpotSymbol(spotSymbol);
+        for (int n = -CHAIN_HALF_WIDTH; n <= CHAIN_HALF_WIDTH; n++) {
+            long strike = baseAtm + (long) n * STRIKE_STEP;
+            if (strike <= 0) continue;
+            String ceSym = "NSE:" + underlying + expiryTag + strike + "CE";
+            String peSym = "NSE:" + underlying + expiryTag + strike + "PE";
+            ChainRow r = new ChainRow();
+            r.ceSym = ceSym;
+            r.peSym = peSym;
+            r.ce    = marketDataService.getLtp(ceSym);
+            r.pe    = marketDataService.getLtp(peSym);
+            byStrike.put(strike, r);
+        }
+        return byStrike;
+    }
+
+    /** Peel the {@code NSE:} prefix and {@code -INDEX} suffix off a spot symbol
+     *  (e.g. {@code NSE:NIFTY50-INDEX} → {@code NIFTY}). NIFTY-weekly options use the
+     *  bare underlying tag (no digits) — {@code NIFTY50} becomes {@code NIFTY}. */
+    private static String underlyingFromSpotSymbol(String spotSymbol) {
+        String s = spotSymbol;
+        if (s.startsWith("NSE:")) s = s.substring(4);
+        int dash = s.indexOf('-');
+        if (dash > 0) s = s.substring(0, dash);
+        // NIFTY50 → NIFTY, BANKNIFTY stays.
+        if (s.startsWith("NIFTY") && s.length() > 5 && Character.isDigit(s.charAt(5))) {
+            s = "NIFTY";
+        }
+        return s;
+    }
+
+    /** Fyers weekly-expiry tag encoding the current-week Tuesday (SEBI's NIFTY weekly
+     *  expiry day). Format: {@code YYMDD} where M is {@code 1-9} for Jan-Sep and
+     *  {@code O|N|D} for Oct/Nov/Dec. Walks back one day if that Tuesday is an NSE
+     *  holiday (uses {@link MarketHolidayService}). Returns {@code null} on any
+     *  failure to compute. */
+    private String currentWeeklyExpiryTag() {
+        try {
+            LocalDate today = LocalDate.now(IST);
+            int daysUntilTue = (DayOfWeek.TUESDAY.getValue() - today.getDayOfWeek().getValue() + 7) % 7;
+            LocalDate expiry = today.plusDays(daysUntilTue);
+            // Walk back one trading day when Tuesday is a market holiday (NIFTY's
+            // documented weekly-expiry-day slide rule).
+            if (marketHolidayService != null && marketHolidayService.isHoliday(expiry)) {
+                expiry = expiry.minusDays(1);
+            }
+            int yy = expiry.getYear() % 100;
+            int mm = expiry.getMonthValue();
+            int dd = expiry.getDayOfMonth();
+            char monthCh;
+            if (mm >= 1 && mm <= 9) monthCh = (char) ('0' + mm);
+            else if (mm == 10) monthCh = 'O';
+            else if (mm == 11) monthCh = 'N';
+            else if (mm == 12) monthCh = 'D';
+            else return null;
+            return String.format("%02d%c%02d", yy, monthCh, dd);
         } catch (Exception e) {
-            log.warn("[atm-selector] Chain fetch failed: {}", e.getMessage());
+            log.warn("[atm-selector] weekly expiry tag build failed: {}", e.getMessage());
             return null;
         }
     }

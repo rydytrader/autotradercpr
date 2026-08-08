@@ -51,29 +51,6 @@ public class LiveFyersClient implements FyersClient {
     }
 
     @Override
-    public JsonNode getOptionChain(String symbol, int strikeCount, String authHeader) throws Exception {
-        return getOptionChain(symbol, strikeCount, "", authHeader);
-    }
-
-    /** Same as {@link #getOptionChain(String, int, String)} but lets the caller
-     *  pass a Fyers expiry timestamp (epoch seconds, as a string) to fetch a
-     *  specific weekly's chain instead of the nearest one. Empty {@code expiryTs}
-     *  means "nearest expiry" — same behaviour as the single-arg overload. */
-    public JsonNode getOptionChain(String symbol, int strikeCount, String expiryTs, String authHeader) throws Exception {
-        String url = "https://api-t1.fyers.in/data/options-chain-v3?symbol="
-            + java.net.URLEncoder.encode(symbol, java.nio.charset.StandardCharsets.UTF_8)
-            + "&strikecount=" + strikeCount
-            + "&timestamp="   + (expiryTs == null ? "" : expiryTs.trim());
-        return get(url, authHeader);
-    }
-
-    @Override
-    public JsonNode getQuotes(String symbols, String authHeader) throws Exception {
-        String url = "https://api-t1.fyers.in/data/quotes/?symbols=" + symbols;
-        return get(url, authHeader);
-    }
-
-    @Override
     public JsonNode getProfile(String authHeader) throws Exception {
         return get(BASE + "/profile", authHeader);
     }
@@ -81,19 +58,6 @@ public class LiveFyersClient implements FyersClient {
     @Override
     public JsonNode modifyOrder(String orderJson, String authHeader) throws Exception {
         return patch(BASE + "/orders/sync", orderJson, authHeader);
-    }
-
-    @Override
-    public JsonNode getHistory(String symbol, String resolution, String rangeFromIso,
-                                String rangeToIso, String authHeader) throws Exception {
-        String url = "https://api-t1.fyers.in/data/history"
-            + "?symbol="     + java.net.URLEncoder.encode(symbol, java.nio.charset.StandardCharsets.UTF_8)
-            + "&resolution=" + java.net.URLEncoder.encode(resolution, java.nio.charset.StandardCharsets.UTF_8)
-            + "&date_format=1"
-            + "&range_from=" + rangeFromIso
-            + "&range_to="   + rangeToIso
-            + "&cont_flag=1";
-        return get(url, authHeader);
     }
 
     // ── HTTP HELPERS ──────────────────────────────────────────────────────────

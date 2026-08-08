@@ -1,6 +1,6 @@
 package com.rydytrader.autotrader.gdfl;
 
-import com.rydytrader.autotrader.controller.OptionChainController;
+import com.rydytrader.autotrader.util.OptionSymbolUtils;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
@@ -16,8 +16,8 @@ import java.util.regex.Pattern;
  *
  * <p>Fyers's symbol string encodes the expiry (monthly {@code NIFTY26JUL} or weekly
  * {@code NIFTY2670824200CE}). We decode it via
- * {@link OptionChainController#parseExpiryFromSymbol} — the same parser the option-chain
- * UI uses — and reformat as GDFL's {@code DDMMMYY} tag:
+ * {@link OptionSymbolUtils#parseExpiryFromSymbol} and reformat as GDFL's {@code DDMMMYY}
+ * tag:
  *
  * <ul>
  *   <li>Fyers {@code NSE:NIFTY26JUL24200CE} → expiry {@code 2026-07-28} (last Tuesday of
@@ -77,7 +77,7 @@ public class GdflSymbolMapper {
             return GDFL_NIFTY_FUTURES;
         }
         // 1. Expiry from the Fyers symbol (yyyy-MM-dd or empty on parse failure).
-        String isoExpiry = OptionChainController.parseExpiryFromSymbol(fyersSymbol);
+        String isoExpiry = OptionSymbolUtils.parseExpiryFromSymbol(fyersSymbol);
         if (isoExpiry == null || isoExpiry.isEmpty()) return null;
         LocalDate expiry;
         try { expiry = LocalDate.parse(isoExpiry); }

@@ -38,7 +38,6 @@ public class PollingService {
     private final FyersClientRouter fyersClient;
     private final OrderService     orderService;
     private final EventService     eventService;
-    private final MarketDataService  marketDataService;
 
     @org.springframework.beans.factory.annotation.Autowired
     @Lazy
@@ -54,14 +53,12 @@ public class PollingService {
                            FyersProperties fyersProperties,
                            FyersClientRouter fyersClient,
                            OrderService orderService,
-                           EventService eventService,
-                           MarketDataService marketDataService) {
+                           EventService eventService) {
         this.tokenStore        = tokenStore;
         this.fyersProperties   = fyersProperties;
         this.fyersClient       = fyersClient;
         this.orderService      = orderService;
         this.eventService      = eventService;
-        this.marketDataService = marketDataService;
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
@@ -130,8 +127,8 @@ public class PollingService {
             cachedPositions.putAll(fresh);
             updateLastSyncTime();
 
-            // Push subscription updates if open position set changed.
-            marketDataService.updateSubscriptions();
+            // Fyers data-side WS was removed with the strip-Fyers-data refactor —
+            // there is no per-symbol subscription set to push updates to anymore.
         } catch (java.net.SocketTimeoutException ste) {
             // Fyers' /positions occasionally takes >10 s to respond — transient, not an
             // operator-actionable error. Log at WARN and leave connectionStatus alone:
@@ -195,22 +192,15 @@ public class PollingService {
     }
 
     public String getConnectionStatus() {
+        // After the strip-Fyers-data refactor there is no Fyers data-side WebSocket to
+        // report on — only the order-side stream. Data-feed status (GDFL) is surfaced
+        // separately by GdflService.
         boolean orderWs     = orderEventService != null && orderEventService.isConnected();
-        boolean dataWs      = marketDataService.isConnected();
         boolean orderPaused = orderEventService != null && orderEventService.isPaused();
-        boolean dataPaused  = marketDataService.isPaused();
-
-        if (orderWs && dataWs) return "WS CONNECTED";
-        // Either WS deliberately paused waiting for a fresh access token — surface as
-        // "WAITING FOR LOGIN" before any per-leg RECONNECTING label, because reconnect
-        // will not happen until the operator re-logs in. The previous order of checks
-        // showed "RECONNECTING (Order)" when only data WS was up but order WS was paused
-        // for missing token — misleading since the order WS wasn't actually reconnecting.
-        if (orderPaused || dataPaused) return "WAITING FOR LOGIN";
-        if (orderWs && !dataWs) return "RECONNECTING (Data)";
-        if (!orderWs && dataWs) return "RECONNECTING (Order)";
-        if (marketDataService.isReconnecting() || (orderEventService != null && orderEventService.isReconnecting())) return "RECONNECTING";
-        if (marketDataService.isConnecting()   || (orderEventService != null && orderEventService.isConnecting()))   return "CONNECTING";
+        if (orderWs) return "WS CONNECTED";
+        if (orderPaused) return "WAITING FOR LOGIN";
+        if (orderEventService != null && orderEventService.isReconnecting()) return "RECONNECTING";
+        if (orderEventService != null && orderEventService.isConnecting())   return "CONNECTING";
         return connectionStatus;
     }
 

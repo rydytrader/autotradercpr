@@ -3,8 +3,13 @@ package com.rydytrader.autotrader.fyers;
 import com.fasterxml.jackson.databind.JsonNode;
 
 /**
- * Abstraction over all Fyers API calls.
- * Implementation: LiveFyersClient (real Fyers API).
+ * Abstraction over Fyers order-side and login-side API calls.
+ *
+ * <p>Data endpoints (history, quotes, option chain, WebSocket ticks) were removed —
+ * all market data now flows in via GDFL. Fyers is retained solely for order placement,
+ * order/position/tradebook queries, and login/auth.
+ *
+ * <p>Implementation: LiveFyersClient (real Fyers API).
  */
 public interface FyersClient {
 
@@ -29,28 +34,9 @@ public interface FyersClient {
     /** POST /api/v3/validate-authcode — exchange auth code for token */
     JsonNode validateAuthCode(String requestBody) throws Exception;
 
-    /** GET /api/v3/optionChain — get option chain with OI data (nearest expiry). */
-    JsonNode getOptionChain(String symbol, int strikeCount, String authHeader) throws Exception;
-
-    /** GET /api/v3/optionChain — get option chain for a specific expiry. {@code expiryTs}
-     *  is the Fyers epoch-second timestamp; blank/null means nearest. */
-    JsonNode getOptionChain(String symbol, int strikeCount, String expiryTs, String authHeader) throws Exception;
-
-    /** GET /data/quotes — get quotes for a comma-separated list of symbols */
-    JsonNode getQuotes(String symbols, String authHeader) throws Exception;
-
     /** GET /api/v3/profile — get user profile (name, email, etc.) */
     JsonNode getProfile(String authHeader) throws Exception;
 
     /** PUT /api/v3/orders/sync — modify an existing order */
     JsonNode modifyOrder(String orderJson, String authHeader) throws Exception;
-
-    /** GET /data/history — OHLCV candle history.
-     *  @param symbol       e.g. "NSE:NIFTY50-INDEX"
-     *  @param resolution   "D" for daily, "5"/"15" for minute candles
-     *  @param rangeFromIso yyyy-MM-dd (inclusive)
-     *  @param rangeToIso   yyyy-MM-dd (inclusive)
-     *  Response shape: {s:"ok", candles:[[epochSec, open, high, low, close, volume], ...]} */
-    JsonNode getHistory(String symbol, String resolution, String rangeFromIso,
-                        String rangeToIso, String authHeader) throws Exception;
 }

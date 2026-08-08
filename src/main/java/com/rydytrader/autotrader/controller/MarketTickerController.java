@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
 import com.rydytrader.autotrader.manager.PositionManager;
+import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.MarketHolidayService;
 import com.rydytrader.autotrader.store.TokenStore;
 import org.springframework.http.ResponseEntity;
@@ -15,7 +16,6 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Map;
 import java.util.Set;
 
 @RestController
@@ -25,6 +25,7 @@ public class MarketTickerController {
     private final FyersProperties fyersProperties;
     private final TokenStore tokenStore;
     private final MarketHolidayService marketHolidayService;
+    private final MarketDataService marketDataService;
 
     // Indices stay hardcoded — used by MarketDataService to ensure the WebSocket always
     // subscribes to them for the NIFTY trend calc + sector chips on the scanner page.
@@ -44,72 +45,51 @@ public class MarketTickerController {
         return BASE_SYMBOLS.split(",");
     }
 
-    private static final long CACHE_TTL_MS = 60_000; // 60 seconds
-    private volatile List<Map<String, Object>> cachedTickers = List.of();
-    private volatile long lastFetchTime = 0;
-    private volatile String lastSymbolsKey = "";
-
     public MarketTickerController(FyersClientRouter fyersClient,
                                    FyersProperties fyersProperties,
                                    TokenStore tokenStore,
-                                   MarketHolidayService marketHolidayService) {
+                                   MarketHolidayService marketHolidayService,
+                                   MarketDataService marketDataService) {
         this.fyersClient = fyersClient;
         this.fyersProperties = fyersProperties;
         this.tokenStore = tokenStore;
         this.marketHolidayService = marketHolidayService;
+        this.marketDataService = marketDataService;
     }
 
+    /** REST snapshot for the top-of-page ticker. Reads from {@link MarketDataService}'s
+     *  in-memory tick cache — Fyers /quotes was retired with the strip-Fyers-data
+     *  refactor. Only symbols with a live LTP in cache appear; the SSE stream
+     *  (/api/market-ticker-sse) is the real-time feed. */
     @GetMapping("/api/market-ticker")
     public ResponseEntity<?> getMarketTicker() {
-        String symbols = buildSymbolList();
-        long now = System.currentTimeMillis();
+        Set<String> wanted = new LinkedHashSet<>();
+        for (String s : BASE_SYMBOLS.split(",")) wanted.add(s);
+        wanted.addAll(PositionManager.getAllSymbols());
+        Set<String> positionSymbols = PositionManager.getAllSymbols();
 
-        // Invalidate cache if position symbols changed or TTL expired
-        boolean cacheValid = (now - lastFetchTime < CACHE_TTL_MS)
-                && !cachedTickers.isEmpty()
-                && symbols.equals(lastSymbolsKey);
-
-        if (cacheValid) {
-            return ResponseEntity.ok(cachedTickers);
+        List<Map<String, Object>> tickers = new ArrayList<>();
+        for (String sym : wanted) {
+            double lp = marketDataService.getDisplayLtp(sym);
+            if (lp <= 0) continue;
+            Map<String, Object> tick = new LinkedHashMap<>();
+            tick.put("symbol", shortName(sym));
+            tick.put("lp",  lp);
+            tick.put("ch",  marketDataService.getDisplayChange(sym));
+            tick.put("chp", marketDataService.getDisplayChangePct(sym));
+            tick.put("position", positionSymbols.contains(sym));
+            tickers.add(tick);
         }
-
-        try {
-            String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
-            JsonNode resp = fyersClient.getQuotes(symbols, auth);
-
-            List<Map<String, Object>> tickers = new ArrayList<>();
-            Set<String> positionSymbols = PositionManager.getAllSymbols();
-            JsonNode data = resp.get("d");
-            if (data != null && data.isArray()) {
-                for (JsonNode item : data) {
-                    JsonNode v = item.get("v");
-                    if (v == null) continue;
-                    Map<String, Object> tick = new LinkedHashMap<>();
-                    String sym = v.get("symbol").asText();
-                    tick.put("symbol", v.has("short_name") ? v.get("short_name").asText() : sym);
-                    tick.put("lp", v.get("lp").asDouble());
-                    tick.put("ch", v.get("ch").asDouble());
-                    tick.put("chp", v.get("chp").asDouble());
-                    // Mark position symbols so the UI can highlight them
-                    tick.put("position", positionSymbols.contains(sym));
-                    tickers.add(tick);
-                }
-            }
-            cachedTickers = tickers;
-            lastFetchTime = now;
-            lastSymbolsKey = symbols;
-            return ResponseEntity.ok(tickers);
-        } catch (Exception e) {
-            return ResponseEntity.ok(cachedTickers.isEmpty() ? List.of() : cachedTickers);
-        }
+        return ResponseEntity.ok(tickers);
     }
 
-    private String buildSymbolList() {
-        Set<String> symbols = new LinkedHashSet<>();
-        for (String s : BASE_SYMBOLS.split(",")) symbols.add(s);
-        // Open position symbols — ensures user sees live prices for what they hold.
-        symbols.addAll(PositionManager.getAllSymbols());
-        return String.join(",", symbols);
+    private static String shortName(String fyersSymbol) {
+        try {
+            String afterColon = fyersSymbol.split(":")[1];
+            return afterColon.replaceAll("-(EQ|INDEX|MF|BE|BL|SM)$", "");
+        } catch (Exception e) {
+            return fyersSymbol;
+        }
     }
 
     @GetMapping("/api/profile")

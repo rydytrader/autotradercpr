@@ -4,7 +4,6 @@ import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.entity.AppUser;
 import com.rydytrader.autotrader.repository.AppUserRepository;
 import com.rydytrader.autotrader.service.LoginService;
-import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.OrderEventService;
 import com.rydytrader.autotrader.service.PollingService;
 import com.rydytrader.autotrader.store.TokenStore;
@@ -28,7 +27,6 @@ public class ViewController {
     private final PollingService    pollingService;
     private final LoginService      loginService;
     private final FyersProperties   fyersProperties;
-    private final MarketDataService marketDataService;
     private final OrderEventService orderEventService;
     private final AppUserRepository userRepo;
     private final PasswordEncoder   passwordEncoder;
@@ -37,7 +35,6 @@ public class ViewController {
                            PollingService pollingService,
                            LoginService loginService,
                            FyersProperties fyersProperties,
-                           MarketDataService marketDataService,
                            OrderEventService orderEventService,
                            AppUserRepository userRepo,
                            PasswordEncoder passwordEncoder) {
@@ -45,7 +42,6 @@ public class ViewController {
         this.pollingService    = pollingService;
         this.loginService      = loginService;
         this.fyersProperties   = fyersProperties;
-        this.marketDataService = marketDataService;
         this.orderEventService = orderEventService;
         this.userRepo          = userRepo;
         this.passwordEncoder   = passwordEncoder;
@@ -83,7 +79,6 @@ public class ViewController {
                 try {
                     pollingService.syncPositionOnce();
                     pollingService.startPositionSync();
-                    marketDataService.start();
                     orderEventService.start();
                 } catch (Exception e) {
                     log.error("Error starting services after Fyers login: {}", e.getMessage());

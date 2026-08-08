@@ -128,13 +128,6 @@ public class OptionScalping implements Strategy {
     private final RiskSettingsStore     riskSettings;
     private final ObjectProvider<StrategyTradeRepository> tradeRepoProvider;
     private final ObjectProvider<OptionScalpingStreamBroker>     streamBrokerProvider;
-    /** Fyers /history reconcile — swaps our WS-aggregated bar OHLC with the exchange-
-     *  authoritative bar before the FSM commits to a fire/no-fire decision. Also used
-     *  to backfill yesterday's session for NIFTY spot + ATM CE/PE so the SuperTrend
-     *  indicator has 11+ bars available at 09:18 instead of waiting until ~09:48
-     *  live-only warm-up. Provider so a stripped-down test context without the Fyers
-     *  client can still boot OptionScalping. */
-    private final ObjectProvider<com.rydytrader.autotrader.service.HistoryReconcileService> historyReconcileProvider;
     /** GDFL config — read to skip Fyers WS + aggregator subscribes for option strikes
      *  when GDFL owns those symbols. Provider so the strategy still boots when the
      *  GDFL bean is absent (test / simulator contexts, or gdfl.enabled=false setups
@@ -166,7 +159,6 @@ public class OptionScalping implements Strategy {
                    RiskSettingsStore riskSettings,
                    ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
                    ObjectProvider<OptionScalpingStreamBroker> streamBrokerProvider,
-                   ObjectProvider<com.rydytrader.autotrader.service.HistoryReconcileService> historyReconcileProvider,
                    ObjectProvider<com.rydytrader.autotrader.gdfl.GdflProperties> gdflPropertiesProvider) {
         this.candleAggregator           = candleAggregator;
         this.atmTracker                 = atmTracker;
@@ -177,7 +169,6 @@ public class OptionScalping implements Strategy {
         this.riskSettings               = riskSettings;
         this.tradeRepoProvider          = tradeRepoProvider;
         this.streamBrokerProvider       = streamBrokerProvider;
-        this.historyReconcileProvider   = historyReconcileProvider;
         this.gdflPropertiesProvider     = gdflPropertiesProvider;
     }
 
@@ -252,11 +243,8 @@ public class OptionScalping implements Strategy {
         catch (Exception ignored) {}
         log.info("[OptionScalping] boot — NIFTY spot subscribed: {}", NIFTY_SYMBOL);
 
-        // Backfill yesterday's session on NIFTY spot so Gate C (spot SuperTrend)
-        // is warm the moment the first 09:18 bar closes. Index /history is very
-        // reliable so no fallback path is needed. Runs async on the reconcile
-        // pool; boot() doesn't block on it.
-        backfillLegHistory(NIFTY_SYMBOL);
+        // Fyers /history backfill was removed with the strip-Fyers-data refactor —
+        // SuperTrend warms live from GDFL ticks starting at 09:15.
 
         // Trading-started marker — fires exactly once per day, on the first NIFTY spot
         // tick received after 09:15 IST. Anchors the operator's mental timeline to the
@@ -538,12 +526,9 @@ public class OptionScalping implements Strategy {
     // ── Candle close handler ──────────────────────────────────────────────
 
     public void onCandleClose(String symbol, Candle c) {
-        // Reconcile FIRST — this replaces the local WS-aggregated candle with the
-        // exchange-authoritative /history bar and pushes it back into the aggregator's
-        // history ring. Runs regardless of the strategy enable / doneForDay / lockout
-        // state because the /chart page needs to render authoritative OHLC even when
-        // trading is paused. FSM logic below still gates on those flags.
-        Candle authoritative = reconcileBar(symbol, c);
+        // Fyers /history reconcile was removed with the strip-Fyers-data refactor. The
+        // FSM now runs on the locally-aggregated candle straight from the GDFL tick feed.
+        Candle authoritative = c;
 
         if (!isEnabled()) return;
         Object lock = symbolLocks.computeIfAbsent(symbol, k -> new Object());
@@ -635,7 +620,10 @@ public class OptionScalping implements Strategy {
             BalancedAtmSelector.ChainStrike cs = e.getValue();
             String ce = cs.ceSymbol(), pe = cs.peSymbol();
             if (ce == null || ce.isBlank() || pe == null || pe.isBlank()) continue;
-            if (cs.ceLtp() <= 0 || cs.peLtp() <= 0) continue;
+            // LTP-availability filter dropped with the strip-Fyers-data refactor: chain
+            // data is now synthesised locally and LTPs are 0 for strikes that haven't
+            // been tick-subscribed yet. Pre-warm subscribes the full ATM ± N window
+            // regardless; LTPs flow in from GDFL after subscription lands.
             state.warmingStrikes.add(strike);
             state.warmingCeByStrike.put(strike, ce);
             state.warmingPeByStrike.put(strike, pe);
@@ -809,8 +797,6 @@ public class OptionScalping implements Strategy {
                 + " (" + shortSym(ce) + ") | 1 ITM PE " + peItmStrike + " (" + shortSym(pe) + ")",
                 c.startMillis() + 60 * 1000L);
             saveToDisk();
-            backfillLegHistory(ce);
-            backfillLegHistory(pe);
             return;
         }
 
@@ -855,40 +841,6 @@ public class OptionScalping implements Strategy {
             + ") | 1 ITM PE " + peItmStrike + " (" + shortSym(state.peSymbol) + ")",
             c.startMillis() + 60 * 1000L);
         saveToDisk();
-        backfillLegHistory(state.ceSymbol);
-        backfillLegHistory(state.peSymbol);
-    }
-
-    /** Async /history backfill for yesterday's session on a single option leg. Prepends
-     *  the returned bars into the {@link CandleAggregator} ring so
-     *  {@link com.rydytrader.autotrader.indicator.SuperTrend#at} can compute a valid
-     *  state on the first live 09:18 bar close (11-bar warm-up satisfied).
-     *  No-op when the /history bean isn't available (e.g. simulator boot). */
-    private void backfillLegHistory(String symbol) {
-        if (symbol == null || symbol.isBlank()) return;
-        var hist = historyReconcileProvider == null ? null : historyReconcileProvider.getIfAvailable();
-        if (hist == null) return;
-        java.time.LocalDate yday = previousTradingDay();
-        hist.fetchDayRangeAsync(symbol, yday, yday, bars -> {
-            if (bars == null || bars.isEmpty()) {
-                log.info("[OptionScalping] backfill empty for {} on {} — SuperTrend will warm live", symbol, yday);
-                return;
-            }
-            candleAggregator.prependHistory(symbol, bars);
-        });
-    }
-
-    /** Walk back through weekends / obvious holidays to the previous trading day. Not
-     *  authoritative — the /history call itself will return empty on a holiday and we
-     *  fall back to live-only warm-up in that case. */
-    private java.time.LocalDate previousTradingDay() {
-        java.time.LocalDate d = java.time.LocalDate.now(IST).minusDays(1);
-        for (int i = 0; i < 3; i++) {
-            java.time.DayOfWeek dow = d.getDayOfWeek();
-            if (dow != java.time.DayOfWeek.SATURDAY && dow != java.time.DayOfWeek.SUNDAY) break;
-            d = d.minusDays(1);
-        }
-        return d;
     }
 
     private void ensureSessionLegsSubscribed() {
@@ -1203,51 +1155,6 @@ public class OptionScalping implements Strategy {
             saveToDisk();
         }
     }
-
-    /** Blocking /history reconcile for {@code bar}. Returns the authoritative bar when
-     *  Fyers has published it (typical ~2-4 s wait), or falls back to {@code bar} with a
-     *  warn event so the FSM still fires when the API is down. Emits an info event when
-     *  the authoritative close differs from the local close by more than 0.05 so drift is
-     *  visible in the operator's event log. */
-    /** Kill-switch for the /history reconcile path. Flip to {@code true} to re-enable
-     *  after evaluating the LTT-only bucketing (the LTT swap eliminates the boundary
-     *  skew that reconcile was mostly there to correct — testing needed to confirm the
-     *  remaining throttle/wick drift is tolerable without reconcile). While disabled,
-     *  the FSM runs on the local WS-aggregated bar and the chart ring keeps the local
-     *  values. All the reconcile machinery stays in place — this is a one-line toggle. */
-    private static final boolean HISTORY_RECONCILE_ENABLED = false;
-
-    private Candle reconcileBar(String symbol, Candle bar) {
-        if (!HISTORY_RECONCILE_ENABLED) return bar;
-        var svc = historyReconcileProvider == null ? null : historyReconcileProvider.getIfAvailable();
-        if (svc == null) return bar;
-        Candle auth;
-        try { auth = svc.fetchAuthoritative(symbol, bar.startMillis()); }
-        catch (Exception e) {
-            log.warn("[OptionScalping] reconcile threw for {} bar {}: {}", symbol, bar.startMillis(), e.getMessage());
-            return bar;
-        }
-        if (auth == null) {
-            event("[WARNING]", "Setup",
-                shortSym(symbol) + " /history reconcile unavailable — using local close "
-                + round2(bar.close()));
-            return bar;
-        }
-        double drift = auth.close() - bar.close();
-        if (Math.abs(drift) > 0.05) {
-            event("[INFO]", "Setup",
-                shortSym(symbol) + " reconciled close " + round2(auth.close())
-                + " (local " + round2(bar.close()) + ", Δ " + round2(drift) + ")");
-        }
-        // Push the authoritative bar back into the aggregator's history ring so the
-        // /chart page (which polls that ring) renders the same OHLC TradingView shows.
-        // Best-effort — a miss just leaves the local bar visible on the chart while the
-        // FSM still uses the authoritative value returned below.
-        try { candleAggregator.updateHistoryEntry(symbol, auth); }
-        catch (Exception e) { log.warn("[OptionScalping] history-ring update failed for {}: {}", symbol, e.getMessage()); }
-        return auth;
-    }
-
 
     private boolean canFireNewEntry() {
         LocalTime now = ZonedDateTime.now(IST).toLocalTime();
