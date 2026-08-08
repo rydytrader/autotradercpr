@@ -269,6 +269,13 @@ public class GdflService {
             // WS must be up + authenticated.
             if (wsClient == null || !wsClient.isAuthenticated()) return;
 
+            // NIFTY current-month futures — always subscribed independent of the
+            // strategy pre-warm. Uses GDFL's continuous "NIFTY-I" identifier which
+            // auto-rolls at expiry server-side, so no local expiry math / holiday
+            // walkback / rollover code needed. Idempotent — subscribeOne skips
+            // once it's in subscribedGdflSymbols.
+            subscribeOne(GdflSymbolMapper.FYERS_NIFTY_FUTURES);
+
             // Pre-warm window — OptionScalping.warmupIfDue populates ±10 strikes
             // (42 CE + PE symbols) at 09:10 IST. Subscribe them all on GDFL so
             // the 09:15 → 09:16 first 1-min bar has tick data for whichever
