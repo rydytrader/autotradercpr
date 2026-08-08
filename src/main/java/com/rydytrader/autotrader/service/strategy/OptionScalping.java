@@ -254,14 +254,23 @@ public class OptionScalping implements Strategy {
 
     @Override
     public boolean forceClose(String reason) {
-        // No auto-entries in Phase 3, but a MANUAL-terminal position may still be open —
-        // route through the existing close path so manual positions can be flattened
-        // from the kill-switch / Trade page.
+        // Two paths to close: (a) MANUAL-terminal positions in state.openPositions
+        // still get routed through the legacy close path; (b) FSM open positions
+        // (Phase 4 OPTIONS BUYING) live in state.entry* + state.fsmState and must
+        // be exited via fireExit so the FSM correctly locks DONE_FOR_DAY.
+        //
+        // PortfolioRiskService calls this when aggregate liveNetPnlToday breaches
+        // the daily budget — flattening the FSM's open leg is what actually stops
+        // the bleeding for the OPTIONS BUYING strategy.
+        String tag = reason == null ? "MANUAL" : reason;
         synchronized (this) {
-            if (state.openPositions.isEmpty()) return false;
             boolean anyClosed = false;
             for (Position p : new ArrayList<>(state.openPositions.values())) {
-                if (closePosition(p, reason == null ? "MANUAL" : reason)) anyClosed = true;
+                if (closePosition(p, tag)) anyClosed = true;
+            }
+            if (state.fsmState == FsmState.IN_POSITION) {
+                fireExit(tag, tag + " — market sell (forceClose)");
+                anyClosed = true;
             }
             return anyClosed;
         }
@@ -312,6 +321,11 @@ public class OptionScalping implements Strategy {
             for (Position p : state.openPositions.values()) {
                 net += openPositionMtm(p) - cycleChargesFor(p);
             }
+            // FSM open position (Phase 4 OPTIONS BUYING) lives in state.entry* not
+            // state.openPositions — its MTM must be added explicitly for portfolio-
+            // risk aggregation to see the live drawdown. Charges are ignored on the
+            // open leg (the fill hasn't landed yet); onOrderFill logs them at close.
+            net += fsmOpenPositionMtm();
             return round2(net);
         }
     }
@@ -586,11 +600,40 @@ public class OptionScalping implements Strategy {
                 return;
             }
             if (orderId.equals(state.exitOrderId)) {
-                double pnl = ("CE".equals(state.entrySide) || "PE".equals(state.entrySide))
-                    ? (price - state.entryPrice) * (riskSettings.getOptionBuyingLotsPerLeg() * LOT_SIZE)
+                int qty = riskSettings.getOptionBuyingLotsPerLeg() * LOT_SIZE;
+                double gross = ("CE".equals(state.entrySide) || "PE".equals(state.entrySide))
+                    ? (price - state.entryPrice) * qty
                     : 0.0;
-                event(pnl >= 0 ? "[SUCCESS]" : "[WARNING]", "Fill",
-                    "Exit filled @ Rs." + round2(price) + " — gross P&L Rs." + round2(pnl));
+                double sellTurnover = price            * qty;    // long exit → sell turnover
+                double buyTurnover  = state.entryPrice * qty;    // long entry → buy turnover
+                double charges = perCycleCharges(sellTurnover, buyTurnover);
+                double net = gross - charges;
+                event(net >= 0 ? "[SUCCESS]" : "[WARNING]", "Fill",
+                    "Exit filled @ Rs." + round2(price) + " — gross Rs." + round2(gross)
+                        + " charges Rs." + round2(charges) + " net Rs." + round2(net));
+
+                // Append a cycle so consumedRiskToday / liveNetPnlToday /
+                // PortfolioRiskService see the realised P&L. Same shape closePosition
+                // uses so downstream readers (dashboard, analytics) don't branch.
+                Map<String, Object> cycle = new LinkedHashMap<>();
+                long closedAtMillis = System.currentTimeMillis();
+                cycle.put("strategyId",     STRATEGY_ID);
+                cycle.put("setup",          state.entrySide == null ? "" : state.entrySide);
+                cycle.put("symbol",         state.entrySymbol);
+                cycle.put("side",           "BUY");
+                cycle.put("qty",            qty);
+                cycle.put("entryPrice",     round2(state.entryPrice));
+                cycle.put("exitPrice",      round2(price));
+                cycle.put("grossPnl",       round2(gross));
+                cycle.put("charges",        round2(charges));
+                cycle.put("netPnl",         round2(net));
+                cycle.put("closeReason",    "FSM_EXIT");
+                cycle.put("closedAtMillis", closedAtMillis);
+                cycle.put("openedAtMillis", 0L);
+                cycle.put("entryCandleMs",  0L);
+                state.todayClosedTrades.add(cycle);
+                while (state.todayClosedTrades.size() > 100) state.todayClosedTrades.remove(0);
+
                 saveToDisk();
             }
         }
@@ -934,6 +977,39 @@ public class OptionScalping implements Strategy {
         }
     }
 
+    /** Gross MTM (rupees) of the FSM's open OPTIONS BUYING position, if any.
+     *  Positive = unrealised gain, negative = unrealised loss. Zero when
+     *  the FSM is not IN_POSITION or the option LTP hasn't landed yet. */
+    private double fsmOpenPositionMtm() {
+        if (state.fsmState != FsmState.IN_POSITION) return 0.0;
+        if (state.entrySymbol == null || state.entryPrice <= 0) return 0.0;
+        try {
+            double ltp = marketDataService.getLtp(state.entrySymbol);
+            if (ltp <= 0) return 0.0;
+            int qty = riskSettings.getOptionBuyingLotsPerLeg() * LOT_SIZE;
+            return (ltp - state.entryPrice) * qty;   // always long (BUY)
+        } catch (Exception e) {
+            return 0.0;
+        }
+    }
+
+    /** Rupees consumed by realised losses (closed cycles) + current unrealised
+     *  drawdown on the FSM open position (if any). Used by both the Risk Budget
+     *  UI tile and — via PortfolioRiskService's liveNetPnlToday check — the
+     *  hard-close enforcement. Positive number = money burned. */
+    private double consumedRiskToday() {
+        double consumed = 0.0;
+        synchronized (this) {
+            for (Map<String, Object> m : state.todayClosedTrades) {
+                double pnl = asDouble(m.get("netPnl"));
+                if (pnl < 0) consumed += -pnl;
+            }
+        }
+        double fsmMtm = fsmOpenPositionMtm();
+        if (fsmMtm < 0) consumed += -fsmMtm;
+        return consumed;
+    }
+
     /** Legacy indicator snapshot — returns neutral (unavailable) fields so the /positions
      *  page's "NIFTY Technicals" tile shows "—" instead of crashing. No CE/PE state is
      *  tracked in Phase 3. */
@@ -1027,8 +1103,8 @@ public class OptionScalping implements Strategy {
         m.put("perSymbolLevels", new LinkedHashMap<String, Object>());
 
         Map<String, Object> risk = new LinkedHashMap<>();
-        risk.put("exposedRisk",     0.0);
-        risk.put("consumedRisk",    0.0);
+        risk.put("exposedRisk",     0.0);                          // retired — see hero tile comments
+        risk.put("consumedRisk",    round2(consumedRiskToday()));  // realised loss + live FSM MTM drawdown
         risk.put("dailyRiskBudget", round2(riskSettings.getPortfolioMaxDailyLoss()));
         m.put("risk", risk);
 
