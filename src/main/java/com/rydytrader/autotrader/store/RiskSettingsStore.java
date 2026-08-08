@@ -342,12 +342,6 @@ public class RiskSettingsStore {
         // the bhavcopy fetcher hardcodes NIFTY 100 cap-flag seeding.
         volatile double scanMinPrice = 300;      // min stock price filter (0 = no filter)
         volatile double scanMaxPrice = 0;        // max stock price filter (0 = no max)
-        // Opening refresh — re-fetches today's candles from Fyers /data/history after
-        // 9:20 to correct any wrong live-tick-built first candle (Fyers' live WS data is
-        // unreliable during 9:15-9:25 per their own docs). Re-seeds completedCandles, SMA, ATR,
-        // firstCandleClose, dayOpen. Configurable HH:mm time (IST).
-        volatile boolean enableOpeningRefresh = true;
-        volatile String  openingRefreshTime   = "09:25"; // IST, HH:mm
         // Target Tolerance — discount structural target by ATR fraction so near-miss reversals fill
         volatile boolean enableTargetTolerance = true;
         volatile double targetToleranceAtr = 0.10; // discount structural target by this fraction of ATR
@@ -562,8 +556,6 @@ public class RiskSettingsStore {
     public double getNarrowCprZoneCollapseWidthPct() { return cfg().narrowCprZoneCollapseWidthPct; }
     public double getScanMinPrice() { return cfg().scanMinPrice; }
     public double getScanMaxPrice() { return cfg().scanMaxPrice; }
-    public boolean isEnableOpeningRefresh()    { return cfg().enableOpeningRefresh; }
-    public String  getOpeningRefreshTime()     { return cfg().openingRefreshTime; }
     public boolean isEnableTargetTolerance()   { return cfg().enableTargetTolerance; }
     public double getTargetToleranceAtr()      { return cfg().targetToleranceAtr; }
     public boolean isEnableIndexAlignment()    { return cfg().enableIndexAlignment; }
@@ -588,8 +580,6 @@ public class RiskSettingsStore {
     public void setNarrowCprZoneCollapseWidthPct(double v) { cfg().narrowCprZoneCollapseWidthPct = v; }
     public void setScanMinPrice(double v) { cfg().scanMinPrice = v; }
     public void setScanMaxPrice(double v) { cfg().scanMaxPrice = v; }
-    public void setEnableOpeningRefresh(boolean v) { cfg().enableOpeningRefresh = v; }
-    public void setOpeningRefreshTime(String v)    { cfg().openingRefreshTime = v; }
     public void setEnableTargetTolerance(boolean v) { cfg().enableTargetTolerance = v; }
     public void setTargetToleranceAtr(double v) { cfg().targetToleranceAtr = v; }
     public void setEnableIndexAlignment(boolean v)        { cfg().enableIndexAlignment = v; }
@@ -912,8 +902,6 @@ public class RiskSettingsStore {
             upsert("narrowCprZoneCollapseWidthPct", String.valueOf(c.narrowCprZoneCollapseWidthPct));
             upsert("scanMinPrice", String.valueOf(c.scanMinPrice));
             upsert("scanMaxPrice", String.valueOf(c.scanMaxPrice));
-            upsert("enableOpeningRefresh", String.valueOf(c.enableOpeningRefresh));
-            upsert("openingRefreshTime", c.openingRefreshTime);
             upsert("enableTargetTolerance", String.valueOf(c.enableTargetTolerance));
             upsert("targetToleranceAtr", String.valueOf(c.targetToleranceAtr));
             upsert("enableIndexAlignment",   String.valueOf(c.enableIndexAlignment));
@@ -1250,8 +1238,6 @@ public class RiskSettingsStore {
                          "scanCapFilter",
                          "openingRangeMinutes" -> { /* legacy — removed */ }
                     case "scanOnlyNifty50" -> { /* ignored — field removed, DB Stock Universe gates the watchlist */ }
-                    case "enableOpeningRefresh" -> c.enableOpeningRefresh = Boolean.parseBoolean(v);
-                    case "openingRefreshTime" -> c.openingRefreshTime = v;
                     case "enableTargetTolerance" -> c.enableTargetTolerance = Boolean.parseBoolean(v);
                     case "targetToleranceAtr" -> c.targetToleranceAtr = Double.parseDouble(v);
                     case "enableIndexAlignment"   -> c.enableIndexAlignment = Boolean.parseBoolean(v);

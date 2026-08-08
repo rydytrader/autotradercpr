@@ -169,9 +169,9 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
 
     private void scheduleReconnect() {
         if (!running) return;
-        // Mirrors MarketDataService — once the in-memory token has been cleared (after
-        // MarketDataService detected repeated 401s from /data/symbol-token), there's no
-        // point hammering the order WS handshake. Resume on the next start() call which
+        // Once the in-memory token has been cleared (e.g. LoginService cleared it
+        // on repeated 401s from order-side calls), there's no point hammering the
+        // order WS handshake. Resume on the next start() call which
         // ViewController.fyersCallback triggers after a fresh Fyers login.
         if (!tokenStore.isTokenAvailable()) {
             log.info("[OrderEventSvc] Reconnect paused — no access token. Waiting for re-login.");
