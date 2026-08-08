@@ -203,82 +203,57 @@
         </div>
     </div>
 
-    <!-- ── Overview hero — big NIFTY on the left, tiles on the right, ──────
-         Technicals chip row across the bottom. Mirrors home.html's Overview
-         card shape. Everything on this card updates live (NIFTY LTP via
-         ticker SSE, P&L / risk via /api/option-scalping/state SSE, clock on
-         a 1 s local tick, indicators via a 3 s poll). -->
+    <!-- ── Overview hero — big Net Day P&L on the left, tiles on the right. ──
+         Everything on this card updates live (risk from /api/option-scalping/state
+         SSE, NIFTY futures / VWAP from /api/chart/symbols poll, clock on 1s tick). -->
     <div class="section-card fade-in" style="margin-bottom:20px;">
         <div class="section-header">
             <div class="section-title"><div class="section-title-dot"></div> Overview</div>
-            <!-- Right-side header cluster: exposed risk (compact). Market clock
-                 lives in the tile row below now. -->
-            <div style="margin-left:auto; display:flex; align-items:center; gap:14px;
-                        font-family:var(--font-mono); font-size:0.72rem;">
-                <span style="color:var(--text-muted);">Exposed
-                    <span id="exposedRiskVal" style="color:#f6ad55; font-weight:700;">₹0</span>
-                </span>
-                <span style="color:var(--text-muted);">Consumed
-                    <span id="consumedRiskVal" style="color:#fc8181; font-weight:700;">₹0</span>
-                </span>
-                <span style="color:var(--text-muted);">Budget
-                    <span id="riskBudgetVal" style="color:#68d391; font-weight:700;">—</span>
-                </span>
-            </div>
         </div>
         <div style="padding:20px 28px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:20px;">
-            <!-- Big left tile — Net Day P&L (was NIFTY Spot; swap per operator ask). -->
+            <!-- Big left tile — Net Day P&L. -->
             <div>
                 <div class="stat-label" style="margin-bottom:6px;">Net Day P&amp;L</div>
                 <div class="stat-value" id="statPnl" style="font-size:2.2rem;">—</div>
                 <div class="stat-sub" id="statPnlSub" style="margin-top:6px; color:var(--text-muted);">Realized + Unrealized</div>
             </div>
             <div style="display:flex; gap:28px; flex-wrap:wrap; align-items:flex-start;">
-                <!-- NIFTY Spot — now a small tile on the right. -->
-                <div style="text-align:center;">
-                    <div class="stat-label">NIFTY Spot</div>
-                    <!-- LTP colour set by renderFutTickerCells based on change sign
-                         (green above y-close, red below, muted at flat). -->
-                    <div class="stat-value" id="statNiftyLtp" style="font-size:1.3rem; margin-top:4px;">—</div>
+                <!-- Exposed Risk — capital tied up in open positions (₹). -->
+                <div style="text-align:center;"
+                     title="Rupees currently at risk across open positions">
+                    <div class="stat-label">Exposed</div>
+                    <div class="stat-value" id="exposedRiskVal" style="font-size:1.3rem; margin-top:4px; color:#f6ad55;">₹0</div>
+                    <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">Open positions</div>
+                </div>
+                <!-- Consumed Risk — realised losses today (₹). -->
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
+                     title="Rupees lost on closed trades today">
+                    <div class="stat-label">Consumed</div>
+                    <div class="stat-value" id="consumedRiskVal" style="font-size:1.3rem; margin-top:4px; color:#fc8181;">₹0</div>
+                    <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">Realized loss today</div>
+                </div>
+                <!-- Budget — daily risk budget with usage %. -->
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
+                     title="Daily risk budget and how much is used (exposed + consumed)">
+                    <div class="stat-label">Budget</div>
+                    <div class="stat-value" id="riskBudgetVal" style="font-size:1.3rem; margin-top:4px;">—</div>
+                    <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">Used / Total</div>
+                </div>
+                <!-- NIFTY Futures — LTP + change vs previous close. -->
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
+                     title="NIFTY current-month futures">
+                    <div class="stat-label">NIFTY FUT</div>
+                    <div class="stat-value" id="statFutLtp" style="font-size:1.3rem; margin-top:4px;">—</div>
                     <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">
-                        <span id="statNiftyChg" style="font-weight:400;">—</span>
+                        <span id="statFutChg" style="font-weight:400;">—</span>
                     </div>
                 </div>
-                <!-- SuperTrend — NIFTY spot ST headline, CE + PE premium ST in the sub. -->
+                <!-- NIFTY VWAP — session VWAP of futures. -->
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
-                     title="SuperTrend(10, 3) — direction filter">
-                    <div class="stat-label">SuperTrend</div>
-                    <div class="stat-value" id="tileStValue" style="font-size:1.3rem; margin-top:4px;">—</div>
-                    <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">
-                        CE <span id="tileStCe" style="font-weight:600;">—</span>
-                        <span style="margin:0 4px;">·</span>
-                        PE <span id="tileStPe" style="font-weight:600;">—</span>
-                    </div>
-                </div>
-                <!-- Bollinger — upper / lower headline, mid band in the sub. -->
-                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
-                     title="Bollinger Bands (20 SMA ± 2σ)">
-                    <div class="stat-label">Bollinger</div>
-                    <div class="stat-value" id="tileBbValue" style="font-size:1.3rem; margin-top:4px;">—</div>
-                    <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">
-                        Mid <span id="tileBbMid" style="font-weight:600;">—</span>
-                    </div>
-                </div>
-                <!-- Floor Pivots — R1 / S1 headline, pivot in the sub. -->
-                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
-                     title="Floor Pivots from yesterday's HLC — constant intraday">
-                    <div class="stat-label">Pivots</div>
-                    <div class="stat-value" id="tilePivotValue" style="font-size:1.3rem; margin-top:4px;">—</div>
-                    <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">
-                        P <span id="tilePivotMid" style="font-weight:600;">—</span>
-                    </div>
-                </div>
-                <!-- RSI — value coloured on 30/70 thresholds. -->
-                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
-                     title="RSI(14) — Wilder smoothing">
-                    <div class="stat-label">RSI</div>
-                    <div class="stat-value" id="tileRsiValue" style="font-size:1.3rem; margin-top:4px;">—</div>
-                    <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">30 · 70</div>
+                     title="Session VWAP of NIFTY futures — reference for the OPTION BUYING trigger">
+                    <div class="stat-label">VWAP</div>
+                    <div class="stat-value" id="statFutVwap" style="font-size:1.3rem; margin-top:4px;">—</div>
+                    <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">Session-anchored</div>
                 </div>
                 <!-- Market Clock — session clock + market status. Rightmost tile. -->
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
@@ -1105,109 +1080,50 @@
         if (cardChg) { cardChg.textContent = chgText || '—'; cardChg.style.color = 'var(--text-muted)'; }
     }
 
-    // ── Technicals tile poll ───────────────────────────────────────────────
-    // Every 3 s, hydrates the four Technicals tiles inside the hero card:
-    //   SuperTrend → NIFTY spot ST + arrow; sub carries CE + PE premium ST
-    //   Bollinger  → upper / lower band; sub carries the mid (20-SMA)
-    //   Pivots     → R1 / S1; sub carries the pivot P (all from yesterday's HLC)
-    //   RSI        → 14-period value coloured on 30 / 70 thresholds
-    // Two parallel fetches:
-    //   /api/option-buying/indicators — NIFTY ST/RSI/BB/pivots
-    //   /api/option-scalping/indicators — ATM CE / PE premium ST
-    function pollNiftyTechnicals() {
+    // ── NIFTY Futures + VWAP tile poll ─────────────────────────────────────
+    // Every 3s hits /api/chart/symbols (a purely in-memory read on the server) and
+    // updates the two futures-side hero tiles: LTP + change and session VWAP.
+    // Same endpoint the /chart page uses, so no duplicate machinery.
+    function pollFuturesTick() {
         if (document.visibilityState !== 'visible') return;
-
-        fetch('/api/option-buying/indicators')
+        fetch('/api/chart/symbols')
             .then(function(r) { return r.ok ? r.json() : null; })
             .then(function(d) {
                 if (!d) return;
-                var fmt = function(v) { return v > 0 ? Number(v).toFixed(1) : '—'; };
+                var ft = d.futuresTick || {};
+                var ltp  = Number(ft.ltp  || 0);
+                var ch   = Number(ft.ch   || 0);
+                var chp  = Number(ft.chp  || 0);
+                var vwap = Number(ft.vwap || 0);
 
-                // SuperTrend tile — headline value + arrow, colour by direction.
-                var stEl = document.getElementById('tileStValue');
-                if (stEl) {
-                    if (d.stAvailable && d.stLine > 0) {
-                        var arrow = d.stIsUp ? '▲' : '▼';
-                        stEl.textContent = Number(d.stLine).toFixed(1) + ' ' + arrow;
-                        stEl.style.color = d.stIsUp
-                            ? 'var(--accent-green, #34d399)'
-                            : 'var(--accent-red, #f87171)';
+                var ltpEl = document.getElementById('statFutLtp');
+                var chgEl = document.getElementById('statFutChg');
+                if (ltpEl) {
+                    ltpEl.textContent = ltp > 0 ? ltp.toFixed(2) : '—';
+                    ltpEl.style.color = ltp <= 0 ? 'var(--text-primary)'
+                                      : ch > 0   ? 'var(--accent-green, #34d399)'
+                                      : ch < 0   ? 'var(--accent-red, #f87171)'
+                                      : 'var(--text-primary)';
+                }
+                if (chgEl) {
+                    if (ltp > 0 && !(ch === 0 && chp === 0)) {
+                        var sign = ch > 0 ? '+' : (ch < 0 ? '−' : '');
+                        chgEl.textContent = sign + Math.abs(ch).toFixed(2) + ' (' + sign + Math.abs(chp).toFixed(2) + '%)';
                     } else {
-                        stEl.textContent = '—';
-                        stEl.style.color = 'var(--text-primary)';
+                        chgEl.textContent = '—';
                     }
                 }
 
-                // Bollinger tile — upper in GREEN (resistance), lower in RED (support).
-                // Mid (20-SMA) neutral in the sub.
-                var bbEl = document.getElementById('tileBbValue');
-                var bbMidEl = document.getElementById('tileBbMid');
-                if (bbEl) {
-                    if (d.bbUpper > 0 && d.bbLower > 0) {
-                        bbEl.innerHTML =
-                            '<span style="color:var(--accent-green, #34d399);">' + Number(d.bbUpper).toFixed(1) + '</span>'
-                            + '<span style="color:var(--text-muted); margin:0 4px;">/</span>'
-                            + '<span style="color:var(--accent-red, #f87171);">'   + Number(d.bbLower).toFixed(1) + '</span>';
-                    } else {
-                        bbEl.textContent = '—';
-                    }
+                var vwapEl = document.getElementById('statFutVwap');
+                if (vwapEl) {
+                    vwapEl.textContent = vwap > 0 ? vwap.toFixed(2) : '—';
+                    // Colour VWAP by where LTP sits relative to it — above = green (bullish
+                    // context for CE), below = red (bullish context for PE).
+                    vwapEl.style.color = (ltp <= 0 || vwap <= 0) ? 'var(--text-primary)'
+                                       : ltp > vwap ? 'var(--accent-green, #34d399)'
+                                       : ltp < vwap ? 'var(--accent-red, #f87171)'
+                                       : 'var(--text-primary)';
                 }
-                if (bbMidEl) bbMidEl.textContent = fmt(d.bbMid);
-
-                // Pivots tile — R1 in GREEN (resistance), S1 in RED (support).
-                // Pivot P neutral in the sub.
-                var pvEl = document.getElementById('tilePivotValue');
-                var pvMidEl = document.getElementById('tilePivotMid');
-                if (pvEl) {
-                    if (d.r1 > 0 && d.s1 > 0) {
-                        pvEl.innerHTML =
-                            '<span style="color:var(--accent-green, #34d399);">' + Number(d.r1).toFixed(1) + '</span>'
-                            + '<span style="color:var(--text-muted); margin:0 4px;">/</span>'
-                            + '<span style="color:var(--accent-red, #f87171);">'   + Number(d.s1).toFixed(1) + '</span>';
-                    } else {
-                        pvEl.textContent = '—';
-                    }
-                }
-                if (pvMidEl) pvMidEl.textContent = fmt(d.pivot);
-
-                // RSI tile — colour on 30 / 70 thresholds.
-                var rsiEl = document.getElementById('tileRsiValue');
-                if (rsiEl) {
-                    if (d.rsi > 0) {
-                        rsiEl.textContent = Number(d.rsi).toFixed(1);
-                        rsiEl.style.color = d.rsi >= 70 ? 'var(--accent-green, #34d399)'
-                                          : d.rsi <= 30 ? 'var(--accent-red, #f87171)'
-                                          : 'var(--text-primary)';
-                    } else {
-                        rsiEl.textContent = '—';
-                        rsiEl.style.color = 'var(--text-primary)';
-                    }
-                }
-            })
-            .catch(function() { /* silent */ });
-
-        // ATM CE + PE premium ST → SuperTrend tile's sub line.
-        fetch('/api/option-scalping/indicators')
-            .then(function(r) { return r.ok ? r.json() : null; })
-            .then(function(d) {
-                if (!d) return;
-                var render = function(el, available, line, isUp) {
-                    if (!el) return;
-                    if (available && line > 0) {
-                        var arrow = isUp ? '▲' : '▼';
-                        el.textContent = Number(line).toFixed(2) + arrow;
-                        // Premium ST for a SHORT: RED = trend agrees (green tint),
-                        // GREEN = flip → exit (red tint).
-                        el.style.color = isUp
-                            ? 'var(--accent-red, #f87171)'
-                            : 'var(--accent-green, #34d399)';
-                    } else {
-                        el.textContent = '—';
-                        el.style.color = 'var(--text-secondary)';
-                    }
-                };
-                render(document.getElementById('tileStCe'), d.ceStAvailable, d.ceStLine, d.ceStIsUp);
-                render(document.getElementById('tileStPe'), d.peStAvailable, d.peStLine, d.peStIsUp);
             })
             .catch(function() { /* silent */ });
     }
@@ -1227,8 +1143,8 @@
         checkConnection();
         setInterval(checkConnection, 5000);
         loadWelcome();
-        pollNiftyTechnicals();
-        setInterval(pollNiftyTechnicals, 3000);
+        pollFuturesTick();
+        setInterval(pollFuturesTick, 3000);
     });
 </script>
 

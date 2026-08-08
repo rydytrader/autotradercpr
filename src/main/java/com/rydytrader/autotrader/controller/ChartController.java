@@ -44,9 +44,10 @@ public class ChartController {
     private Map<String, Object> tickBlock(String fyersSymbol) {
         Map<String, Object> m = new LinkedHashMap<>();
         if (fyersSymbol == null || fyersSymbol.isBlank()) return m;
-        m.put("ltp", round2(marketDataService.getLtp(fyersSymbol)));
-        m.put("ch",  round2(marketDataService.getChange(fyersSymbol)));
-        m.put("chp", round2(marketDataService.getChangePercent(fyersSymbol)));
+        m.put("ltp",  round2(marketDataService.getLtp(fyersSymbol)));
+        m.put("ch",   round2(marketDataService.getChange(fyersSymbol)));
+        m.put("chp",  round2(marketDataService.getChangePercent(fyersSymbol)));
+        m.put("vwap", round2(marketDataService.getVwap(fyersSymbol)));
         return m;
     }
 
