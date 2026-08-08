@@ -28,18 +28,6 @@ public class RiskSettingsStore {
         volatile double maxRiskPerDayPct  = 1.0;  // max risk per day as % of totalCapital
         volatile double riskPerTrade      = 1000;  // max ₹ loss per trade if SL hits
         volatile String autoSquareOffTime = "";  // empty = disabled, e.g. "15:15"
-        // ── ATM VWAP strategy settings (singleton) ──────────────────────────
-        volatile boolean optionScalpingEnabled         = true;
-        volatile int     optionScalpingLotsPerLeg      = 1;       // 1 lot = 65 NIFTY
-        volatile String  optionScalpingOrderType       = "INTRADAY"; // INTRADAY | OVERNIGHT
-        volatile String  optionScalpingTradingStartTime = "09:18"; // signals fire only after this time (IST)
-        volatile String  optionScalpingTradingEndTime   = "14:30"; // no new signals after this time (IST); exits keep running
-        volatile String  optionScalpingSquareOffTime   = "15:25";
-        volatile int     optionScalpingMaxConcurrentPositions = 4; // hard cap on simultaneously-open positions
-        /** Hard cap on CE-side fires per session. Default 3. */
-        volatile int    optionScalpingMaxCeTradesPerDay = 3;
-        /** Hard cap on PE-side fires per session. Default 3. */
-        volatile int    optionScalpingMaxPeTradesPerDay = 3;
         // ── OPTION BUYING strategy settings (singleton) ─────────────────────
         // Dharanidharan Ganesan 4-indicator framework on 3-min NIFTY spot.
         // On a bullish 4-of-4 setup: buy today's ATM CE (fresh ATM from NIFTY
@@ -401,15 +389,6 @@ public class RiskSettingsStore {
     public double getRiskPerTrade()      { return cfg().riskPerTrade; }
     public double getMaxDailyLoss()      { return cfg().totalCapital * cfg().maxRiskPerDayPct / 100.0; }
     public String getAutoSquareOffTime() { return cfg().autoSquareOffTime; }
-    public boolean isOptionScalpingEnabled()           { return cfg().optionScalpingEnabled; }
-    public int     getOptionScalpingLotsPerLeg()       { return cfg().optionScalpingLotsPerLeg; }
-    public String  getOptionScalpingOrderType()        { return cfg().optionScalpingOrderType; }
-    public String  getOptionScalpingTradingStartTime() { return cfg().optionScalpingTradingStartTime; }
-    public String  getOptionScalpingTradingEndTime()   { return cfg().optionScalpingTradingEndTime; }
-    public String  getOptionScalpingSquareOffTime()    { return cfg().optionScalpingSquareOffTime; }
-    public int     getOptionScalpingMaxConcurrentPositions() { return cfg().optionScalpingMaxConcurrentPositions; }
-    public int     getOptionScalpingMaxCeTradesPerDay(){ return cfg().optionScalpingMaxCeTradesPerDay; }
-    public int     getOptionScalpingMaxPeTradesPerDay(){ return cfg().optionScalpingMaxPeTradesPerDay; }
     // OPTION BUYING getters
     public boolean isOptionBuyingEnabled()             { return cfg().optionBuyingEnabled; }
     public int     getOptionBuyingLotsPerLeg()         { return cfg().optionBuyingLotsPerLeg; }
@@ -598,15 +577,6 @@ public class RiskSettingsStore {
     public void setMaxRiskPerDayPct(double v)  { cfg().maxRiskPerDayPct = v; }
     public void setRiskPerTrade(double v)      { cfg().riskPerTrade = v; }
     public void setAutoSquareOffTime(String v) { cfg().autoSquareOffTime = v; }
-    public void setOptionScalpingEnabled(boolean v)            { cfg().optionScalpingEnabled = v; }
-    public void setOptionScalpingLotsPerLeg(int v)             { cfg().optionScalpingLotsPerLeg = Math.max(1, v); }
-    public void setOptionScalpingOrderType(String v)           { cfg().optionScalpingOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
-    public void setOptionScalpingTradingStartTime(String v)    { cfg().optionScalpingTradingStartTime = (v == null || v.isBlank()) ? "09:18" : v.trim(); }
-    public void setOptionScalpingTradingEndTime(String v)      { cfg().optionScalpingTradingEndTime = (v == null || v.isBlank()) ? "14:30" : v.trim(); }
-    public void setOptionScalpingSquareOffTime(String v)       { cfg().optionScalpingSquareOffTime = v == null ? "" : v.trim(); }
-    public void setOptionScalpingMaxConcurrentPositions(int v) { cfg().optionScalpingMaxConcurrentPositions = Math.max(1, v); }
-    public void setOptionScalpingMaxCeTradesPerDay(int v)      { cfg().optionScalpingMaxCeTradesPerDay = Math.max(0, v); }
-    public void setOptionScalpingMaxPeTradesPerDay(int v)      { cfg().optionScalpingMaxPeTradesPerDay = Math.max(0, v); }
     // OPTION BUYING setters
     public void setOptionBuyingEnabled(boolean v)             { cfg().optionBuyingEnabled = v; }
     public void setOptionBuyingLotsPerLeg(int v)              { cfg().optionBuyingLotsPerLeg = Math.max(1, v); }
@@ -713,15 +683,6 @@ public class RiskSettingsStore {
     public double getRiskPerTrade(String mode)      { return cfgFor(mode).riskPerTrade; }
     public double getMaxDailyLoss(String mode)      { return cfgFor(mode).totalCapital * cfgFor(mode).maxRiskPerDayPct / 100.0; }
     public String getAutoSquareOffTime(String mode) { return cfgFor(mode).autoSquareOffTime; }
-    public boolean isOptionScalpingEnabled(String mode)            { return cfgFor(mode).optionScalpingEnabled; }
-    public int     getOptionScalpingLotsPerLeg(String mode)        { return cfgFor(mode).optionScalpingLotsPerLeg; }
-    public String  getOptionScalpingOrderType(String mode)         { return cfgFor(mode).optionScalpingOrderType; }
-    public String  getOptionScalpingTradingStartTime(String mode)  { return cfgFor(mode).optionScalpingTradingStartTime; }
-    public String  getOptionScalpingTradingEndTime(String mode)    { return cfgFor(mode).optionScalpingTradingEndTime; }
-    public String  getOptionScalpingSquareOffTime(String mode)     { return cfgFor(mode).optionScalpingSquareOffTime; }
-    public int     getOptionScalpingMaxConcurrentPositions(String mode) { return cfgFor(mode).optionScalpingMaxConcurrentPositions; }
-    public int     getOptionScalpingMaxCeTradesPerDay(String mode) { return cfgFor(mode).optionScalpingMaxCeTradesPerDay; }
-    public int     getOptionScalpingMaxPeTradesPerDay(String mode) { return cfgFor(mode).optionScalpingMaxPeTradesPerDay; }
     public double getAtrMultiplier(String mode)     { return cfgFor(mode).atrMultiplier; }
     public double getBrokeragePerOrder(String mode) { return cfgFor(mode).brokeragePerOrder; }
     public double getStartingCapital(String mode)      { return cfgFor(mode).startingCapital; }
@@ -744,15 +705,6 @@ public class RiskSettingsStore {
     public void setMaxRiskPerDayPct(String mode, double v)  { cfgFor(mode).maxRiskPerDayPct = v; }
     public void setRiskPerTrade(String mode, double v)      { cfgFor(mode).riskPerTrade = v; }
     public void setAutoSquareOffTime(String mode, String v) { cfgFor(mode).autoSquareOffTime = v; }
-    public void setOptionScalpingEnabled(String mode, boolean v)            { cfgFor(mode).optionScalpingEnabled = v; }
-    public void setOptionScalpingLotsPerLeg(String mode, int v)             { cfgFor(mode).optionScalpingLotsPerLeg = Math.max(1, v); }
-    public void setOptionScalpingOrderType(String mode, String v)           { cfgFor(mode).optionScalpingOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
-    public void setOptionScalpingTradingStartTime(String mode, String v)    { cfgFor(mode).optionScalpingTradingStartTime = (v == null || v.isBlank()) ? "09:18" : v.trim(); }
-    public void setOptionScalpingTradingEndTime(String mode, String v)      { cfgFor(mode).optionScalpingTradingEndTime = (v == null || v.isBlank()) ? "14:30" : v.trim(); }
-    public void setOptionScalpingSquareOffTime(String mode, String v)       { cfgFor(mode).optionScalpingSquareOffTime = v == null ? "" : v.trim(); }
-    public void setOptionScalpingMaxConcurrentPositions(String mode, int v) { cfgFor(mode).optionScalpingMaxConcurrentPositions = Math.max(1, v); }
-    public void setOptionScalpingMaxCeTradesPerDay(String mode, int v)      { cfgFor(mode).optionScalpingMaxCeTradesPerDay = Math.max(0, v); }
-    public void setOptionScalpingMaxPeTradesPerDay(String mode, int v)      { cfgFor(mode).optionScalpingMaxPeTradesPerDay = Math.max(0, v); }
     public void setAtrMultiplier(String mode, double v)     { cfgFor(mode).atrMultiplier = v; }
     public void setBrokeragePerOrder(String mode, double v) { cfgFor(mode).brokeragePerOrder = v; }
     public void setStartingCapital(String mode, double v)      { cfgFor(mode).startingCapital = Math.max(0, v); }
@@ -785,15 +737,6 @@ public class RiskSettingsStore {
             upsert("maxRiskPerDayPct", String.valueOf(c.maxRiskPerDayPct));
             upsert("riskPerTrade", String.valueOf(c.riskPerTrade));
             upsert("autoSquareOffTime", c.autoSquareOffTime);
-            upsert("optionScalpingEnabled",          String.valueOf(c.optionScalpingEnabled));
-            upsert("optionScalpingLotsPerLeg",       String.valueOf(c.optionScalpingLotsPerLeg));
-            upsert("optionScalpingOrderType",         c.optionScalpingOrderType);
-            upsert("optionScalpingTradingStartTime",  c.optionScalpingTradingStartTime);
-            upsert("optionScalpingTradingEndTime",    c.optionScalpingTradingEndTime);
-            upsert("optionScalpingSquareOffTime",     c.optionScalpingSquareOffTime);
-            upsert("optionScalpingMaxConcurrentPositions", String.valueOf(c.optionScalpingMaxConcurrentPositions));
-            upsert("optionScalpingMaxCeTradesPerDay", String.valueOf(c.optionScalpingMaxCeTradesPerDay));
-            upsert("optionScalpingMaxPeTradesPerDay", String.valueOf(c.optionScalpingMaxPeTradesPerDay));
             upsert("optionBuyingEnabled",             String.valueOf(c.optionBuyingEnabled));
             upsert("optionBuyingLotsPerLeg",          String.valueOf(c.optionBuyingLotsPerLeg));
             upsert("optionBuyingOrderType",            c.optionBuyingOrderType);
@@ -960,35 +903,35 @@ public class RiskSettingsStore {
                     case "autoSquareOffTime" -> c.autoSquareOffTime = v;
                     case "manualAutoSquareOffTime"    -> { /* retired */ }
                     case "optionScalpingEnabled",
-                         "camarillaEnabled"           -> c.optionScalpingEnabled = Boolean.parseBoolean(v);
-                    case "optionScalpingLotsPerLeg",
-                         "camarillaLotsPerLeg"        -> c.optionScalpingLotsPerLeg = Integer.parseInt(v);
-                    case "optionScalpingOrderType",
-                         "camarillaOrderType"         -> c.optionScalpingOrderType = v;
-                    case "optionScalpingTradingStartTime",
-                         "camarillaTradingStartTime"  -> c.optionScalpingTradingStartTime = v;
-                    case "optionScalpingTradingEndTime",
-                         "camarillaTradingEndTime"    -> c.optionScalpingTradingEndTime = v;
-                    case "optionScalpingSquareOffTime",
-                         "camarillaSquareOffTime"     -> c.optionScalpingSquareOffTime = v;
-                    case "optionScalpingMinSlPoints",
-                         "optionScalpingMaxSlPoints" -> { /* SL clamps retired — SL is now trailing ST line; silently consume legacy rows */ }
-                    case "optionScalpingMaxCeTradesPerDay"   -> c.optionScalpingMaxCeTradesPerDay = Math.max(0, Integer.parseInt(v));
-                    case "optionScalpingMaxPeTradesPerDay"   -> c.optionScalpingMaxPeTradesPerDay = Math.max(0, Integer.parseInt(v));
-                    case "optionScalpingOiStrikesEachSide",
+                         "camarillaEnabled",
+                         "optionScalpingLotsPerLeg",
+                         "camarillaLotsPerLeg",
+                         "optionScalpingOrderType",
+                         "camarillaOrderType",
+                         "optionScalpingTradingStartTime",
+                         "camarillaTradingStartTime",
+                         "optionScalpingTradingEndTime",
+                         "camarillaTradingEndTime",
+                         "optionScalpingSquareOffTime",
+                         "camarillaSquareOffTime",
+                         "optionScalpingMinSlPoints",
+                         "optionScalpingMaxSlPoints",
+                         "optionScalpingMaxCeTradesPerDay",
+                         "optionScalpingMaxPeTradesPerDay",
+                         "optionScalpingOiStrikesEachSide",
                          "optionScalpingOiBiasThresholdPct",
                          "optionScalpingOiBiasFilterEnabled",
-                         "camarillaOiBiasFilterEnabled" -> { /* OI-bias retired 2026-08 — silently consume so old settings rows don't error on boot */ }
-                    case "optionScalpingSupertrendAtr",
+                         "camarillaOiBiasFilterEnabled",
+                         "optionScalpingSupertrendAtr",
                          "optionScalpingSupertrendMult",
                          "optionScalpingSpotSupertrendAtr",
-                         "optionScalpingSpotSupertrendMult" -> { /* SuperTrend params hardcoded to (10, 3) — silently consume legacy rows */ }
-                    case "optionScalpingMaxBreakdownPct"   -> { /* Gate D setting retired 2026-08 — silently consume so old settings rows don't error on boot */ }
-                    case "optionScalpingTrailingExitEnabled",
-                         "optionScalpingRequireGapOpenAboveVwap" -> { /* Both hardcoded ON — silently consume legacy rows */ }
-                    case "optionScalpingRetestEntryEnabled"  -> { /* retest folded into Gate A — silently consume legacy rows */ }
-                    case "optionScalpingMaxConcurrentPositions",
-                         "camarillaMaxConcurrentPositions" -> c.optionScalpingMaxConcurrentPositions = Integer.parseInt(v);
+                         "optionScalpingSpotSupertrendMult",
+                         "optionScalpingMaxBreakdownPct",
+                         "optionScalpingTrailingExitEnabled",
+                         "optionScalpingRequireGapOpenAboveVwap",
+                         "optionScalpingRetestEntryEnabled",
+                         "optionScalpingMaxConcurrentPositions",
+                         "camarillaMaxConcurrentPositions" -> { /* legacy scalping setting — silently consumed */ }
                     case "optionBuyingEnabled"           -> c.optionBuyingEnabled = Boolean.parseBoolean(v);
                     case "optionBuyingLotsPerLeg"        -> c.optionBuyingLotsPerLeg = Math.max(1, Integer.parseInt(v));
                     case "optionBuyingOrderType"         -> c.optionBuyingOrderType = v;

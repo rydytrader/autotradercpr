@@ -199,8 +199,7 @@ public class OptionScalping implements Strategy {
         }
 
         log.info("[OptionScalping] boot — futures subscribed: {} (5-min bars)", NIFTY_SYMBOL);
-        log.info("[OptionScalping] booted — optionScalpingEnabled={} optionBuyingEnabled={} fsmState={} squareoff={} restoredPositions={}",
-            riskSettings.isOptionScalpingEnabled(),
+        log.info("[OptionScalping] booted — optionBuyingEnabled={} fsmState={} squareoff={} restoredPositions={}",
             riskSettings.isOptionBuyingEnabled(),
             state.fsmState,
             riskSettings.getOptionBuyingSquareOffTime(),
@@ -251,7 +250,7 @@ public class OptionScalping implements Strategy {
         if (state.doneForDay || state.fsmState == FsmState.DONE_FOR_DAY) return "DONE_FOR_DAY";
         return state.openPositions.isEmpty() ? "IDLE" : "OPEN(" + state.openPositions.size() + ")";
     }
-    @Override public boolean isEnabled() { return riskSettings.isOptionScalpingEnabled(); }
+    @Override public boolean isEnabled() { return riskSettings.isOptionBuyingEnabled(); }
 
     @Override
     public boolean forceClose(String reason) {
@@ -628,7 +627,7 @@ public class OptionScalping implements Strategy {
         if (p == null) return false;
         String symbol = p.symbol;
         String productType = (p.productType == null || p.productType.isBlank())
-            ? riskSettings.getOptionScalpingOrderType()
+            ? "INTRADAY"
             : p.productType;
         int closeSide = p.isShort ? +1 : -1;
         var close = orderService.placeExitOrder(symbol, p.qty, closeSide, productType);

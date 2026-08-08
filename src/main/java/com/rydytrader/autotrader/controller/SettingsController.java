@@ -31,17 +31,7 @@ public class SettingsController {
         result.put("tradingStartTime",    riskSettings.getTradingStartTime(effectiveMode));
         result.put("tradingEndTime",      riskSettings.getTradingEndTime(effectiveMode));
         result.put("autoSquareOffTime",   riskSettings.getAutoSquareOffTime(effectiveMode));
-        // ATM VWAP
-        result.put("optionScalpingEnabled",            riskSettings.isOptionScalpingEnabled(effectiveMode));
-        result.put("optionScalpingLotsPerLeg",         riskSettings.getOptionScalpingLotsPerLeg(effectiveMode));
-        result.put("optionScalpingOrderType",          riskSettings.getOptionScalpingOrderType(effectiveMode));
-        result.put("optionScalpingTradingStartTime",   riskSettings.getOptionScalpingTradingStartTime(effectiveMode));
-        result.put("optionScalpingTradingEndTime",     riskSettings.getOptionScalpingTradingEndTime(effectiveMode));
-        result.put("optionScalpingSquareOffTime",      riskSettings.getOptionScalpingSquareOffTime(effectiveMode));
-        result.put("optionScalpingMaxConcurrentPositions", riskSettings.getOptionScalpingMaxConcurrentPositions(effectiveMode));
-        result.put("optionScalpingMaxCeTradesPerDay",  riskSettings.getOptionScalpingMaxCeTradesPerDay(effectiveMode));
-        result.put("optionScalpingMaxPeTradesPerDay",  riskSettings.getOptionScalpingMaxPeTradesPerDay(effectiveMode));
-        // OPTION BUYING (Ganesan 4-indicator framework — coexists with OPTION SCALPING)
+        // OPTION BUYING (Ganesan 4-indicator framework — only active strategy)
         result.put("optionBuyingEnabled",           riskSettings.isOptionBuyingEnabled());
         result.put("optionBuyingLotsPerLeg",        riskSettings.getOptionBuyingLotsPerLeg());
         result.put("optionBuyingOrderType",         riskSettings.getOptionBuyingOrderType());
@@ -85,19 +75,6 @@ public class SettingsController {
             if (body.containsKey("tradingStartTime"))  riskSettings.setTradingStartTime(effectiveMode, body.get("tradingStartTime").toString());
             if (body.containsKey("tradingEndTime"))    riskSettings.setTradingEndTime(effectiveMode, body.get("tradingEndTime").toString());
             if (body.containsKey("autoSquareOffTime")) riskSettings.setAutoSquareOffTime(effectiveMode, body.get("autoSquareOffTime").toString());
-            // ATM VWAP
-            if (body.containsKey("optionScalpingEnabled"))           riskSettings.setOptionScalpingEnabled(effectiveMode, Boolean.parseBoolean(body.get("optionScalpingEnabled").toString()));
-            if (body.containsKey("optionScalpingLotsPerLeg"))        riskSettings.setOptionScalpingLotsPerLeg(effectiveMode, Integer.parseInt(body.get("optionScalpingLotsPerLeg").toString()));
-            if (body.containsKey("optionScalpingOrderType"))         riskSettings.setOptionScalpingOrderType(effectiveMode, body.get("optionScalpingOrderType").toString());
-            if (body.containsKey("optionScalpingTradingStartTime"))  riskSettings.setOptionScalpingTradingStartTime(effectiveMode, body.get("optionScalpingTradingStartTime").toString());
-            if (body.containsKey("optionScalpingTradingEndTime"))    riskSettings.setOptionScalpingTradingEndTime(effectiveMode, body.get("optionScalpingTradingEndTime").toString());
-            if (body.containsKey("optionScalpingSquareOffTime"))     riskSettings.setOptionScalpingSquareOffTime(effectiveMode, body.get("optionScalpingSquareOffTime").toString());
-            if (body.containsKey("optionScalpingMaxConcurrentPositions")) riskSettings.setOptionScalpingMaxConcurrentPositions(effectiveMode, Integer.parseInt(body.get("optionScalpingMaxConcurrentPositions").toString()));
-            if (body.containsKey("optionScalpingMaxCeTradesPerDay"))      riskSettings.setOptionScalpingMaxCeTradesPerDay(effectiveMode, Integer.parseInt(body.get("optionScalpingMaxCeTradesPerDay").toString()));
-            if (body.containsKey("optionScalpingMaxPeTradesPerDay"))      riskSettings.setOptionScalpingMaxPeTradesPerDay(effectiveMode, Integer.parseInt(body.get("optionScalpingMaxPeTradesPerDay").toString()));
-            // SuperTrend params (Atr / Mult / Spot Atr / Spot Mult) intentionally not
-            // exposed to POST — hardcoded to (10, 3) in OptionScalping.java.
-            // TrailingExitEnabled + RequireGapOpenAboveVwap both hardcoded ON in OptionScalping — no POST.
             // OPTION BUYING — HardSlPct retired; Enabled is per-strategy kill switch.
             if (body.containsKey("optionBuyingEnabled"))          riskSettings.setOptionBuyingEnabled(Boolean.parseBoolean(body.get("optionBuyingEnabled").toString()));
             if (body.containsKey("optionBuyingLotsPerLeg"))       riskSettings.setOptionBuyingLotsPerLeg(Integer.parseInt(body.get("optionBuyingLotsPerLeg").toString()));

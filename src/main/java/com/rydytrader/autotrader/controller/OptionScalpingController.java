@@ -82,8 +82,8 @@ public class OptionScalpingController {
         Object v = body == null ? null : body.get("enabled");
         boolean enabled = (v instanceof Boolean) ? (Boolean) v
             : v != null && Boolean.parseBoolean(v.toString());
-        boolean previous = riskSettings.isOptionScalpingEnabled();
-        riskSettings.setOptionScalpingEnabled(enabled);
+        boolean previous = riskSettings.isOptionBuyingEnabled();
+        riskSettings.setOptionBuyingEnabled(enabled);
         riskSettings.save();
         if (enabled != previous) {
             strategy.postEvent(
