@@ -23,25 +23,23 @@
         .nav-icon:hover { color:var(--text-primary) !important; background:var(--bg-card-hover) !important; border-color:var(--border) !important; }
         .nav-icon.active { color:var(--accent-cyan) !important; background:rgba(125,211,252,0.12) !important; border-color:rgba(125,211,252,0.35) !important; }
 
-        /* Chart page grid — row 1 = NIFTY (full width), row 2 = CE (left) + PE (right). */
+        /* Single full-height panel — NIFTY FUT 5-min. */
         .chart-grid {
             display: grid;
             grid-template-columns: 1fr;
-            grid-template-rows: 1fr 1fr;
+            grid-template-rows: 1fr;
             gap: 16px;
             height: calc(100vh - 240px);
             min-height: 420px;
         }
-        .chart-panel-ce    { grid-column: 1; grid-row: 1; }
-        .chart-panel-pe    { grid-column: 1; grid-row: 2; }
+        .chart-panel-fut   { grid-column: 1; grid-row: 1; }
         .chart-panel { display: flex; flex-direction: column; margin: 0; }
         .chart-panel .chart-wrap {
             flex: 1; min-height: 0;
             padding: 8px 12px 12px;
             position: relative;
         }
-        /* Expanded / fullscreen chart panel. Covers the viewport; the chart itself
-           picks up the new container size on the next resize tick via autoSize. */
+        /* Expanded / fullscreen chart panel. */
         .chart-panel.chart-panel-expanded {
             position: fixed !important;
             inset: 0 !important;
@@ -51,8 +49,6 @@
             grid-column: unset !important;
             grid-row: unset !important;
         }
-        /* Hide any other panels + the app chrome behind the expanded one so ESC / click-out
-           can't leave overlapping content pushed underneath the fullscreen chart. */
         body.chart-expanded .chart-grid > .chart-panel:not(.chart-panel-expanded) {
             visibility: hidden;
         }
@@ -88,8 +84,7 @@
         .pnl-positive { color: var(--accent-green, #34d399); }
         .pnl-negative { color: var(--accent-red, #f87171); }
 
-        /* TradingView-style OHLC/VWAP tooltip pinned to top-left of the chart-wrap.
-           Populated by chart.subscribeCrosshairMove; hidden when the cursor leaves. */
+        /* TradingView-style OHLC/VWAP tooltip pinned to top-left of the chart-wrap. */
         .chart-ohlc-overlay {
             position: absolute; top: 10px; left: 14px;
             font-family: var(--font-mono); font-size: 0.68rem; font-weight: 600;
@@ -196,7 +191,7 @@
     <div class="page-header fade-in" style="margin-bottom:14px;">
         <div>
             <div class="page-title">Chart</div>
-            <div class="page-subtitle">Selected 1 ITM CE + PE · 1-min OHLC with VWAP</div>
+            <div class="page-subtitle">NIFTY FUT (5-min) · OHLC with VWAP</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -207,47 +202,24 @@
     </div>
 
     <div class="chart-grid fade-in">
-        <!-- 1 ITM CE — top -->
-        <div class="section-card chart-panel chart-panel-ce">
+        <!-- NIFTY FUTURES — 5-min -->
+        <div class="section-card chart-panel chart-panel-fut">
             <div class="section-header">
                 <div class="section-title" style="display:flex; align-items:center; gap:10px;">
-                    <div class="section-title-dot" style="background:var(--accent-green, #34d399);"></div>
-                    <span>1 ITM CE <span id="ceStrikeLabel" style="color:var(--text-primary); font-weight:700; margin-left:6px;">—</span></span>
-                    <span class="chart-hdr-price" id="cePrice">—</span>
-                    <span class="chart-hdr-chg" id="ceChg"></span>
+                    <div class="section-title-dot" style="background:var(--accent-cyan, #7dd3fc);"></div>
+                    <span>NIFTY FUT (5-min)</span>
+                    <span class="chart-hdr-sym" id="futSymbolLabel">—</span>
+                    <span class="chart-hdr-price" id="futPrice">—</span>
+                    <span class="chart-hdr-chg" id="futChg"></span>
                 </div>
                 <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
-                    <span id="ceTradeCount" style="font-family:var(--font-mono); font-size:0.74rem; font-weight:700; color:#34d399; background:rgba(52,211,153,0.12); border:1px solid rgba(52,211,153,0.40); padding:2px 9px; border-radius:999px;">0 / 3</span>
-                    <span id="cePnl" style="font-family:var(--font-mono); font-size:0.78rem; font-weight:700; color:var(--text-muted);">P&amp;L —</span>
-                    <button class="chart-expand-btn" data-panel="ce" onclick="toggleExpand('ce')" title="Expand chart">⛶</button>
+                    <button class="chart-expand-btn" data-panel="fut" onclick="toggleExpand('fut')" title="Expand chart">⛶</button>
                 </div>
             </div>
             <div class="chart-wrap">
-                <div id="chartCe" style="position:absolute; inset:0;"></div>
-                <div class="chart-ohlc-overlay" id="chartCeOverlay"></div>
-                <div class="chart-empty" id="chartCeEmpty">Waits until first 1-min bar closes and ATM locks (~09:16 IST)…</div>
-            </div>
-        </div>
-
-        <!-- 1 ITM PE — bottom -->
-        <div class="section-card chart-panel chart-panel-pe">
-            <div class="section-header">
-                <div class="section-title" style="display:flex; align-items:center; gap:10px;">
-                    <div class="section-title-dot" style="background:var(--accent-red, #f87171);"></div>
-                    <span>1 ITM PE <span id="peStrikeLabel" style="color:var(--text-primary); font-weight:700; margin-left:6px;">—</span></span>
-                    <span class="chart-hdr-price" id="pePrice">—</span>
-                    <span class="chart-hdr-chg" id="peChg"></span>
-                </div>
-                <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
-                    <span id="peTradeCount" style="font-family:var(--font-mono); font-size:0.74rem; font-weight:700; color:#f87171; background:rgba(248,113,113,0.12); border:1px solid rgba(248,113,113,0.40); padding:2px 9px; border-radius:999px;">0 / 3</span>
-                    <span id="pePnl" style="font-family:var(--font-mono); font-size:0.78rem; font-weight:700; color:var(--text-muted);">P&amp;L —</span>
-                    <button class="chart-expand-btn" data-panel="pe" onclick="toggleExpand('pe')" title="Expand chart">⛶</button>
-                </div>
-            </div>
-            <div class="chart-wrap">
-                <div id="chartPe" style="position:absolute; inset:0;"></div>
-                <div class="chart-ohlc-overlay" id="chartPeOverlay"></div>
-                <div class="chart-empty" id="chartPeEmpty">Waits until first 1-min bar closes and ATM locks (~09:16 IST)…</div>
+                <div id="chartFut" style="position:absolute; inset:0;"></div>
+                <div class="chart-ohlc-overlay" id="chartFutOverlay"></div>
+                <div class="chart-empty" id="chartFutEmpty">Waiting for first 5-min bar to close…</div>
             </div>
         </div>
     </div>
@@ -261,14 +233,13 @@
 </div>
 
 <script>
-    // Charts render 3-min close prices as a line, with the rightmost point animated by the
-    // in-progress bucket's live close (LTP). Poll cadence:
+    // Charts render 5-min close prices as candles + VWAP overlay, with the rightmost point
+    // animated by the in-progress bucket's live close (LTP). Poll cadence:
     //   • /api/chart/candles per symbol every 2 s — smooth live rightmost point.
-    //   • /api/chart/symbols  every 15 s — catches OptionScalping's ATM lock at ~09:18 IST.
+    //   • /api/chart/symbols  every 2 s (folded into pollAll) — header LTP + change cells.
 
-    var charts = { nifty: null, ce: null, pe: null };
-    var currentCeSym = '', currentPeSym = '';
-    // NIFTY spot no longer plotted here — page keeps CE + PE panels only.
+    var charts = { fut: null };
+    var currentFutSym = '';
 
     function fmtHhmm(ms) {
         try {
@@ -287,42 +258,15 @@
     function pnlClass(v) { return v > 0 ? 'pnl-positive' : (v < 0 ? 'pnl-negative' : ''); }
 
     // TradingView Lightweight Charts — candlestick + VWAP line overlay per panel.
-    // Chart / candlestick series / VWAP line series stored per panel key.
-    var candleSeries = { nifty: null, ce: null, pe: null };
-    var vwapSeries   = { nifty: null, ce: null, pe: null };
-    // Active SL price line per panel — created when an option position opens with an
-    // SL level, removed when the position closes or SL changes (then re-created).
-    var slPriceLine    = { ce: null, pe: null };
-    var entryPriceLine = { ce: null, pe: null };
-    var entryPriceLevel= { ce: 0,    pe: 0    };
-    var slPriceLevel = { ce: 0,    pe: 0 };
-    // Last real close price per panel — the countdown price line is pinned here.
-    var lastClosePerPanel = { ce: null, pe: null };
-    // TradingView-style countdown "price line" — invisible line, axis label carries
-    // the mm:ss text. Recreated when lastClose changes; title updated every second.
-    var countdownPriceLine  = { ce: null, pe: null };
-    var countdownPriceLevel = { ce: 0,    pe: 0 };
+    var candleSeries = { fut: null };
+    var vwapSeries   = { fut: null };
+    // Last real close per panel — the countdown price line is pinned here.
+    var lastClosePerPanel = { fut: null };
+    var countdownPriceLine  = { fut: null };
+    var countdownPriceLevel = { fut: 0 };
     // IST offset used to shift bar timestamps so LightweightCharts (which formats in UTC
     // by default) renders IST wall-clock labels. 5 h 30 min = 19800 s.
     var IST_OFFSET_S = 5.5 * 3600;
-
-    /** Session bounds (09:15 → 15:30 IST) for TODAY, in the same time coordinates the
-     *  candle series uses (epoch seconds + IST_OFFSET_S so LWC displays IST labels).
-     *  Used to pre-draw the full-day X axis so sparse morning candles left-anchor
-     *  instead of being stretched to fill the panel width. */
-    function todaySessionRange() {
-        var now = new Date();
-        var istMs = now.getTime() + IST_OFFSET_S * 1000;
-        var istDate = new Date(istMs);
-        var y = istDate.getUTCFullYear(), mo = istDate.getUTCMonth(), d = istDate.getUTCDate();
-        // 09:15 IST = 03:45 UTC, 15:30 IST = 10:00 UTC.
-        var openUtcSec  = Date.UTC(y, mo, d, 3, 45) / 1000;
-        var closeUtcSec = Date.UTC(y, mo, d, 10, 0) / 1000;
-        return {
-            from: openUtcSec  + IST_OFFSET_S,
-            to:   closeUtcSec + IST_OFFSET_S
-        };
-    }
 
     function themeColors() {
         var t = document.documentElement.getAttribute('data-theme') || 'dark';
@@ -330,7 +274,7 @@
         return {
             text:  isDark ? '#94a3b8' : '#475569',
             grid:  'rgba(128,128,128,0.08)',
-            vwap:  '#fbbf24',      // amber — distinct against green/red candles + white grid
+            vwap:  '#fbbf24',
             up:    '#34d399',
             down:  '#f87171',
             unchg: '#94a3b8'
@@ -360,9 +304,6 @@
                 borderVisible: false,
                 timeVisible: true,
                 secondsVisible: false,
-                // TradingView-style: axis extends only as far as data exists. Latest
-                // bar sits near the right edge; rightOffset keeps a small gap after
-                // it so the forming candle has room to render.
                 rightOffset: 6,
                 shiftVisibleRangeOnNewBar: true
             },
@@ -380,19 +321,12 @@
         vwapSeries[panelKey] = chart.addLineSeries({
             color: col.vwap,
             lineWidth: 2,
-            // Show VWAP's last value as a coloured badge on the right price scale (same
-            // treatment as the candlestick's LTP badge) but WITHOUT the horizontal
-            // full-width line — operator finds the line visually noisy against the
-            // main VWAP curve.
             priceLineVisible: false,
             lastValueVisible: true,
             crosshairMarkerVisible: false,
             priceFormat: { type: 'price', precision: priceDecimals, minMove: minMove }
         });
 
-        // Crosshair-driven OHLC/VWAP tooltip — TradingView convention. Pinned to the
-        // overlay div in the chart-wrap. Fires on every mouse-move, so the handler is
-        // kept lean (map lookups + one innerHTML assignment).
         var overlayId = 'chart' + panelKey.charAt(0).toUpperCase() + panelKey.slice(1) + 'Overlay';
         chart.subscribeCrosshairMove(function(param) {
             var overlay = document.getElementById(overlayId);
@@ -433,8 +367,8 @@
         var candles = candleSeries[panelKey];
         var vwap    = vwapSeries[panelKey];
         if (!candles) return { firstClose: null, lastClose: null };
-        var byTime = {};   // bar-time → bar data (accumulated as we walk history + current)
-        var vwapMap = {};  // bar-time → vwap value
+        var byTime = {};
+        var vwapMap = {};
         function pushBar(c) {
             var t = Math.floor(Number(c.startMillis) / 1000) + IST_OFFSET_S;
             byTime[t] = { time: t, open: Number(c.open), high: Number(c.high), low: Number(c.low), close: Number(c.close) };
@@ -444,21 +378,18 @@
         (history || []).forEach(pushBar);
         if (current) pushBar(current);
 
-        // Real bars only — no whitespace pre-fill. Axis extends only up to the
-        // latest bar, with a small rightOffset gap for the forming candle.
         var bars = Object.keys(byTime)
             .map(function(k) { return byTime[Number(k)]; })
             .sort(function(a, b) { return a.time - b.time; });
         var firstClose = bars.length ? bars[0].close : null;
         var lastClose  = bars.length ? bars[bars.length - 1].close : null;
 
-        // VWAP series — only real points, no whitespace (line series handles gaps).
         var vwapPoints = Object.keys(vwapMap)
             .map(function(k) { return { time: Number(k), value: vwapMap[k] }; })
             .sort(function(a, b) { return a.time - b.time; });
-        // NIFTY spot doesn't carry Fyers ATP (index feeds have no volume), so the
-        // server-side vwap field is 0. Fall back to a session-anchored typical-price
-        // average — cumulative (H+L+C)/3 divided by bar count.
+        // Futures feed doesn't carry Fyers ATP the same way an equity spot does — fall
+        // back to a session-anchored typical-price average when the server-side vwap
+        // field is 0.
         if (vwapPoints.length === 0 && bars.length > 0) {
             var cumTyp = 0, cnt = 0;
             for (var i = 0; i < bars.length; i++) {
@@ -470,30 +401,15 @@
         }
         candles.setData(bars);
         vwap.setData(vwapPoints);
-        // Cache last real close so the countdown price-line badge can pin to it.
         lastClosePerPanel[panelKey] = lastClose;
-        // Fit real bars corner-to-corner (with rightOffset gap). Axis extends only
-        // to the latest bar, then a small gap for the next forming candle.
         try { charts[panelKey].timeScale().fitContent(); } catch (e) {}
-        return {
-            firstClose: firstClose,
-            lastClose:  lastClose
-        };
+        return { firstClose: firstClose, lastClose: lastClose };
     }
 
     function updatePanel(panelKey, symbol, priceElId, chgElId, emptyElId, priceDecimals) {
         if (!symbol) return;
-        // Chart-only: this poll fetches history + current bucket and redraws the
-        // candles. Header LTP + change cells are OWNED by attachTickerHeaderUpdates
-        // (SSE tick, sub-second) and refreshSymbols (/symbols poll, 15 s fallback).
-        // Writing them here as well caused flicker — the candle poll's session-anchored
-        // change math and the SSE's Fyers day-change math don't agree, so the two
-        // sources kept overwriting each other every couple of seconds.
         fetch('/api/chart/candles?symbol=' + encodeURIComponent(symbol)).then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
-            // Refresh the exchange-clock offset every poll — server returns exchangeNowMs
-            // (max exchFeedTime across subscribed symbols). Diff vs Date.now() is applied
-            // to the countdown so it ticks in sync with TradingView.
             if (d.exchangeNowMs && Number(d.exchangeNowMs) > 0) {
                 exchangeClockOffsetMs = Number(d.exchangeNowMs) - Date.now();
             }
@@ -518,129 +434,22 @@
         }).catch(function(){});
     }
 
-    /** Draw / update / remove the SL horizontal line on a CE or PE panel. Only the
-     *  price changes trigger a full re-create — same-price updates are no-ops so the
-     *  15-s poll doesn't visually flicker. */
-    function applySlLine(panelKey, slValue) {
-        var series = candleSeries[panelKey];
-        if (!series || typeof series.createPriceLine !== 'function') return;
-        var current = slPriceLevel[panelKey] || 0;
-        var target  = Number(slValue) || 0;
-        if (current === target) return;                       // no change
-        if (slPriceLine[panelKey]) {
-            try { series.removePriceLine(slPriceLine[panelKey]); } catch (e) {}
-            slPriceLine[panelKey] = null;
-        }
-        slPriceLevel[panelKey] = target;
-        if (target <= 0) return;                               // no active position → line removed
-        try {
-            slPriceLine[panelKey] = series.createPriceLine({
-                price: target,
-                color: '#f87171',
-                lineWidth: 2,
-                lineStyle: LightweightCharts.LineStyle.Dashed,
-                axisLabelVisible: true,
-                title: 'SL'
-            });
-        } catch (e) {}
-    }
-
-    /** Draw / update / remove the ENTRY horizontal line on a CE or PE panel.
-     *  Same shape as applySlLine but rendered in cyan (matches accent) to
-     *  distinguish from the red SL line. Removed when the position closes. */
-    function applyEntryLine(panelKey, entryValue) {
-        var series = candleSeries[panelKey];
-        if (!series || typeof series.createPriceLine !== 'function') return;
-        var current = entryPriceLevel[panelKey] || 0;
-        var target  = Number(entryValue) || 0;
-        if (current === target) return;
-        if (entryPriceLine[panelKey]) {
-            try { series.removePriceLine(entryPriceLine[panelKey]); } catch (e) {}
-            entryPriceLine[panelKey] = null;
-        }
-        entryPriceLevel[panelKey] = target;
-        if (target <= 0) return;
-        try {
-            entryPriceLine[panelKey] = series.createPriceLine({
-                price: target,
-                color: '#7dd3fc',
-                lineWidth: 2,
-                lineStyle: LightweightCharts.LineStyle.Dashed,
-                axisLabelVisible: true,
-                title: 'ENTRY'
-            });
-        } catch (e) {}
-    }
-
     function refreshSymbols() {
         fetch('/api/chart/symbols').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
-            var ce  = d.ceSymbol  || '';
-            var pe  = d.peSymbol  || '';
-            // Panel titles carry the LEG's own strike inline — trading pair is
-            // 1 ITM on both sides, so CE = (ATM − 50) and PE = (ATM + 50) are
-            // different numbers, exposed as ceStrike / peStrike from the backend.
-            var ceStrikeEl = document.getElementById('ceStrikeLabel');
-            var peStrikeEl = document.getElementById('peStrikeLabel');
-            if (ceStrikeEl) ceStrikeEl.textContent = d.ceStrike > 0 ? String(d.ceStrike) : '—';
-            if (peStrikeEl) peStrikeEl.textContent = d.peStrike > 0 ? String(d.peStrike) : '—';
-            currentCeSym = ce;
-            currentPeSym = pe;
-            // Prime the CE / PE header LTP + change cells from the in-memory tick cache.
-            // Option ticks aren't in the shared ticker SSE (filtered server-side), so
-            // this /symbols poll is the only source of live CE/PE prices in the chart
-            // headers.
-            // Always call setHeaderCells so the price + change spans render
-            // gracefully as "—" before the leg is subscribed / ticks flow.
-            // Prior gate `if (cet.ltp)` left ceChg completely empty until
-            // the first tick — operator saw only the strike, no change.
-            var cet = d.ceTick || {};
-            setHeaderCells('cePrice', 'ceChg', cet.ltp, cet.ch, cet.chp, 1);
-            var pet = d.peTick || {};
-            setHeaderCells('pePrice', 'peChg', pet.ltp, pet.ch, pet.chp, 1);
-            // Overlay the active SL as a dashed horizontal price line on the CE / PE
-            // charts. Reads d.ceSl / d.peSl from OptionScalping's live position state — zero
-            // when no position is open on that side, so the line is removed cleanly.
-            applySlLine('ce', Number(d.ceSl || 0));
-            applySlLine('pe', Number(d.peSl || 0));
-            // Overlay the entry fill price alongside the SL — same removal semantics.
-            applyEntryLine('ce', Number(d.ceEntry || 0));
-            applyEntryLine('pe', Number(d.peEntry || 0));
-            // Per-side trade count + P&L chips in the CE / PE headers.
-            applySideStats('ce', d.ceStats);
-            applySideStats('pe', d.peStats);
+            var fut = d.futuresSymbol || '';
+            currentFutSym = fut;
+            var lbl = document.getElementById('futSymbolLabel');
+            if (lbl) lbl.textContent = fut || '—';
+            var ft = d.futuresTick || {};
+            setHeaderCells('futPrice', 'futChg', ft.ltp, ft.ch, ft.chp, 2);
         }).catch(function() {});
     }
 
-    /** Render "(n / max) · P&L" chips for the CE / PE panel headers. */
-    function applySideStats(panelKey, stats) {
-        stats = stats || {};
-        var countEl = document.getElementById(panelKey + 'TradeCount');
-        var pnlEl   = document.getElementById(panelKey + 'Pnl');
-        if (countEl) {
-            var count = Number(stats.count || 0);
-            var max   = Number(stats.max   || 0);
-            countEl.textContent = count + ' / ' + max;
-        }
-        if (pnlEl) {
-            var pnl = Number(stats.pnl || 0);
-            var sign = pnl >= 0 ? '+' : '−';
-            pnlEl.textContent = 'P&L ' + sign + '₹' + Math.abs(pnl).toLocaleString('en-IN', { maximumFractionDigits: 0 });
-            pnlEl.style.color = pnl > 0 ? 'var(--accent-green, #34d399)'
-                              : pnl < 0 ? 'var(--accent-red, #f87171)'
-                              : 'var(--text-muted)';
-        }
-    }
-
     // ── Panel fullscreen expand / collapse ──────────────────────────────────
-    // Toggles the .chart-panel-expanded class on the clicked panel and dims the
-    // others (via body.chart-expanded on the <body>). LightweightCharts uses a
-    // ResizeObserver on autoSize: true, so it refits automatically; we still call
-    // requestAnimationFrame + resize as a belt-and-braces nudge for browsers that
-    // batch the observer callback after a paint.
     var expandedPanel = null;
     function toggleExpand(panelKey) {
-        var panelIds = { ce: 'chart-panel-ce', pe: 'chart-panel-pe' };
+        var panelIds = { fut: 'chart-panel-fut' };
         var panel = document.querySelector('.' + panelIds[panelKey]);
         if (!panel) return;
         if (expandedPanel === panelKey) {
@@ -656,7 +465,6 @@
             document.body.classList.add('chart-expanded');
             expandedPanel = panelKey;
         }
-        // Nudge LightweightCharts to refit into the new container size.
         requestAnimationFrame(function() {
             var chart = charts[panelKey];
             if (chart && typeof chart.applyOptions === 'function') {
@@ -670,25 +478,10 @@
 
     function pollAll() {
         if (document.visibilityState !== 'visible') return;
-        // /api/chart/symbols is a purely in-memory read on the server (no DB, no
-        // external HTTP), so folding it into the 2-s cycle keeps CE/PE trade-count
-        // + P&L chips updating in near-real time. Also picks up the ATM symbol
-        // resolution the moment OptionScalping locks it.
         refreshSymbols();
-        // Only CE + PE panels remain — NIFTY chart was removed; its LTP still shows
-        // in the page-header strip via the SSE ticker handler + /symbols poll.
-        if (currentCeSym) updatePanel('ce', currentCeSym, 'cePrice', 'ceChg', 'chartCeEmpty', 1);
-        if (currentPeSym) updatePanel('pe', currentPeSym, 'pePrice', 'peChg', 'chartPeEmpty', 1);
+        if (currentFutSym) updatePanel('fut', currentFutSym, 'futPrice', 'futChg', 'chartFutEmpty', 2);
     }
 
-    // ── Tick-level header updates via the shared ticker SSE ──────────────
-    // The 2-s poll of /api/chart/candles gives smooth chart updates, but the header
-    // price / change cells feel snappier when driven off every WS tick. Same pattern
-    // trade.html uses to update its NIFTY / VIX header cells. Fields on the tick:
-    //   t.fyers  — full Fyers symbol (matches whatever /api/chart/symbols returned)
-    //   t.lp     — last price
-    //   t.ch     — change vs prev close (rupees)
-    //   t.chp    — change vs prev close (%)
     function setHeaderCells(priceElId, chgElId, ltp, ch, chp, decimals) {
         var pEl = document.getElementById(priceElId);
         var cEl = document.getElementById(chgElId);
@@ -707,20 +500,12 @@
             }
         }
     }
-    // Welcome-line reload also runs on interval so tab-switch back reflects any user change.
 
-    // ── 3-min bar countdown ───────────────────────────────────────────────
-    // Bars are anchored on 09:15 IST → 09:15/09:18/09:21/…/15:30 boundaries.
-    // Shows mm:ss remaining until the current bar closes. BUCKET_MINUTES
-    // below must match CandleAggregator.BUCKET_MINUTES on the server.
-    //
-    // Uses the browser's WALL CLOCK as the reference — operator preference.
-    // The bot's CandleAggregator buckets by LTT, but the UI countdown ticks
-    // against the user's own clock so it matches what they see on any other
-    // timing source (system clock, phone). `exchangeClockOffsetMs` is retained
-    // for backward compatibility with the poll response but is no longer
-    // applied here.
-    var BUCKET_MINUTES = 1;
+    // ── 5-min bar countdown ───────────────────────────────────────────────
+    // Bars are anchored on 09:15 IST → 09:15/09:20/09:25/…/15:25/15:30 boundaries.
+    // Shows mm:ss remaining until the current bar closes. BUCKET_MINUTES below must
+    // match CandleAggregator.BUCKET_MINUTES on the server.
+    var BUCKET_MINUTES = 5;
     var exchangeClockOffsetMs = 0;
     function computeBarCountdown() {
         var utcMs = Date.now();
@@ -742,20 +527,15 @@
         var s = sec % 60;
         return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
     }
-    /** Ensures a "countdown price line" exists on each series and rewrites its axis
-     *  label to the current mm:ss remaining. Uses lineVisible:false so no horizontal
-     *  line is drawn — only the badge on the right price scale, TradingView-style. */
     function tickCountdown() {
         var sec = computeBarCountdown();
         var txt = '⏱ ' + fmtMmSs(sec);
-        // Countdown badge stays amber the entire time — no colour switch on the
-        // final 10 seconds. Operator asked for consistent yellow rendering.
         var bgColor = '#fbbf24';
-        ['ce', 'pe'].forEach(function(panelKey) {
+        ['fut'].forEach(function(panelKey) {
             var series = candleSeries[panelKey];
             if (!series || typeof series.createPriceLine !== 'function') return;
             var last = lastClosePerPanel[panelKey];
-            if (last == null) return;   // no bars yet — nothing to anchor to
+            if (last == null) return;
             var line = countdownPriceLine[panelKey];
             var needsRecreate = !line || countdownPriceLevel[panelKey] !== last;
             if (needsRecreate) {
@@ -768,14 +548,13 @@
                         color: bgColor,
                         lineWidth: 1,
                         lineStyle: LightweightCharts.LineStyle.Dotted,
-                        lineVisible: false,        // no horizontal line, just the axis badge
+                        lineVisible: false,
                         axisLabelVisible: true,
                         title: txt
                     });
                     countdownPriceLevel[panelKey] = last;
                 } catch (e) {}
             } else {
-                // Same price → just update the badge text + colour.
                 try {
                     line.applyOptions({ title: txt, color: bgColor });
                 } catch (e) {}
@@ -783,9 +562,6 @@
         });
     }
 
-    // Connection status dot in the header — same shape as home / calendar /
-    // trade pages. Reads /status, derives Fyers + GDFL state, colour-codes the
-    // dot and label.
     function checkConnection() {
         var ctrl = new AbortController();
         var tid = setTimeout(function(){ ctrl.abort(); }, 3000);
@@ -826,8 +602,6 @@
         pollAll();
         tickCountdown();
         checkConnection();
-        // refreshSymbols is now folded into pollAll every 2 s (in-memory reads, cheap),
-        // so a separate slower interval isn't needed.
         setInterval(pollAll, 2000);
         setInterval(tickCountdown, 1000);
         setInterval(checkConnection, 5000);

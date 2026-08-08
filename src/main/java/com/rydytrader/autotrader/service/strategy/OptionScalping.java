@@ -3,14 +3,13 @@ package com.rydytrader.autotrader.service.strategy;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rydytrader.autotrader.dto.Candle;
-import com.rydytrader.autotrader.dto.OrderDTO;
 import com.rydytrader.autotrader.entity.StrategyTradeEntity;
+import com.rydytrader.autotrader.gdfl.GdflSymbolMapper;
 import com.rydytrader.autotrader.repository.StrategyTradeRepository;
-import com.rydytrader.autotrader.service.AtmTracker;
-import com.rydytrader.autotrader.service.OptionScalpingStreamBroker;
 import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.service.EventService;
 import com.rydytrader.autotrader.service.MarketDataService;
+import com.rydytrader.autotrader.service.OptionScalpingStreamBroker;
 import com.rydytrader.autotrader.service.OrderService;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import jakarta.annotation.PostConstruct;
@@ -25,37 +24,27 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.time.ZoneId;
-import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * NIFTY ATM 3-min VWAP option-scalping strategy.
+ * NIFTY current-month FUTURES 5-min bar plumbing.
  *
- * <p>First 3-min NIFTY spot bar close (~09:18 IST) captures the close price and locks
- * today's ATM strike (round to nearest 50). The strike's CE and PE symbols become the
- * two option legs for the session. From {@code optionScalpingTradingStartTime} onward (default
- * 09:30 IST), each option's 3-min bar closes drive a trigger-candle state machine:
+ * <p><b>Phase 3 strip</b> — options / ATM / CE / PE / pre-warm / trigger-candle-FSM /
+ * entry / SL / target logic has been removed. Only the NIFTY current-month futures
+ * symbol (via GDFL, {@link GdflSymbolMapper#FYERS_NIFTY_FUTURES}) is subscribed and
+ * bar closes are logged. No strike selection, no orders. The Strategy interface impl
+ * still exists as stubs so the wider app boots cleanly.
  *
- * <ul>
- *   <li><b>S0 → seed</b>: a bar whose close is &lt; the option's session VWAP becomes the
- *       new trigger candle.</li>
- *   <li><b>S1 → fire</b>: the very next bar whose close is &lt; trigger.low fires a SELL on
- *       that option (VWAP position irrelevant to the fire check).</li>
- *   <li><b>S1 → promote</b>: if it didn't fire but its own close is &lt; VWAP, THAT bar
- *       becomes the new trigger.</li>
- *   <li><b>S1 → invalidate</b>: otherwise the trigger is dropped.</li>
- * </ul>
- *
- * <p>Stop loss = trailing premium SuperTrend line. Exits are bar-close only:
- * bar CLOSE &gt; VWAP (VWAP_RECLAIM), premium ST flips green (ST_FLIP), or
- * timed squareoff at {@code optionScalpingSquareOffTime}. No target, no
- * tick-based SL. CE and PE can be short simultaneously.
+ * <p>Strike selection + entry FSM are deferred and will be added when the strategy
+ * layer is specified. Legacy accessors ({@link #getCeSymbol}, {@link #getAtmStrike},
+ * etc.) remain and return zeros / empty strings so existing UI polls degrade
+ * gracefully to "—" instead of crashing.
  */
 @Service
 public class OptionScalping implements Strategy {
@@ -66,49 +55,36 @@ public class OptionScalping implements Strategy {
      *  day-modal, and Trade Log filter on this string so manual scalps stay distinguishable
      *  from algorithm trades while still aggregating into the same portfolio totals. */
     public  static final String MANUAL_STRATEGY_ID = "manual";
-    private static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
+    /** The one symbol Phase 3 subscribes to — GDFL delivers NIFTY current-month
+     *  futures ticks under {@link GdflSymbolMapper#FYERS_NIFTY_FUTURES}. */
+    private static final String NIFTY_SYMBOL = GdflSymbolMapper.FYERS_NIFTY_FUTURES;
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final String STATE_FILE = "../store/cache/option-scalping-state.json";
-    /** NIFTY option lot size — 65 (post 2025 revision). */
+    /** NIFTY option lot size — 65 (post 2025 revision). Exposed for the Manual Terminal
+     *  controller (translates operator "lots" input into a contract count) so it
+     *  doesn't duplicate the constant. Unused by the stripped Phase 3 body itself. */
     private static final int    LOT_SIZE = 65;
-    /** NIFTY option premium tick size — the minimum tradable price. */
-    private static final double OPTION_TICK_SIZE = 0.05;
-    /** NIFTY strike interval — 50 points. */
-    private static final long   STRIKE_STEP = 50L;
-    /** SuperTrend(ATR, multiplier) — hardcoded to PDF spec (10, 3) for both the
-     *  option premium leg (Gate B / trailing SL) and the NIFTY spot alignment
-     *  filter (Gate C). Deliberately not exposed as settings — TA convention
-     *  is fixed, and the operator was clear the strategy shouldn't drift here. */
-    private static final int    SUPERTREND_ATR       = 10;
-    private static final double SUPERTREND_MULT      = 3.0;
-    private static final int    SPOT_SUPERTREND_ATR  = 10;
-    private static final double SPOT_SUPERTREND_MULT = 3.0;
     private static final int    RECENT_EVENTS_LIMIT = 60;
 
-    /** NIFTY contract lot size — exposed for the Manual Terminal controller (translates
-     *  operator "lots" input into a contract count) so it doesn't duplicate the constant. */
     public static int lotSize() { return LOT_SIZE; }
 
     /** Setup enum kept in the shape older DB rows and state files know so their
-     *  serialized {@code setup} column deserializes cleanly. Only CE_SELL and
-     *  PE_SELL fire in the current strategy — split by which leg the SELL
-     *  targets so analytics can compare CE vs PE performance. The other
-     *  values are legacy — never emitted by the new detection code but
-     *  retained so historical rows load without exception. */
+     *  serialized {@code setup} column deserializes cleanly. Nothing in the
+     *  Phase 3 strip emits new values — legacy values retained for round-trip
+     *  compatibility with historical rows and manual-terminal fires. */
     public enum ActiveSetup {
         L3_REVERSAL,      // legacy
         H3_REVERSAL,      // legacy
         H4_BREAKOUT,      // legacy
         L4_BREAKDOWN,     // legacy
-        VWAP_BREAKDOWN,   // legacy (pre-CE/PE split — short-lived, still in some state files)
-        CE_SELL,          // active — SELL fired on the ATM CE leg
-        PE_SELL,          // active — SELL fired on the ATM PE leg
+        VWAP_BREAKDOWN,   // legacy
+        CE_SELL,          // legacy (options)
+        PE_SELL,          // legacy (options)
         MANUAL            // reserved for the Options Scalper Terminal path
     }
 
-    /** Composite key {@code "setup|symbol"} for {@code state.openPositions}.
-     *  Allows a MANUAL Options-Scalper-Terminal position to coexist with a bot-managed
-     *  fire on the same Fyers option symbol — each tracked independently. */
+    /** Composite key {@code "setup|symbol"} for {@code state.openPositions}. Kept for
+     *  round-trip compatibility with historical state files. */
     private static String posKey(Position p) {
         if (p == null) return "";
         String setup = p.setup == null ? "MANUAL" : p.setup.name();
@@ -120,19 +96,12 @@ public class OptionScalping implements Strategy {
     public enum WatchRole { ATM_L4, ITM_L4, OTM_H3 }
 
     private final CandleAggregator      candleAggregator;
-    private final AtmTracker            atmTracker;
-    private final BalancedAtmSelector   atmSelector;
     private final MarketDataService     marketDataService;
     private final OrderService          orderService;
     private final EventService          eventService;
     private final RiskSettingsStore     riskSettings;
     private final ObjectProvider<StrategyTradeRepository> tradeRepoProvider;
-    private final ObjectProvider<OptionScalpingStreamBroker>     streamBrokerProvider;
-    /** GDFL config — read to skip Fyers WS + aggregator subscribes for option strikes
-     *  when GDFL owns those symbols. Provider so the strategy still boots when the
-     *  GDFL bean is absent (test / simulator contexts, or gdfl.enabled=false setups
-     *  where the properties bean is present but disabled). */
-    private final ObjectProvider<com.rydytrader.autotrader.gdfl.GdflProperties> gdflPropertiesProvider;
+    private final ObjectProvider<OptionScalpingStreamBroker> streamBrokerProvider;
 
     private final ObjectMapper mapper = new ObjectMapper()
         .findAndRegisterModules()
@@ -140,83 +109,21 @@ public class OptionScalping implements Strategy {
         .configure(com.fasterxml.jackson.databind.DeserializationFeature.READ_UNKNOWN_ENUM_VALUES_AS_NULL, true);
 
     private volatile State state = new State();
-    private final Map<String, Object> symbolLocks = new ConcurrentHashMap<>();
-    /** Symbols for which we've already registered a {@code candleAggregator.subscribe}
-     *  listener this JVM lifetime. Prevents duplicate registrations when
-     *  {@link #ensureSessionLegsSubscribed()} is called repeatedly (which happens every
-     *  3-min NIFTY candle close via the same-day early-return branch of
-     *  {@code resolveAtmFromFirstBar}). Without this guard, each pass added another
-     *  listener → {@code processOptionBar} ran N times per bar → trigger promoted /
-     *  seeded / invalidated events fired N times. Cleared on day rollover, kill switch,
-     *  logout — anywhere the session's option legs are released. */
-    private final java.util.Set<String> aggregatorSubscribedSymbols = ConcurrentHashMap.newKeySet();
+
     public OptionScalping(CandleAggregator candleAggregator,
-                   AtmTracker atmTracker,
-                   BalancedAtmSelector atmSelector,
                    MarketDataService marketDataService,
                    OrderService orderService,
                    EventService eventService,
                    RiskSettingsStore riskSettings,
                    ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
-                   ObjectProvider<OptionScalpingStreamBroker> streamBrokerProvider,
-                   ObjectProvider<com.rydytrader.autotrader.gdfl.GdflProperties> gdflPropertiesProvider) {
+                   ObjectProvider<OptionScalpingStreamBroker> streamBrokerProvider) {
         this.candleAggregator           = candleAggregator;
-        this.atmTracker                 = atmTracker;
-        this.atmSelector                = atmSelector;
         this.marketDataService          = marketDataService;
         this.orderService               = orderService;
         this.eventService               = eventService;
         this.riskSettings               = riskSettings;
         this.tradeRepoProvider          = tradeRepoProvider;
         this.streamBrokerProvider       = streamBrokerProvider;
-        this.gdflPropertiesProvider     = gdflPropertiesProvider;
-    }
-
-    /** Whether an alternate feed (GDFL) is owning tick delivery for the option strikes.
-     *  When true, {@link #warmupIfDue} and {@link #ensureSessionLegsSubscribed} skip
-     *  the Fyers WS subscription for those symbols — GDFL provides the ticks and any
-     *  Fyers-side subscription would be dead weight (ticks would be dropped at
-     *  {@link com.rydytrader.autotrader.service.MarketDataService#onTick} anyway). */
-    private boolean gdflOwnsOptionTicks() {
-        var props = gdflPropertiesProvider == null ? null : gdflPropertiesProvider.getIfAvailable();
-        return props != null && props.isEnabled();
-    }
-
-    /** Fires on every LTP tick from the {@link MarketDataService} listener chain — most
-     *  are filtered out. The one we care about: the very first NIFTY spot tick of the
-     *  trading day that arrives with an in-hours (>= 09:15) timestamp. Emits a
-     *  once-per-day "Trading started" event anchored to the 09:15 bar OPEN so the
-     *  operator's event log has a clear session-start marker. Subsequent ticks are
-     *  cheap no-ops via {@link #tradingStartedDayKey}. */
-    private void onFirstNiftyTickOfDay(MarketDataService.LtpTick t) {
-        if (t == null || !NIFTY_SYMBOL.equals(t.fyersSymbol())) return;
-        String today = LocalDate.now(IST).toString();
-        // Persisted across restarts — a mid-day boot won't re-fire the event with the
-        // now-stale "09:15 candle forming" message on the next NIFTY tick.
-        if (today.equals(state.tradingStartedDayKey)) return;
-
-        // Prefer LTT (exchange trade time) when populated; fall back to EFT (Fyers
-        // dissemination). NIFTY is an index so LTT is usually 0 → EFT is our primary.
-        long tickSec = t.lastTradedTimeSec() > 0 ? t.lastTradedTimeSec() : t.exchFeedTimeSec();
-        if (tickSec <= 0) return;
-        java.time.Instant instant = java.time.Instant.ofEpochSecond(tickSec);
-        ZonedDateTime tickZdt = instant.atZone(IST);
-        if (!today.equals(tickZdt.toLocalDate().toString())) return;
-        LocalTime tickTime = tickZdt.toLocalTime();
-        if (tickTime.isBefore(MARKET_OPEN_IST)) return;
-
-        // Compute today's 09:15 IST epoch — that's the bar open we anchor the display
-        // time to (user sees "09:15  INFO  [Session] Trading started …").
-        long marketOpenMs = ZonedDateTime.now(IST)
-            .withHour(9).withMinute(15).withSecond(0).withNano(0)
-            .toInstant().toEpochMilli();
-
-        state.tradingStartedDayKey = today;
-        saveToDisk();
-        eventAtDisplayTime("[INFO]", "Session",
-            "Trading started — 09:15 candle forming (first NIFTY tick @ "
-            + tickTime.withNano(0).withSecond(tickTime.getSecond()).toString() + ")",
-            marketOpenMs);
     }
 
     /** Push the latest dashboard state to every SSE-connected browser. No-op when no clients. */
@@ -232,37 +139,19 @@ public class OptionScalping implements Strategy {
     @PostConstruct
     public void boot() {
         loadFromDisk();
-        backfillLegacyDbRowsFromState();
         rolloverIfNewDay();
         pruneStaleEventsBeforeToday();
 
-        // Subscribe NIFTY spot — first 3-min close resolves today's ATM strike.
+        // Subscribe the NIFTY current-month FUTURES symbol. GdflService already
+        // subscribes it on its own poller — this registers the aggregator close
+        // listener so 5-min bar closes get logged (and can be reacted to when a
+        // strategy layer is added later).
         state.futuresSymbol = NIFTY_SYMBOL;
         candleAggregator.subscribe(NIFTY_SYMBOL, c -> onCandleClose(NIFTY_SYMBOL, c));
-        try { marketDataService.subscribeAdditional(java.util.List.of(NIFTY_SYMBOL)); }
-        catch (Exception ignored) {}
-        log.info("[OptionScalping] boot — NIFTY spot subscribed: {}", NIFTY_SYMBOL);
+        log.info("[OptionScalping] boot — futures subscribed: {} (5-min bars)", NIFTY_SYMBOL);
 
-        // Fyers /history backfill was removed with the strip-Fyers-data refactor —
-        // SuperTrend warms live from GDFL ticks starting at 09:15.
-
-        // Trading-started marker — fires exactly once per day, on the first NIFTY spot
-        // tick received after 09:15 IST. Anchors the operator's mental timeline to the
-        // 09:15 open of the first 3-min bar.
-        marketDataService.addLtpListener(this::onFirstNiftyTickOfDay);
-
-        atmTracker.setListener(this::onAtmChange);
-
-        // If today's ATM is already resolved (mid-day restart), re-subscribe the two option legs.
-        try { ensureSessionLegsSubscribed(); }
-        catch (Exception e) { log.warn("[OptionScalping] session-legs boot re-subscribe failed: {}", e.getMessage()); }
-
-        // If pre-warm was in progress before the crash (09:15-09:18 window), re-subscribe.
-        try { resumeWarmingIfNeeded(); }
-        catch (Exception e) { log.warn("[OptionScalping] resume-warming failed: {}", e.getMessage()); }
-
-        log.info("[OptionScalping] booted — enabled={}, lots={}, squareoff={}, restoredPositions={}",
-            riskSettings.isOptionScalpingEnabled(), riskSettings.getOptionScalpingLotsPerLeg(),
+        log.info("[OptionScalping] booted — enabled={}, squareoff={}, restoredPositions={}",
+            riskSettings.isOptionScalpingEnabled(),
             riskSettings.getOptionScalpingSquareOffTime(), state.openPositions.size());
     }
 
@@ -282,119 +171,24 @@ public class OptionScalping implements Strategy {
         }
     }
 
-    private void backfillLegacyDbRowsFromState() {
-        if (state.todayClosedTrades == null || state.todayClosedTrades.isEmpty()) return;
-        StrategyTradeRepository repo = tradeRepoProvider == null ? null : tradeRepoProvider.getIfAvailable();
-        if (repo == null) return;
-        try {
-            List<StrategyTradeEntity> rows = repo.findByStrategyIdAndSessionDateOrderByClosedAtMillisAsc(
-                STRATEGY_ID, state.dayKey);
-            int patched = 0;
-            for (StrategyTradeEntity row : rows) {
-                boolean needSymbol = row.getSymbol() == null || row.getSymbol().isBlank();
-                boolean needSetup  = row.getSetup()  == null || row.getSetup().isBlank();
-                if (!needSymbol && !needSetup) continue;
-                for (Map<String, Object> m : state.todayClosedTrades) {
-                    Object ts = m.get("closedAtMillis");
-                    if (!(ts instanceof Number)) continue;
-                    long ms = ((Number) ts).longValue();
-                    if (Math.abs(ms - row.getClosedAtMillis()) > 5_000L) continue;
-                    if (needSymbol) {
-                        Object sym = m.get("symbol");
-                        if (sym != null) row.setSymbol(String.valueOf(sym));
-                    }
-                    if (needSetup) {
-                        Object setup = m.get("setup");
-                        if (setup != null) row.setSetup(String.valueOf(setup));
-                    }
-                    patched++;
-                    break;
-                }
-            }
-            if (patched > 0) {
-                repo.saveAll(rows);
-                log.info("[OptionScalping] backfilled symbol/setup on {} legacy DB row(s) for {}",
-                    patched, state.dayKey);
-            }
-        } catch (Exception e) {
-            log.warn("[OptionScalping] backfill failed: {}", e.getMessage());
-        }
-    }
-
     // ── Strategy interface ──────────────────────────────────────────────────
 
     @Override public String id() { return STRATEGY_ID; }
-    @Override public String displayName() { return "ATM VWAP"; }
-    @Override public String description() { return "NIFTY ATM 3-min · session VWAP · bearish premium sell"; }
-    /** Session-locked ATM strike, or 0 before the first 3-min close resolves it. */
-    public long getAtmStrike() { return state.atmStrike; }
-    /** Selected ATM CE leg Fyers symbol, or "" before ATM resolution. */
-    public String getCeSymbol() { return state.ceSymbol == null ? "" : state.ceSymbol; }
-    /** Selected ATM PE leg Fyers symbol, or "" before ATM resolution. */
-    public String getPeSymbol() { return state.peSymbol == null ? "" : state.peSymbol; }
-    /** All pre-warm CE + PE symbols (±10 strikes around baseAtm at 09:15). Used by
-     *  {@code GdflService} to subscribe the same window on GDFL so the 09:15-09:18
-     *  first bar has tick data for whichever strike ends up as ATM. Empty when the
-     *  pre-warm hasn't run yet OR after {@link #trimWarmingSet} has narrowed to just
-     *  the resolved ATM pair. */
-    public java.util.List<String> getPreWarmSymbols() {
-        java.util.List<String> out = new java.util.ArrayList<>();
-        try {
-            state.warmingCeByStrike.values().forEach(s -> { if (s != null && !s.isBlank()) out.add(s); });
-            state.warmingPeByStrike.values().forEach(s -> { if (s != null && !s.isBlank()) out.add(s); });
-        } catch (Exception ignored) {}
-        return out;
-    }
-    /** SL price of the currently-open CE / PE leg position (matched by symbol), or 0
-     *  when no such position is active. Used by the Chart page to draw an SL price
-     *  line on the corresponding option chart. */
-    public double getOpenSlLevel(String fyersSymbol) {
-        if (fyersSymbol == null || fyersSymbol.isBlank()) return 0;
-        for (Position p : state.openPositions.values()) {
-            if (p != null && fyersSymbol.equals(p.symbol) && p.slLevel > 0) return p.slLevel;
-        }
-        return 0;
-    }
+    @Override public String displayName() { return "NIFTY Futures (5-min)"; }
+    @Override public String description() { return "NIFTY current-month futures · 5-min bar plumbing (strike selection deferred)"; }
 
-    /** Entry price of the currently-open CE / PE leg position (matched by symbol),
-     *  or 0 when no such position is active. Used by the Chart page to draw an
-     *  entry-price horizontal line alongside the SL line. Reflects the FILL price
-     *  once {@link #refreshUnresolvedFills} resolves it, else the fire-time LTP. */
-    public double getOpenEntryPrice(String fyersSymbol) {
-        if (fyersSymbol == null || fyersSymbol.isBlank()) return 0;
-        for (Position p : state.openPositions.values()) {
-            if (p != null && fyersSymbol.equals(p.symbol) && p.entryPrice > 0) return p.entryPrice;
-        }
-        return 0;
-    }
-
-    /** Per-side trade counter for today (CE_SELL fires). */
-    public int getCeTradesToday() { return state.ceTradesToday; }
-    /** Per-side trade counter for today (PE_SELL fires). */
-    public int getPeTradesToday() { return state.peTradesToday; }
-
-    /** Realised + open-MTM net P&L of the CE_SELL leg for today. Closed cycles read
-     *  from {@code todayClosedTrades} filtered by setup; open positions add live MTM
-     *  minus their projected cycle charges. */
-    public double getCeSideNetPnlToday() { return sideNetPnlToday(ActiveSetup.CE_SELL); }
-    public double getPeSideNetPnlToday() { return sideNetPnlToday(ActiveSetup.PE_SELL); }
-
-    private synchronized double sideNetPnlToday(ActiveSetup side) {
-        rolloverIfNewDay();
-        double net = 0;
-        String sideName = side.name();
-        for (Map<String, Object> m : state.todayClosedTrades) {
-            if (sideName.equals(String.valueOf(m.getOrDefault("setup", "")))) {
-                net += asDouble(m.get("netPnl"));
-            }
-        }
-        for (Position p : state.openPositions.values()) {
-            if (p != null && p.setup == side) {
-                net += openPositionMtm(p) - cycleChargesFor(p);
-            }
-        }
-        return round2(net);
-    }
+    // Legacy accessors — stripped strategy has no ATM / CE / PE / SL / entry state.
+    // Return neutral values so UI callers degrade to "—" instead of NPE.
+    public long   getAtmStrike()                             { return 0L; }
+    public String getCeSymbol()                              { return ""; }
+    public String getPeSymbol()                              { return ""; }
+    public java.util.List<String> getPreWarmSymbols()        { return Collections.emptyList(); }
+    public double getOpenSlLevel(String fyersSymbol)         { return 0.0; }
+    public double getOpenEntryPrice(String fyersSymbol)      { return 0.0; }
+    public int    getCeTradesToday()                         { return 0; }
+    public int    getPeTradesToday()                         { return 0; }
+    public double getCeSideNetPnlToday()                     { return 0.0; }
+    public double getPeSideNetPnlToday()                     { return 0.0; }
 
     @Override public String currentState() {
         if (state.doneForDay) return "DONE_FOR_DAY";
@@ -404,14 +198,17 @@ public class OptionScalping implements Strategy {
 
     @Override
     public boolean forceClose(String reason) {
-        boolean anyClosed = false;
+        // No auto-entries in Phase 3, but a MANUAL-terminal position may still be open —
+        // route through the existing close path so manual positions can be flattened
+        // from the kill-switch / Trade page.
         synchronized (this) {
             if (state.openPositions.isEmpty()) return false;
+            boolean anyClosed = false;
             for (Position p : new ArrayList<>(state.openPositions.values())) {
                 if (closePosition(p, reason == null ? "MANUAL" : reason)) anyClosed = true;
             }
+            return anyClosed;
         }
-        return anyClosed;
     }
 
     public boolean forceCloseSymbol(String symbol, String reason) {
@@ -438,8 +235,6 @@ public class OptionScalping implements Strategy {
                 candleAggregator.unsubscribe(sym);
             }
             state.openPositions.clear();
-        state.lastSlBarStartMsBySymbol.clear();
-            state.lastSlBarStartMsBySymbol.clear();
             state.doneForDay = false;
             saveToDisk();
             event("[INFO]", "System", "reset — " + (reason == null ? "" : reason));
@@ -489,904 +284,26 @@ public class OptionScalping implements Strategy {
     @Override
     public void tick() {
         rolloverIfNewDay();
-        watchSquareoff();
-        refreshUnresolvedFills();
-        warmupIfDue();
-        double maxRisk = riskSettings.getPortfolioMaxDailyLoss();
-        if (maxRisk > 0 && !state.dailyLossLockout) {
-            double consumed = consumedRiskNow();
-            if (consumed > maxRisk) {
-                event("[ERROR]", "Risk", "consumed ₹" + round2(consumed)
-                    + " > maxRisk ₹" + round2(maxRisk) + " — force-closing and locking session");
-                state.dailyLossLockout = true;
-                for (Position p : new ArrayList<>(state.openPositions.values())) {
-                    closePosition(p, "RISK_BREACH");
-                }
-                saveToDisk();
-            }
-        }
+        // No auto entries / no timed squareoff of algo positions — MANUAL-terminal
+        // positions (if any) are managed by the Options Scalper Terminal itself.
     }
 
     @Override
     public void fastSlCheck() {
-        // Tick-based SL retired. Exits are bar-close-only, evaluated in
-        // evaluateTrailingExit on every 3-min close of the position's
-        // symbol: VWAP_RECLAIM (close > VWAP) or ST_FLIP (premium ST
-        // turns green). slLevel trails the premium ST line for display /
-        // reference; no tick check against it.
+        // No auto SL logic in Phase 3.
     }
 
-    // ── ATM change handler — no-op (retained as a harmless AtmTracker hook) ─
-
-    public synchronized void onAtmChange(AtmTracker.AtmChange ev) {
-        // Session ATM is locked at the first 3-min NIFTY bar close; subsequent
-        // AtmTracker moves are informational only.
-    }
-
-    // ── Candle close handler ──────────────────────────────────────────────
+    // ── Candle close handler — logs only, no FSM ───────────────────────────
 
     public void onCandleClose(String symbol, Candle c) {
-        // Fyers /history reconcile was removed with the strip-Fyers-data refactor. The
-        // FSM now runs on the locally-aggregated candle straight from the GDFL tick feed.
-        Candle authoritative = c;
-
-        if (!isEnabled()) return;
-        Object lock = symbolLocks.computeIfAbsent(symbol, k -> new Object());
-        synchronized (lock) {
-            rolloverIfNewDay();
-            if (state.doneForDay) return;
-            if (state.dailyLossLockout) return;
-
-            // (1) NIFTY spot: first 3-min close of the day resolves today's ATM strike.
-            if (NIFTY_SYMBOL.equals(symbol)) {
-                resolveAtmFromFirstBar(authoritative);
-                return;
-            }
-
-            // (2) Option leg: run the trigger-candle FSM.
-            boolean isCe = symbol.equals(state.ceSymbol);
-            boolean isPe = symbol.equals(state.peSymbol);
-            if (!isCe && !isPe) return;
-
-            processOptionBar(symbol, authoritative);
-            saveToDisk();
-        }
+        if (c == null) return;
+        if (!NIFTY_SYMBOL.equals(symbol)) return;   // only the futures leg is subscribed
+        log.info("[OptionScalping] futures {}-min bar closed — {} o={} h={} l={} c={} startMs={}",
+            CandleAggregator.BUCKET_MINUTES, symbol,
+            c.open(), c.high(), c.low(), c.close(), c.startMillis());
     }
 
-    // ── Session start — pre-warm at 09:15, resolve ATM CE + PE at 09:18 ────
-
-    /** Pre-warm width — ±10 strikes each side (21 strikes total, 42 option symbols).
-     *  Covers ±500 pts of first-3-min NIFTY move so the resolved ATM's CE + PE almost
-     *  always fall inside the window and their first 09:15–09:18 candle has full OHLC.
-     *  Extreme opens beyond ±500 pts still fall back to the slow (racy) path with a
-     *  partial-first-bar warning.
-     *
-     *  <p>Sized at 10 so the total 42-symbol pre-warm fits under GDFL's 50-symbol
-     *  per-key subscription cap. */
-    private static final int PRE_WARM_STRIKES_EACH_SIDE = 10;
-    private static final LocalTime MARKET_OPEN_IST      = LocalTime.of(9, 15);
-    /** Pre-market subscribe window opens at 09:10 IST — 5 min before market
-     *  open. This lets both Fyers WS and CandleAggregator listeners settle
-     *  BEFORE the first tick lands at 09:15, so the 09:15→09:16 first 1-min
-     *  bar is fully-formed instead of a partial synthetic. */
-    private static final LocalTime PRE_WARM_OPEN_IST    = LocalTime.of(9, 10);
-    /** Pre-warm window closes at market open — after 09:15 the first 1-min bar
-     *  is already being aggregated live; resolveAtmFromFirstBar takes over at
-     *  its 09:16 close. */
-    private static final LocalTime PRE_WARM_CUTOFF_IST  = LocalTime.of(9, 15);
-
-    /** Called from {@link #tick()} on the 5 s slow loop. Subscribes ±10 strikes of ATM
-     *  candidate legs at 09:10 IST (BEFORE market open) so that when the first exchange
-     *  tick lands at 09:15, both Fyers WS and CandleAggregator listeners are already
-     *  in place. Prevents the historical "first bar was partial because subscribe
-     *  hand-shake took 200-1000 ms" bug. Idempotent — same-day short-circuits. */
-    private synchronized void warmupIfDue() {
-        if (!isEnabled()) return;
-        LocalTime now = ZonedDateTime.now(IST).toLocalTime();
-        if (now.isBefore(PRE_WARM_OPEN_IST)) return;                  // too early — window opens at 09:10
-        if (!now.isBefore(PRE_WARM_CUTOFF_IST)) return;               // too late — first bar is being aggregated live
-        if (state.ceSymbol != null && !state.ceSymbol.isBlank()) return;  // ATM already resolved
-        if (!state.warmingStrikes.isEmpty()) return;                  // already warming
-        String today = LocalDate.now(IST).toString();
-        if (today.equals(state.preWarmDayKey)) return;                // already ran today
-        // Anchor to yesterday's close — NIFTY spot doesn't tick pre-market so
-        // getLtp() returns 0 before 09:15. getDisplayLtp() reads the same map
-        // without the today-date guard, giving us yesterday's last tick.
-        // ±10 strikes (±500 pts) comfortably covers any overnight gap.
-        double niftyLtp;
-        try { niftyLtp = marketDataService.getDisplayLtp(NIFTY_SYMBOL); }
-        catch (Exception e) { return; }
-        if (niftyLtp <= 0) return;                                     // WS not warm yet
-
-        long baseAtm = Math.round(niftyLtp / (double) STRIKE_STEP) * STRIKE_STEP;
-        long lo = baseAtm - (long) PRE_WARM_STRIKES_EACH_SIDE * STRIKE_STEP;
-        long hi = baseAtm + (long) PRE_WARM_STRIKES_EACH_SIDE * STRIKE_STEP;
-
-        java.util.NavigableMap<Long, BalancedAtmSelector.ChainStrike> chain;
-        try { chain = atmSelector.fetchChainStrikes(); }
-        catch (Exception e) {
-            log.warn("[OptionScalping] pre-warm chain fetch failed: {}", e.getMessage());
-            return;
-        }
-        if (chain == null || chain.isEmpty()) {
-            log.warn("[OptionScalping] pre-warm skipped — empty chain response");
-            return;
-        }
-
-        List<String> subs = new ArrayList<>();
-        for (Map.Entry<Long, BalancedAtmSelector.ChainStrike> e : chain.entrySet()) {
-            long strike = e.getKey();
-            if (strike < lo || strike > hi) continue;
-            BalancedAtmSelector.ChainStrike cs = e.getValue();
-            String ce = cs.ceSymbol(), pe = cs.peSymbol();
-            if (ce == null || ce.isBlank() || pe == null || pe.isBlank()) continue;
-            // LTP-availability filter dropped with the strip-Fyers-data refactor: chain
-            // data is now synthesised locally and LTPs are 0 for strikes that haven't
-            // been tick-subscribed yet. Pre-warm subscribes the full ATM ± N window
-            // regardless; LTPs flow in from GDFL after subscription lands.
-            state.warmingStrikes.add(strike);
-            state.warmingCeByStrike.put(strike, ce);
-            state.warmingPeByStrike.put(strike, pe);
-            subs.add(ce);
-            subs.add(pe);
-        }
-
-        if (subs.isEmpty()) {
-            log.warn("[OptionScalping] pre-warm found no quoted strikes near {} (range {}–{})",
-                baseAtm, lo, hi);
-            return;
-        }
-
-        // When GDFL owns option tick delivery: skip the Fyers WS subscribe (dead weight —
-        // Fyers ticks for altFeed-owned symbols get dropped at MarketDataService.onTick).
-        // BUT still register the per-strike CandleAggregator listener — CandleAggregator
-        // drops ticks for symbols with no registered listener at onLtpTick, so without
-        // this the 09:15 → 09:18 bucket for CE/PE never forms (aggregator subscribe
-        // otherwise wouldn't happen until 09:18 ATM lock, by which point the 09:15
-        // ticks have already been discarded). GDFL pushes LTP via pushLtpTick which
-        // fires the same listener chain, so a registered listener is sufficient.
-        if (!gdflOwnsOptionTicks()) {
-            try { marketDataService.subscribeAdditional(subs); }
-            catch (Exception ignored) {}
-        }
-        for (String sym : subs) {
-            if (aggregatorSubscribedSymbols.contains(sym)) continue;
-            final String s = sym;
-            candleAggregator.subscribe(s, cc -> onCandleClose(s, cc));
-            aggregatorSubscribedSymbols.add(sym);
-        }
-        state.preWarmDayKey = today;
-        saveToDisk();
-
-        event("[INFO]", "Setup",
-            "pre-warm subscribed " + state.warmingStrikes.size() + " strikes around ATM "
-            + baseAtm + " (range " + lo + "–" + hi + ")");
-    }
-
-    /** Called on a mid-warm boot restart. Re-subscribes the warming set that was
-     *  persisted before the crash so the aggregator continues sampling. Called from
-     *  {@link #boot()} after the state is loaded. */
-    private synchronized void resumeWarmingIfNeeded() {
-        if (state.warmingStrikes.isEmpty()) return;
-        if (state.ceSymbol != null && !state.ceSymbol.isBlank()) {
-            // ATM already resolved before the crash — warming set is stale.
-            trimWarmingSet();
-            return;
-        }
-        String today = LocalDate.now(IST).toString();
-        if (!today.equals(state.preWarmDayKey)) {
-            // Yesterday's warming set — abandon (no live subscriptions to unsubscribe;
-            // the WS was already closed on shutdown).
-            state.warmingStrikes.clear();
-            state.warmingCeByStrike.clear();
-            state.warmingPeByStrike.clear();
-            state.preWarmDayKey = "";
-            saveToDisk();
-            return;
-        }
-        LocalTime now = ZonedDateTime.now(IST).toLocalTime();
-        if (!now.isBefore(PRE_WARM_CUTOFF_IST)) {
-            // Past 09:18 with no ATM resolved and stale warming — likely a bug case.
-            // Drop the warming set; resolveAtmFromFirstBar will slow-path when NIFTY closes.
-            state.warmingStrikes.clear();
-            state.warmingCeByStrike.clear();
-            state.warmingPeByStrike.clear();
-            state.preWarmDayKey = "";
-            saveToDisk();
-            return;
-        }
-        List<String> subs = new ArrayList<>();
-        for (Long strike : state.warmingStrikes) {
-            String ce = state.warmingCeByStrike.get(strike);
-            String pe = state.warmingPeByStrike.get(strike);
-            if (ce != null && !ce.isBlank()) subs.add(ce);
-            if (pe != null && !pe.isBlank()) subs.add(pe);
-        }
-        if (subs.isEmpty()) return;
-        // In GDFL mode CE/PE ticks are altFeed-owned; a Fyers WS subscribe would
-        // be dead weight (ticks dropped at MarketDataService.onTick). Aggregator
-        // listeners still register unconditionally so GDFL's pushLtpTick fans
-        // out into the same bucketing pipeline.
-        if (!gdflOwnsOptionTicks()) {
-            try { marketDataService.subscribeAdditional(subs); }
-            catch (Exception ignored) {}
-        }
-        for (String sym : subs) {
-            if (aggregatorSubscribedSymbols.contains(sym)) continue;
-            final String s = sym;
-            candleAggregator.subscribe(s, cc -> onCandleClose(s, cc));
-            aggregatorSubscribedSymbols.add(sym);
-        }
-        event("[INFO]", "Setup",
-            "resuming pre-warm from persisted state — " + state.warmingStrikes.size() + " strikes");
-    }
-
-    /** Unsubscribe every pre-warmed symbol that isn't the resolved ATM CE or PE, and
-     *  clear the warming state. Called by {@link #resolveAtmFromFirstBar} at 09:18. */
-    private synchronized void trimWarmingSet() {
-        if (state.warmingStrikes.isEmpty()) return;
-        java.util.Set<String> keep = new java.util.HashSet<>();
-        if (state.ceSymbol != null && !state.ceSymbol.isBlank()) keep.add(state.ceSymbol);
-        if (state.peSymbol != null && !state.peSymbol.isBlank()) keep.add(state.peSymbol);
-
-        List<String> drop = new ArrayList<>();
-        for (Long strike : state.warmingStrikes) {
-            String ce = state.warmingCeByStrike.get(strike);
-            String pe = state.warmingPeByStrike.get(strike);
-            if (ce != null && !ce.isBlank() && !keep.contains(ce)) drop.add(ce);
-            if (pe != null && !pe.isBlank() && !keep.contains(pe)) drop.add(pe);
-        }
-
-        if (!drop.isEmpty()) {
-            try { marketDataService.unsubscribeAdditional(drop); }
-            catch (Exception ignored) {}
-            for (String sym : drop) candleAggregator.unsubscribe(sym);
-        }
-
-        int dropped = drop.size();
-        state.warmingStrikes.clear();
-        state.warmingCeByStrike.clear();
-        state.warmingPeByStrike.clear();
-        saveToDisk();
-
-        if (dropped > 0) {
-            event("[INFO]", "Setup",
-                "pre-warm trimmed — kept ATM legs, unsubscribed " + dropped + " symbol(s)");
-        }
-    }
-
-    /** First 1-min NIFTY spot bar close of the day (09:15 → 09:16). Rounds close to
-     *  the nearest 50-point strike to get the ATM, then picks 1 ITM CE (strike
-     *  ATM − 50) and 1 ITM PE (strike ATM + 50). Since pre-warm ran at 09:10 and
-     *  subscribed ±10 strikes, both ITM legs have a fully-formed 09:15 → 09:16
-     *  bar — no partial-first-bar problem. Idempotent — no-op if today's contracts
-     *  are already picked. */
-    private synchronized void resolveAtmFromFirstBar(Candle c) {
-        String today = LocalDate.now(IST).toString();
-        if (today.equals(state.sessionSetupDayKey) && state.atmStrike > 0
-            && !state.ceSymbol.isBlank() && !state.peSymbol.isBlank()) {
-            ensureSessionLegsSubscribed();
-            return;
-        }
-        double close = c.close();
-        if (close <= 0) return;
-        long atmStrike = Math.round(close / (double) STRIKE_STEP) * STRIKE_STEP;
-
-        // 1 ITM offsets: CE ITM = ATM − 50 (strike below spot); PE ITM = ATM + 50
-        // (strike above spot). "Deeper in the money" for both sides — higher intrinsic.
-        long ceItmStrike = atmStrike - STRIKE_STEP;
-        long peItmStrike = atmStrike + STRIKE_STEP;
-
-        String ce = state.warmingCeByStrike.get(ceItmStrike);
-        String pe = state.warmingPeByStrike.get(peItmStrike);
-
-        if (ce != null && !ce.isBlank() && pe != null && !pe.isBlank()) {
-            // Fast path — pre-warm hit. Both ITM strikes were subscribed at 09:10
-            // so their 09:15 → 09:16 aggregator bucket is fully formed.
-            state.firstBarCloseSymbol = NIFTY_SYMBOL;
-            state.firstBarClose       = close;
-            state.atmStrike           = atmStrike;
-            state.ceSymbol            = ce;
-            state.peSymbol            = pe;
-            state.ceRefLtp            = safeLtp(ce);
-            state.peRefLtp            = safeLtp(pe);
-            state.sessionSetupDayKey  = today;
-            trimWarmingSet();
-            eventAtDisplayTime("[INFO]", "Setup",
-                "NIFTY ATM " + atmStrike + " (close " + round2(close) + ") — 1 ITM CE " + ceItmStrike
-                + " (" + shortSym(ce) + ") | 1 ITM PE " + peItmStrike + " (" + shortSym(pe) + ")",
-                c.startMillis() + 60 * 1000L);
-            saveToDisk();
-            return;
-        }
-
-        // Slow path — the ITM strikes fell outside the ±10 pre-warm window
-        // (extreme overnight gap) OR pre-warm never ran (fresh install / bot
-        // started after 09:15). Fetch chain live and subscribe fresh; the
-        // 09:15 → 09:16 bar may be partial in that case.
-        if (!state.warmingStrikes.isEmpty()) {
-            event("[WARNING]", "Setup",
-                "1 ITM strikes CE=" + ceItmStrike + " PE=" + peItmStrike
-                + " outside pre-warm window — resolving fresh (first bar may be partial)");
-        }
-        java.util.NavigableMap<Long, BalancedAtmSelector.ChainStrike> chain;
-        try { chain = atmSelector.fetchChainStrikes(); }
-        catch (Exception e) {
-            log.warn("[OptionScalping] ATM resolution failed — chain fetch: {}", e.getMessage());
-            return;
-        }
-        BalancedAtmSelector.ChainStrike ceRow = chain == null ? null : chain.get(ceItmStrike);
-        BalancedAtmSelector.ChainStrike peRow = chain == null ? null : chain.get(peItmStrike);
-        if (ceRow == null || peRow == null
-            || ceRow.ceSymbol() == null || ceRow.ceSymbol().isBlank()
-            || peRow.peSymbol() == null || peRow.peSymbol().isBlank()) {
-            log.debug("[OptionScalping] ATM resolution deferred — chain missing ITM strikes for close {}", close);
-            return;
-        }
-
-        state.firstBarCloseSymbol = NIFTY_SYMBOL;
-        state.firstBarClose       = close;
-        state.atmStrike           = atmStrike;
-        state.ceSymbol            = ceRow.ceSymbol();
-        state.peSymbol            = peRow.peSymbol();
-        state.ceRefLtp            = ceRow.ceLtp();
-        state.peRefLtp            = peRow.peLtp();
-        state.sessionSetupDayKey  = today;
-
-        ensureSessionLegsSubscribed();
-        trimWarmingSet();
-        eventAtDisplayTime("[INFO]", "Setup",
-            "NIFTY ATM " + atmStrike + " (close " + round2(close) + ") — 1 ITM CE " + ceItmStrike
-            + " (" + shortSym(state.ceSymbol)
-            + ") | 1 ITM PE " + peItmStrike + " (" + shortSym(state.peSymbol) + ")",
-            c.startMillis() + 60 * 1000L);
-        saveToDisk();
-    }
-
-    private void ensureSessionLegsSubscribed() {
-        java.util.List<String> legs = new java.util.ArrayList<>(2);
-        if (state.ceSymbol != null && !state.ceSymbol.isBlank()) legs.add(state.ceSymbol);
-        if (state.peSymbol != null && !state.peSymbol.isBlank()) legs.add(state.peSymbol);
-        if (legs.isEmpty()) return;
-        // WS subscribe is safely idempotent (the underlying subscribedHsmTokens set
-        // dedups). Skipped when GDFL owns option ticks — Fyers WS ticks for these
-        // symbols would be dropped at MarketDataService.onTick anyway; the WS
-        // subscription is dead weight in that mode.
-        // Candle-aggregator subscribe is NOT idempotent — every call adds another
-        // listener. Guard with aggregatorSubscribedSymbols so we register exactly one
-        // listener per session leg per JVM lifetime. Aggregator subscription is
-        // ALWAYS needed (regardless of feed) so the aggregator builds candles from
-        // whatever LTP source feeds onLtpTick.
-        if (!gdflOwnsOptionTicks()) {
-            try { marketDataService.subscribeAdditional(legs); }
-            catch (Exception ignored) {}
-        }
-        for (String sym : legs) {
-            if (aggregatorSubscribedSymbols.contains(sym)) continue;
-            final String s = sym;
-            candleAggregator.subscribe(s, cc -> onCandleClose(s, cc));
-            aggregatorSubscribedSymbols.add(sym);
-        }
-    }
-
-    private synchronized void releaseSessionLegs() {
-        java.util.Set<String> openSymbols = new java.util.HashSet<>();
-        for (Position p : state.openPositions.values()) {
-            if (p != null && p.symbol != null) openSymbols.add(p.symbol);
-        }
-        java.util.List<String> legs = new java.util.ArrayList<>(2);
-        for (String sym : new String[] {state.ceSymbol, state.peSymbol}) {
-            if (sym != null && !sym.isBlank() && !openSymbols.contains(sym)) {
-                legs.add(sym);
-                candleAggregator.unsubscribe(sym);
-                aggregatorSubscribedSymbols.remove(sym);
-            }
-        }
-        if (!legs.isEmpty()) {
-            try { marketDataService.unsubscribeAdditional(legs); }
-            catch (Exception ignored) {}
-        }
-        // Also drop any still-warming symbols (defensive — should be empty by now).
-        if (!state.warmingStrikes.isEmpty()) {
-            List<String> drop = new ArrayList<>();
-            for (Long strike : state.warmingStrikes) {
-                String ce = state.warmingCeByStrike.get(strike);
-                String pe = state.warmingPeByStrike.get(strike);
-                if (ce != null && !ce.isBlank() && !openSymbols.contains(ce)) drop.add(ce);
-                if (pe != null && !pe.isBlank() && !openSymbols.contains(pe)) drop.add(pe);
-            }
-            if (!drop.isEmpty()) {
-                try { marketDataService.unsubscribeAdditional(drop); }
-                catch (Exception ignored) {}
-                for (String sym : drop) {
-                    candleAggregator.unsubscribe(sym);
-                    aggregatorSubscribedSymbols.remove(sym);
-                }
-            }
-            state.warmingStrikes.clear();
-            state.warmingCeByStrike.clear();
-            state.warmingPeByStrike.clear();
-        }
-        state.ceSymbol           = "";
-        state.peSymbol           = "";
-        state.atmStrike          = 0;
-        state.ceRefLtp           = 0;
-        state.peRefLtp           = 0;
-        state.firstBarClose      = 0;
-        state.sessionSetupDayKey = "";
-        state.preWarmDayKey      = "";
-    }
-
-    // ── Trigger-candle FSM ─────────────────────────────────────────────────
-
-    /** TEST MODE — entry / exit FSM DISABLED.
-     *
-     *  <p>Right now this branch only validates the DATA PIPELINE:
-     *  pre-market subscribe at 09:10, 1-min bar aggregation, 09:16 ATM
-     *  lock, 1 ITM CE / PE selection. No orders should fire.
-     *
-     *  <p>To re-enable, remove the early return below. The rest of the
-     *  method (VWAP-break + Premium ST + Spot ST gates, trailing SL,
-     *  ST-flip exit, VWAP-reclaim exit) is inherited from the old
-     *  OPTION SELLING implementation and will need to be rewritten to
-     *  match the scalping spec the operator will define. */
-    private void processOptionBar(String symbol, Candle c) {
-        // TEST MODE guard — do nothing. Bar close still reaches this method
-        // (which proves the aggregator is emitting bars for the leg) but
-        // no gates evaluate and no orders fire.
-        if (true) return;
-        // Original OPTION SELLING FSM below — kept for reference; will be
-        // rewritten in a follow-up with the scalping entry / exit rules.
-        // Bar-level gate: skip bars whose START is before the configured
-        // optionScalpingTradingStartTime. "Start = 09:18" means the 09:18 bar (closes
-        // at 09:21) is the first bar the FSM sees; the 09:15 opening bar is
-        // pre-start and ignored — no seed, no fire, no promote, no invalidate.
-        //
-        // {@link #canFireNewEntry} does the same check against WALL CLOCK for
-        // per-tick gates like {@link #fire}; this is the per-bar equivalent.
-        // Without this, canFireNewEntry alone lets the 09:15 bar through
-        // because its close event fires at wall clock 09:18:XX, which is not
-        // before 09:18. OI subscription, pre-warm, and ATM resolution live
-        // outside processOptionBar so they continue running from 09:15.
-        String startHhmm = riskSettings.getOptionScalpingTradingStartTime();
-        if (startHhmm != null && !startHhmm.isBlank()) {
-            LocalTime startCfg = null;
-            try { startCfg = LocalTime.parse(startHhmm); }
-            catch (Exception ignored) {}
-            if (startCfg != null) {
-                LocalTime barStart = ZonedDateTime.ofInstant(
-                    java.time.Instant.ofEpochMilli(c.startMillis()), IST).toLocalTime();
-                if (barStart.isBefore(startCfg)) {
-                    eventAtDisplayTime("[INFO]", "Setup",
-                        shortSym(symbol) + " bar " + barStart + " pre-start (< "
-                        + startCfg + ") — FSM skipped",
-                        c.startMillis());
-                    return;
-                }
-            }
-        }
-
-        double vwap = 0;
-        try { vwap = marketDataService.getVwap(symbol); }
-        catch (Exception ignored) {}
-        if (vwap <= 0) {
-            // Fyers ATP not warm yet — skip this bar; the FSM stays in whatever state it was.
-            return;
-        }
-
-        // After the configured trading end time, no new entries fire. Existing open
-        // positions keep running via fastSlCheck + watchSquareoff independently.
-        // Trailing exits still evaluate (see bottom of method) so we exit late.
-        boolean canFire = canFireNewEntry();
-
-        // Skip entry work if a position is already open on this symbol.
-        boolean alreadyOpen = false;
-        for (Position p : state.openPositions.values()) {
-            if (p == null) continue;
-            if (p.setup == ActiveSetup.MANUAL) continue;
-            if (symbol.equals(p.symbol)) { alreadyOpen = true; break; }
-        }
-
-        // Rule: the bar that just took out an SL on this symbol cannot be the
-        // qualifying entry bar — prevents re-entering on the same structural
-        // bar that just moved against us.
-        Long slBar = state.lastSlBarStartMsBySymbol.get(symbol);
-        boolean poisonedByRecentSl = slBar != null && slBar == c.startMillis();
-
-        boolean isCeLeg = symbol.equals(state.ceSymbol);
-
-        // Single-bar entry: if this closed bar passes all 4 gates, fire NOW.
-        // The PDF says "Execute the sell order at the market open of the candle
-        // immediately following the confirmed breakdown close" — in our world
-        // that is the market order placed the instant onCandleClose fires
-        // (~3 s after bar close via the aggregator grace window).
-        if (canFire && !alreadyOpen && !poisonedByRecentSl) {
-            EntryGateResult gate = evaluateEntryGates(symbol, c, vwap, isCeLeg);
-            if (gate.pass) {
-                eventAtDisplayTime("[INFO]", "Setup",
-                    shortSym(symbol) + " entry gates PASS @ close " + round2(c.close())
-                    + " (high=" + round2(c.high()) + ", vwap=" + round2(vwap)
-                    + ", stLine=" + round2(gate.premiumStLine) + ")",
-                    c.startMillis());
-                fire(symbol, c, TriggerCandle.of(c, gate.premiumStLine));
-            } else if (gate.reason != null) {
-                // Log only when we had a candidate breakdown (skips the vacuous "close ≥ VWAP" case).
-                eventAtDisplayTime("[INFO]", "Setup",
-                    shortSym(symbol) + " gate REJECT — " + gate.reason,
-                    c.startMillis());
-            }
-        }
-
-        // Trailing exit + ST-flip-green — hardcoded ON; evaluated on every 3-min close.
-        evaluateTrailingExit(symbol, c);
-    }
-
-    /** Result of the 4-gate entry evaluation. */
-    private static class EntryGateResult {
-        final boolean pass;
-        final double  premiumStLine;
-        /** Human-readable rejection reason for the event log, or {@code null} when the
-         *  bar wasn't a candidate at all (e.g. close ≥ VWAP — nothing to reject). */
-        final String  reason;
-        EntryGateResult(boolean pass, double stLine, String reason) {
-            this.pass = pass; this.premiumStLine = stLine; this.reason = reason;
-        }
-    }
-
-    /** PDF's entry gate check on the just-closed bar. Returns pass=true and the
-     *  premium ST line snapshot when all three active gates hold:
-     *  <ul>
-     *    <li>A. VWAP cross-and-reject: close &lt; VWAP AND high ≥ VWAP. Covers
-     *        BOTH fresh breakdown (bar opened at/above VWAP and closed below)
-     *        AND wick rejection (bar opened below VWAP, wicked up to at least
-     *        touch VWAP, closed back below). Red or green body doesn't matter
-     *        — only that the bar interacted with VWAP and closed below it.</li>
-     *    <li>B. Premium SuperTrend RED at this bar (isUp=false).</li>
-     *    <li>C. Spot SuperTrend alignment: CE → spot ST red, PE → spot ST green.</li>
-     *  </ul>
-     *  Gate D ("not far below VWAP") not implemented — will be added later.
-     *
-     *  <p>When any check fails, {@code reason} carries a short human-readable
-     *  label the caller can log INFO-level to keep the operator's event log
-     *  debuggable. Returns {@code reason=null} when the bar wasn't a candidate
-     *  at all (close ≥ VWAP) — caller logs nothing in that case to avoid
-     *  event-log spam. */
-    private EntryGateResult evaluateEntryGates(String symbol, Candle c, double vwap, boolean isCeLeg) {
-        double close = c.close();
-        double high  = c.high();
-        // Gate A — VWAP cross-and-reject on this bar.
-        //   close < VWAP  → bar closed on the short side.
-        //   high  ≥ VWAP  → bar interacted with VWAP (either opened at/above
-        //                    and closed below = fresh breakdown, OR opened
-        //                    below and wicked up to at least touch VWAP =
-        //                    retest / wick rejection). Either flavour is a
-        //                    valid entry — no prior-breakdown state needed.
-        if (close >= vwap) {
-            return new EntryGateResult(false, 0, null);   // not a candidate — silent
-        }
-        if (high < vwap) {
-            return new EntryGateResult(false, 0,
-                "A fail — bar never touched VWAP (high=" + round2(high) + " < vwap=" + round2(vwap) + ")");
-        }
-        // Gate B — premium SuperTrend RED
-        List<Candle> premBars = candleAggregator.getHistory(symbol);
-        com.rydytrader.autotrader.indicator.SuperTrend.State premSt =
-            com.rydytrader.autotrader.indicator.SuperTrend.at(premBars, SUPERTREND_ATR, SUPERTREND_MULT);
-        if (!premSt.available()) {
-            return new EntryGateResult(false, 0,
-                "B fail — premium ST warming (" + premBars.size() + "/" + (SUPERTREND_ATR + 1) + " bars)");
-        }
-        if (premSt.isUp()) {
-            return new EntryGateResult(false, premSt.line(),
-                "B fail — premium ST is GREEN (line=" + round2(premSt.line()) + ")");
-        }
-        // Gate C — spot SuperTrend alignment
-        List<Candle> spotBars = candleAggregator.getHistory(NIFTY_SYMBOL);
-        com.rydytrader.autotrader.indicator.SuperTrend.State spotSt =
-            com.rydytrader.autotrader.indicator.SuperTrend.at(spotBars, SPOT_SUPERTREND_ATR, SPOT_SUPERTREND_MULT);
-        if (!spotSt.available()) {
-            return new EntryGateResult(false, premSt.line(),
-                "C fail — spot ST warming (" + spotBars.size() + "/" + (SPOT_SUPERTREND_ATR + 1) + " bars)");
-        }
-        // CE trigger requires spot bearish (isUp=false); PE trigger requires spot bullish.
-        boolean spotOk = isCeLeg ? !spotSt.isUp() : spotSt.isUp();
-        if (!spotOk) {
-            return new EntryGateResult(false, premSt.line(),
-                "C fail — spot ST " + (spotSt.isUp() ? "GREEN" : "RED") + " but "
-                + (isCeLeg ? "CE" : "PE") + " needs " + (isCeLeg ? "RED" : "GREEN"));
-        }
-        return new EntryGateResult(true, premSt.line(), null);
-    }
-
-    /** Runs on every 3-min close of a symbol we have an open position on.
-     *  Two exit signals + a trailing-SL housekeeping step, in order:
-     *  <ol>
-     *    <li>Bar CLOSE > VWAP → exit tagged "VWAP_RECLAIM" — the entry
-     *        condition (close below VWAP) is invalidated.</li>
-     *    <li>Premium ST flips RED → GREEN → exit tagged "ST_FLIP".</li>
-     *    <li>Else ST still red and line tightened → trail slLevel down
-     *        to the new ST line (display only, no tick check).</li>
-     *  </ol>
-     *  Bar-close only — no tick-based path. Mechanism is always ON. */
-    private void evaluateTrailingExit(String symbol, Candle c) {
-        Position openHere = null;
-        for (Position p : state.openPositions.values()) {
-            if (p != null && symbol.equals(p.symbol) && p.setup != ActiveSetup.MANUAL) {
-                openHere = p; break;
-            }
-        }
-        if (openHere == null) return;
-
-        // 1. VWAP reclaim — entry gate invalidated.
-        double vwap = 0;
-        try { vwap = marketDataService.getVwap(symbol); } catch (Exception ignored) {}
-        if (vwap > 0 && c.close() > vwap) {
-            eventAtDisplayTime("[INFO]", "Exit",
-                shortSym(symbol) + " close " + round2(c.close())
-                + " reclaimed VWAP " + round2(vwap) + " — exit (VWAP_RECLAIM)",
-                c.startMillis());
-            closePosition(openHere, "VWAP_RECLAIM");
-            return;
-        }
-
-        // 2 + 3. Premium ST — flip → exit; still red + tighter → trail.
-        List<Candle> bars = candleAggregator.getHistory(symbol);
-        com.rydytrader.autotrader.indicator.SuperTrend.State st =
-            com.rydytrader.autotrader.indicator.SuperTrend.at(bars, SUPERTREND_ATR, SUPERTREND_MULT);
-        if (!st.available()) return;   // warming — hold
-
-        if (st.isUp()) {
-            eventAtDisplayTime("[INFO]", "Exit",
-                shortSym(symbol) + " premium ST flipped GREEN — exit (line=" + round2(st.line()) + ")",
-                c.startMillis());
-            closePosition(openHere, "ST_FLIP");
-            return;
-        }
-
-        // Trail slLevel to the current ST line if it tightened.
-        double newLine = st.line();
-        if (newLine > 0 && (openHere.slLevel <= 0 || newLine < openHere.slLevel)) {
-            double oldSl = openHere.slLevel;
-            openHere.slLevel = newLine;
-            eventAtDisplayTime("[INFO]", "Setup",
-                shortSym(symbol) + " SL trailed " + round2(oldSl) + " → " + round2(newLine)
-                + " (ST line)",
-                c.startMillis());
-            saveToDisk();
-        }
-    }
-
-    private boolean canFireNewEntry() {
-        LocalTime now = ZonedDateTime.now(IST).toLocalTime();
-        String startHhmm = riskSettings.getOptionScalpingTradingStartTime();
-        if (startHhmm != null && !startHhmm.isBlank()) {
-            try {
-                LocalTime start = LocalTime.parse(startHhmm);
-                if (now.isBefore(start)) return false;
-            } catch (Exception ignored) {}
-        }
-        String endHhmm = riskSettings.getOptionScalpingTradingEndTime();
-        if (endHhmm != null && !endHhmm.isBlank()) {
-            try {
-                LocalTime end = LocalTime.parse(endHhmm);
-                if (!now.isBefore(end)) return false;
-            } catch (Exception ignored) {}
-        }
-        return true;
-    }
-
-    /** Sum of remaining ₹ at risk across all currently-open positions. */
-    private double exposedRiskNow() {
-        double total = 0;
-        for (Position p : state.openPositions.values()) {
-            if (p == null) continue;
-            double perShare = p.isShort
-                ? Math.max(0, p.slLevel - p.entryPrice)
-                : Math.max(0, p.entryPrice - p.slLevel);
-            total += perShare * p.qty;
-        }
-        return total;
-    }
-
-    private double consumedRiskNow() {
-        double total = 0;
-        for (Map<String, Object> trade : state.todayClosedTrades) {
-            double net = asDouble(trade.get("netPnl"));
-            if (net < 0) total += Math.abs(net);
-        }
-        return total;
-    }
-
-    /** Fire a SHORT on the option leg. SL price is clamped to [entry+minSl, entry+maxSl].
-     *  Per-leg CE / PE trade counters cap fires per day. No target order — position exits
-     *  on tick-based SL hit or timed squareoff.
-     *
-     *  <p>TEST MODE — currently short-circuits to place no orders. See
-     *  processOptionBar for the plumbing-only rationale. */
-    private void fire(String symbol, Candle entryCandle, TriggerCandle trigger) {
-        // TEST MODE — no orders. processOptionBar already short-circuits so
-        // this method shouldn't be reached; the guard here is belt-and-suspenders
-        // in case some future path calls fire() directly.
-        if (true) return;
-        if (!canFireNewEntry()) return;
-        if (state.dailyLossLockout) return;
-        for (Position p : state.openPositions.values()) {
-            if (p != null && symbol.equals(p.symbol)) return;
-        }
-
-        // Per-leg LOSS cap — no new entries after N losing exits on this side.
-        // Winning trades (VWAP_RECLAIM / ST_FLIP with profit) don't burn the
-        // cap; the trailing SL lets us take profit repeatedly without
-        // consuming the loss budget.
-        boolean isCeLeg = symbol.equals(state.ceSymbol);
-        int maxCe = riskSettings.getOptionScalpingMaxCeTradesPerDay();
-        int maxPe = riskSettings.getOptionScalpingMaxPeTradesPerDay();
-        if (isCeLeg && maxCe > 0 && state.ceLossesToday >= maxCe) {
-            event("[WARNING]", "Risk",
-                shortSym(symbol) + " — CE loss cap reached (" + state.ceLossesToday
-                + "/" + maxCe + " losses), skipping");
-            return;
-        }
-        if (!isCeLeg && maxPe > 0 && state.peLossesToday >= maxPe) {
-            event("[WARNING]", "Risk",
-                shortSym(symbol) + " — PE loss cap reached (" + state.peLossesToday
-                + "/" + maxPe + " losses), skipping");
-            return;
-        }
-
-        // Portfolio realized-loss lockout.
-        double maxRisk = riskSettings.getPortfolioMaxDailyLoss();
-        if (maxRisk > 0 && consumedRiskNow() > maxRisk) {
-            event("[ERROR]", "Risk", "lockout — consumed ₹"
-                + round2(consumedRiskNow()) + " > ₹" + round2(maxRisk));
-            state.dailyLossLockout = true;
-            saveToDisk();
-            return;
-        }
-
-        double entryLtp = 0;
-        try { entryLtp = marketDataService.getLtp(symbol); } catch (Exception ignored) {}
-        if (entryLtp <= 0 && entryCandle != null) entryLtp = entryCandle.close();
-        if (entryLtp <= 0) {
-            event("[ERROR]", "AUTO ENTRY", shortSym(symbol) + " — no entry price available");
-            return;
-        }
-
-        // Initial SL = premium SuperTrend line at fire. Trails down bar-by-bar
-        // in evaluateTrailingExit as the ST line ratchets tighter. Exits are
-        // bar-close only:
-        //   * bar CLOSE > VWAP → VWAP_RECLAIM (entry condition invalidated)
-        //   * premium ST flips GREEN → ST_FLIP
-        //   * timed squareoff at 15:25
-        // Whichever bar-close signal fires first wins. No tick-based SL.
-        //
-        // Safety: ST line for a downtrend sits ABOVE price, so
-        // trigger.premiumStLine > entry is the expected case. If the snapshot
-        // is missing / ST wasn't warm at seed time, fall back to trigger.high
-        // as a display value.
-        double slLevel;
-        if (trigger.premiumStLine > entryLtp) {
-            slLevel = trigger.premiumStLine;
-        } else {
-            slLevel = trigger.high > 0 ? trigger.high : entryLtp;
-        }
-
-        int qty = riskSettings.getOptionScalpingLotsPerLeg() * LOT_SIZE;
-
-        // Combined-risk gate — projected exposure after this entry must fit under portfolioMaxDailyLoss.
-        if (maxRisk > 0) {
-            double addedRisk = Math.max(0, slLevel - entryLtp) * qty;
-            double projected = exposedRiskNow() + addedRisk;
-            if (projected > maxRisk) {
-                int halfQty = Math.max(LOT_SIZE, qty / 2);
-                double halfProjected = exposedRiskNow() + Math.max(0, slLevel - entryLtp) * halfQty;
-                if (halfProjected <= maxRisk && halfQty < qty) {
-                    event("[WARNING]", "Risk",
-                        shortSym(symbol) + " — projected ₹" + round2(projected)
-                        + " > cap ₹" + round2(maxRisk) + "; retrying at half qty (" + halfQty + ")");
-                    qty = halfQty;
-                } else {
-                    event("[WARNING]", "Risk",
-                        shortSym(symbol) + " — skipped, projected ₹" + round2(projected)
-                        + " > cap ₹" + round2(maxRisk) + " (half-qty also over)");
-                    return;
-                }
-            }
-        }
-
-        String productType = riskSettings.getOptionScalpingOrderType();
-        OrderDTO order = orderService.placeOrder(symbol, qty, -1, 0, productType);
-        if (order == null || order.getId() == null || order.getId().isEmpty()) {
-            event("[ERROR]", "AUTO ENTRY", "entry order rejected for " + shortSym(symbol));
-            return;
-        }
-        // Only subscribe on Fyers WS when GDFL isn't the option-side feed. In
-        // GDFL mode this symbol is already altFeed-owned via the OI-window /
-        // aggregation-leg subscribe path; a Fyers WS subscribe would be dead
-        // weight (ticks dropped at MarketDataService.onTick).
-        if (!gdflOwnsOptionTicks()) {
-            try { marketDataService.subscribeAdditional(java.util.Collections.singletonList(symbol)); }
-            catch (Exception ignored) {}
-        }
-
-        // SL is tick-based inside fastSlCheck — no broker SL order is placed.
-        // Tag the setup by which leg fired so analytics can split CE vs PE performance.
-        Position p = new Position();
-        p.symbol          = symbol;
-        p.setup           = isCeLeg ? ActiveSetup.CE_SELL : ActiveSetup.PE_SELL;
-        p.qty             = qty;
-        p.entryPrice      = entryLtp;
-        p.entryOrderId    = order.getId();
-        p.openMillis      = System.currentTimeMillis();
-        // Record the confirmation candle's bar start — the bar whose close met the fire
-        // gate. UI shows the CLOSE time (start + 2 min) as the "entry candle time".
-        p.entryCandleMs   = entryCandle == null ? 0 : entryCandle.startMillis();
-        p.slLevel         = slLevel;
-        p.originalSlLevel = slLevel;
-        p.triggerHigh     = trigger.high;   // used by refreshUnresolvedFills to re-clamp SL on fill
-        p.targetLevel     = 0;              // no target
-        p.isShort         = true;
-        p.fillResolved    = false;
-        p.productType     = productType;
-        p.breakevenMoved  = false;
-        p.lockedAtm       = state.atmStrike;
-        state.openPositions.put(posKey(p), p);
-        state.tradesToday++;
-        if (isCeLeg) state.ceTradesToday++; else state.peTradesToday++;
-        eventAtDisplayTime("[SUCCESS]", "AUTO ENTRY",
-            "sell " + shortSym(symbol) + " ×" + (qty / LOT_SIZE) + "L "
-            + "@ " + round2(entryLtp) + " (SL " + round2(slLevel)
-            + ", " + (isCeLeg ? "CE losses " + state.ceLossesToday + "/" + maxCe
-                              : "PE losses " + state.peLossesToday + "/" + maxPe) + ")",
-            entryCandle == null ? 0 : entryCandle.startMillis());
-        saveToDisk();
-    }
-
-    // ── Fill resolver ──────────────────────────────────────────────────────
-
-    private void refreshUnresolvedFills() {
-        if (state.openPositions.isEmpty()) return;
-        for (Position p : state.openPositions.values()) {
-            if (p == null) continue;
-            if (p.fillResolved) continue;
-            if (p.entryOrderId == null || p.entryOrderId.isBlank()) continue;
-            try {
-                double fillPrice = orderService.getFilledPriceByOrderId(p.entryOrderId);
-                if (fillPrice <= 0) continue;
-                double oldEntry = p.entryPrice;
-                p.entryPrice = round2(fillPrice);
-                p.fillResolved = true;
-                event("[INFO]", "Fill", shortSym(p.symbol) + " fill resolved — entry "
-                    + round2(oldEntry) + " → " + round2(p.entryPrice) + " (qty=" + p.qty + ")");
-                // No SL re-clamp — slLevel is the trailing premium ST line,
-                // not a min/max clamp against fill. Next bar close in
-                // evaluateTrailingExit will trail it further if ST tightens.
-                saveToDisk();
-            } catch (Exception e) {
-                log.warn("[OptionScalping] fill lookup failed for {}: {}", p.entryOrderId, e.getMessage());
-            }
-        }
-    }
-
-    // ── Time-based squareoff ───────────────────────────────────────────────
-
-    public synchronized void watchSquareoff() {
-        if (state.openPositions.isEmpty()) return;
-        String hhmm = riskSettings.getOptionScalpingSquareOffTime();
-        if (hhmm == null || hhmm.isBlank()) return;
-        LocalTime cutoff;
-        try { cutoff = LocalTime.parse(hhmm); }
-        catch (Exception e) { return; }
-        if (ZonedDateTime.now(IST).toLocalTime().isAfter(cutoff)) {
-            event("[INFO]", "Squareoff", "TIMED_EXIT — clock reached " + hhmm
-                + ", flattening " + state.openPositions.size() + " position(s)");
-            for (Position p : new ArrayList<>(state.openPositions.values())) {
-                closePosition(p, "TIMED_EXIT");
-            }
-        }
-    }
-
-    // ── Position close + persistence to DB / in-memory ring ────────────────
+    // ── Position close + persistence (kept for MANUAL-terminal fires) ──────
 
     private boolean closePosition(Position p, String reason) {
         if (p == null) return false;
@@ -1395,13 +312,9 @@ public class OptionScalping implements Strategy {
             ? riskSettings.getOptionScalpingOrderType()
             : p.productType;
         int closeSide = p.isShort ? +1 : -1;
-        OrderDTO close = orderService.placeExitOrder(symbol, p.qty, closeSide, productType);
+        var close = orderService.placeExitOrder(symbol, p.qty, closeSide, productType);
         double exitPrice = 0;
         String exitOrderId = close == null ? null : close.getId();
-        // Prefer the actual filled trade price from Fyers tradebook. Market squareoff
-        // orders usually fill within a few hundred ms; poll a short window before
-        // falling back to LTP so the persisted P&L reflects real execution, not a
-        // moving-window LTP snapshot.
         if (exitOrderId != null && !exitOrderId.isBlank()) {
             for (int attempt = 0; attempt < 5; attempt++) {
                 try {
@@ -1432,14 +345,13 @@ public class OptionScalping implements Strategy {
         double net     = gross - charges;
 
         long closedAtMillis = System.currentTimeMillis();
-        long exitCandleMs   = currentBarStartMs();
         String dbStrategyId = (p.setup == ActiveSetup.MANUAL) ? MANUAL_STRATEGY_ID : STRATEGY_ID;
         String setupName    = p.setup == null ? "MANUAL" : p.setup.name();
         persistTradeRow(dbStrategyId, p.symbol, setupName, reason, p.qty,
             gross, charges, net,
             "SL_HIT".equals(reason) ? 1 : 0,
             closedAtMillis, p.openMillis, p.entryPrice, exitPrice,
-            p.entryCandleMs, exitCandleMs);
+            p.entryCandleMs, 0L);
 
         Map<String, Object> cycle = new LinkedHashMap<>();
         cycle.put("strategyId",     dbStrategyId);
@@ -1456,32 +368,22 @@ public class OptionScalping implements Strategy {
         cycle.put("closedAtMillis", closedAtMillis);
         cycle.put("openedAtMillis", p.openMillis);
         cycle.put("entryCandleMs",  p.entryCandleMs);
-        cycle.put("exitCandleMs",   exitCandleMs);
         state.todayClosedTrades.add(cycle);
         while (state.todayClosedTrades.size() > 100) state.todayClosedTrades.remove(0);
 
         if (net < 0) state.consecutiveLosses++; else state.consecutiveLosses = 0;
-        // Bump the per-leg LOSS counter for the daily cap. Winners do NOT
-        // increment — a successful trailing-SL take-profit shouldn't burn
-        // the loss budget.
-        if (net < 0 && p.setup != null) {
-            if (p.setup == ActiveSetup.CE_SELL) state.ceLossesToday++;
-            if (p.setup == ActiveSetup.PE_SELL) state.peLossesToday++;
-        }
-        eventAtDisplayTime(net >= 0 ? "[SUCCESS]" : "[WARNING]", "Exit",
-            shortSym(symbol) + " closed (" + reason + ") net=" + round2(net) + " gross=" + round2(gross),
-            exitCandleMs);
+        event(net >= 0 ? "[SUCCESS]" : "[WARNING]", "Exit",
+            symbol + " closed (" + reason + ") net=" + round2(net) + " gross=" + round2(gross));
 
         state.openPositions.remove(posKey(p));
 
-        // Drop candle subscription for this symbol only if not a session leg + no other open uses.
+        // Drop candle subscription if not the futures leg and no other open positions use it.
         boolean stillUsed = false;
         for (Position pp : state.openPositions.values()) {
             if (pp != null && symbol.equals(pp.symbol)) { stillUsed = true; break; }
         }
-        boolean isSessionLeg = symbol != null
-            && (symbol.equals(state.ceSymbol) || symbol.equals(state.peSymbol));
-        if (!stillUsed && !isSessionLeg) {
+        boolean isFuturesLeg = NIFTY_SYMBOL.equals(symbol);
+        if (!stillUsed && !isFuturesLeg) {
             candleAggregator.unsubscribe(symbol);
         }
 
@@ -1522,22 +424,6 @@ public class OptionScalping implements Strategy {
         }
     }
 
-    /** Start-of-bar epoch millis for the current wall-clock 3-min bucket, anchored on
-     *  09:15 IST. Used at exit time to tag which bar the exit fell into. Off-market
-     *  hours the returned bucket is still math-correct — no callers use it then. */
-    private long currentBarStartMs() {
-        ZonedDateTime nowIst = ZonedDateTime.now(IST);
-        LocalTime t = nowIst.toLocalTime();
-        int minuteOfDay = t.getHour() * 60 + t.getMinute();
-        int marketOpen  = 9 * 60 + 15;
-        int minutesSinceOpen = minuteOfDay - marketOpen;
-        int bucketMinute = minutesSinceOpen >= 0
-            ? marketOpen + (minutesSinceOpen / 2) * 2
-            : (minuteOfDay / 2) * 2;
-        return nowIst.withHour(bucketMinute / 60).withMinute(bucketMinute % 60)
-            .withSecond(0).withNano(0).toInstant().toEpochMilli();
-    }
-
     private static String instrumentFromSymbol(String symbol) {
         if (symbol == null) return null;
         String s = symbol.toUpperCase();
@@ -1552,18 +438,11 @@ public class OptionScalping implements Strategy {
         int cyclesCleared = state.todayClosedTrades.size();
         state.todayClosedTrades.clear();
 
-        int prevTradesToday      = state.tradesToday;
-        int prevConsecutiveLoss  = state.consecutiveLosses;
         state.tradesToday        = 0;
-        state.ceTradesToday      = 0;
-        state.peTradesToday      = 0;
-        state.ceLossesToday      = 0;
-        state.peLossesToday      = 0;
         state.consecutiveLosses  = 0;
 
         int eventsCleared = state.recentEvents.size();
         state.recentEvents.clear();
-        state.lastSlBarStartMsBySymbol.clear();
 
         saveToDisk();
 
@@ -1583,8 +462,6 @@ public class OptionScalping implements Strategy {
             + " events=" + eventsCleared
             + " dbRows=" + dbCleared
             + " (open positions preserved)");
-        log.warn("[OptionScalping] clearAllRecords — cycles={} events={} dbRows={} prevTradesToday={} prevConsLoss={}",
-            cyclesCleared, eventsCleared, dbCleared, prevTradesToday, prevConsecutiveLoss);
         publishStream();
 
         Map<String, Object> out = new LinkedHashMap<>();
@@ -1598,13 +475,7 @@ public class OptionScalping implements Strategy {
         int cyclesCleared = state.todayClosedTrades.size();
         state.todayClosedTrades.clear();
 
-        int prevTradesToday      = state.tradesToday;
-        int prevConsecutiveLoss  = state.consecutiveLosses;
         state.tradesToday        = 0;
-        state.ceTradesToday      = 0;
-        state.peTradesToday      = 0;
-        state.ceLossesToday      = 0;
-        state.peLossesToday      = 0;
         state.consecutiveLosses  = 0;
 
         long startOfTodayMillis = LocalDate.now(IST).atStartOfDay(IST).toInstant().toEpochMilli();
@@ -1632,8 +503,6 @@ public class OptionScalping implements Strategy {
             + " events=" + eventsCleared
             + " dbRows=" + dbCleared
             + " (open positions preserved)");
-        log.warn("[OptionScalping] clearTodayRecords — cycles={} events={} dbRows={} prevTradesToday={} prevConsLoss={}",
-            cyclesCleared, eventsCleared, dbCleared, prevTradesToday, prevConsecutiveLoss);
         publishStream();
 
         Map<String, Object> out = new LinkedHashMap<>();
@@ -1648,16 +517,11 @@ public class OptionScalping implements Strategy {
     @Scheduled(cron = "0 0 6 * * *", zone = "Asia/Kolkata")
     public synchronized void scheduledDailyReset() {
         String today = LocalDate.now(IST).toString();
-        log.info("[OptionScalping] 06:00 IST daily reset — clearing events + today's trades (was dayKey={})", state.dayKey);
+        log.info("[OptionScalping] 06:00 IST daily reset (was dayKey={})", state.dayKey);
         state.dayKey = today;
         state.tradesToday = 0;
-        state.ceTradesToday = 0;
-        state.peTradesToday = 0;
-        state.ceLossesToday = 0;
-        state.peLossesToday = 0;
         state.consecutiveLosses = 0;
         state.doneForDay = false;
-        state.dailyLossLockout = false;
         state.todayClosedTrades.clear();
         if (state.recentEvents != null) state.recentEvents.clear();
         java.util.Set<String> uniqSymbols = new java.util.HashSet<>();
@@ -1668,9 +532,7 @@ public class OptionScalping implements Strategy {
             candleAggregator.unsubscribe(sym);
         }
         state.openPositions.clear();
-        state.symbolRole.clear();
-        state.lastSlBarStartMsBySymbol.clear();
-        releaseSessionLegs();
+        if (state.symbolRole != null) state.symbolRole.clear();
         saveToDisk();
         publishStream();
     }
@@ -1682,20 +544,12 @@ public class OptionScalping implements Strategy {
             if (today.equals(state.dayKey)) return;
             state.dayKey = today;
 
-            // Per-day counters + lockouts + audit lists.
             state.tradesToday       = 0;
-            state.ceTradesToday     = 0;
-            state.peTradesToday     = 0;
-            state.ceLossesToday     = 0;
-            state.peLossesToday     = 0;
             state.consecutiveLosses = 0;
             state.doneForDay        = false;
-            state.dailyLossLockout  = false;
             state.todayClosedTrades.clear();
             if (state.recentEvents != null) state.recentEvents.clear();
 
-            // Unsubscribe symbols behind yesterday's open positions before dropping them
-            // — otherwise the aggregator keeps buffering into a ring nobody reads.
             java.util.Set<String> uniqSymbolsRoll = new java.util.HashSet<>();
             for (Position p : state.openPositions.values()) {
                 if (p != null && p.symbol != null) uniqSymbolsRoll.add(p.symbol);
@@ -1704,27 +558,7 @@ public class OptionScalping implements Strategy {
                 candleAggregator.unsubscribe(sym);
             }
             state.openPositions.clear();
-            state.symbolRole.clear();
-        state.lastSlBarStartMsBySymbol.clear();
-            state.lastSlBarStartMsBySymbol.clear();
-
-            // Yesterday's resolved-ATM block — resolveAtmFromFirstBar will re-populate
-            // at 09:18 from today's first NIFTY 3-min bar close.
-            state.firstBarCloseSymbol = "";
-            state.firstBarClose       = 0;
-            state.atmStrike           = 0;
-            state.ceSymbol            = "";
-            state.peSymbol            = "";
-            state.ceRefLtp            = 0;
-            state.peRefLtp            = 0;
-            state.sessionSetupDayKey  = "";
-
-            // Pre-warm carries strike-scoped subscriptions that warmupIfDue will rebuild
-            // at 09:15 for the new day's baseAtm estimate.
-            state.warmingStrikes.clear();
-            state.warmingCeByStrike.clear();
-            state.warmingPeByStrike.clear();
-            state.preWarmDayKey = "";
+            if (state.symbolRole != null) state.symbolRole.clear();
 
             saveToDisk();
         }
@@ -1764,36 +598,22 @@ public class OptionScalping implements Strategy {
         }
     }
 
-    /** Premium SuperTrend snapshot for both ATM CE and PE legs. Consumed by
-     *  the /positions page's NIFTY Technicals row so the operator can watch
-     *  the same premium-ST direction the entry gate + trailing SL evaluate.
-     *  Returns 0 values / stAvailable=false when the leg isn't yet resolved
-     *  (pre-09:18) or bars haven't warmed up. */
+    /** Legacy indicator snapshot — returns neutral (unavailable) fields so the /positions
+     *  page's "NIFTY Technicals" tile shows "—" instead of crashing. No CE/PE state is
+     *  tracked in Phase 3. */
     public Map<String, Object> optionIndicatorsSnapshot() {
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("ceSymbol", state.ceSymbol == null ? "" : state.ceSymbol);
-        m.put("peSymbol", state.peSymbol == null ? "" : state.peSymbol);
-        m.put("atmStrike", state.atmStrike);
-        addLegSt(m, "ce", state.ceSymbol, SUPERTREND_ATR, SUPERTREND_MULT);
-        addLegSt(m, "pe", state.peSymbol, SUPERTREND_ATR, SUPERTREND_MULT);
+        m.put("ceSymbol", "");
+        m.put("peSymbol", "");
+        m.put("atmStrike", 0);
+        m.put("ceStAvailable", false);
+        m.put("ceStLine", 0.0);
+        m.put("ceStIsUp", false);
+        m.put("peStAvailable", false);
+        m.put("peStLine", 0.0);
+        m.put("peStIsUp", false);
         m.put("ts", System.currentTimeMillis());
         return m;
-    }
-
-    private void addLegSt(Map<String, Object> out, String prefix, String symbol,
-                          int atr, double mult) {
-        if (symbol == null || symbol.isBlank()) {
-            out.put(prefix + "StAvailable", false);
-            out.put(prefix + "StLine", 0.0);
-            out.put(prefix + "StIsUp", false);
-            return;
-        }
-        List<Candle> bars = candleAggregator.getHistory(symbol);
-        com.rydytrader.autotrader.indicator.SuperTrend.State st =
-            com.rydytrader.autotrader.indicator.SuperTrend.at(bars, atr, mult);
-        out.put(prefix + "StAvailable", st.available());
-        out.put(prefix + "StLine",   st.available() ? round2(st.line()) : 0.0);
-        out.put(prefix + "StIsUp",   st.available() && st.isUp());
     }
 
     // ── Dashboard payload (consumed by OptionScalpingController + Trade page) ─────
@@ -1809,24 +629,15 @@ public class OptionScalping implements Strategy {
         m.put("tradesToday",       state.tradesToday);
         m.put("consecutiveLosses", state.consecutiveLosses);
 
-        // Live ATM (round current NIFTY spot to STRIKE_STEP) — used by header chip block.
-        long liveAtm = 0;
-        try {
-            double spotLtp = marketDataService.getLtp(NIFTY_SYMBOL);
-            if (spotLtp > 0) liveAtm = Math.round(spotLtp / (double) STRIKE_STEP) * STRIKE_STEP;
-        } catch (Exception ignored) {}
+        // No CE/PE session legs in Phase 3 — return an empty setupLegs list so
+        // trade.html degrades to "—" for the ATM CE / PE header slots.
+        m.put("setupLegs",      Collections.<Map<String, Object>>emptyList());
+        m.put("watchlistSize",  0);
+        m.put("watchlistRoles", new LinkedHashMap<>());
 
-        // Two session-static option legs (row 0 = ATM CE, row 1 = ATM PE).
-        java.util.List<Map<String, Object>> setupLegs = new java.util.ArrayList<>(2);
-        addSetupLegRow(setupLegs, "NIFTY", "ATM_CE", "BEARISH", "ATM",
-            state.atmStrike, state.ceSymbol, "CE", state.ceRefLtp);
-        addSetupLegRow(setupLegs, "NIFTY", "ATM_PE", "BEARISH", "ATM",
-            state.atmStrike, state.peSymbol, "PE", state.peRefLtp);
-        m.put("setupLegs",      setupLegs);
-        m.put("watchlistSize",  state.symbolRole.size());
-        m.put("watchlistRoles", new LinkedHashMap<>(state.symbolRole));
-
-        // Header chips: NIFTY spot (change / change%) + live ATM CE/PE LTP.
+        // Header chips: NIFTY current-month FUTURES symbol + LTP + change +
+        // % change. Consumed by the ticker cells on the trade page (see trade.html
+        // renderFutTickerCells).
         Map<String, Object> vwap = new LinkedHashMap<>();
         String futSym = state.futuresSymbol == null ? "" : state.futuresSymbol;
         double futLtp = 0, futChange = 0, futChangePct = 0;
@@ -1835,33 +646,25 @@ public class OptionScalping implements Strategy {
             try { futChange     = marketDataService.getDisplayChange(futSym); }    catch (Exception ignored) {}
             try { futChangePct  = marketDataService.getDisplayChangePct(futSym); } catch (Exception ignored) {}
         }
-        long atm = liveAtm;
-        String putSym = "", callSym = "";
-        double putLtp = 0, callLtp = 0;
-        if (atm > 0) {
-            BalancedAtmSelector.StrikeAtLevel atmRow = atmSelector.resolveStrikeAtLevel(atm);
-            if (atmRow != null && atmRow.peSymbol() != null) putSym  = atmRow.peSymbol();
-            if (atmRow != null && atmRow.ceSymbol() != null) callSym = atmRow.ceSymbol();
-            if (!putSym.isBlank())  { try { putLtp  = marketDataService.getLtp(putSym);  } catch (Exception ignored) {} }
-            if (!callSym.isBlank()) { try { callLtp = marketDataService.getLtp(callSym); } catch (Exception ignored) {} }
-        }
         vwap.put("futSymbol",    futSym);
         vwap.put("futLtp",       round2(futLtp));
         vwap.put("futChange",    round2(futChange));
         vwap.put("futChangePct", round2(futChangePct));
-        vwap.put("putSymbol",    putSym);
-        vwap.put("putStrike",    atm);
-        vwap.put("putLtp",       round2(putLtp));
-        vwap.put("callSymbol",   callSym);
-        vwap.put("callStrike",   atm);
-        vwap.put("callLtp",      round2(callLtp));
-        vwap.put("ceSymbol", "");
-        vwap.put("peSymbol", "");
-        vwap.put("ceVwap",   round2(safeVwap(state.ceSymbol)));
-        vwap.put("peVwap",   round2(safeVwap(state.peSymbol)));
+        // Legacy fields — kept as empty / 0 so any older client code that reads
+        // them doesn't NPE. Not populated in Phase 3.
+        vwap.put("putSymbol",    "");
+        vwap.put("putStrike",    0);
+        vwap.put("putLtp",       0.0);
+        vwap.put("callSymbol",   "");
+        vwap.put("callStrike",   0);
+        vwap.put("callLtp",      0.0);
+        vwap.put("ceSymbol",     "");
+        vwap.put("peSymbol",     "");
+        vwap.put("ceVwap",       0.0);
+        vwap.put("peVwap",       0.0);
         m.put("optionScalping", vwap);
 
-        // Open positions
+        // Open positions — may still exist for MANUAL-terminal fires.
         List<Map<String, Object>> rows = new ArrayList<>();
         for (Position p : state.openPositions.values()) {
             if (p == null) continue;
@@ -1875,42 +678,30 @@ public class OptionScalping implements Strategy {
             row.put("entryPrice",   round2(p.entryPrice));
             row.put("ltp",          round2(ltp));
             row.put("mtm",          round2(mtm));
-            double displayedTarget = p.targetLevel;
-            if (p.isShort && !Double.isNaN(displayedTarget) && displayedTarget > 0
-                && displayedTarget < OPTION_TICK_SIZE) {
-                displayedTarget = OPTION_TICK_SIZE;
-            }
-            row.put("targetLevel",    round2(displayedTarget));
-            row.put("slLevel",        round2(p.slLevel));
+            row.put("targetLevel",  round2(p.targetLevel));
+            row.put("slLevel",      round2(p.slLevel));
             row.put("breakevenMoved", p.breakevenMoved);
-            row.put("isShort",        p.isShort);
-            row.put("openMillis",     p.openMillis);
-            row.put("entryCandleMs",  p.entryCandleMs);
-            row.put("triggerSymbol", p.triggerSymbol == null ? "" : p.triggerSymbol);
-            row.put("entryFutures",  round2(p.entryFutures));
-            row.put("targetFutures", round2(p.targetFutures));
-            row.put("slFutures",     round2(p.slFutures));
+            row.put("isShort",      p.isShort);
+            row.put("openMillis",   p.openMillis);
+            row.put("entryCandleMs",p.entryCandleMs);
             rows.add(row);
         }
         m.put("openPositions", rows);
 
-        // Per-symbol levels retired — the new strategy computes no pivots. Emit an empty map
-        // so downstream JS that iterates perSymbolLevels doesn't NPE.
         m.put("perSymbolLevels", new LinkedHashMap<String, Object>());
 
-        // Risk block
         Map<String, Object> risk = new LinkedHashMap<>();
-        risk.put("exposedRisk",         round2(exposedRiskNow()));
-        risk.put("consumedRisk",        round2(consumedRiskNow()));
-        risk.put("dailyRiskBudget",     round2(riskSettings.getPortfolioMaxDailyLoss()));
+        risk.put("exposedRisk",     0.0);
+        risk.put("consumedRisk",    0.0);
+        risk.put("dailyRiskBudget", round2(riskSettings.getPortfolioMaxDailyLoss()));
         m.put("risk", risk);
 
         m.put("todayClosedTrades", new ArrayList<>(state.todayClosedTrades));
         m.put("recentEvents",      new ArrayList<>(state.recentEvents));
-        try {
-            double spot = marketDataService.getLtp(NIFTY_SYMBOL);
-            m.put("niftySpot", round2(spot));
-        } catch (Exception ignored) {}
+        // NIFTY spot no longer fed by GDFL in Phase 3 (we subscribe futures only).
+        // Report the futures LTP as niftySpot so older UIs that expect a number
+        // don't render "—" for the whole session.
+        m.put("niftySpot", round2(futLtp));
         try {
             double vix = marketDataService.getLtp("NSE:INDIAVIX-INDEX");
             m.put("indiaVix", round2(vix));
@@ -1924,90 +715,16 @@ public class OptionScalping implements Strategy {
     public static class State {
         public String dayKey = "";
         public int    tradesToday;
-        /** Per-leg TOTAL fire counters — informational only (analytics + event
-         *  log). Reset on day rollover. */
-        public int    ceTradesToday;
-        public int    peTradesToday;
-        /** Per-leg LOSING trade counters — closes with netPnl < 0. These are
-         *  the counters gated by optionScalpingMaxCe/PeTradesPerDay: once a leg
-         *  hits its loss cap for the day, no more entries fire on that side
-         *  even if the total-trades count is lower. Winning trades don't
-         *  consume the cap (trailing SL lets us capture profit without
-         *  burning the loss budget). Reset on day rollover. */
-        public int    ceLossesToday;
-        public int    peLossesToday;
         public int    consecutiveLosses;
         public boolean doneForDay;
         public Map<String, Position> openPositions = new ConcurrentHashMap<>();
         public List<Map<String, Object>> todayClosedTrades = new ArrayList<>();
         public List<Map<String, Object>> recentEvents      = new ArrayList<>();
-        public boolean dailyLossLockout;
-        /** NIFTY spot symbol — subscribed to trigger first-3-min ATM resolution. */
+        /** Fyers-style symbol of the primary subscribed leg — the NIFTY current-month
+         *  futures {@link GdflSymbolMapper#FYERS_NIFTY_FUTURES} in Phase 3. */
         public String futuresSymbol = "";
-        /** Per-symbol memory of the LAST bar in which an SL fired for that symbol.
-         *  Value = the SL-hit bar's start-ms (matches {@link Candle#startMillis()}).
-         *  {@link #processOptionBar} short-circuits trigger classification when the
-         *  incoming bar matches this stamp — the bar that just took out an SL is
-         *  never re-classified as a trigger candle for a new entry on the same
-         *  symbol. Cleared on day rollover, kill switch, and end-of-session. */
-        public Map<String, Long> lastSlBarStartMsBySymbol = new ConcurrentHashMap<>();
         /** Legacy watchlist role map — kept for state-file back-compat. */
         public Map<String, WatchRole> symbolRole = new ConcurrentHashMap<>();
-
-        // ── ATM strike + option legs resolved at first 3-min NIFTY bar close ─
-        public String firstBarCloseSymbol = "";
-        public double firstBarClose;
-        public long   atmStrike;
-        public String ceSymbol = "";
-        public String peSymbol = "";
-        public double ceRefLtp;
-        public double peRefLtp;
-        /** YYYY-MM-DD on which today's ATM was resolved. Mismatch → force re-resolve. */
-        public String sessionSetupDayKey = "";
-
-        // ── Pre-warm (±10 strikes subscribed at 09:15 to eliminate second-candle OHLC race) ─
-        /** Strikes we pre-warmed at 09:15. Empty after the 09:18 trim. */
-        public List<Long> warmingStrikes = new ArrayList<>();
-        /** Per-strike CE / PE Fyers symbols captured from the chain at pre-warm time. */
-        public Map<Long, String> warmingCeByStrike = new ConcurrentHashMap<>();
-        public Map<Long, String> warmingPeByStrike = new ConcurrentHashMap<>();
-        /** YYYY-MM-DD of the last pre-warm run. Same-day short-circuits re-warm; different-day
-         *  triggers a fresh warm on the next tick where guards pass. */
-        public String preWarmDayKey = "";
-        /** YYYY-MM-DD on which the "Trading started — 09:15 candle forming" event has
-         *  already fired. Persisted so a mid-day restart doesn't re-fire the event on
-         *  the next NIFTY tick with a stale "09:15 candle forming" message. */
-        public String tradingStartedDayKey = "";
-    }
-
-    /** A 3-min bar that closed below its option's session VWAP. If the very next bar closes
-     *  below its low, the fire triggers. */
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    public static class TriggerCandle {
-        public double high;
-        public double low;
-        public double close;
-        public long   barStartMs;
-        /** Premium SuperTrend line value AT the breakdown bar. Snapshotted at seed
-         *  time so the fire()'s SL calc uses the ST value the trader saw when the
-         *  gate passed, not a fresh ST call at fire time (ATR ripples through the
-         *  fire bar and shifts the value). 0 = no snapshot (legacy trigger or
-         *  ST unavailable at seed time). */
-        public double premiumStLine;
-
-        public static TriggerCandle of(Candle c) {
-            TriggerCandle t = new TriggerCandle();
-            t.high       = c.high();
-            t.low        = c.low();
-            t.close      = c.close();
-            t.barStartMs = c.startMillis();
-            return t;
-        }
-        public static TriggerCandle of(Candle c, double stLine) {
-            TriggerCandle t = of(c);
-            t.premiumStLine = stLine;
-            return t;
-        }
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -2018,66 +735,28 @@ public class OptionScalping implements Strategy {
         public double     entryPrice;
         public String     entryOrderId = "";
         public long       openMillis;
-        /** Start-of-bar epoch millis for the 3-min candle that TRIGGERED this fire — the
-         *  confirmation bar whose close met {@code close < trigger.low}. UI renders as
-         *  the bar CLOSE time (start + 2 min). 0 for MANUAL fires and legacy state-file
-         *  positions that predate this field. */
         public long       entryCandleMs;
         public double     targetLevel;
         public double     slLevel;
         public double     originalSlLevel;
-        /** Trigger candle's high at fire time — the structural anchor used to
-         *  seed the SL clamp. Retained on the Position so {@link #refreshUnresolvedFills}
-         *  can re-clamp against the actual fill price (min/max SL only; SL that
-         *  was already dominated by trigger.high stays put). 0 for MANUAL fires
-         *  and legacy state-file positions that predate this field. */
-        public double     triggerHigh;
         public boolean    breakevenMoved;
-        public boolean fillResolved;
-        public boolean isShort = true;
-        public transient int slBreachStreak;
-        public int    preAddQty;
-        public double preAddEntry;
-        public String productType = "";
-
-        // v2 fields retained for state-file / dashboard compatibility.
-        public String triggerSymbol = "";
-        public double entryFutures;
-        public double targetFutures = Double.NaN;
-        public double slFutures     = Double.NaN;
-        public long   lockedAtm;
-        public String ceSymbol = "";
-        public String peSymbol = "";
+        public boolean    fillResolved;
+        public boolean    isShort = true;
+        public String     productType = "";
     }
 
     // ── Event log ────────────────────────────────────────────────────────────
 
     /** Public event-log wrapper for external callers (e.g. the kill-switch toggle in
-     *  OptionScalpingController). Pushes into {@code state.recentEvents} for the Trade page
-     *  event-log widget and mirrors the line to {@link EventService}. */
+     *  OptionScalpingController). */
     public void postEvent(String severity, String source, String message) {
         event(severity, source, message);
     }
 
-    /** Default event emitter — anchors display to the CURRENT 3-min bar's OPEN.
-     *  Every event log entry renders as "HH:MM" (bar-aligned) rather than the
-     *  wall-clock "HH:MM:SS". For an event that must be anchored to a SPECIFIC
-     *  bar boundary that isn't the current one, call {@link #eventAtDisplayTime}
-     *  directly with the desired {@code displayMs}. Pure wall-clock events are
-     *  no longer emitted from this class. */
     private void event(String severity, String source, String message) {
-        eventAtDisplayTime(severity, source, message, currentBarStartMs());
-    }
-
-    /** Emit an event whose displayed time is EXACTLY {@code displayMs}. Used when the
-     *  caller wants to anchor to a SPECIFIC bar boundary that isn't the current one
-     *  (e.g. "Trading started — 09:15" pinned to 09:15 even if the first tick arrived
-     *  a few seconds later). Pass 0 for pure wall-clock events. */
-    private void eventAtDisplayTime(String severity, String source, String message, long displayMs) {
         Map<String, Object> e = new LinkedHashMap<>();
         long wallTs = System.currentTimeMillis();
         e.put("ts",       wallTs);
-        if (displayMs > 0) e.put("barMs", displayMs);
         e.put("severity", severity);
         e.put("source",   source);
         e.put("message",  message);
@@ -2099,13 +778,8 @@ public class OptionScalping implements Strategy {
                 if (state.openPositions == null)    state.openPositions    = new ConcurrentHashMap<>();
                 if (state.todayClosedTrades == null) state.todayClosedTrades = new ArrayList<>();
                 if (state.recentEvents == null)     state.recentEvents     = new ArrayList<>();
-                if (state.lastSlBarStartMsBySymbol == null) state.lastSlBarStartMsBySymbol = new ConcurrentHashMap<>();
                 if (state.symbolRole == null)       state.symbolRole       = new ConcurrentHashMap<>();
-                if (state.warmingStrikes == null)     state.warmingStrikes     = new ArrayList<>();
-                if (state.warmingCeByStrike == null)  state.warmingCeByStrike  = new ConcurrentHashMap<>();
-                if (state.warmingPeByStrike == null)  state.warmingPeByStrike  = new ConcurrentHashMap<>();
                 purgeRetiredEntries();
-                migrateOpenPositionsKeyFormat();
             }
         } catch (IOException e) {
             log.warn("[OptionScalping] failed to load state: {}", e.getMessage());
@@ -2124,24 +798,6 @@ public class OptionScalping implements Strategy {
         }
     }
 
-    private void migrateOpenPositionsKeyFormat() {
-        if (state.openPositions == null || state.openPositions.isEmpty()) return;
-        boolean anyOld = false;
-        for (String key : state.openPositions.keySet()) {
-            if (key == null || key.indexOf('|') < 0) { anyOld = true; break; }
-        }
-        if (!anyOld) return;
-        Map<String, Position> migrated = new ConcurrentHashMap<>();
-        for (Map.Entry<String, Position> e : state.openPositions.entrySet()) {
-            Position pos = e.getValue();
-            if (pos == null) continue;
-            migrated.put(posKey(pos), pos);
-        }
-        state.openPositions = migrated;
-        log.info("[OptionScalping] migrated {} openPositions entries to composite keys",
-            migrated.size());
-    }
-
     private synchronized void saveToDisk() {
         try {
             Path dst = Path.of(STATE_FILE);
@@ -2158,55 +814,6 @@ public class OptionScalping implements Strategy {
     // ── Misc utility ────────────────────────────────────────────────────────
 
     private static double round2(double v) { return Math.round(v * 100.0) / 100.0; }
-
-    private double safeLtp(String sym) {
-        if (sym == null || sym.isBlank()) return 0;
-        try { return round2(marketDataService.getLtp(sym)); }
-        catch (Exception e) { return 0; }
-    }
-
-    private double safeVwap(String sym) {
-        if (sym == null || sym.isBlank()) return 0;
-        try { return round2(marketDataService.getVwap(sym)); }
-        catch (Exception e) { return 0; }
-    }
-
-    private void addSetupLegRow(java.util.List<Map<String, Object>> rows,
-                                String instrument,
-                                String setupLabel, String dir, String levelRef,
-                                long strike, String symbol, String side,
-                                double refLtp) {
-        double live = safeLtp(symbol);
-        boolean stale = live <= 0 && refLtp > 0;
-        double ltp   = live > 0 ? live : round2(refLtp);
-        Map<String, Object> row = new LinkedHashMap<>();
-        row.put("instrument", instrument);
-        row.put("setup",      setupLabel == null ? "" : setupLabel);
-        row.put("setupTag",   setupLabel == null ? "" : setupLabel);
-        row.put("dir",        dir);
-        row.put("levelRef",   levelRef);
-        row.put("strike",     strike);
-        row.put("symbol",     symbol == null ? "" : symbol);
-        row.put("side",       side);
-        row.put("ltp",        ltp);
-        row.put("ltpStale",   stale);
-        row.put("vwap",       safeVwap(symbol));
-        rows.add(row);
-    }
-
-    /** Compact rendering of a Fyers option symbol for the event log:
-     *  {@code NSE:NIFTY2562624650CE} → {@code 24650CE}. */
-    private static String shortSym(String s) {
-        if (s == null || s.isBlank()) return "";
-        if (s.endsWith("CE") || s.endsWith("PE")) {
-            int len = s.length();
-            int strikeEnd = len - 2;
-            int strikeStart = strikeEnd;
-            while (strikeStart > 0 && Character.isDigit(s.charAt(strikeStart - 1))) strikeStart--;
-            if (strikeEnd - strikeStart >= 4) return s.substring(strikeStart);
-        }
-        return s.length() > 12 ? s.substring(s.length() - 12) : s;
-    }
 
     private static double asDouble(Object o) {
         if (o instanceof Number) return ((Number) o).doubleValue();

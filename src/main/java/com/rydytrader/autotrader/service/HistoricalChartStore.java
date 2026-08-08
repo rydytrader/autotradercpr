@@ -6,16 +6,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.rydytrader.autotrader.dto.Candle;
-import com.rydytrader.autotrader.service.strategy.OptionScalping;
+import com.rydytrader.autotrader.gdfl.GdflSymbolMapper;
 import com.rydytrader.autotrader.util.FileIoUtils;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,30 +21,26 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Stream;
 
 /**
- * Persists per-day OHLC snapshots (NIFTY spot + ATM CE + ATM PE) to
- * {@code store/data/charts/YYYY-MM-DD.json} for historical review from the calendar
- * page.
+ * Persists per-day OHLC snapshots (NIFTY current-month FUTURES only) to
+ * {@code store/data/charts/YYYY-MM-DD.json} for historical review from the calendar page.
  *
  * <p>Two write triggers:
  * <ul>
  *   <li><b>Scheduled 15:45 IST daily</b> — 5-min buffer after the extended
  *       15:40 market close (in effect from 2026-08-03). Snapshots whatever's
- *       currently in {@link CandleAggregator}'s per-symbol history rings for
- *       NIFTY + today's ATM CE + PE.</li>
+ *       currently in {@link CandleAggregator}'s history ring for the futures symbol.</li>
  *   <li><b>On-boot catch-up</b> — if the bot boots after 15:45 today and no snapshot
  *       file exists yet, saves immediately. Handles the case where the bot was offline
- *       at 15:45 but is booted later that evening to catch up.</li>
+ *       at 15:45 but is booted later that evening.</li>
  * </ul>
  *
- * <p>The {@code store/data/charts/} directory is intentionally distinct from
- * {@code store/cache/} — cache is ephemeral (discarded on stale-day boot), data is
- * permanent historical record.
+ * <p>Phase 3 shape: single-symbol payload — no CE / PE / ATM fields. Older
+ * multi-symbol snapshot files still on disk continue to deserialize (unknown
+ * fields ignored) but no new fields are written.
  */
 @Service
 public class HistoricalChartStore {
@@ -54,7 +48,7 @@ public class HistoricalChartStore {
     private static final Logger log = LoggerFactory.getLogger(HistoricalChartStore.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final String STORAGE_DIR = "../store/data/charts";
-    private static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
+    private static final String FUTURES_SYMBOL = GdflSymbolMapper.FYERS_NIFTY_FUTURES;
 
     private final ObjectMapper mapper = new ObjectMapper()
         .registerModule(new JavaTimeModule())
@@ -63,23 +57,20 @@ public class HistoricalChartStore {
         .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
         .setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
-    private final CandleAggregator          candleAggregator;
-    private final ObjectProvider<OptionScalping>   optionScalpingProvider;
+    private final CandleAggregator candleAggregator;
 
-    public HistoricalChartStore(CandleAggregator candleAggregator,
-                                ObjectProvider<OptionScalping> optionScalpingProvider) {
+    public HistoricalChartStore(CandleAggregator candleAggregator) {
         this.candleAggregator = candleAggregator;
-        this.optionScalpingProvider  = optionScalpingProvider;
     }
 
-    /** DTO written to disk. */
+    /** DTO written to disk. Single-symbol shape as of Phase 3. */
     public static class DailySnapshot {
-        public String  date;
-        public long    atmStrike;
-        public String  ceSymbol;
-        public String  peSymbol;
-        /** Fyers-format symbol → chronological list of that symbol's 3-min candles. */
-        public Map<String, List<Candle>> candlesBySymbol = new LinkedHashMap<>();
+        public String date;
+        /** The one instrument snapshotted (Fyers-style key). Phase 3 always the
+         *  NIFTY current-month futures. */
+        public String symbol;
+        /** Chronological list of that symbol's bars. */
+        public List<Candle> candles = new ArrayList<>();
     }
 
     @PostConstruct
@@ -102,42 +93,26 @@ public class HistoricalChartStore {
 
     /** Fires at 15:45 IST every weekday — 5-min buffer after the extended
      *  15:40 market close (in effect from 2026-08-03). Snapshots today's
-     *  NIFTY + ATM CE + PE candles. */
+     *  NIFTY futures candles. */
     @Scheduled(cron = "0 45 15 * * MON-FRI", zone = "Asia/Kolkata")
     public void scheduledSave() {
         saveTodaySnapshot();
     }
 
-    /** Public entry — snapshots today's chart data to disk. Idempotent (overwrites the
+    /** Public entry — snapshots today's futures chart to disk. Idempotent (overwrites the
      *  same file on repeat call). Callable manually via REST if needed. */
     public synchronized void saveTodaySnapshot() {
         String today = LocalDate.now(IST).toString();
-        OptionScalping atm = optionScalpingProvider.getIfAvailable();
-        if (atm == null) {
-            log.warn("[HistoricalChartStore] skip save — OptionScalping bean unavailable");
+        List<Candle> hist = candleAggregator.getHistory(FUTURES_SYMBOL);
+        if (hist == null || hist.isEmpty()) {
+            log.warn("[HistoricalChartStore] skip save — no candles in aggregator for {}", FUTURES_SYMBOL);
             return;
         }
         DailySnapshot snap = new DailySnapshot();
-        snap.date      = today;
-        snap.atmStrike = atm.getAtmStrike();
-        snap.ceSymbol  = atm.getCeSymbol();
-        snap.peSymbol  = atm.getPeSymbol();
-
-        addSymbolIfHasData(snap, NIFTY_SYMBOL);
-        if (snap.ceSymbol != null && !snap.ceSymbol.isBlank()) addSymbolIfHasData(snap, snap.ceSymbol);
-        if (snap.peSymbol != null && !snap.peSymbol.isBlank()) addSymbolIfHasData(snap, snap.peSymbol);
-
-        if (snap.candlesBySymbol.isEmpty()) {
-            log.warn("[HistoricalChartStore] skip save — no candles in aggregator for {}, ce {}, pe {}",
-                NIFTY_SYMBOL, snap.ceSymbol, snap.peSymbol);
-            return;
-        }
+        snap.date    = today;
+        snap.symbol  = FUTURES_SYMBOL;
+        snap.candles = hist;
         writeSnapshot(today, snap);
-    }
-
-    private void addSymbolIfHasData(DailySnapshot snap, String symbol) {
-        List<Candle> hist = candleAggregator.getHistory(symbol);
-        if (hist != null && !hist.isEmpty()) snap.candlesBySymbol.put(symbol, hist);
     }
 
     /** Reads a stored snapshot. Empty when the file doesn't exist. */
@@ -195,15 +170,13 @@ public class HistoricalChartStore {
             Path tmp = Path.of(dst.toString() + ".tmp");
             Files.writeString(tmp, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(snap));
             FileIoUtils.atomicMoveWithRetry(tmp, dst);
-            int totalBars = snap.candlesBySymbol.values().stream().mapToInt(List::size).sum();
-            log.info("[HistoricalChartStore] saved {} — {} symbols, {} bars total",
-                date, snap.candlesBySymbol.size(), totalBars);
+            log.info("[HistoricalChartStore] saved {} — {} bars for {}",
+                date, snap.candles.size(), snap.symbol);
         } catch (IOException | RuntimeException e) {
             log.warn("[HistoricalChartStore] save {} failed: {}", date, e.getMessage());
         }
     }
 
-    /** Simple {@link File} helper for {@link com.rydytrader.autotrader.controller.ChartController}
-     *  which just needs to know the store's canonical directory. */
+    /** Canonical directory used by {@link com.rydytrader.autotrader.controller.ChartController}. */
     public static String storageDir() { return STORAGE_DIR; }
 }

@@ -1,12 +1,10 @@
 package com.rydytrader.autotrader.controller;
 
 import com.rydytrader.autotrader.dto.Candle;
+import com.rydytrader.autotrader.gdfl.GdflSymbolMapper;
 import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.service.HistoricalChartStore;
 import com.rydytrader.autotrader.service.MarketDataService;
-import com.rydytrader.autotrader.service.strategy.OptionScalping;
-import com.rydytrader.autotrader.store.RiskSettingsStore;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,31 +16,25 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Read-only endpoints powering the Chart page. Exposes the 3-min OHLC buffer maintained
- * by {@link CandleAggregator} plus the currently-selected ATM CE / PE symbols so the
- * page can render NIFTY spot + both option legs side-by-side without hitting Fyers.
+ * Read-only endpoints powering the Chart page. Phase 3: the page shows the NIFTY
+ * current-month FUTURES leg only — no option strikes. The aggregator's 5-min OHLC
+ * ring for the futures symbol drives the panel.
  */
 @RestController
 @RequestMapping("/api/chart")
 public class ChartController {
 
-    private static final String NIFTY_SYMBOL = "NSE:NIFTY50-INDEX";
+    private static final String FUTURES_SYMBOL = GdflSymbolMapper.FYERS_NIFTY_FUTURES;
 
     private final CandleAggregator  candleAggregator;
     private final MarketDataService marketDataService;
-    private final RiskSettingsStore riskSettings;
-    private final ObjectProvider<OptionScalping> optionScalpingProvider;
     private final HistoricalChartStore historicalChartStore;
 
     public ChartController(CandleAggregator candleAggregator,
                            MarketDataService marketDataService,
-                           RiskSettingsStore riskSettings,
-                           ObjectProvider<OptionScalping> optionScalpingProvider,
                            HistoricalChartStore historicalChartStore) {
         this.candleAggregator     = candleAggregator;
         this.marketDataService    = marketDataService;
-        this.riskSettings         = riskSettings;
-        this.optionScalpingProvider      = optionScalpingProvider;
         this.historicalChartStore = historicalChartStore;
     }
 
@@ -58,106 +50,30 @@ public class ChartController {
         return m;
     }
 
-    /** Tick block for option strikes. Fyers HSM delta packets don't carry prev_close
-     *  for freshly-subscribed option symbols, so {@link MarketDataService#getChange}
-     *  stays at 0 for the whole session. Instead compute chg / chp as **session change**
-     *  — LTP relative to the OPEN of today's first 1-min bar for the strike (matches
-     *  what most option chart UIs display intraday). Falls back to the current in-
-     *  progress bucket's open when no bar has closed yet, and to MarketDataService's
-     *  values when the aggregator has no bars at all. */
-    private Map<String, Object> optionTickBlock(String fyersSymbol) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        if (fyersSymbol == null || fyersSymbol.isBlank()) return m;
-        double ltp = marketDataService.getLtp(fyersSymbol);
-        m.put("ltp", round2(ltp));
-        double sessionOpen = 0.0;
-        List<Candle> hist = candleAggregator.getHistory(fyersSymbol);
-        if (hist != null && !hist.isEmpty()) {
-            sessionOpen = hist.get(0).open();
-        } else {
-            Candle cur = candleAggregator.getCurrentBucket(fyersSymbol);
-            if (cur != null) sessionOpen = cur.open();
-        }
-        if (ltp > 0 && sessionOpen > 0) {
-            double ch  = ltp - sessionOpen;
-            double chp = (ch / sessionOpen) * 100.0;
-            m.put("ch",  round2(ch));
-            m.put("chp", round2(chp));
-        } else {
-            m.put("ch",  round2(marketDataService.getChange(fyersSymbol)));
-            m.put("chp", round2(marketDataService.getChangePercent(fyersSymbol)));
-        }
-        return m;
-    }
-
     private static double round2(double v) {
         return Math.round(v * 100.0) / 100.0;
     }
 
-    /** Which symbols the chart page should render. NIFTY is fixed; CE / PE come from
-     *  OptionScalping.state and populate after the day's first-3-min close (~09:18 IST). */
+    /** Symbols block for the chart page. Phase 3 exposes only the NIFTY futures leg —
+     *  no ATM strikes / no CE-PE panels. Kept as a single endpoint so the client can
+     *  keep polling one URL for both the symbol identity and the header tick block. */
     @GetMapping("/symbols")
     public Map<String, Object> symbols() {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("nifty", NIFTY_SYMBOL);
-        // Read the session-locked ATM state DIRECTLY from OptionScalping rather than fishing
-        // through dashboardState — the top-level dashboardState map has no ceSymbol /
-        // peSymbol keys (they live nested under `optionScalping` and are hardcoded to "" there),
-        // which was returning empty strings and starving the CE / PE chart panels.
-        OptionScalping strat = optionScalpingProvider == null ? null : optionScalpingProvider.getIfAvailable();
-        long   atmStrike = strat == null ? 0  : strat.getAtmStrike();
-        String ceSymbol  = strat == null ? "" : strat.getCeSymbol();
-        String peSymbol  = strat == null ? "" : strat.getPeSymbol();
-        // Trading pair strikes derived off the locked ATM: 1 ITM on both sides.
-        // CE = strike (ATM − 50), PE = strike (ATM + 50). Chart uses these to
-        // label the CE / PE panels — panels are for the ACTUAL contracts
-        // traded, not the ATM anchor.
-        long ceStrike = atmStrike > 0 ? atmStrike - 50 : 0;
-        long peStrike = atmStrike > 0 ? atmStrike + 50 : 0;
-        out.put("atmStrike", atmStrike);
-        out.put("ceStrike",  ceStrike);
-        out.put("peStrike",  peStrike);
-        out.put("ceSymbol",  ceSymbol);
-        out.put("peSymbol",  peSymbol);
-        // Prime the header cells with the last-known WS-cached tick per symbol so the
-        // chart page shows NIFTY / CE / PE values instantly even when the ticker SSE
-        // hasn't pushed anything yet (initial load, off-hours, or paused feed).
-        out.put("niftyTick", tickBlock(NIFTY_SYMBOL));
-        out.put("ceTick",    optionTickBlock(ceSymbol));
-        out.put("peTick",    optionTickBlock(peSymbol));
-        // Active SL levels for the CE / PE legs — drives a horizontal SL price line
-        // on the corresponding chart. Zero when no position is open on that side.
-        out.put("ceSl", strat == null ? 0.0 : round2(strat.getOpenSlLevel(ceSymbol)));
-        out.put("peSl", strat == null ? 0.0 : round2(strat.getOpenSlLevel(peSymbol)));
-        // Entry price of the open CE / PE position — drives a horizontal entry
-        // price line alongside the SL line. Zero when no position is open on
-        // that side (the line is removed).
-        out.put("ceEntry", strat == null ? 0.0 : round2(strat.getOpenEntryPrice(ceSymbol)));
-        out.put("peEntry", strat == null ? 0.0 : round2(strat.getOpenEntryPrice(peSymbol)));
-        // Per-side session stats — trade count vs configured cap + realised+open P&L.
-        // Drives the "(n/max) · P&L +X" chip inside the CE / PE panel headers.
-        Map<String, Object> ceStats = new LinkedHashMap<>();
-        Map<String, Object> peStats = new LinkedHashMap<>();
-        ceStats.put("count",  strat == null ? 0 : strat.getCeTradesToday());
-        ceStats.put("max",    riskSettings.getOptionScalpingMaxCeTradesPerDay());
-        ceStats.put("pnl",    strat == null ? 0.0 : round2(strat.getCeSideNetPnlToday()));
-        peStats.put("count",  strat == null ? 0 : strat.getPeTradesToday());
-        peStats.put("max",    riskSettings.getOptionScalpingMaxPeTradesPerDay());
-        peStats.put("pnl",    strat == null ? 0.0 : round2(strat.getPeSideNetPnlToday()));
-        out.put("ceStats", ceStats);
-        out.put("peStats", peStats);
+        out.put("futuresSymbol", FUTURES_SYMBOL);
+        out.put("futuresTick",   tickBlock(FUTURES_SYMBOL));
         return out;
     }
 
-    /** Closed 3-min candles for {@code symbol} plus the in-progress bucket. Polling this
-     *  every couple of seconds gives a live-updating rightmost candle without SSE. If the
-     *  aggregator isn't yet buffering {@code symbol}, this endpoint registers a no-op
-     *  listener to kick off subscription — subsequent polls will see the ring populate. */
+    /** Closed 5-min candles for {@code symbol} plus the in-progress bucket. Polling this
+     *  every couple of seconds gives a live-updating rightmost candle without SSE. Phase 3
+     *  only serves the futures symbol; any other request returns an empty payload so a
+     *  stale client can't accidentally start bucketing an unrelated symbol. */
     @GetMapping("/candles")
     public Map<String, Object> candles(@RequestParam String symbol) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("symbol", symbol);
-        if (symbol == null || symbol.isBlank()) {
+        if (symbol == null || symbol.isBlank() || !FUTURES_SYMBOL.equals(symbol)) {
             out.put("history", List.of());
             out.put("current", null);
             return out;
@@ -171,16 +87,15 @@ public class ChartController {
         out.put("history", hist);
         out.put("current", candleAggregator.getCurrentBucket(symbol));
         // Exchange "now" — max exchFeedTime across subscribed symbols. Chart uses this
-        // for the 3-min bar countdown so it ticks in sync with TradingView (which also
-        // runs on exchange time) rather than local wall clock (which typically trails
-        // exchange time by 2-3 seconds). 0 when no ticks have arrived yet.
+        // for the bar countdown so it ticks in sync with TradingView (which also runs
+        // on exchange time) rather than local wall clock. 0 when no ticks have arrived.
         long latestExchSec = marketDataService.getLatestExchFeedTimeSec();
         out.put("exchangeNowMs", latestExchSec > 0 ? latestExchSec * 1000L : 0L);
         return out;
     }
 
     /** Dates for which a historical chart snapshot exists (newest first). Populated by
-     *  {@link HistoricalChartStore}'s 15:32 scheduled save. The calendar page uses this
+     *  {@link HistoricalChartStore}'s scheduled daily save. The calendar page uses this
      *  to decide which day cells get a "chart" icon. */
     @GetMapping("/historical/dates")
     public Map<String, Object> historicalDates() {
@@ -189,8 +104,8 @@ public class ChartController {
         return out;
     }
 
-    /** Full snapshot for a given date (NIFTY spot + ATM CE + ATM PE candles). Returns
-     *  404 when no snapshot exists for the requested date. */
+    /** Full snapshot for a given date (NIFTY futures candles). Returns 404 when no
+     *  snapshot exists for the requested date. */
     @GetMapping("/historical")
     public ResponseEntity<HistoricalChartStore.DailySnapshot> historicalSnapshot(
             @RequestParam String date) {

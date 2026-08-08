@@ -1,11 +1,11 @@
 // ── Historical Chart modal ─────────────────────────────────────────────
 // Opens from the calendar page when the operator clicks the chart-icon
 // button in a day cell. Fetches /api/chart/historical?date=YYYY-MM-DD
-// and /api/strategies/option-scalping/trades?date=… together, renders ATM CE
-// and ATM PE as two stacked TradingView Lightweight Charts panels
-// (candlestick + VWAP overlay, same look as the live /chart page).
-// Each entry from that session gets an ↑ marker on the bar it fired
-// on, and each exit gets a ↓ marker on the exit bar.
+// and renders the day's NIFTY current-month futures 5-min bars as a
+// single TradingView Lightweight Chart (candlestick + VWAP overlay,
+// same look as the live /chart page).
+//
+// Phase 3: single-panel — no ATM / CE / PE.
 //
 // Overlay skeleton mirrors AppConfirm — fixed dark backdrop, centered card,
 // Esc / backdrop / close-button dismissal.
@@ -41,13 +41,9 @@ window.HistoricalChartModal = (function() {
           +     '<div id="histChartLoading" style="color:var(--text-muted);text-align:center;padding:60px 20px;'
           +       'font-family:var(--font-mono);font-size:0.82rem;">Loading…</div>'
           +     '<div id="histChartPanels" style="display:none;">'
-          +       '<div class="hist-panel" data-key="ce" style="margin-bottom:14px;">'
-          +         '<div class="hist-panel-hdr"><span style="color:#34d399;">■</span> ATM CE <span id="histCeSym" class="hist-hdr-note"></span></div>'
-          +         '<div class="hist-panel-body"><div id="histChartCe" style="position:absolute;inset:0;"></div></div>'
-          +       '</div>'
-          +       '<div class="hist-panel" data-key="pe">'
-          +         '<div class="hist-panel-hdr"><span style="color:#f87171;">■</span> ATM PE <span id="histPeSym" class="hist-hdr-note"></span></div>'
-          +         '<div class="hist-panel-body"><div id="histChartPe" style="position:absolute;inset:0;"></div></div>'
+          +       '<div class="hist-panel" data-key="fut">'
+          +         '<div class="hist-panel-hdr"><span style="color:#7dd3fc;">■</span> NIFTY FUT (5-min) <span id="histFutSym" class="hist-hdr-note"></span></div>'
+          +         '<div class="hist-panel-body"><div id="histChartFut" style="position:absolute;inset:0;"></div></div>'
           +       '</div>'
           +     '</div>'
           +   '</div>'
@@ -55,12 +51,13 @@ window.HistoricalChartModal = (function() {
         document.body.appendChild(overlayEl);
 
         // Scoped styles for the panel headers + fixed-height chart boxes.
+        // Taller single-panel layout since Phase 3 shows only NIFTY FUT.
         var style = document.createElement('style');
         style.textContent =
             '.hist-panel-hdr { font-family:var(--font-mono);font-size:0.72rem;font-weight:700;'
           + '  letter-spacing:0.06em;color:var(--text-secondary);padding:6px 4px;text-transform:uppercase; }'
           + '.hist-panel-hdr .hist-hdr-note { color:var(--text-muted);font-weight:400;margin-left:8px;text-transform:none; }'
-          + '.hist-panel-body { position:relative;height:280px;border:1px solid var(--border);border-radius:6px;overflow:hidden; }';
+          + '.hist-panel-body { position:relative;height:560px;border:1px solid var(--border);border-radius:6px;overflow:hidden; }';
         document.head.appendChild(style);
 
         overlayEl.addEventListener('click', function(e) {
@@ -78,7 +75,7 @@ window.HistoricalChartModal = (function() {
         overlayEl.style.display = 'none';
         // Tear down charts so the next open starts from a clean slate — LightweightCharts
         // instances don't survive a hidden container being resized.
-        ['ce','pe'].forEach(function(k) {
+        ['fut'].forEach(function(k) {
             if (charts[k]) { try { charts[k].remove(); } catch (e) {} }
             charts[k] = null; candleSeries[k] = null; vwapSeries[k] = null;
         });
@@ -149,15 +146,12 @@ window.HistoricalChartModal = (function() {
         vwapSeries[panelKey] = vs;
     }
 
-    /** Build TradingView-style marker objects for a leg's entries + exits.
-     *  Entries anchor at the entry-candle START (that bar's start-of-bar time),
-     *  exits at the exit-candle START. The ↑ / ↓ shapes + colour code make wins /
-     *  losses distinguishable at a glance. */
-    function markersFor(trades, legSetup) {
+    /** Build TradingView-style marker objects for entries + exits. Entries anchor
+     *  at the entry-candle START, exits at the exit-candle START. The ↑ / ↓
+     *  shapes + colour code make wins / losses distinguishable at a glance. */
+    function markersFor(trades) {
         var out = [];
         (trades || []).forEach(function(t) {
-            var setup = String(t.setup || '').toUpperCase();
-            if (setup !== legSetup) return;
             var entryMs = Number(t.entryCandleMs || 0);
             var exitMs  = Number(t.exitCandleMs  || 0);
             var net     = Number(t.netPnl || 0);
@@ -187,17 +181,17 @@ window.HistoricalChartModal = (function() {
         document.getElementById('histChartLoading').style.display = 'block';
         document.getElementById('histChartPanels').style.display = 'none';
         document.getElementById('histChartDate').textContent = dateStr;
-        document.getElementById('histChartAtm').textContent = '—';
-        document.getElementById('histCeSym').textContent = '';
-        document.getElementById('histPeSym').textContent = '';
+        document.getElementById('histChartAtm').textContent = '';
+        var futSymEl = document.getElementById('histFutSym');
+        if (futSymEl) futSymEl.textContent = '';
 
         // Tear down previous charts if the modal is being re-opened without a full close.
-        ['ce','pe'].forEach(function(k) {
+        ['fut'].forEach(function(k) {
             if (charts[k]) { try { charts[k].remove(); } catch (e) {} charts[k] = null; }
         });
 
         // Parallel fetch — chart snapshot + trades for the same session. Trades
-        // drive the entry / exit markers on the CE / PE panels.
+        // drive the entry / exit markers on the futures panel.
         var chartUrl  = '/api/chart/historical?date=' + encodeURIComponent(dateStr);
         var tradesUrl = '/api/strategies/option-scalping/trades?date=' + encodeURIComponent(dateStr);
         Promise.all([
@@ -211,23 +205,31 @@ window.HistoricalChartModal = (function() {
             var panels  = document.getElementById('histChartPanels');
             if (!d) {
                 loading.textContent = 'No chart data stored for ' + dateStr
-                    + ' — the bot wasn’t running at 15:32 that day, or it was a market holiday.';
+                    + ' — the bot wasn’t running at 15:45 that day, or it was a market holiday.';
                 return;
             }
             loading.style.display = 'none';
             panels.style.display  = 'block';
 
-            document.getElementById('histChartAtm').textContent = 'ATM ' + (d.atmStrike || '—');
-            document.getElementById('histCeSym').textContent = d.ceSymbol ? '· ' + d.ceSymbol : '';
-            document.getElementById('histPeSym').textContent = d.peSymbol ? '· ' + d.peSymbol : '';
+            // Phase 3 shape: { symbol, candles }. Older files (multi-symbol
+            // { candlesBySymbol, ceSymbol, peSymbol }) are tolerated — we pull
+            // any first symbol's candles as a fallback so historical data from
+            // before the strip still renders.
+            var futSym = d.symbol || '';
+            var candles = d.candles || null;
+            if ((!candles || candles.length === 0) && d.candlesBySymbol) {
+                var keys = Object.keys(d.candlesBySymbol);
+                if (keys.length > 0) {
+                    futSym  = futSym || keys[0];
+                    candles = d.candlesBySymbol[keys[0]];
+                }
+            }
+            if (futSymEl) futSymEl.textContent = futSym ? '· ' + futSym : '';
 
-            var byS = d.candlesBySymbol || {};
-            var ceMarkers = markersFor(trades, 'CE_SELL');
-            var peMarkers = markersFor(trades, 'PE_SELL');
+            var markers = markersFor(trades);
             // Small setTimeout so LWC sees the container after its display:block flush.
             setTimeout(function() {
-                if (d.ceSymbol) renderPanel('ce', 'histChartCe', byS[d.ceSymbol], 2, ceMarkers);
-                if (d.peSymbol) renderPanel('pe', 'histChartPe', byS[d.peSymbol], 2, peMarkers);
+                renderPanel('fut', 'histChartFut', candles || [], 2, markers);
             }, 30);
         }).catch(function(err) {
             document.getElementById('histChartLoading').textContent =

@@ -35,11 +35,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
- * Samples LTPs for every subscribed Fyers symbol once per second and rolls samples into 3-minute
- * OHLC buckets per symbol. On bucket close (the first sample in a new 3-min window), the closed
+ * Samples LTPs for every subscribed Fyers symbol once per second and rolls samples into 5-minute
+ * OHLC buckets per symbol. On bucket close (the first sample in a new 5-min window), the closed
  * candle is emitted to every listener registered for that symbol.
  *
- * <p>Buckets are anchored on the IST wall clock — 09:15, 09:18, 09:21, … 15:27, 15:30 — and only
+ * <p>Buckets are anchored on the IST wall clock — 09:15, 09:20, 09:25, … 15:25, 15:30 — and only
  * emitted during market hours (09:15 ≤ now ≤ 15:31).
  *
  * <p>{@link #BUCKET_MINUTES} is public so downstream consumers can derive bar length without
@@ -50,7 +50,8 @@ public class CandleAggregator {
 
     private static final Logger log = LoggerFactory.getLogger(CandleAggregator.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    public  static final int    BUCKET_MINUTES = 1;
+    /** 5-minute bars. Buckets anchor on 09:15 IST → 09:15, 09:20, …, 15:25, 15:30. */
+    public  static final int    BUCKET_MINUTES = 5;
     /** NSE market open in minutes-of-day (IST). Bucket boundaries are computed relative
      *  to this so the first bar spans 09:15→09:15+BUCKET_MINUTES (at 3-min:
      *  09:15→09:18). */
