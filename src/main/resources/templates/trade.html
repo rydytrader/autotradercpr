@@ -243,6 +243,14 @@
                     <div class="stat-value" id="statFutVwap" style="font-size:1.3rem; margin-top:4px;">—</div>
                     <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">Session-anchored</div>
                 </div>
+                <!-- Trend — derived from futures LTP vs VWAP.
+                     LTP > VWAP → BULLISH; LTP < VWAP → BEARISH; ==  → NEUTRAL. -->
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
+                     title="Futures trading above VWAP = bullish, below = bearish">
+                    <div class="stat-label">Trend</div>
+                    <div class="stat-value" id="statFutTrend" style="font-size:1.3rem; margin-top:4px;">—</div>
+                    <div class="stat-sub" id="statFutTrendSub" style="margin-top:4px; color:var(--text-muted);">Futures vs VWAP</div>
+                </div>
                 <!-- Market Clock — session clock + market status. Rightmost tile. -->
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
                      title="IST market clock and session status">
@@ -1113,6 +1121,30 @@
                                        : ltp > vwap ? 'var(--accent-green, #34d399)'
                                        : ltp < vwap ? 'var(--accent-red, #f87171)'
                                        : 'var(--text-primary)';
+                }
+
+                // Trend tile — BULLISH above VWAP, BEARISH below, NEUTRAL at exactly
+                // equal. Also shows the signed distance from VWAP in the sub-line.
+                var trendEl = document.getElementById('statFutTrend');
+                var trendSubEl = document.getElementById('statFutTrendSub');
+                if (trendEl) {
+                    if (ltp <= 0 || vwap <= 0) {
+                        trendEl.textContent = '—';
+                        trendEl.style.color = 'var(--text-primary)';
+                        if (trendSubEl) trendSubEl.textContent = 'Futures vs VWAP';
+                    } else if (ltp > vwap) {
+                        trendEl.textContent = 'BULLISH';
+                        trendEl.style.color = 'var(--accent-green, #34d399)';
+                        if (trendSubEl) trendSubEl.textContent = '+' + (ltp - vwap).toFixed(2) + ' vs VWAP';
+                    } else if (ltp < vwap) {
+                        trendEl.textContent = 'BEARISH';
+                        trendEl.style.color = 'var(--accent-red, #f87171)';
+                        if (trendSubEl) trendSubEl.textContent = '−' + (vwap - ltp).toFixed(2) + ' vs VWAP';
+                    } else {
+                        trendEl.textContent = 'NEUTRAL';
+                        trendEl.style.color = 'var(--text-muted)';
+                        if (trendSubEl) trendSubEl.textContent = 'At VWAP';
+                    }
                 }
             })
             .catch(function() { /* silent */ });
