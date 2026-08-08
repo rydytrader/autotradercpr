@@ -3,15 +3,21 @@ package com.rydytrader.autotrader.service.strategy;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rydytrader.autotrader.dto.Candle;
+import com.rydytrader.autotrader.dto.OrderDTO;
 import com.rydytrader.autotrader.entity.StrategyTradeEntity;
+import com.rydytrader.autotrader.gdfl.GdflService;
 import com.rydytrader.autotrader.gdfl.GdflSymbolMapper;
 import com.rydytrader.autotrader.repository.StrategyTradeRepository;
 import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.service.EventService;
 import com.rydytrader.autotrader.service.MarketDataService;
+import com.rydytrader.autotrader.service.MarketHolidayService;
 import com.rydytrader.autotrader.service.OptionScalpingStreamBroker;
+import com.rydytrader.autotrader.service.OrderEventService;
 import com.rydytrader.autotrader.service.OrderService;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
+import com.rydytrader.autotrader.util.NiftyExpiryResolver;
+import com.rydytrader.autotrader.util.NiftyOptionSymbolBuilder;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,7 +30,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -95,6 +103,24 @@ public class OptionScalping implements Strategy {
      *  historical state files. No live code branches on it. */
     public enum WatchRole { ATM_L4, ITM_L4, OTM_H3 }
 
+    /** OPTION BUYING per-day FSM. Locked once-a-day: exactly one trade per session,
+     *  no re-entry after any exit.
+     *  <ul>
+     *    <li>{@code WAITING_FOR_TRIGGER} — start of day. First 5-min futures bar
+     *        (startMs = 09:15 IST) triggers evaluation.</li>
+     *    <li>{@code PENDING_ENTRY} — entry MARKET order placed on Fyers; awaiting
+     *        the OrderEventService fill push to capture entryPrice + computed
+     *        target. Enters this state as soon as OrderService returns a non-empty
+     *        orderId. If the fill never lands the tick() squareoff cutoff will
+     *        eventually flatten (defensive; a MARKET order rarely stays pending).</li>
+     *    <li>{@code IN_POSITION} — fill confirmed. Two exits active: (a) LTP-target
+     *        via addLtpListener, (b) 2-consecutive-opposite-closes SL via
+     *        onCandleClose on the futures leg. Timed squareoff cuts through both.</li>
+     *    <li>{@code DONE_FOR_DAY} — one-way terminal state for the session. Cleared
+     *        only on day rollover.</li>
+     *  </ul> */
+    public enum FsmState { WAITING_FOR_TRIGGER, PENDING_ENTRY, IN_POSITION, DONE_FOR_DAY }
+
     private final CandleAggregator      candleAggregator;
     private final MarketDataService     marketDataService;
     private final OrderService          orderService;
@@ -102,6 +128,9 @@ public class OptionScalping implements Strategy {
     private final RiskSettingsStore     riskSettings;
     private final ObjectProvider<StrategyTradeRepository> tradeRepoProvider;
     private final ObjectProvider<OptionScalpingStreamBroker> streamBrokerProvider;
+    private final ObjectProvider<OrderEventService>          orderEventServiceProvider;
+    private final ObjectProvider<GdflService>                gdflServiceProvider;
+    private final ObjectProvider<MarketHolidayService>       holidayServiceProvider;
 
     private final ObjectMapper mapper = new ObjectMapper()
         .findAndRegisterModules()
@@ -116,7 +145,10 @@ public class OptionScalping implements Strategy {
                    EventService eventService,
                    RiskSettingsStore riskSettings,
                    ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
-                   ObjectProvider<OptionScalpingStreamBroker> streamBrokerProvider) {
+                   ObjectProvider<OptionScalpingStreamBroker> streamBrokerProvider,
+                   ObjectProvider<OrderEventService> orderEventServiceProvider,
+                   ObjectProvider<GdflService> gdflServiceProvider,
+                   ObjectProvider<MarketHolidayService> holidayServiceProvider) {
         this.candleAggregator           = candleAggregator;
         this.marketDataService          = marketDataService;
         this.orderService               = orderService;
@@ -124,6 +156,9 @@ public class OptionScalping implements Strategy {
         this.riskSettings               = riskSettings;
         this.tradeRepoProvider          = tradeRepoProvider;
         this.streamBrokerProvider       = streamBrokerProvider;
+        this.orderEventServiceProvider  = orderEventServiceProvider;
+        this.gdflServiceProvider        = gdflServiceProvider;
+        this.holidayServiceProvider     = holidayServiceProvider;
     }
 
     /** Push the latest dashboard state to every SSE-connected browser. No-op when no clients. */
@@ -144,15 +179,32 @@ public class OptionScalping implements Strategy {
 
         // Subscribe the NIFTY current-month FUTURES symbol. GdflService already
         // subscribes it on its own poller — this registers the aggregator close
-        // listener so 5-min bar closes get logged (and can be reacted to when a
-        // strategy layer is added later).
+        // listener so 5-min bar closes get logged (and drive the OPTION BUYING FSM).
         state.futuresSymbol = NIFTY_SYMBOL;
         candleAggregator.subscribe(NIFTY_SYMBOL, c -> onCandleClose(NIFTY_SYMBOL, c));
-        log.info("[OptionScalping] boot — futures subscribed: {} (5-min bars)", NIFTY_SYMBOL);
 
-        log.info("[OptionScalping] booted — enabled={}, squareoff={}, restoredPositions={}",
+        // LTP listener — drives the target-hit exit for the option leg. Filtered
+        // to entrySymbol inside the callback so the fanout is O(1) for all other
+        // ticks that flow through MarketDataService.
+        marketDataService.addLtpListener(this::onLtpTickForFsm);
+
+        // Fill listener — when the entry MARKET order fills, capture the exact
+        // broker price and compute target. Registered lazily to avoid coupling
+        // OrderEventService init order.
+        OrderEventService oes = orderEventServiceProvider == null ? null : orderEventServiceProvider.getIfAvailable();
+        if (oes != null) {
+            oes.addFillListener(this::onOrderFill);
+        } else {
+            log.warn("[OptionScalping] OrderEventService not available at boot — fill capture will fall back to tradebook polling on exit");
+        }
+
+        log.info("[OptionScalping] boot — futures subscribed: {} (5-min bars)", NIFTY_SYMBOL);
+        log.info("[OptionScalping] booted — optionScalpingEnabled={} optionBuyingEnabled={} fsmState={} squareoff={} restoredPositions={}",
             riskSettings.isOptionScalpingEnabled(),
-            riskSettings.getOptionScalpingSquareOffTime(), state.openPositions.size());
+            riskSettings.isOptionBuyingEnabled(),
+            state.fsmState,
+            riskSettings.getOptionBuyingSquareOffTime(),
+            state.openPositions.size());
     }
 
     private void pruneStaleEventsBeforeToday() {
@@ -191,7 +243,12 @@ public class OptionScalping implements Strategy {
     public double getPeSideNetPnlToday()                     { return 0.0; }
 
     @Override public String currentState() {
-        if (state.doneForDay) return "DONE_FOR_DAY";
+        // Prefer OPTION BUYING FSM state when it's the leading indicator (post-trigger).
+        // Falls back to legacy manual-terminal openPositions counter otherwise.
+        if (state.fsmState == FsmState.IN_POSITION || state.fsmState == FsmState.PENDING_ENTRY) {
+            return state.fsmState.name();
+        }
+        if (state.doneForDay || state.fsmState == FsmState.DONE_FOR_DAY) return "DONE_FOR_DAY";
         return state.openPositions.isEmpty() ? "IDLE" : "OPEN(" + state.openPositions.size() + ")";
     }
     @Override public boolean isEnabled() { return riskSettings.isOptionScalpingEnabled(); }
@@ -284,8 +341,37 @@ public class OptionScalping implements Strategy {
     @Override
     public void tick() {
         rolloverIfNewDay();
-        // No auto entries / no timed squareoff of algo positions — MANUAL-terminal
-        // positions (if any) are managed by the Options Scalper Terminal itself.
+        checkOptionBuyingSquareoff();
+    }
+
+    /** Called from the ~5 s scheduler. If FSM is IN_POSITION or PENDING_ENTRY and
+     *  wall-clock has crossed {@code optionBuyingSquareOffTime}, flatten via
+     *  MARKET SELL. IN_POSITION → normal exit. PENDING_ENTRY → we place the exit
+     *  anyway (in case Fyers filled the entry between our checks and we just
+     *  didn't get the fill push yet); the tradebook will reconcile net position
+     *  to zero. */
+    private void checkOptionBuyingSquareoff() {
+        // Squareoff runs regardless of the master kill switch — a live position
+        // must be flattened at the cutoff even if the operator turned the
+        // strategy OFF after entry.
+        FsmState s = state.fsmState;
+        if (s != FsmState.IN_POSITION && s != FsmState.PENDING_ENTRY) return;
+        String sqStr = riskSettings.getOptionBuyingSquareOffTime();
+        if (sqStr == null || sqStr.isBlank()) return;
+        LocalTime cutoff;
+        try {
+            cutoff = LocalTime.parse(sqStr);
+        } catch (Exception e) {
+            log.warn("[OptionScalping] bad optionBuyingSquareOffTime '{}' — skipping", sqStr);
+            return;
+        }
+        LocalTime now = ZonedDateTime.now(IST).toLocalTime();
+        if (now.isBefore(cutoff)) return;
+        synchronized (this) {
+            FsmState cur = state.fsmState;
+            if (cur != FsmState.IN_POSITION && cur != FsmState.PENDING_ENTRY) return;
+            fireExit("SQUAREOFF", "SQUAREOFF at " + sqStr + " — market sell");
+        }
     }
 
     @Override
@@ -293,14 +379,247 @@ public class OptionScalping implements Strategy {
         // No auto SL logic in Phase 3.
     }
 
-    // ── Candle close handler — logs only, no FSM ───────────────────────────
+    // ── Candle close handler — OPTION BUYING FSM entry + SL counter ───────
 
     public void onCandleClose(String symbol, Candle c) {
         if (c == null) return;
         if (!NIFTY_SYMBOL.equals(symbol)) return;   // only the futures leg is subscribed
-        log.info("[OptionScalping] futures {}-min bar closed — {} o={} h={} l={} c={} startMs={}",
+        double vwap = c.vwap();
+        log.info("[OptionScalping] futures {}-min bar closed — {} o={} h={} l={} c={} vwap={} startMs={} fsm={}",
             CandleAggregator.BUCKET_MINUTES, symbol,
-            c.open(), c.high(), c.low(), c.close(), c.startMillis());
+            c.open(), c.high(), c.low(), c.close(), vwap, c.startMillis(), state.fsmState);
+
+        rolloverIfNewDay();
+
+        synchronized (this) {
+            if (state.fsmState == FsmState.DONE_FOR_DAY) return;
+
+            if (state.fsmState == FsmState.WAITING_FOR_TRIGGER) {
+                // Master kill switch blocks NEW entries only — SL / target on open
+                // positions keep running below. When disabled, quietly skip until
+                // the operator re-enables (which is a re-arm for tomorrow, since
+                // the trigger bar has already passed).
+                if (!riskSettings.isOptionBuyingEnabled()) return;
+                handleTriggerBar(c);
+                return;
+            }
+
+            if (state.fsmState == FsmState.IN_POSITION) {
+                handleSlBar(c);
+                return;
+            }
+
+            // PENDING_ENTRY: entry order placed but not yet filled. Do nothing on
+            // this bar — the fill listener drives the transition to IN_POSITION.
+            // The tick() squareoff cutoff will eventually cover us if fill never
+            // arrives (edge case for a MARKET order).
+        }
+    }
+
+    /** Handle a 5-min futures bar close while FSM is WAITING_FOR_TRIGGER.
+     *  Only the FIRST bar of the day (startMs = today's 09:15 IST epoch millis)
+     *  fires the trigger; later bars while still WAITING mean we missed the
+     *  09:20 close (bot late start / restart) and the FSM locks to DONE_FOR_DAY. */
+    private void handleTriggerBar(Candle c) {
+        long todayFirstBarStartMs = LocalDate.now(IST)
+            .atTime(9, 15).atZone(IST).toInstant().toEpochMilli();
+        if (c.startMillis() < todayFirstBarStartMs) {
+            // Bar from an earlier session — should have been discarded already.
+            return;
+        }
+        if (c.startMillis() > todayFirstBarStartMs) {
+            // We're past the first bar and never fired. Lock the day.
+            state.fsmState = FsmState.DONE_FOR_DAY;
+            event("[INFO]", "Setup", "First bar already passed at strategy boot — no trigger today");
+            saveToDisk();
+            return;
+        }
+
+        double close = c.close();
+        double vwap  = c.vwap();
+        if (vwap <= 0) {
+            // Futures VWAP unavailable (no ATP on this bar) — can't decide direction. Skip.
+            event("[WARNING]", "Setup",
+                "Trigger bar VWAP unavailable (vwap=" + round2(vwap) + ") — skipping day");
+            state.fsmState = FsmState.DONE_FOR_DAY;
+            saveToDisk();
+            return;
+        }
+
+        String side;
+        long strike;
+        if (close > vwap) {
+            side = "CE";
+            strike = Math.round(close / 50.0) * 50L + 50L;
+            event("[SUCCESS]", "Setup",
+                "Trigger bar closed above VWAP (close=" + round2(close) + " vwap=" + round2(vwap)
+                    + ") — buying 1 OTM CE strike " + strike);
+        } else if (close < vwap) {
+            side = "PE";
+            strike = Math.round(close / 50.0) * 50L - 50L;
+            event("[SUCCESS]", "Setup",
+                "Trigger bar closed below VWAP (close=" + round2(close) + " vwap=" + round2(vwap)
+                    + ") — buying 1 OTM PE strike " + strike);
+        } else {
+            event("[INFO]", "Setup", "Skipped — trigger close equals VWAP (" + round2(close) + ")");
+            state.fsmState = FsmState.DONE_FOR_DAY;
+            saveToDisk();
+            return;
+        }
+
+        // Weekly expiry + Fyers symbol synthesis.
+        MarketHolidayService holidays = holidayServiceProvider == null ? null : holidayServiceProvider.getIfAvailable();
+        LocalDate expiry = NiftyExpiryResolver.currentWeeklyExpiry(LocalDate.now(IST), holidays);
+        String fyersSymbol;
+        try {
+            fyersSymbol = NiftyOptionSymbolBuilder.buildFyersSymbol(expiry, strike, side);
+        } catch (Exception e) {
+            event("[ERROR]", "Setup", "Symbol build failed for expiry=" + expiry + " strike=" + strike + " side=" + side + ": " + e.getMessage());
+            state.fsmState = FsmState.DONE_FOR_DAY;
+            saveToDisk();
+            return;
+        }
+
+        // On-demand GDFL subscribe so option ticks land in MarketDataService for
+        // the target-hit check.
+        GdflService gdfl = gdflServiceProvider == null ? null : gdflServiceProvider.getIfAvailable();
+        if (gdfl != null) {
+            boolean subscribed = gdfl.subscribeSymbolOnDemand(fyersSymbol);
+            log.info("[OptionScalping] GDFL subscribe for {} → {}", fyersSymbol, subscribed);
+        }
+        marketDataService.addAltFeedOwnedSymbol(fyersSymbol);
+
+        int qty = riskSettings.getOptionBuyingLotsPerLeg() * LOT_SIZE;
+        String productType = riskSettings.getOptionBuyingOrderType();
+        // Fyers side codes: 1 = BUY, -1 = SELL. Market order, product per settings.
+        OrderDTO placed = orderService.placeOrder(fyersSymbol, qty, 1, 0.0, productType);
+        if (placed == null || !"ok".equals(placed.getStatus()) || placed.getId() == null || placed.getId().isBlank()) {
+            String msg = placed == null ? "placeOrder returned null" : placed.getMessage();
+            event("[ERROR]", "Reject", "Entry order rejected — no trade today (" + msg + ")");
+            state.fsmState = FsmState.DONE_FOR_DAY;
+            saveToDisk();
+            return;
+        }
+
+        state.entrySide     = side;
+        state.entryStrike   = strike;
+        state.entrySymbol   = fyersSymbol;
+        state.entryOrderId  = placed.getId();
+        state.consecutiveOppositeCloses = 0;
+        state.fsmState      = FsmState.PENDING_ENTRY;
+        event("[SUCCESS]", "Order",
+            "Entry placed: BUY " + qty + " " + fyersSymbol + " @ MARKET (orderId=" + placed.getId() + ")");
+        saveToDisk();
+    }
+
+    /** IN_POSITION SL check on each 5-min futures bar close. */
+    private void handleSlBar(Candle c) {
+        double close = c.close();
+        double vwap  = c.vwap();
+        if (vwap <= 0) {
+            // Missing VWAP on this bar — don't count either way; keep prior counter.
+            return;
+        }
+        boolean onCorrectSide;
+        if ("CE".equals(state.entrySide)) {
+            onCorrectSide = close > vwap;
+        } else {
+            onCorrectSide = close < vwap;
+        }
+        if (onCorrectSide) {
+            if (state.consecutiveOppositeCloses > 0) {
+                event("[INFO]", "SL-Watch",
+                    "Futures closed on correct side (" + round2(close) + " vs vwap " + round2(vwap)
+                        + ") — SL counter reset from " + state.consecutiveOppositeCloses + " to 0");
+            }
+            state.consecutiveOppositeCloses = 0;
+            saveToDisk();
+            return;
+        }
+        state.consecutiveOppositeCloses++;
+        event("[WARNING]", "SL-Watch",
+            "Futures closed on OPPOSITE side (" + round2(close) + " vs vwap " + round2(vwap)
+                + ") — SL counter " + state.consecutiveOppositeCloses + "/2");
+        if (state.consecutiveOppositeCloses >= 2) {
+            fireExit("SL_2_OPPOSITE_CLOSES", "SL — 2 consecutive futures closes on opposite side — market sell");
+        } else {
+            saveToDisk();
+        }
+    }
+
+    /** LTP listener registered on {@link MarketDataService}. Filters to the entry
+     *  option symbol; when IN_POSITION and LTP crosses the target, fires exit. */
+    void onLtpTickForFsm(MarketDataService.LtpTick tick) {
+        if (tick == null) return;
+        String sym = tick.fyersSymbol();
+        if (sym == null || sym.isBlank()) return;
+        // Cheap check outside the lock — filter on FSM + symbol equality.
+        FsmState snap = state.fsmState;
+        if (snap != FsmState.IN_POSITION) return;
+        String entrySym = state.entrySymbol;
+        if (entrySym == null || !entrySym.equals(sym)) return;
+        double ltp = tick.ltp();
+        double target = state.targetPrice;
+        if (target <= 0 || ltp < target) return;
+        synchronized (this) {
+            if (state.fsmState != FsmState.IN_POSITION) return;
+            if (!sym.equals(state.entrySymbol)) return;
+            if (ltp < state.targetPrice) return;
+            fireExit("TARGET_HIT",
+                "TARGET hit @ Rs." + round2(ltp) + " (target Rs." + round2(state.targetPrice) + ")");
+        }
+    }
+
+    /** Registered on {@link OrderEventService}. Two transitions land here:
+     *  (a) entry order fills — capture price, compute target, promote to IN_POSITION;
+     *  (b) exit order fills — log realised P&L, book stays DONE_FOR_DAY. */
+    void onOrderFill(String orderId, double price) {
+        if (orderId == null || orderId.isBlank() || price <= 0) return;
+        synchronized (this) {
+            if (orderId.equals(state.entryOrderId) && state.fsmState == FsmState.PENDING_ENTRY) {
+                state.entryPrice  = price;
+                state.targetPrice = price + riskSettings.getOptionBuyingTargetPoints();
+                state.fsmState    = FsmState.IN_POSITION;
+                event("[SUCCESS]", "Fill",
+                    "Entry filled @ Rs." + round2(price) + " — target Rs." + round2(state.targetPrice)
+                        + " (entry + " + round2(riskSettings.getOptionBuyingTargetPoints()) + "pts)");
+                saveToDisk();
+                return;
+            }
+            if (orderId.equals(state.exitOrderId)) {
+                double pnl = ("CE".equals(state.entrySide) || "PE".equals(state.entrySide))
+                    ? (price - state.entryPrice) * (riskSettings.getOptionBuyingLotsPerLeg() * LOT_SIZE)
+                    : 0.0;
+                event(pnl >= 0 ? "[SUCCESS]" : "[WARNING]", "Fill",
+                    "Exit filled @ Rs." + round2(price) + " — gross P&L Rs." + round2(pnl));
+                saveToDisk();
+            }
+        }
+    }
+
+    /** Places a MARKET SELL exit for the current option position and locks the
+     *  FSM to DONE_FOR_DAY. Called from three paths: TARGET, SL, SQUAREOFF. */
+    private void fireExit(String reason, String eventMessage) {
+        String sym = state.entrySymbol;
+        int qty = riskSettings.getOptionBuyingLotsPerLeg() * LOT_SIZE;
+        String productType = riskSettings.getOptionBuyingOrderType();
+        if (sym == null || sym.isBlank()) {
+            log.warn("[OptionScalping] fireExit called without an entrySymbol — locking DONE_FOR_DAY");
+            state.fsmState = FsmState.DONE_FOR_DAY;
+            saveToDisk();
+            return;
+        }
+        // Fyers side codes: 1 = BUY, -1 = SELL. MARKET exit.
+        OrderDTO closed = orderService.placeExitOrder(sym, qty, -1, productType);
+        if (closed != null && "ok".equals(closed.getStatus()) && closed.getId() != null && !closed.getId().isBlank()) {
+            state.exitOrderId = closed.getId();
+            event("[SUCCESS]", "Exit", eventMessage + " (orderId=" + closed.getId() + ")");
+        } else {
+            String msg = closed == null ? "placeExitOrder returned null" : closed.getMessage();
+            event("[ERROR]", "Exit", eventMessage + " — order FAILED (" + msg + "). Manual intervention required.");
+        }
+        state.fsmState = FsmState.DONE_FOR_DAY;
+        saveToDisk();
     }
 
     // ── Position close + persistence (kept for MANUAL-terminal fires) ──────
@@ -533,6 +852,7 @@ public class OptionScalping implements Strategy {
         }
         state.openPositions.clear();
         if (state.symbolRole != null) state.symbolRole.clear();
+        resetOptionBuyingFsm(today);
         saveToDisk();
         publishStream();
     }
@@ -560,8 +880,25 @@ public class OptionScalping implements Strategy {
             state.openPositions.clear();
             if (state.symbolRole != null) state.symbolRole.clear();
 
+            resetOptionBuyingFsm(today);
             saveToDisk();
         }
+    }
+
+    /** Wipe every OPTION BUYING FSM field so a fresh session starts in
+     *  WAITING_FOR_TRIGGER with no residual per-trade state. Called from both
+     *  rollover paths (scheduled 06:00 + lazy). */
+    private void resetOptionBuyingFsm(String today) {
+        state.fsmState                  = FsmState.WAITING_FOR_TRIGGER;
+        state.fsmDayKey                 = today == null ? "" : today;
+        state.entrySide                 = "";
+        state.entryStrike               = 0;
+        state.entrySymbol               = "";
+        state.entryPrice                = 0;
+        state.targetPrice               = 0;
+        state.consecutiveOppositeCloses = 0;
+        state.entryOrderId              = "";
+        state.exitOrderId               = "";
     }
 
     // ── Charges ──────────────────────────────────────────────────────────────
@@ -725,6 +1062,30 @@ public class OptionScalping implements Strategy {
         public String futuresSymbol = "";
         /** Legacy watchlist role map — kept for state-file back-compat. */
         public Map<String, WatchRole> symbolRole = new ConcurrentHashMap<>();
+
+        // ── OPTION BUYING FSM state (Phase 4) — persisted so a mid-day JVM restart
+        //    resumes at the same point in the daily lifecycle.
+        public FsmState fsmState = FsmState.WAITING_FOR_TRIGGER;
+        /** {@code "CE"} or {@code "PE"} — direction chosen by the 09:15 trigger bar. */
+        public String  entrySide = "";
+        public long    entryStrike;
+        /** Fyers-format option symbol we placed the entry MARKET order on. */
+        public String  entrySymbol = "";
+        /** Actual fill price captured from OrderEventService.FillListener. Populated
+         *  as we transition PENDING_ENTRY → IN_POSITION. */
+        public double  entryPrice;
+        /** entryPrice + optionBuyingTargetPoints. Frozen at fill time; target-check
+         *  compares option LTP against this. */
+        public double  targetPrice;
+        /** Count of consecutive futures 5-min bar closes on the OPPOSITE side of
+         *  VWAP relative to entrySide. Resets to 0 the moment a bar closes on the
+         *  CORRECT side. On ≥ 2 → SL exit. */
+        public int     consecutiveOppositeCloses;
+        public String  entryOrderId = "";
+        public String  exitOrderId  = "";
+        /** {@code yyyy-MM-dd} — bumped on day rollover so a state file from
+         *  yesterday's session doesn't re-fire today's FSM in a stale state. */
+        public String  fsmDayKey = "";
     }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)

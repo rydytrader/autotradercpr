@@ -55,6 +55,9 @@ public class RiskSettingsStore {
         volatile String  optionBuyingSquareOffTime     = "15:25";    // hard flatten
         /** Max entries per session across both sides combined. */
         volatile int     optionBuyingMaxTradesPerDay   = 6;
+        /** Target distance in option premium points. Exit triggers on option LTP ≥
+         *  {@code entryPrice + optionBuyingTargetPoints}. Default 20. */
+        volatile double  optionBuyingTargetPoints      = 20.0;
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
         /** Initial capital used as the baseline for the Analytics Home page (capital growth %,
@@ -415,6 +418,7 @@ public class RiskSettingsStore {
     public String  getOptionBuyingTradingEndTime()     { return cfg().optionBuyingTradingEndTime; }
     public String  getOptionBuyingSquareOffTime()      { return cfg().optionBuyingSquareOffTime; }
     public int     getOptionBuyingMaxTradesPerDay()    { return cfg().optionBuyingMaxTradesPerDay; }
+    public double  getOptionBuyingTargetPoints()       { return cfg().optionBuyingTargetPoints; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getStartingCapital()      { return cfg().startingCapital; }
@@ -611,6 +615,7 @@ public class RiskSettingsStore {
     public void setOptionBuyingTradingEndTime(String v)       { cfg().optionBuyingTradingEndTime = (v == null || v.isBlank()) ? "14:30" : v.trim(); }
     public void setOptionBuyingSquareOffTime(String v)        { cfg().optionBuyingSquareOffTime = v == null ? "" : v.trim(); }
     public void setOptionBuyingMaxTradesPerDay(int v)         { cfg().optionBuyingMaxTradesPerDay = Math.max(0, v); }
+    public void setOptionBuyingTargetPoints(double v)         { cfg().optionBuyingTargetPoints = Math.max(0, v); }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setStartingCapital(double v)      { cfg().startingCapital = Math.max(0, v); }
@@ -796,6 +801,7 @@ public class RiskSettingsStore {
             upsert("optionBuyingTradingEndTime",       c.optionBuyingTradingEndTime);
             upsert("optionBuyingSquareOffTime",        c.optionBuyingSquareOffTime);
             upsert("optionBuyingMaxTradesPerDay",     String.valueOf(c.optionBuyingMaxTradesPerDay));
+            upsert("optionBuyingTargetPoints",        String.valueOf(c.optionBuyingTargetPoints));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("startingCapital",      String.valueOf(c.startingCapital));
@@ -991,6 +997,7 @@ public class RiskSettingsStore {
                     case "optionBuyingSquareOffTime"     -> c.optionBuyingSquareOffTime = v;
                     case "optionBuyingHardSlPct"         -> { /* hard SL retired — silently consume legacy rows */ }
                     case "optionBuyingMaxTradesPerDay"   -> c.optionBuyingMaxTradesPerDay = Math.max(0, Integer.parseInt(v));
+                    case "optionBuyingTargetPoints"      -> c.optionBuyingTargetPoints    = Math.max(0, Double.parseDouble(v));
                     // Legacy Camarilla-era keys silently consumed so old risk-settings.json
                     // files round-trip cleanly through the ATM-VWAP cutover. All of these
                     // features were removed with the Camarilla strategy.

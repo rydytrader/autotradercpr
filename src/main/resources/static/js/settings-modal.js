@@ -38,6 +38,7 @@
                       '<div class="sm-field"><label>Trading End (HH:mm IST)</label><input type="time" id="sm-optionBuyingTradingEndTime" step="60"><div class="sm-hint">No new entries after this time. Default 14:30.</div></div>' +
                       '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-optionBuyingSquareOffTime" step="60"><div class="sm-hint">Hard flatten any open positions. Default 15:25.</div></div>' +
                       '<div class="sm-field"><label>Max Trades / Day</label><input type="number" id="sm-optionBuyingMaxTradesPerDay" step="1" min="0"><div class="sm-hint">Hard cap on total fires per session (CE + PE combined). Default 6.</div></div>' +
+                      '<div class="sm-field"><label>Target (option points)</label><input type="number" id="sm-optionBuyingTargetPoints" step="0.5" min="0"><div class="sm-hint">Exit fires when option LTP ≥ entryPrice + this many points. Default 20.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
@@ -232,6 +233,7 @@
             if (g('sm-optionBuyingTradingEndTime'))  g('sm-optionBuyingTradingEndTime').value = d.optionBuyingTradingEndTime || '14:30';
             if (g('sm-optionBuyingSquareOffTime'))   g('sm-optionBuyingSquareOffTime').value = d.optionBuyingSquareOffTime || '15:25';
             if (g('sm-optionBuyingMaxTradesPerDay')) g('sm-optionBuyingMaxTradesPerDay').value = d.optionBuyingMaxTradesPerDay != null ? d.optionBuyingMaxTradesPerDay : 6;
+            if (g('sm-optionBuyingTargetPoints'))    g('sm-optionBuyingTargetPoints').value = d.optionBuyingTargetPoints != null ? d.optionBuyingTargetPoints : 20;
         }).catch(function() {});
     }
 
@@ -244,7 +246,8 @@
             optionBuyingTradingStartTime:  (g('sm-optionBuyingTradingStartTime').value || '').trim(),
             optionBuyingTradingEndTime:    (g('sm-optionBuyingTradingEndTime').value || '').trim(),
             optionBuyingSquareOffTime:     (g('sm-optionBuyingSquareOffTime').value || '').trim(),
-            optionBuyingMaxTradesPerDay:   parseInt(g('sm-optionBuyingMaxTradesPerDay').value, 10) || 0
+            optionBuyingMaxTradesPerDay:   parseInt(g('sm-optionBuyingMaxTradesPerDay').value, 10) || 0,
+            optionBuyingTargetPoints:      parseFloat(g('sm-optionBuyingTargetPoints').value) || 0
         };
         postSettings('/api/settings/risk', body);
     }

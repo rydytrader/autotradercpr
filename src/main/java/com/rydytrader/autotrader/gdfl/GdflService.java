@@ -306,6 +306,26 @@ public class GdflService {
         }
     }
 
+    /** Public wrapper — a strategy that resolves its target Fyers symbol at
+     *  runtime (e.g. the OPTION BUYING FSM picks today's OTM strike at 09:20)
+     *  calls this to have GDFL subscribe the strike on demand. Delegates to the
+     *  same idempotent {@link #subscribeOne} path the atm-check loop uses, so
+     *  no double-subscribe. Safe to call from any thread; the underlying WS
+     *  send is guarded by the GDFL client. Silently no-ops when the WS isn't
+     *  up yet — the caller is expected to retry (bar-close or scheduler tick).
+     *  <p>Returns {@code true} when the symbol is now subscribed (either
+     *  because this call issued the subscribe or an earlier call already did);
+     *  {@code false} on translation failure / WS not authenticated. */
+    public boolean subscribeSymbolOnDemand(String fyersSym) {
+        if (fyersSym == null || fyersSym.isBlank()) return false;
+        if (wsClient == null || !wsClient.isAuthenticated()) return false;
+        String gdflSym = mapper.fyersToGdfl(fyersSym);
+        if (gdflSym == null) return false;
+        if (subscribedGdflSymbols.contains(gdflSym)) return true;
+        subscribeOne(fyersSym);
+        return subscribedGdflSymbols.contains(gdflSym);
+    }
+
     /** Idempotent per-symbol subscribe. Translates the Fyers symbol to GDFL contractwise
      *  format, sends SubscribeRealtime, and takes altFeed ownership so subsequent Fyers
      *  ticks for this symbol are dropped at ingress. Silently no-ops on second call for

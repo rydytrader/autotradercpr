@@ -49,6 +49,7 @@ public class SettingsController {
         result.put("optionBuyingTradingEndTime",    riskSettings.getOptionBuyingTradingEndTime());
         result.put("optionBuyingSquareOffTime",     riskSettings.getOptionBuyingSquareOffTime());
         result.put("optionBuyingMaxTradesPerDay",   riskSettings.getOptionBuyingMaxTradesPerDay());
+        result.put("optionBuyingTargetPoints",      riskSettings.getOptionBuyingTargetPoints());
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
         result.put("maxRiskPerDayPct",    riskSettings.getMaxRiskPerDayPct(effectiveMode));
@@ -105,6 +106,7 @@ public class SettingsController {
             if (body.containsKey("optionBuyingTradingEndTime"))   riskSettings.setOptionBuyingTradingEndTime(body.get("optionBuyingTradingEndTime").toString());
             if (body.containsKey("optionBuyingSquareOffTime"))    riskSettings.setOptionBuyingSquareOffTime(body.get("optionBuyingSquareOffTime").toString());
             if (body.containsKey("optionBuyingMaxTradesPerDay"))  riskSettings.setOptionBuyingMaxTradesPerDay(Integer.parseInt(body.get("optionBuyingMaxTradesPerDay").toString()));
+            if (body.containsKey("optionBuyingTargetPoints"))     riskSettings.setOptionBuyingTargetPoints(Double.parseDouble(body.get("optionBuyingTargetPoints").toString()));
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
             if (body.containsKey("maxRiskPerDayPct"))  riskSettings.setMaxRiskPerDayPct(effectiveMode, Double.parseDouble(body.get("maxRiskPerDayPct").toString()));
