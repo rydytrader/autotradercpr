@@ -218,26 +218,14 @@
                 <div class="stat-sub" id="statPnlSub" style="margin-top:6px; color:var(--text-muted);">Realized + Unrealized</div>
             </div>
             <div style="display:flex; gap:28px; flex-wrap:wrap; align-items:flex-start;">
-                <!-- Exposed Risk — capital tied up in open positions (₹). -->
+                <!-- Risk Budget — realised losses today vs daily budget. Only risk
+                     metric we can compute: SL fires on futures bar close, not a fixed
+                     premium level, so exposed / unrealised risk doesn't apply. -->
                 <div style="text-align:center;"
-                     title="Rupees currently at risk across open positions">
-                    <div class="stat-label">Exposed</div>
-                    <div class="stat-value" id="exposedRiskVal" style="font-size:1.3rem; margin-top:4px; color:#f6ad55;">₹0</div>
-                    <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">Open positions</div>
-                </div>
-                <!-- Consumed Risk — realised losses today (₹). -->
-                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
-                     title="Rupees lost on closed trades today">
-                    <div class="stat-label">Consumed</div>
-                    <div class="stat-value" id="consumedRiskVal" style="font-size:1.3rem; margin-top:4px; color:#fc8181;">₹0</div>
-                    <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">Realized loss today</div>
-                </div>
-                <!-- Budget — daily risk budget with usage %. -->
-                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
-                     title="Daily risk budget and how much is used (exposed + consumed)">
-                    <div class="stat-label">Budget</div>
+                     title="Realised losses today vs daily risk budget">
+                    <div class="stat-label">Risk Budget</div>
                     <div class="stat-value" id="riskBudgetVal" style="font-size:1.3rem; margin-top:4px;">—</div>
-                    <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">Used / Total</div>
+                    <div class="stat-sub" id="riskBudgetSub" style="margin-top:4px; color:var(--text-muted);">Consumed / Total</div>
                 </div>
                 <!-- NIFTY Futures — LTP + change vs previous close. -->
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
@@ -676,25 +664,27 @@
         statPnlEl.textContent = fmtRs(net);
         statPnlEl.className = 'stat-value ' + pnlClass(net);
 
-        // ── Exposed Risk card (replaces the section-header badges) ──
-        var risk = d.risk || { exposedRisk: 0, consumedRisk: 0, dailyRiskBudget: 0 };
-        var exposed  = Number(risk.exposedRisk || 0);
+        // ── Risk Budget tile ──
+        // Only risk metric — realised losses today vs daily budget. Exposed-risk
+        // retired (SL fires on futures bar close, not a fixed premium level, so
+        // unrealised drawdown against an SL can't be computed).
+        var risk = d.risk || { consumedRisk: 0, dailyRiskBudget: 0 };
         var consumed = Number(risk.consumedRisk || 0);
         var budget   = Number(risk.dailyRiskBudget || 0);
-        document.getElementById('exposedRiskVal').textContent  = fmtRs(exposed);
-        document.getElementById('consumedRiskVal').textContent = fmtRs(consumed);
         var budgetEl = document.getElementById('riskBudgetVal');
-        var used = exposed + consumed;
+        var budgetSub = document.getElementById('riskBudgetSub');
         budgetEl.textContent = budget > 0
-            ? (fmtRs(used) + ' / ' + fmtRs(budget))
-            : fmtRs(used);
+            ? (fmtRs(consumed) + ' / ' + fmtRs(budget))
+            : fmtRs(consumed);
         if (budget > 0) {
-            var pct = used / budget;
+            var pct = consumed / budget;
             if (pct >= 1)        budgetEl.style.color = '#fc8181';
             else if (pct >= 0.8) budgetEl.style.color = '#f6ad55';
             else                 budgetEl.style.color = '#68d391';
+            if (budgetSub) budgetSub.textContent = (pct * 100).toFixed(0) + '% used';
         } else {
             budgetEl.style.color = 'var(--text-muted)';
+            if (budgetSub) budgetSub.textContent = 'No budget set';
         }
 
         // Disable squareoff when nothing open
