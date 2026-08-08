@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org" data-strategy-id="strategy">
 <head>
-    <title>TraderEdge — Strategy</title>
+    <title>TraderEdge — Strategy · OPTIONS BUYING</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -27,9 +27,11 @@
         .doc-h3 { font-family:var(--font-mono); font-size:0.68rem; font-weight:700; color:var(--text-muted); letter-spacing:0.08em; text-transform:uppercase; margin:16px 0 8px 0; }
         .doc-p  { color:var(--text-secondary); font-size:0.78rem; line-height:1.65; margin:0 0 10px 0; }
         .doc-p strong { color:var(--text-primary); font-weight:600; }
+        .doc-p code { background:rgba(125,211,252,0.10); border-radius:3px; padding:1px 5px; font-family:var(--font-mono); font-size:0.72rem; color:var(--accent-cyan); }
         .doc-list { color:var(--text-secondary); font-size:0.78rem; line-height:1.7; margin:6px 0 10px 22px; padding:0; }
         .doc-list li { margin-bottom:3px; }
         .doc-list li strong { color:var(--text-primary); }
+        .doc-list code { background:rgba(125,211,252,0.10); border-radius:3px; padding:1px 5px; font-family:var(--font-mono); font-size:0.72rem; color:var(--accent-cyan); }
 
         .setup-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; margin:14px 0; }
         .setup-card { background:var(--bg-primary); border:1px solid var(--border); border-radius:10px; padding:14px 16px; }
@@ -41,70 +43,19 @@
         .setup-card.bear .setup-name { color:var(--accent-red, #f87171); }
         .setup-body { font-size:0.76rem; color:var(--text-secondary); line-height:1.55; }
         .setup-body code { background:rgba(125,211,252,0.10); border-radius:3px; padding:1px 5px; font-family:var(--font-mono); font-size:0.72rem; color:var(--accent-cyan); }
+        .setup-body strong { color:var(--text-primary); font-weight:600; }
 
         .phase-row { display:grid; grid-template-columns:88px 1fr; gap:14px; padding:9px 0; border-bottom:1px solid rgba(128,128,128,0.10); }
         .phase-row:last-child { border-bottom:none; }
         .phase-tag { font-family:var(--font-mono); font-size:0.68rem; font-weight:700; color:var(--accent-cyan); letter-spacing:0.08em; }
         .phase-desc { font-size:0.78rem; color:var(--text-secondary); line-height:1.55; }
         .phase-desc strong { color:var(--text-primary); }
+        .phase-desc code { background:rgba(125,211,252,0.10); border-radius:3px; padding:1px 5px; font-family:var(--font-mono); font-size:0.72rem; color:var(--accent-cyan); }
 
-        .band-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin:10px 0; }
-        .band-row { background:var(--bg-primary); border:1px solid var(--border); border-radius:8px; padding:10px 14px; font-family:var(--font-mono); font-size:0.72rem; display:flex; justify-content:space-between; align-items:center; }
+        .band-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px; margin:10px 0; }
+        .band-row { background:var(--bg-primary); border:1px solid var(--border); border-radius:8px; padding:10px 14px; font-family:var(--font-mono); font-size:0.72rem; display:flex; justify-content:space-between; align-items:center; gap:12px; }
         .band-row .left { color:var(--text-primary); font-weight:700; }
         .band-row .right { color:var(--accent-amber, #fbbf24); }
-
-        /* Legacy pivot formula table — kept for the hidden reference section */
-        .formula-table { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin:14px 0 4px 0; }
-        .formula-row { display:flex; flex-direction:column; align-items:center; gap:8px; padding:12px 8px; background:var(--bg-primary); border:1px solid var(--border); border-radius:8px; }
-        .formula-chip { font-family:var(--font-mono); font-size:0.7rem; font-weight:700; letter-spacing:0.04em; text-align:center; padding:4px 12px; border-radius:4px; border:1px solid transparent; }
-        .formula-chip.h5 { color:#fbbf24; background:rgba(251,191,36,0.10); border-color:rgba(251,191,36,0.35); }
-        .formula-chip.h4 { color:#f87171; background:rgba(248,113,113,0.12); border-color:rgba(248,113,113,0.40); }
-        .formula-chip.h3 { color:#fca5a5; background:rgba(252,165,165,0.10); border-color:rgba(252,165,165,0.35); }
-        .formula-chip.l3 { color:#86efac; background:rgba(134,239,172,0.10); border-color:rgba(134,239,172,0.35); }
-        .formula-chip.l4 { color:#34d399; background:rgba(52,211,153,0.12); border-color:rgba(52,211,153,0.40); }
-        .formula-chip.l5 { color:#fbbf24; background:rgba(251,191,36,0.10); border-color:rgba(251,191,36,0.35); }
-        .formula-eq   { font-family:var(--font-mono); font-size:0.78rem; font-weight:600; color:var(--text-primary); letter-spacing:0.02em; text-align:center; white-space:nowrap; }
-        .formula-role { font-family:var(--font-mono); font-size:0.58rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.06em; text-align:center; line-height:1.3; }
-        .formula-k    { background:rgba(125,211,252,0.10); border:1px solid rgba(125,211,252,0.30); border-radius:6px; padding:5px 10px; font-family:var(--font-mono); font-size:0.72rem; color:var(--accent-cyan); display:inline-block; margin-bottom:6px; }
-        /* Collapse to a 3×2 grid on narrow screens so equations don't overflow */
-        @media (max-width: 760px) {
-            .formula-table { grid-template-columns:repeat(3,1fr); }
-        }
-
-        .doc-svg-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(380px,1fr)); gap:16px; margin:14px 0; }
-        .doc-svg-card { background:var(--bg-primary); border:1px solid var(--border); border-radius:10px; padding:16px 18px; }
-        .doc-svg-title { font-family:var(--font-mono); font-size:0.7rem; font-weight:700; color:var(--text-muted); letter-spacing:0.08em; text-transform:uppercase; margin:0 0 12px 0; text-align:center; }
-        .doc-svg-card svg { max-width:420px; width:100%; height:auto; display:block; margin:0 auto; }
-
-        /* Setup section: combined description (left) + SVG diagram (right) side by side */
-        .setup-combo { display:grid; grid-template-columns:1fr minmax(320px, 1fr); gap:14px; align-items:stretch; margin:10px 0 22px 0; }
-        @media (max-width: 880px) {
-            .setup-combo { grid-template-columns:1fr; }
-        }
-        .setup-combo > .doc-svg-card { display:flex; align-items:center; justify-content:center; }
-        .setup-combo-card { background:var(--bg-primary); border:1px solid var(--border); border-radius:10px; overflow:hidden; display:flex; flex-direction:column; }
-        .combo-row { display:flex; flex-direction:column; gap:8px; padding:16px 18px; flex:1; }
-        .combo-row + .combo-row { border-top:1px solid rgba(128,128,128,0.12); }
-        .combo-row.bull { border-left:3px solid var(--accent-green); }
-        .combo-row.bear { border-left:3px solid var(--accent-red, #f87171); }
-        .combo-label { display:flex; flex-direction:column; gap:3px; }
-        .combo-label .setup-tag { font-family:var(--font-mono); font-size:0.62rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:var(--text-muted); }
-        .combo-label .setup-name { font-family:var(--font-mono); font-size:0.84rem; font-weight:700; letter-spacing:0.04em; }
-        .combo-body { font-size:0.78rem; color:var(--text-secondary); line-height:1.65; }
-        .combo-body code { background:rgba(125,211,252,0.10); border-radius:3px; padding:1px 5px; font-family:var(--font-mono); font-size:0.74rem; color:var(--accent-cyan); }
-        .combo-body strong { color:var(--text-primary); font-weight:600; }
-        .doc-inline-chip { background:rgba(125,211,252,0.10); border:1px solid rgba(125,211,252,0.30); border-radius:5px; padding:1px 8px; font-family:var(--font-mono); font-size:0.86em; color:var(--accent-cyan); display:inline-block; vertical-align:baseline; margin:0 2px; }
-        .doc-svg-card svg text { font-family:var(--font-mono); }
-        .doc-svg-card .lvl-pill { font-size:9px; font-weight:700; letter-spacing:0.04em; }
-        .doc-svg-card .lvl-h5  { fill:#fbbf24; }
-        .doc-svg-card .lvl-h4  { fill:#f87171; }
-        .doc-svg-card .lvl-h3  { fill:#fca5a5; }
-        .doc-svg-card .lvl-l3  { fill:#86efac; }
-        .doc-svg-card .lvl-l4  { fill:#34d399; }
-        .doc-svg-card .lvl-l5  { fill:#fbbf24; }
-        .doc-svg-card .ann-bull { fill:#86efac; }
-        .doc-svg-card .ann-bear { fill:#fca5a5; }
-        .doc-svg-card .ann-mute { fill:#9ca3af; }
     </style>
 </head>
 <body style="margin:0;display:flex;flex-direction:column;min-height:100vh;">
@@ -188,11 +139,11 @@
 </aside>
 <div class="app-main" style="flex:1;min-width:0;margin-left:0;width:auto;padding:20px 24px;">
 
-    <!-- ── Page header (mirrors Home / Calendar) ── -->
+    <!-- Page header -->
     <div class="page-header fade-in" style="margin-bottom:18px;">
         <div>
             <div class="page-title">Strategy</div>
-            <div class="page-subtitle">NIFTY ATM 3-min · session VWAP · bearish premium sell</div>
+            <div class="page-subtitle">OPTIONS BUYING · first 5-min NIFTY futures vs VWAP · buy 1 OTM CE or PE</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -202,320 +153,179 @@
         </div>
     </div>
 
-    <!-- ── Overview ── -->
+    <!-- Overview -->
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot"></span> Overview</h2>
         <p class="doc-p">
-            The bot scalps <strong>NIFTY weekly options</strong> on the
-            <strong>1-minute</strong> timeframe. Each session locks in TWO legs at
-            the first 1-min bar close (09:16): the <strong>1 ITM CE</strong> at strike
-            <code>(ATM − 50)</code> and the <strong>1 ITM PE</strong> at strike
-            <code>(ATM + 50)</code>, where ATM is the round-to-50 of the 09:15 → 09:16
-            NIFTY close.
+            One trade per day on the NIFTY current-month future. At the
+            <strong>09:20 close</strong> of the first 5-minute bar, the bot compares
+            the futures close to session VWAP and buys <strong>one 1 OTM weekly option</strong>
+            — CE if bullish, PE if bearish. No indicators, no scanner, no re-entry.
         </p>
         <p class="doc-p">
-            Data pipeline is designed for first-bar accuracy: at
-            <strong>09:10 IST</strong> the bot subscribes ±10 strikes to the GDFL WS
-            using yesterday's NIFTY close as an anchor. When the exchange opens at
-            09:15, every leg's first tick lands in an already-live subscription — no
-            hand-shake delay, no partial first bar. The 1 ITM CE and PE that end up
-            being the trading pair additionally get GDFL <em>SubscribeSnapshot</em>
-            after the 09:16 ATM lock, plus a one-shot <em>GetHistory</em> to backfill
-            the 09:15 → 09:16 first bar. OHLC on the trading pair therefore matches
-            TradingView tick-for-tick.
-        </p>
-        <p class="doc-p">
-            Entry / exit rules — <em>TEST MODE</em>: the FSM is currently disabled
-            while the data pipeline is validated. No orders will fire until the
-            operator specs the scalping entry / exit rules and the FSM is re-enabled.
+            Orders are placed as <strong>real Fyers MARKET</strong> intraday orders.
+            The single position is managed to a fixed points target, a bar-close SL,
+            or a hard timed squareoff — whichever fires first.
         </p>
     </div>
 
-    <!-- ── Session flow ── -->
+    <!-- Session flow -->
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-amber, #fbbf24);"></span> Session flow</h2>
-        <ul class="doc-list">
-            <li><strong>09:10 IST — pre-market subscribe.</strong> Bot rounds yesterday's
-                NIFTY close to a 50-point base ATM, subscribes ±10 strikes (42 CE + PE
-                symbols) to the GDFL WS and registers CandleAggregator listeners for each.
-                Both feeds are live BEFORE the exchange opens.</li>
-            <li><strong>09:15 IST — market open.</strong> Every leg's first tick lands in
-                an already-wired subscription; the 09:15 → 09:16 first 1-min bar builds
-                without any hand-shake loss.</li>
-            <li><strong>09:16 IST — first 1-min NIFTY bar closes.</strong> The bar's close
-                is snapshotted, rounded to a 50-point strike (ATM), and the trading pair
-                is derived: CE = <code>(ATM − 50)</code>, PE = <code>(ATM + 50)</code> —
-                both 1 ITM. The 40 non-trading strikes stay subscribed for chart display.
-                The 2 trading legs additionally get GDFL <em>SubscribeSnapshot</em> +
-                one <em>GetHistory</em> call for canonical OHLC.</li>
-            <li><strong>From Trading Start (default 09:16 IST) onward.</strong> Every 1-min
-                bar close on either trading leg would run the entry FSM — CURRENTLY
-                DISABLED (TEST MODE).</li>
-            <li><strong>Trading End (default 14:30 IST).</strong> No new entries after
-                this time.</li>
-            <li><strong>Squareoff (default 15:25 IST).</strong> Any remaining open
-                positions are flattened at market.</li>
-        </ul>
-    </div>
-
-    <!-- ── The FSM ── -->
-    <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-purple, #a78bfa);"></span> The FSM</h2>
-        <p class="doc-p">
-            One state machine per option leg. On every 3-min bar close for a leg,
-            the bot reads that leg's session VWAP (Fyers ATP) and evaluates in this
-            exact order:
-        </p>
-        <div style="margin-top:8px;">
+        <div style="margin-top:4px;">
             <div class="phase-row">
-                <div class="phase-tag">S0 · seed</div>
-                <div class="phase-desc"><strong>No active trigger.</strong> If this bar's close is
-                    <strong>&lt; VWAP</strong>, it becomes the trigger candle. Otherwise stay in S0.</div>
+                <div class="phase-tag">09:15</div>
+                <div class="phase-desc"><strong>Market opens.</strong> GDFL futures ticks start flowing on
+                    <code>NIFTY-I</code> (continuous current-month contract, auto-rolls at expiry
+                    server-side). Session VWAP is delivered on every tick as
+                    <code>AveragedTradedPrice</code> — not computed locally.</div>
             </div>
             <div class="phase-row">
-                <div class="phase-tag">S1 · fire</div>
-                <div class="phase-desc"><strong>Trigger active.</strong> If this bar's close is
-                    <strong>&lt; trigger.low</strong>, <strong>SELL the leg</strong>. This check is
-                    <em>unconditional</em> vs VWAP — the fire happens regardless of where the close
-                    sits relative to VWAP.</div>
+                <div class="phase-tag">09:20</div>
+                <div class="phase-desc"><strong>First 5-min bar closes → trigger evaluated.</strong>
+                    <code>close vs VWAP</code> picks the side, the OTM strike is resolved, the option
+                    is subscribed on demand, and a MARKET BUY is sent to Fyers. Fires exactly once
+                    per day.</div>
             </div>
             <div class="phase-row">
-                <div class="phase-tag">S1 · promote</div>
-                <div class="phase-desc"><strong>No fire, this bar closes &lt; VWAP.</strong> The old
-                    trigger is dropped and THIS bar becomes the new trigger. Rolling behaviour —
-                    a fresh trigger seeds on every below-VWAP close until the very next bar
-                    fires it.</div>
+                <div class="phase-tag">09:25 →</div>
+                <div class="phase-desc"><strong>Position management begins.</strong> Every option tick
+                    checks the points target; every 5-min futures close updates the
+                    opposite-side counter for the bar-close SL.</div>
             </div>
             <div class="phase-row">
-                <div class="phase-tag">S1 · invalidate</div>
-                <div class="phase-desc"><strong>No fire, this bar closes ≥ VWAP.</strong> The old
-                    trigger is dropped; no new trigger held. The state machine falls back to S0
-                    and waits for the next below-VWAP close.</div>
-            </div>
-        </div>
-        <p class="doc-p" style="margin-top:14px;">
-            The trigger candle survives at most ONE follow-up bar. Either the follow-up
-            fires or the trigger is dropped — there is no multi-bar "waiting on the same
-            trigger." A bar close ≥ VWAP does <strong>not by itself</strong> invalidate anything;
-            the fire check always runs first. Invalidation is strictly "immediate
-            follow-through failed."
-        </p>
-    </div>
-
-    <!-- Legacy diagrams retained for future reference — hidden. -->
-    <div class="doc-section fade-in" style="display:none;">
-
-        <!-- Reversals subsection -->
-        <h3 class="doc-h3" style="margin-top:22px;">Reversals · L3 / H3</h3>
-        <div class="setup-combo">
-            <div class="setup-combo-card">
-                <div class="combo-row bull">
-                    <div class="combo-label">
-                        <span class="setup-tag">Bullish · Mean-reversion</span>
-                        <span class="setup-name" style="color:var(--accent-green);">L3_REVERSAL</span>
-                    </div>
-                    <div class="combo-body">
-                        NIFTY wicks below <strong>L3</strong> and recovers back above. Bot sells
-                        <code>PE near L3</code>, targets <strong>H3</strong>. SL = confirmation
-                        candle low + buffer.
-                    </div>
-                </div>
-                <div class="combo-row bear">
-                    <div class="combo-label">
-                        <span class="setup-tag">Bearish · Mean-reversion</span>
-                        <span class="setup-name" style="color:var(--accent-red, #f87171);">H3_REVERSAL</span>
-                    </div>
-                    <div class="combo-body">
-                        NIFTY wicks above <strong>H3</strong> and rejects back below. Bot sells
-                        <code>CE near H3</code>, targets <strong>L3</strong>. SL = confirmation
-                        candle high + buffer.
-                    </div>
-                </div>
-            </div>
-            <div class="doc-svg-card" style="margin:0;">
-                <svg viewBox="0 0 380 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="L3 and H3 reversal setups">
-                    <defs>
-                        <marker id="arrG1" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#34d399"/></marker>
-                        <marker id="arrR1" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#f87171"/></marker>
-                    </defs>
-                    <rect x="6"  y="35" width="26" height="14" rx="3" fill="rgba(248,113,113,0.12)" stroke="rgba(248,113,113,0.4)" stroke-width="0.8"/>
-                    <text x="19" y="45" class="lvl-pill lvl-h4" text-anchor="middle">H4</text>
-                    <line x1="36" y1="42" x2="372" y2="42" stroke="#f87171" stroke-width="1.6"/>
-                    <rect x="6"  y="92" width="26" height="14" rx="3" fill="rgba(252,165,165,0.12)" stroke="rgba(252,165,165,0.4)" stroke-width="0.8"/>
-                    <text x="19" y="102" class="lvl-pill lvl-h3" text-anchor="middle">H3</text>
-                    <line x1="36" y1="99" x2="372" y2="99" stroke="#fca5a5" stroke-width="1.3" stroke-dasharray="6,4"/>
-                    <rect x="6"  y="180" width="26" height="14" rx="3" fill="rgba(134,239,172,0.12)" stroke="rgba(134,239,172,0.4)" stroke-width="0.8"/>
-                    <text x="19" y="190" class="lvl-pill lvl-l3" text-anchor="middle">L3</text>
-                    <line x1="36" y1="187" x2="372" y2="187" stroke="#86efac" stroke-width="1.3" stroke-dasharray="6,4"/>
-                    <rect x="6"  y="237" width="26" height="14" rx="3" fill="rgba(52,211,153,0.12)" stroke="rgba(52,211,153,0.4)" stroke-width="0.8"/>
-                    <text x="19" y="247" class="lvl-pill lvl-l4" text-anchor="middle">L4</text>
-                    <line x1="36" y1="244" x2="372" y2="244" stroke="#34d399" stroke-width="1.6"/>
-                    <!-- BULLISH @ L3 -->
-                    <line x1="85"  y1="172" x2="85"  y2="212" stroke="#9ca3af" stroke-width="1"/>
-                    <rect x="78"  y="177" width="14" height="15" fill="#f87171" stroke="#9ca3af" stroke-width="0.5"/>
-                    <line x1="120" y1="152" x2="120" y2="182" stroke="#9ca3af" stroke-width="1"/>
-                    <rect x="113" y="157" width="14" height="22" fill="#34d399" stroke="#9ca3af" stroke-width="0.5"/>
-                    <path d="M 95 178 Q 107 167 111 162" fill="none" stroke="#34d399" stroke-width="1.3" stroke-dasharray="2,2" marker-end="url(#arrG1)"/>
-                    <text x="70" y="270" font-size="9" font-weight="700" class="ann-bull">L3_REVERSAL</text>
-                    <text x="70" y="282" font-size="8" class="ann-mute">sell PE @ L4 · tgt H3</text>
-                    <!-- BEARISH @ H3 -->
-                    <line x1="270" y1="76"  x2="270" y2="118" stroke="#9ca3af" stroke-width="1"/>
-                    <rect x="263" y="104" width="14" height="13" fill="#34d399" stroke="#9ca3af" stroke-width="0.5"/>
-                    <line x1="305" y1="108" x2="305" y2="138" stroke="#9ca3af" stroke-width="1"/>
-                    <rect x="298" y="113" width="14" height="22" fill="#f87171" stroke="#9ca3af" stroke-width="0.5"/>
-                    <path d="M 280 114 Q 290 128 296 132" fill="none" stroke="#f87171" stroke-width="1.3" stroke-dasharray="2,2" marker-end="url(#arrR1)"/>
-                    <text x="255" y="270" font-size="9" font-weight="700" class="ann-bear">H3_REVERSAL</text>
-                    <text x="255" y="282" font-size="8" class="ann-mute">sell CE @ H4 · tgt L3</text>
-                </svg>
-            </div>
-        </div>
-
-        <!-- Breakouts subsection -->
-        <h3 class="doc-h3" style="margin-top:24px;">Breakouts · H4 / L4</h3>
-        <div class="setup-combo">
-            <div class="setup-combo-card">
-                <div class="combo-row bull">
-                    <div class="combo-label">
-                        <span class="setup-tag">Bullish · Trend continuation</span>
-                        <span class="setup-name" style="color:var(--accent-green);">H4_BREAKOUT</span>
-                    </div>
-                    <div class="combo-body">
-                        NIFTY closes above <strong>H4</strong>, breaking out of the pivot
-                        band. Bot sells <code>PE near H4</code>, targets <strong>H5</strong>.
-                        SL = confirmation candle low + buffer.
-                    </div>
-                </div>
-                <div class="combo-row bear">
-                    <div class="combo-label">
-                        <span class="setup-tag">Bearish · Trend continuation</span>
-                        <span class="setup-name" style="color:var(--accent-red, #f87171);">L4_BREAKDOWN</span>
-                    </div>
-                    <div class="combo-body">
-                        NIFTY closes below <strong>L4</strong>, breaking down through the
-                        floor. Bot sells <code>CE near L4</code>, targets <strong>L5</strong>.
-                        SL = confirmation candle high + buffer.
-                    </div>
-                </div>
-            </div>
-            <div class="doc-svg-card" style="margin:0;">
-                <svg viewBox="0 0 380 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="H4 breakout and L4 breakdown setups">
-                    <defs>
-                        <marker id="arrG2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#34d399"/></marker>
-                        <marker id="arrR2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#f87171"/></marker>
-                    </defs>
-                    <rect x="6"  y="13" width="26" height="14" rx="3" fill="rgba(251,191,36,0.10)" stroke="rgba(251,191,36,0.35)" stroke-width="0.8"/>
-                    <text x="19" y="23" class="lvl-pill lvl-h5" text-anchor="middle">H5</text>
-                    <line x1="36" y1="20" x2="372" y2="20" stroke="#fbbf24" stroke-width="1" stroke-dasharray="3,4"/>
-                    <rect x="6"  y="63" width="26" height="14" rx="3" fill="rgba(248,113,113,0.12)" stroke="rgba(248,113,113,0.4)" stroke-width="0.8"/>
-                    <text x="19" y="73" class="lvl-pill lvl-h4" text-anchor="middle">H4</text>
-                    <line x1="36" y1="70" x2="372" y2="70" stroke="#f87171" stroke-width="1.6"/>
-                    <rect x="6"  y="118" width="26" height="14" rx="3" fill="rgba(252,165,165,0.10)" stroke="rgba(252,165,165,0.35)" stroke-width="0.8"/>
-                    <text x="19" y="128" class="lvl-pill lvl-h3" text-anchor="middle">H3</text>
-                    <line x1="36" y1="125" x2="372" y2="125" stroke="#fca5a5" stroke-width="1.1" stroke-dasharray="6,4"/>
-                    <rect x="6"  y="178" width="26" height="14" rx="3" fill="rgba(134,239,172,0.10)" stroke="rgba(134,239,172,0.35)" stroke-width="0.8"/>
-                    <text x="19" y="188" class="lvl-pill lvl-l3" text-anchor="middle">L3</text>
-                    <line x1="36" y1="185" x2="372" y2="185" stroke="#86efac" stroke-width="1.1" stroke-dasharray="6,4"/>
-                    <rect x="6"  y="233" width="26" height="14" rx="3" fill="rgba(52,211,153,0.12)" stroke="rgba(52,211,153,0.4)" stroke-width="0.8"/>
-                    <text x="19" y="243" class="lvl-pill lvl-l4" text-anchor="middle">L4</text>
-                    <line x1="36" y1="240" x2="372" y2="240" stroke="#34d399" stroke-width="1.6"/>
-                    <!-- BULLISH BREAKOUT @ H4 -->
-                    <line x1="85"  y1="55" x2="85"  y2="85" stroke="#9ca3af" stroke-width="1"/>
-                    <rect x="78"  y="58" width="14" height="22" fill="#34d399" stroke="#9ca3af" stroke-width="0.5"/>
-                    <line x1="120" y1="32" x2="120" y2="60" stroke="#9ca3af" stroke-width="1"/>
-                    <rect x="113" y="36" width="14" height="20" fill="#34d399" stroke="#9ca3af" stroke-width="0.5"/>
-                    <path d="M 95 55 Q 107 45 111 41" fill="none" stroke="#34d399" stroke-width="1.3" stroke-dasharray="2,2" marker-end="url(#arrG2)"/>
-                    <text x="70" y="105" font-size="9" font-weight="700" fill="#f87171">H4_BREAKOUT</text>
-                    <text x="70" y="117" font-size="8" class="ann-mute">sell PE @ H3 · tgt H5</text>
-                    <!-- BEARISH BREAKDOWN @ L4 -->
-                    <line x1="270" y1="225" x2="270" y2="258" stroke="#9ca3af" stroke-width="1"/>
-                    <rect x="263" y="230" width="14" height="22" fill="#f87171" stroke="#9ca3af" stroke-width="0.5"/>
-                    <line x1="305" y1="247" x2="305" y2="270" stroke="#9ca3af" stroke-width="1"/>
-                    <rect x="298" y="250" width="14" height="15" fill="#f87171" stroke="#9ca3af" stroke-width="0.5"/>
-                    <path d="M 280 248 Q 290 256 296 256" fill="none" stroke="#f87171" stroke-width="1.3" stroke-dasharray="2,2" marker-end="url(#arrR2)"/>
-                    <text x="240" y="160" font-size="9" font-weight="700" fill="#34d399">L4_BREAKDOWN</text>
-                    <text x="240" y="172" font-size="8" class="ann-mute">sell CE @ L3 · tgt L5</text>
-                </svg>
+                <div class="phase-tag">15:15</div>
+                <div class="phase-desc"><strong>Timed squareoff.</strong> Default. If still in position
+                    (or defensively still in <code>PENDING_ENTRY</code>), MARKET sell everything.
+                    Configurable via <code>optionBuyingSquareOffTime</code>.</div>
             </div>
         </div>
     </div>
 
-    <!-- ── Stop loss ── -->
+    <!-- The trigger -->
     <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-red, #f87171);"></span> Stop loss</h2>
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-green);"></span> The trigger</h2>
         <p class="doc-p">
-            SL = <strong>trailing premium SuperTrend line</strong>. Set at fire time to
-            the premium ST(10, 3) line value on the qualifying bar, then trailed down on
-            each subsequent 3-min close as the ST line ratchets tighter. Never loosens.
-            Displayed for reference — no tick check runs against it.
+            Evaluated at the <strong>09:20 futures 5-min bar close</strong>. Fires exactly once
+            per day. <code>close == VWAP</code> → no trade, state jumps straight to
+            <code>DONE_FOR_DAY</code>.
         </p>
-        <p class="doc-p">
-            <strong>Exits are bar-close only</strong> (evaluated on each 3-min close
-            of the position's leg symbol). Whichever fires first wins:
-        </p>
-        <ul class="doc-list">
-            <li><code>VWAP_RECLAIM</code> — bar CLOSE &gt; VWAP. Entry condition (close
-                below VWAP) is invalidated, exit at market.</li>
-            <li><code>ST_FLIP</code> — premium SuperTrend flips from RED to GREEN.
-                Trend supporting the short has ended, exit at market.</li>
-            <li><code>TIMED_EXIT</code> — clock reaches <code>optionBuyingSquareOffTime</code>
-                (default 15:25); every open leg is flattened.</li>
-        </ul>
-        <p class="doc-p">
-            <strong>No target, no tick-based SL, no min/max clamps</strong> — bar-close
-            exits are the only mechanism.
-        </p>
+        <div class="setup-grid">
+            <div class="setup-card bull">
+                <div class="setup-tag">Bullish · above VWAP</div>
+                <div class="setup-name">BUY 1 OTM CE</div>
+                <div class="setup-body">
+                    Futures <strong>close &gt; VWAP</strong>. Bot buys the call at strike
+                    <code>round(close/50)*50 + 50</code>. Current-week Tuesday expiry (walked
+                    back one day if that Tuesday is an NSE holiday).
+                </div>
+            </div>
+            <div class="setup-card bear">
+                <div class="setup-tag">Bearish · below VWAP</div>
+                <div class="setup-name">BUY 1 OTM PE</div>
+                <div class="setup-body">
+                    Futures <strong>close &lt; VWAP</strong>. Bot buys the put at strike
+                    <code>round(close/50)*50 − 50</code>. Same current-week Tuesday expiry
+                    resolution.
+                </div>
+            </div>
+        </div>
     </div>
 
-    <!-- ── Risk Management ── -->
+    <!-- Exit rules -->
     <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-purple, #a78bfa);"></span> Risk management</h2>
-        <ul class="doc-list">
-            <li><strong>Combined-risk gate</strong> — before every fire, the strategy projects
-                <em>existing exposed risk + (SL − entry) × qty</em> for this new entry. If the
-                projected total would breach <code>portfolioMaxDailyLoss</code>, the fire is
-                rejected.</li>
-            <li><strong>50 % qty retry</strong> — when the full-lot fire would breach the
-                portfolio cap, the bot retries once at half quantity (rounded to whole lots,
-                min 1 lot). If the halved size still doesn't fit, the trade is skipped. No
-                third try.</li>
-            <li><strong>CE + PE simultaneous</strong> — both legs' FSMs run independently.
-                Both can be short at the same time, but their combined worst-case loss
-                (Σ (SL − entry) × qty across all open positions) is bounded by the same
-                portfolio cap.</li>
-            <li><strong>Realized-loss lockout</strong> — if today's <em>closed</em> losses
-                exceed <code>portfolioMaxDailyLoss</code>, the strategy locks out for the rest
-                of the session — no new fires on either leg.</li>
-        </ul>
-    </div>
-
-    <!-- ── Session windows ── -->
-    <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-green);"></span> Session windows</h2>
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-red, #f87171);"></span> Exit rules</h2>
         <p class="doc-p">
-            All three windows are configurable in Settings → ATM VWAP:
+            Three exit paths; whichever fires first wins. All exits are MARKET sells on the
+            open option leg.
         </p>
+        <h3 class="doc-h3">Target</h3>
         <ul class="doc-list">
-            <li><strong>Trading Start</strong> (default <code>09:18</code>) — the FSM runs from
-                first bar close, but sells don't fire until this time. Applies to the fire
-                gate; seed/promote/invalidate still update. Earliest fire opportunity is
-                the 09:24 bar close (when the 09:18 trigger candle's low is broken).</li>
-            <li><strong>Trading End</strong> (default <code>14:30</code>) — no new entries after
-                this time. Existing positions keep being managed until squareoff.</li>
-            <li><strong>Squareoff</strong> (default <code>15:25</code>) — any remaining open
-                positions are flattened at market.</li>
+            <li>Fires when option LTP &ge; <code>entryPrice + optionBuyingTargetPoints</code>
+                (default <strong>20 points</strong>).</li>
+            <li>Evaluated on every option tick — not bar-bound.</li>
+        </ul>
+        <h3 class="doc-h3">Stop loss · 2 back-to-back opposite closes</h3>
+        <ul class="doc-list">
+            <li>Long CE → two consecutive futures 5-min bars close <strong>&lt; VWAP</strong>.</li>
+            <li>Long PE → two consecutive futures 5-min bars close <strong>&gt; VWAP</strong>.</li>
+            <li>Counter starts from the bar <strong>after</strong> the trigger bar (09:25 onwards)
+                and resets to 0 on any correct-side close.</li>
+            <li>Evaluated only at 5-min futures bar close — not on ticks.</li>
+        </ul>
+        <h3 class="doc-h3">Squareoff · hard flatten</h3>
+        <ul class="doc-list">
+            <li>At <code>optionBuyingSquareOffTime</code> (default <strong>15:15 IST</strong>)
+                the open leg is flattened at market.</li>
+            <li>Also catches a stuck <code>PENDING_ENTRY</code> as a defensive squareoff.</li>
         </ul>
     </div>
 
-    <!-- ── What's NOT in this strategy ── -->
+    <!-- Position sizing -->
     <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-amber, #fbbf24);"></span> What's NOT in this strategy</h2>
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-purple, #a78bfa);"></span> Position sizing</h2>
         <ul class="doc-list">
-            <li>No target orders — SL-hit or timed-squareoff exits only.</li>
-            <li>No re-entry after SL — once the leg's position closes, that FSM cycles fresh
-                but there's no automatic re-fire on the same trigger.</li>
-            <li>No bullish setups — every fire is a premium sell.</li>
-            <li>No pivot levels, no ATR, no VWAP bands, no scanner filters. VWAP is the
-                only anchor.</li>
+            <li><strong>Quantity</strong> = <code>optionBuyingLotsPerLeg × 65</code>. NIFTY lot
+                size is fixed at 65.</li>
+            <li><strong>Order type</strong> — Fyers <code>MARKET</code>, side <code>BUY</code>
+                on entry and <code>SELL</code> on every exit path.</li>
+            <li><strong>Product</strong> — <code>optionBuyingOrderType</code>, default
+                <code>INTRADAY</code>. <code>OVERNIGHT</code> is available for CNC / carry.</li>
+        </ul>
+    </div>
+
+    <!-- Data pipeline -->
+    <div class="doc-section fade-in">
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-cyan);"></span> Data pipeline</h2>
+        <ul class="doc-list">
+            <li><strong>Market data — 100% GDFL.</strong> NIFTY futures via the continuous
+                identifier <code>NIFTY-I</code>. GDFL handles the expiry roll server-side; no
+                operator config needed.</li>
+            <li><strong>5-minute bars</strong> — <code>CandleAggregator.BUCKET_MINUTES = 5</code>,
+                bucketed by IST wall clock.</li>
+            <li><strong>Session VWAP</strong> is delivered by GDFL as
+                <code>AveragedTradedPrice</code> on every tick. Not computed locally.</li>
+            <li><strong>Option subscription is on-demand.</strong> Zero option strikes are
+                subscribed before 09:20. The single chosen strike is subscribed at trigger time.</li>
+            <li><strong>Fyers is order-side only</strong> — login + order placement + fill
+                confirmations. No Fyers market data used by this strategy.</li>
+            <li><strong>Persistence</strong> — full FSM state at
+                <code>store/cache/option-scalping-state.json</code> (legacy filename; class is
+                still <code>OptionScalping</code>). Bot restart mid-day resumes correctly.</li>
+        </ul>
+    </div>
+
+    <!-- Settings -->
+    <div class="doc-section fade-in">
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-amber, #fbbf24);"></span> Settings</h2>
+        <p class="doc-p">
+            Four knobs, all under <strong>Settings → OPTION BUYING</strong>. Everything else
+            (start/end windows, max trades per day) was retired — the FSM caps at 1 trade per
+            day via <code>DONE_FOR_DAY</code>.
+        </p>
+        <div class="band-grid">
+            <div class="band-row"><span class="left">Strategy enabled</span><span class="right">kill switch</span></div>
+            <div class="band-row"><span class="left">Lots per Trade</span><span class="right">1</span></div>
+            <div class="band-row"><span class="left">Order Type</span><span class="right">INTRADAY</span></div>
+            <div class="band-row"><span class="left">Squareoff Time</span><span class="right">15:15 IST</span></div>
+            <div class="band-row"><span class="left">Target (option points)</span><span class="right">20</span></div>
+        </div>
+        <p class="doc-p" style="margin-top:8px;">
+            Toggling <strong>Strategy enabled</strong> OFF only blocks new entries — an open
+            position keeps being managed to target / SL / squareoff.
+        </p>
+    </div>
+
+    <!-- What's NOT in this strategy -->
+    <div class="doc-section fade-in">
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--text-muted);"></span> What's NOT in this strategy</h2>
+        <ul class="doc-list">
+            <li>No indicators — VWAP is the only reference, and it comes from the feed.</li>
+            <li>No historical bar warm-up — the 09:20 trigger bar builds live from ticks.</li>
+            <li>No ATM pre-warm and no ±N strike subscription — one strike, subscribed on demand.</li>
+            <li>No re-entry after exit — one trade per day, then <code>DONE_FOR_DAY</code>.</li>
+            <li>No scanner, no watchlist filter, no CPR levels, no probability tiers.</li>
+            <li>No trailing SL and no tick-based SL — SL is bar-close only.</li>
         </ul>
     </div>
 
@@ -561,7 +371,7 @@
                 var gdfl    = d.gdfl    || 'DISABLED';
                 var overall = d.overall;
                 if (!overall) {
-                    if (status.indexOf('WS CONNECTED') >= 0) overall = 'CONNECTED';
+                    if (status.indexOf('FYERS CONNECTED') >= 0) overall = 'CONNECTED';
                     else if (status.indexOf('CONNECTING') >= 0 || status.indexOf('RECONNECTING') >= 0
                              || status === 'POLLING' || status === 'SYNCING') overall = 'SYNCING';
                     else overall = 'DISCONNECTED';
