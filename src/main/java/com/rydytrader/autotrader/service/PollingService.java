@@ -197,7 +197,7 @@ public class PollingService {
         // separately by GdflService.
         boolean orderWs     = orderEventService != null && orderEventService.isConnected();
         boolean orderPaused = orderEventService != null && orderEventService.isPaused();
-        if (orderWs) return "WS CONNECTED";
+        if (orderWs) return "FYERS CONNECTED";
         if (orderPaused) return "WAITING FOR LOGIN";
         if (orderEventService != null && orderEventService.isReconnecting()) return "RECONNECTING";
         if (orderEventService != null && orderEventService.isConnecting())   return "CONNECTING";

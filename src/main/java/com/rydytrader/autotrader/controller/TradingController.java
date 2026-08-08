@@ -105,7 +105,7 @@ public class TradingController {
         GdflService gdfl = gdflServiceProvider == null ? null : gdflServiceProvider.getIfAvailable();
         String gdflState = gdfl == null ? "DISABLED" : gdfl.connectionStatus();
 
-        boolean fyersUp = fyers != null && fyers.contains("WS CONNECTED");
+        boolean fyersUp = fyers != null && fyers.contains("FYERS CONNECTED");
         boolean gdflUp  = "DISABLED".equals(gdflState) || "CONNECTED".equals(gdflState);
 
         String overall;

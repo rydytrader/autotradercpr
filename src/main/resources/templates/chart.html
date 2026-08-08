@@ -575,7 +575,7 @@
                 var gdfl    = d.gdfl    || 'DISABLED';
                 var overall = d.overall;
                 if (!overall) {
-                    if (status.indexOf('WS CONNECTED') >= 0) overall = 'CONNECTED';
+                    if (status.indexOf('FYERS CONNECTED') >= 0) overall = 'CONNECTED';
                     else if (status.indexOf('CONNECTING') >= 0 || status.indexOf('RECONNECTING') >= 0
                              || status === 'POLLING' || status === 'SYNCING') overall = 'SYNCING';
                     else overall = 'DISCONNECTED';
