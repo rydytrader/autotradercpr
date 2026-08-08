@@ -330,7 +330,13 @@ public class GdflService {
         if (gdflSym.isBlank()) return;
         String fyersSym = mapper.gdflToFyers(gdflSym);
         if (fyersSym == null || fyersSym.isBlank()) {
-            log.debug("[Gdfl] tick for unmapped symbol {} — ignored", gdflSym);
+            // Bumped from DEBUG to INFO so diagnostic probe subscribes (via
+            // /api/gdfl/diag/send-raw with a SubscribeRealtime payload) surface
+            // their arriving ticks in the console — we can confirm a candidate
+            // GDFL identifier is valid the moment the first tick prints. Revert
+            // to DEBUG once probing is done if this becomes noisy.
+            log.info("[Gdfl] tick for unmapped symbol {} ltp={} — ignored (probe echo?)",
+                gdflSym, root.path("LastTradePrice").asDouble(0));
             return;
         }
 

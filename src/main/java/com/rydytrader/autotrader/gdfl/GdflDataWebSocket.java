@@ -181,6 +181,10 @@ public class GdflDataWebSocket extends WebSocketClient {
             return;
         }
 
+        // Server-side keepalive pings — silently drop. Not useful in the diagnostic
+        // ring (they'd flood it and evict real responses) and not useful in the log.
+        if ("Echo".equalsIgnoreCase(type)) return;
+
         // Subscribe / unsubscribe ACKs and any error frames — log for now, don't crash.
         // Also stash the raw payload in a bounded ring so a diagnostic controller can
         // pull the most-recent server responses (e.g. GetInstrumentsOnSearch result).
