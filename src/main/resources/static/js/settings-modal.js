@@ -20,13 +20,10 @@
                 '<div class="sm-body" id="sm-body" style="flex:1;overflow-y:auto;padding:20px 24px;">' +
                   '<div class="sm-pane" data-pane="option-buying" style="display:none;">' +
                     '<div class="sm-grid-2col">' +
-                      '<div class="sm-field"><label><input type="checkbox" id="sm-optionBuyingEnabled" style="margin-right:6px;vertical-align:middle;">Strategy enabled</label><div class="sm-hint">Master kill switch. When OFF, no new option-buy entries fire; existing positions keep being managed.</div></div>' +
-                      '<div class="sm-field"><label>Lots per Trade</label><input type="number" id="sm-optionBuyingLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 65 NIFTY. Each fire buys this many lots of the ATM CE (bullish) or ATM PE (bearish).</div></div>' +
-                      '<div class="sm-field"><label>Order Type</label><select id="sm-optionBuyingOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select></div>' +
-                      '<div class="sm-field"><label>Trading Start (HH:mm IST)</label><input type="time" id="sm-optionBuyingTradingStartTime" step="60"><div class="sm-hint">Entries fire only after this time. Default 09:24 — earliest fire opportunity on 3-min bars (close of 09:21 bar).</div></div>' +
-                      '<div class="sm-field"><label>Trading End (HH:mm IST)</label><input type="time" id="sm-optionBuyingTradingEndTime" step="60"><div class="sm-hint">No new entries after this time. Default 14:30.</div></div>' +
-                      '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-optionBuyingSquareOffTime" step="60"><div class="sm-hint">Hard flatten any open positions. Default 15:25.</div></div>' +
-                      '<div class="sm-field"><label>Max Trades / Day</label><input type="number" id="sm-optionBuyingMaxTradesPerDay" step="1" min="0"><div class="sm-hint">Hard cap on total fires per session (CE + PE combined). Default 6.</div></div>' +
+                      '<div class="sm-field"><label><input type="checkbox" id="sm-optionBuyingEnabled" style="margin-right:6px;vertical-align:middle;">Strategy enabled</label><div class="sm-hint">Master kill switch. When OFF, no new trade fires at the 09:20 trigger; an open position keeps being managed to target / SL / squareoff.</div></div>' +
+                      '<div class="sm-field"><label>Lots per Trade</label><input type="number" id="sm-optionBuyingLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 65 NIFTY. Buys this many lots of a 1 OTM CE (when first 5-min futures bar closes above VWAP) or 1 OTM PE (closes below VWAP).</div></div>' +
+                      '<div class="sm-field"><label>Order Type</label><select id="sm-optionBuyingOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select><div class="sm-hint">Fyers product type on both entry and exit orders. INTRADAY for MIS.</div></div>' +
+                      '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-optionBuyingSquareOffTime" step="60"><div class="sm-hint">Hard market-sell of the open leg if target and SL both never fire. Default 15:15.</div></div>' +
                       '<div class="sm-field"><label>Target (option points)</label><input type="number" id="sm-optionBuyingTargetPoints" step="0.5" min="0"><div class="sm-hint">Exit fires when option LTP ≥ entryPrice + this many points. Default 20.</div></div>' +
                     '</div>' +
                   '</div>' +
@@ -185,10 +182,7 @@
             if (g('sm-optionBuyingEnabled'))         g('sm-optionBuyingEnabled').checked = d.optionBuyingEnabled !== false;
             if (g('sm-optionBuyingLotsPerLeg'))      g('sm-optionBuyingLotsPerLeg').value = d.optionBuyingLotsPerLeg != null ? d.optionBuyingLotsPerLeg : 1;
             if (g('sm-optionBuyingOrderType'))       g('sm-optionBuyingOrderType').value = d.optionBuyingOrderType || 'INTRADAY';
-            if (g('sm-optionBuyingTradingStartTime'))g('sm-optionBuyingTradingStartTime').value = d.optionBuyingTradingStartTime || '09:24';
-            if (g('sm-optionBuyingTradingEndTime'))  g('sm-optionBuyingTradingEndTime').value = d.optionBuyingTradingEndTime || '14:30';
-            if (g('sm-optionBuyingSquareOffTime'))   g('sm-optionBuyingSquareOffTime').value = d.optionBuyingSquareOffTime || '15:25';
-            if (g('sm-optionBuyingMaxTradesPerDay')) g('sm-optionBuyingMaxTradesPerDay').value = d.optionBuyingMaxTradesPerDay != null ? d.optionBuyingMaxTradesPerDay : 6;
+            if (g('sm-optionBuyingSquareOffTime'))   g('sm-optionBuyingSquareOffTime').value = d.optionBuyingSquareOffTime || '15:15';
             if (g('sm-optionBuyingTargetPoints'))    g('sm-optionBuyingTargetPoints').value = d.optionBuyingTargetPoints != null ? d.optionBuyingTargetPoints : 20;
         }).catch(function() {});
     }
@@ -199,10 +193,7 @@
             optionBuyingEnabled:           !!(g('sm-optionBuyingEnabled') && g('sm-optionBuyingEnabled').checked),
             optionBuyingLotsPerLeg:        parseInt(g('sm-optionBuyingLotsPerLeg').value, 10) || 1,
             optionBuyingOrderType:         g('sm-optionBuyingOrderType').value,
-            optionBuyingTradingStartTime:  (g('sm-optionBuyingTradingStartTime').value || '').trim(),
-            optionBuyingTradingEndTime:    (g('sm-optionBuyingTradingEndTime').value || '').trim(),
             optionBuyingSquareOffTime:     (g('sm-optionBuyingSquareOffTime').value || '').trim(),
-            optionBuyingMaxTradesPerDay:   parseInt(g('sm-optionBuyingMaxTradesPerDay').value, 10) || 0,
             optionBuyingTargetPoints:      parseFloat(g('sm-optionBuyingTargetPoints').value) || 0
         };
         postSettings('/api/settings/risk', body);

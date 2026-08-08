@@ -31,14 +31,11 @@ public class SettingsController {
         result.put("tradingStartTime",    riskSettings.getTradingStartTime(effectiveMode));
         result.put("tradingEndTime",      riskSettings.getTradingEndTime(effectiveMode));
         result.put("autoSquareOffTime",   riskSettings.getAutoSquareOffTime(effectiveMode));
-        // OPTION BUYING (Ganesan 4-indicator framework — only active strategy)
+        // OPTION BUYING — first 5-min NIFTY futures bar vs VWAP; buy 1 OTM CE/PE.
         result.put("optionBuyingEnabled",           riskSettings.isOptionBuyingEnabled());
         result.put("optionBuyingLotsPerLeg",        riskSettings.getOptionBuyingLotsPerLeg());
         result.put("optionBuyingOrderType",         riskSettings.getOptionBuyingOrderType());
-        result.put("optionBuyingTradingStartTime",  riskSettings.getOptionBuyingTradingStartTime());
-        result.put("optionBuyingTradingEndTime",    riskSettings.getOptionBuyingTradingEndTime());
         result.put("optionBuyingSquareOffTime",     riskSettings.getOptionBuyingSquareOffTime());
-        result.put("optionBuyingMaxTradesPerDay",   riskSettings.getOptionBuyingMaxTradesPerDay());
         result.put("optionBuyingTargetPoints",      riskSettings.getOptionBuyingTargetPoints());
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
@@ -75,14 +72,11 @@ public class SettingsController {
             if (body.containsKey("tradingStartTime"))  riskSettings.setTradingStartTime(effectiveMode, body.get("tradingStartTime").toString());
             if (body.containsKey("tradingEndTime"))    riskSettings.setTradingEndTime(effectiveMode, body.get("tradingEndTime").toString());
             if (body.containsKey("autoSquareOffTime")) riskSettings.setAutoSquareOffTime(effectiveMode, body.get("autoSquareOffTime").toString());
-            // OPTION BUYING — HardSlPct retired; Enabled is per-strategy kill switch.
+            // OPTION BUYING — Enabled is the per-strategy kill switch; sizing / target / squareoff.
             if (body.containsKey("optionBuyingEnabled"))          riskSettings.setOptionBuyingEnabled(Boolean.parseBoolean(body.get("optionBuyingEnabled").toString()));
             if (body.containsKey("optionBuyingLotsPerLeg"))       riskSettings.setOptionBuyingLotsPerLeg(Integer.parseInt(body.get("optionBuyingLotsPerLeg").toString()));
             if (body.containsKey("optionBuyingOrderType"))        riskSettings.setOptionBuyingOrderType(body.get("optionBuyingOrderType").toString());
-            if (body.containsKey("optionBuyingTradingStartTime")) riskSettings.setOptionBuyingTradingStartTime(body.get("optionBuyingTradingStartTime").toString());
-            if (body.containsKey("optionBuyingTradingEndTime"))   riskSettings.setOptionBuyingTradingEndTime(body.get("optionBuyingTradingEndTime").toString());
             if (body.containsKey("optionBuyingSquareOffTime"))    riskSettings.setOptionBuyingSquareOffTime(body.get("optionBuyingSquareOffTime").toString());
-            if (body.containsKey("optionBuyingMaxTradesPerDay"))  riskSettings.setOptionBuyingMaxTradesPerDay(Integer.parseInt(body.get("optionBuyingMaxTradesPerDay").toString()));
             if (body.containsKey("optionBuyingTargetPoints"))     riskSettings.setOptionBuyingTargetPoints(Double.parseDouble(body.get("optionBuyingTargetPoints").toString()));
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));

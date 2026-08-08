@@ -38,11 +38,7 @@ public class RiskSettingsStore {
         volatile boolean optionBuyingEnabled           = true;
         volatile int     optionBuyingLotsPerLeg        = 1;
         volatile String  optionBuyingOrderType         = "INTRADAY"; // INTRADAY | OVERNIGHT
-        volatile String  optionBuyingTradingStartTime  = "09:24";    // earliest fire (close of 09:21 bar)
-        volatile String  optionBuyingTradingEndTime    = "14:30";    // no new entries after
         volatile String  optionBuyingSquareOffTime     = "15:25";    // hard flatten
-        /** Max entries per session across both sides combined. */
-        volatile int     optionBuyingMaxTradesPerDay   = 6;
         /** Target distance in option premium points. Exit triggers on option LTP ≥
          *  {@code entryPrice + optionBuyingTargetPoints}. Default 20. */
         volatile double  optionBuyingTargetPoints      = 20.0;
@@ -393,10 +389,7 @@ public class RiskSettingsStore {
     public boolean isOptionBuyingEnabled()             { return cfg().optionBuyingEnabled; }
     public int     getOptionBuyingLotsPerLeg()         { return cfg().optionBuyingLotsPerLeg; }
     public String  getOptionBuyingOrderType()          { return cfg().optionBuyingOrderType; }
-    public String  getOptionBuyingTradingStartTime()   { return cfg().optionBuyingTradingStartTime; }
-    public String  getOptionBuyingTradingEndTime()     { return cfg().optionBuyingTradingEndTime; }
     public String  getOptionBuyingSquareOffTime()      { return cfg().optionBuyingSquareOffTime; }
-    public int     getOptionBuyingMaxTradesPerDay()    { return cfg().optionBuyingMaxTradesPerDay; }
     public double  getOptionBuyingTargetPoints()       { return cfg().optionBuyingTargetPoints; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
@@ -581,10 +574,7 @@ public class RiskSettingsStore {
     public void setOptionBuyingEnabled(boolean v)             { cfg().optionBuyingEnabled = v; }
     public void setOptionBuyingLotsPerLeg(int v)              { cfg().optionBuyingLotsPerLeg = Math.max(1, v); }
     public void setOptionBuyingOrderType(String v)            { cfg().optionBuyingOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
-    public void setOptionBuyingTradingStartTime(String v)     { cfg().optionBuyingTradingStartTime = (v == null || v.isBlank()) ? "09:24" : v.trim(); }
-    public void setOptionBuyingTradingEndTime(String v)       { cfg().optionBuyingTradingEndTime = (v == null || v.isBlank()) ? "14:30" : v.trim(); }
     public void setOptionBuyingSquareOffTime(String v)        { cfg().optionBuyingSquareOffTime = v == null ? "" : v.trim(); }
-    public void setOptionBuyingMaxTradesPerDay(int v)         { cfg().optionBuyingMaxTradesPerDay = Math.max(0, v); }
     public void setOptionBuyingTargetPoints(double v)         { cfg().optionBuyingTargetPoints = Math.max(0, v); }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
@@ -740,10 +730,7 @@ public class RiskSettingsStore {
             upsert("optionBuyingEnabled",             String.valueOf(c.optionBuyingEnabled));
             upsert("optionBuyingLotsPerLeg",          String.valueOf(c.optionBuyingLotsPerLeg));
             upsert("optionBuyingOrderType",            c.optionBuyingOrderType);
-            upsert("optionBuyingTradingStartTime",     c.optionBuyingTradingStartTime);
-            upsert("optionBuyingTradingEndTime",       c.optionBuyingTradingEndTime);
             upsert("optionBuyingSquareOffTime",        c.optionBuyingSquareOffTime);
-            upsert("optionBuyingMaxTradesPerDay",     String.valueOf(c.optionBuyingMaxTradesPerDay));
             upsert("optionBuyingTargetPoints",        String.valueOf(c.optionBuyingTargetPoints));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
@@ -935,11 +922,11 @@ public class RiskSettingsStore {
                     case "optionBuyingEnabled"           -> c.optionBuyingEnabled = Boolean.parseBoolean(v);
                     case "optionBuyingLotsPerLeg"        -> c.optionBuyingLotsPerLeg = Math.max(1, Integer.parseInt(v));
                     case "optionBuyingOrderType"         -> c.optionBuyingOrderType = v;
-                    case "optionBuyingTradingStartTime"  -> c.optionBuyingTradingStartTime = v;
-                    case "optionBuyingTradingEndTime"    -> c.optionBuyingTradingEndTime = v;
                     case "optionBuyingSquareOffTime"     -> c.optionBuyingSquareOffTime = v;
-                    case "optionBuyingHardSlPct"         -> { /* hard SL retired — silently consume legacy rows */ }
-                    case "optionBuyingMaxTradesPerDay"   -> c.optionBuyingMaxTradesPerDay = Math.max(0, Integer.parseInt(v));
+                    case "optionBuyingTradingStartTime",
+                         "optionBuyingTradingEndTime",
+                         "optionBuyingMaxTradesPerDay",
+                         "optionBuyingHardSlPct"         -> { /* retired — silently consume legacy rows */ }
                     case "optionBuyingTargetPoints"      -> c.optionBuyingTargetPoints    = Math.max(0, Double.parseDouble(v));
                     // Legacy Camarilla-era keys silently consumed so old risk-settings.json
                     // files round-trip cleanly through the ATM-VWAP cutover. All of these
