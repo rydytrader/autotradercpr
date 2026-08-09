@@ -78,6 +78,11 @@ public class GdflService {
      *  day rollover AND on every fresh connect (each new WS starts with zero
      *  live subscriptions). */
     private final Set<String> subscribedGdflSymbols = new HashSet<>();
+    /** Fyers symbols we've already logged a "FIRST LIVE TICK" line for. Used only
+     *  for diagnostic visibility — once a symbol is in here, subsequent live ticks
+     *  go through the silent hot path. Not persisted; reset on process restart
+     *  (that's intentional — each restart should re-log the first live tick). */
+    private final Set<String> firstLiveTickSeen = java.util.concurrent.ConcurrentHashMap.newKeySet();
     /** Day-key of the last successful subscribe pass, so day rollover clears state. */
     private volatile String subscribedDayKey = "";
     /** Flipped in {@link #shutdown} — {@link #scheduleReconnect} and
@@ -399,18 +404,24 @@ public class GdflService {
 
         if (!isLive) {
             if (daysAgo > 5) {
-                log.debug("[Gdfl] rejecting truly-stale tick for {} (tickDay={}, {}d ago)",
-                    fyersSym, tickDay, daysAgo);
+                log.info("[Gdfl] rejecting truly-stale tick for {} ltp={} (tickDay={}, {}d ago)",
+                    fyersSym, ltp, tickDay, daysAgo);
                 return;
             }
             // Cache-only path — populates currentTicks so getDisplayLtp returns the
             // value, but no ltpListeners fire so CandleAggregator stays clean.
             marketDataService.seedTickData(fyersSym, ltp, 0);
-            log.debug("[Gdfl] out-of-hours/stale-day tick for {} — cached LTP only ({} {})",
-                fyersSym, tickDay, tickTime);
+            log.info("[Gdfl] out-of-hours/stale-day tick for {} ltp={} — cached LTP only ({} {})",
+                fyersSym, ltp, tickDay, tickTime);
             return;
         }
 
+        // Log first live tick per symbol so we can visually confirm the pipeline works.
+        // Subsequent live ticks go DEBUG to avoid flooding.
+        if (firstLiveTickSeen.add(fyersSym)) {
+            log.info("[Gdfl] FIRST LIVE TICK for {} ltp={} ({} {})",
+                fyersSym, ltp, tickDay, tickTime);
+        }
         MarketDataService.LtpTick evt = new MarketDataService.LtpTick(
             fyersSym, ltp, atp, svt, ltt);
         marketDataService.pushLtpTick(evt);
