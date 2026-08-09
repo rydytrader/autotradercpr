@@ -218,8 +218,21 @@ public class GdflService {
             if (myGeneration != wsGeneration) return;
             scheduleReconnect();
         };
+        // Pre-populate the initial-subscribe list with NIFTY-I so the WS fires the
+        // SubscribeRealtime immediately on AuthenticateResult — no waiting for the
+        // 5s checkAtmAndSubscribe poll. Also seed the reverse mapper + altFeed
+        // ownership + subscribedGdflSymbols set so the poll's subscribeOne
+        // recognises the symbol as already-handled and skips re-sending.
+        List<String> initialSubs = new ArrayList<>();
+        initialSubs.add(GdflSymbolMapper.GDFL_NIFTY_FUTURES);
+        subscribedGdflSymbols.add(GdflSymbolMapper.GDFL_NIFTY_FUTURES);
+        // Registers gdflToFyers mapping and marks altFeed-owned so pushLtpTick fans
+        // to CandleAggregator without Fyers-side collision.
+        mapper.fyersToGdfl(GdflSymbolMapper.FYERS_NIFTY_FUTURES);
+        marketDataService.addAltFeedOwnedSymbol(GdflSymbolMapper.FYERS_NIFTY_FUTURES);
+
         wsClient = new GdflDataWebSocket(endpoint, props.getApiKey(), props.getExchange(),
-            new ArrayList<>(), this::onGdflTick, this::onGdflOhlcBar, onDisconnect);
+            initialSubs, this::onGdflTick, this::onGdflOhlcBar, onDisconnect);
         wsClient.setConnectionLostTimeout(30);
         try {
             boolean connected = wsClient.connectBlocking(15, TimeUnit.SECONDS);
