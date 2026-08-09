@@ -20,7 +20,7 @@
                 '<div class="sm-body" id="sm-body" style="flex:1;overflow-y:auto;padding:20px 24px;">' +
                   '<div class="sm-pane" data-pane="option-buying" style="display:none;">' +
                     '<div class="sm-grid-2col">' +
-                      '<div class="sm-field"><label><input type="checkbox" id="sm-optionBuyingEnabled" style="margin-right:6px;vertical-align:middle;">Strategy enabled</label><div class="sm-hint">Master kill switch. When OFF, no new trade fires at the 09:20 trigger; an open position keeps being managed to target / SL / squareoff.</div></div>' +
+                      '<div class="sm-field sm-full"><label><input type="checkbox" id="sm-optionBuyingEnabled" style="margin-right:6px;vertical-align:middle;">Strategy enabled</label><div class="sm-hint">Master kill switch. When OFF, no new trade fires at the 09:20 trigger; an open position keeps being managed to target / SL / squareoff.</div></div>' +
                       '<div class="sm-field"><label>Lots per Trade</label><input type="number" id="sm-optionBuyingLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 65 NIFTY. Buys this many lots of a 1 OTM CE (when first 5-min futures bar closes above VWAP) or 1 OTM PE (closes below VWAP).</div></div>' +
                       '<div class="sm-field"><label>Order Type</label><select id="sm-optionBuyingOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select><div class="sm-hint">Fyers product type on both entry and exit orders. INTRADAY for MIS.</div></div>' +
                       '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-optionBuyingSquareOffTime" step="60"><div class="sm-hint">Hard market-sell of the open leg if target and SL both never fire. Default 15:15.</div></div>' +
@@ -29,7 +29,7 @@
                   '</div>' +
                   '<div class="sm-pane" data-pane="option-selling" style="display:none;">' +
                     '<div class="sm-grid-2col">' +
-                      '<div class="sm-field"><label><input type="checkbox" id="sm-optionSellingEnabled" style="margin-right:6px;vertical-align:middle;">Strategy enabled</label><div class="sm-hint">Master kill switch. When OFF, no new CE/PE-SELL fires on VWAP rejection; existing shorts keep being managed to SL / squareoff.</div></div>' +
+                      '<div class="sm-field sm-full"><label><input type="checkbox" id="sm-optionSellingEnabled" style="margin-right:6px;vertical-align:middle;">Strategy enabled</label><div class="sm-hint">Master kill switch. When OFF, no new CE/PE-SELL fires on VWAP rejection; existing shorts keep being managed to SL / squareoff.</div></div>' +
                       '<div class="sm-field"><label>Lots per Trade</label><input type="number" id="sm-optionSellingLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 65 NIFTY. Each CE-SELL / PE-SELL entry sells this many lots at ATM.</div></div>' +
                       '<div class="sm-field"><label>Order Type</label><select id="sm-optionSellingOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select><div class="sm-hint">Fyers product type on entry (SELL) and exit (BUY-TO-COVER) orders. INTRADAY for MIS.</div></div>' +
                       '<div class="sm-field"><label>Start Time (HH:mm IST)</label><input type="time" id="sm-optionSellingStartTime" step="60"><div class="sm-hint">Earliest 5-min bar close eligible for a trigger. Default 09:20.</div></div>' +
