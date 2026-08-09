@@ -435,7 +435,7 @@
               .catch(function() {});
         });
     }
-    function squareOffRow(symbol) {
+    function squareOffRow(symbol, strategyId) {
         AppConfirm.ask({
             title:        'Close Position',
             message:      'Close ' + symbol + ' at market?',
@@ -443,7 +443,14 @@
             danger:       true
         }).then(function(ok) {
             if (!ok) return;
-            fetch('/api/option-scalping/squareoff', {
+            // Route to the correct strategy's squareoff endpoint. Positions
+            // tagged with __strategyId at merge time carry that pill; older
+            // rows without a tag default to option-scalping (legacy MANUAL
+            // terminal fires).
+            var endpoint = strategyId === 'option-buying'  ? '/api/option-buying/squareoff'
+                         : strategyId === 'option-selling' ? '/api/option-selling/squareoff'
+                                                           : '/api/option-scalping/squareoff';
+            fetch(endpoint, {
                 method: 'POST',
                 headers: csrfHeaders(),
                 body: JSON.stringify({ symbol: symbol })
@@ -546,68 +553,93 @@
         });
     }
 
-    /** Fetch OPTION BUYING's state and merge its open positions + today's
-     *  closed cycles + event log INTO the OPTION SCALPING state object that
-     *  `applyState` renders. OPTION SCALPING is the "primary" strategy on this
-     *  page (its stats power the hero tiles); OPTION BUYING gets folded into
-     *  the merged position + event views without disturbing them. */
+    /** Fetch OPTION BUYING + OPTIONS SELLING state and merge their open positions +
+     *  today's closed cycles + event logs INTO the OPTION SCALPING state object
+     *  that `applyState` renders. OPTION SCALPING is the "primary" strategy on
+     *  this page (its stats power the hero tiles); the other two strategies get
+     *  folded into the merged position + event views without disturbing them.
+     *  Both fetches run in parallel — a failure in either falls back gracefully. */
     function mergeOptionBuyingInto(sellingState) {
-        return fetch('/api/option-buying/state')
-            .then(function(r) { return r.ok ? r.json() : null; })
-            .then(function(buying) {
-                var sellingPositions = (sellingState.openPositions || []).map(function(p) {
-                    var q = Object.assign({}, p);
-                    q.__strategyId = 'option-scalping';
-                    return q;
+        var buyingP  = fetch('/api/option-buying/state').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; });
+        var sellingP = fetch('/api/option-selling/state').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; });
+        return Promise.all([buyingP, sellingP]).then(function(pair) {
+            var buying  = pair[0];
+            var selling = pair[1];
+            var scalpingPositions = (sellingState.openPositions || []).map(function(p) {
+                var q = Object.assign({}, p);
+                q.__strategyId = 'option-scalping';
+                return q;
+            });
+            var buyingPositions = ((buying && buying.openPositions) || []).map(function(p) {
+                var q = Object.assign({}, p);
+                q.__strategyId = 'option-buying';
+                // OPTION BUYING is long; explicitly flag so renderPositions picks BUY pill.
+                q.isShort = false;
+                // slLevel isn't tracked as a stop level on buys — the SuperTrend flip
+                // exit is bar-driven. Show '—' via 0 sentinel.
+                if (q.slLevel == null) q.slLevel = 0;
+                // Provide ltp for the LTP column — reuses the ticker cache below via
+                // attachTickerPositionUpdates. Preseed with entryPrice so P&L reads 0.
+                if (q.ltp == null) q.ltp = q.entryPrice;
+                return q;
+            });
+            var sellingPositions = ((selling && selling.openPositions) || []).map(function(p) {
+                var q = Object.assign({}, p);
+                q.__strategyId = 'option-selling';
+                // OPTIONS SELLING is short; explicitly flag so renderPositions picks SELL pill.
+                q.isShort = true;
+                if (q.slLevel == null) q.slLevel = 0;
+                if (q.ltp == null) q.ltp = q.entryPrice;
+                return q;
+            });
+            sellingState.__mergedPositions = scalpingPositions.concat(buyingPositions, sellingPositions);
+            // Merge today's closed cycles (all three strategies) into a single sorted list.
+            var mergedClosed = (sellingState.todayClosedTrades || []).slice();
+            if (buying && buying.todayClosedTrades) {
+                buying.todayClosedTrades.forEach(function(t) {
+                    var q = Object.assign({}, t);
+                    if (!q.strategyId) q.strategyId = 'option-buying';
+                    mergedClosed.push(q);
                 });
-                var buyingPositions = ((buying && buying.openPositions) || []).map(function(p) {
-                    var q = Object.assign({}, p);
-                    q.__strategyId = 'option-buying';
-                    // OPTION BUYING is long; explicitly flag so renderPositions picks BUY pill.
-                    q.isShort = false;
-                    // slLevel isn't tracked as a stop level on buys — the SuperTrend flip
-                    // exit is bar-driven. Show '—' via 0 sentinel.
-                    if (q.slLevel == null) q.slLevel = 0;
-                    // Provide ltp for the LTP column — reuses the ticker cache below via
-                    // attachTickerPositionUpdates. Preseed with entryPrice so P&L reads 0.
-                    if (q.ltp == null) q.ltp = q.entryPrice;
-                    return q;
+            }
+            if (selling && selling.todayClosedTrades) {
+                selling.todayClosedTrades.forEach(function(t) {
+                    var q = Object.assign({}, t);
+                    if (!q.strategyId) q.strategyId = 'option-selling';
+                    mergedClosed.push(q);
                 });
-                sellingState.__mergedPositions = sellingPositions.concat(buyingPositions);
-                // Merge today's closed cycles (both strategies) into a single sorted list.
-                var mergedClosed = (sellingState.todayClosedTrades || []).slice();
-                if (buying && buying.todayClosedTrades) {
-                    buying.todayClosedTrades.forEach(function(t) {
-                        var q = Object.assign({}, t);
-                        if (!q.strategyId) q.strategyId = 'option-buying';
-                        mergedClosed.push(q);
-                    });
-                }
-                mergedClosed.sort(function(a, b) {
-                    return Number(b.closedAtMillis || 0) - Number(a.closedAtMillis || 0);
-                });
-                sellingState.todayClosedTrades = mergedClosed;
-                // Merge event logs. Each event gets tagged with __strategyId so the
-                // event-log renderer can prefix the source with the strategy pill.
-                var mergedEvents = (sellingState.recentEvents || []).map(function(e) {
+            }
+            mergedClosed.sort(function(a, b) {
+                return Number(b.closedAtMillis || 0) - Number(a.closedAtMillis || 0);
+            });
+            sellingState.todayClosedTrades = mergedClosed;
+            // Merge event logs. Each event gets tagged with __strategyId so the
+            // event-log renderer can prefix the source with the strategy pill.
+            var mergedEvents = (sellingState.recentEvents || []).map(function(e) {
+                var q = Object.assign({}, e);
+                q.__strategyId = 'option-scalping';
+                return q;
+            });
+            if (buying && buying.recentEvents) {
+                buying.recentEvents.forEach(function(e) {
                     var q = Object.assign({}, e);
-                    q.__strategyId = 'option-scalping';
-                    return q;
+                    q.__strategyId = 'option-buying';
+                    mergedEvents.push(q);
                 });
-                if (buying && buying.recentEvents) {
-                    buying.recentEvents.forEach(function(e) {
-                        var q = Object.assign({}, e);
-                        q.__strategyId = 'option-buying';
-                        mergedEvents.push(q);
-                    });
-                }
-                mergedEvents.sort(function(a, b) {
-                    return Number(b.ts || 0) - Number(a.ts || 0);
+            }
+            if (selling && selling.recentEvents) {
+                selling.recentEvents.forEach(function(e) {
+                    var q = Object.assign({}, e);
+                    q.__strategyId = 'option-selling';
+                    mergedEvents.push(q);
                 });
-                sellingState.recentEvents = mergedEvents;
-                return sellingState;
-            })
-            .catch(function() { return sellingState; });   // buying fetch failed → carry on with selling-only
+            }
+            mergedEvents.sort(function(a, b) {
+                return Number(b.ts || 0) - Number(a.ts || 0);
+            });
+            sellingState.recentEvents = mergedEvents;
+            return sellingState;
+        }).catch(function() { return sellingState; });
     }
 
     function loadState() {
@@ -734,22 +766,25 @@
                         + '</td>'
                     + '<td class="text-right">' + fmtRs(p.ltp) + '</td>'
                     + '<td class="text-right ' + pnlClass(pnl) + '" style="font-weight:700;">' + fmtRs(pnl) + '</td>'
-                    + '<td class="text-center"><button class="squareoff-btn" style="padding:4px 10px;font-size:0.65rem;" onclick="squareOffRow(\'' + escapeHtml(p.symbol).replace(/'/g, "&#39;") + '\')">×</button></td>'
+                    + '<td class="text-center"><button class="squareoff-btn" style="padding:4px 10px;font-size:0.65rem;" onclick="squareOffRow(\'' + escapeHtml(p.symbol).replace(/'/g, "&#39;") + '\',\'' + strategyId + '\')">×</button></td>'
                 + '</tr>';
             }).join('');
         }
     }
 
     /** Small colored pill for the Strategy column. OPTION SCALPING → amber
-     *  (theta/sell), OPTION BUYING → cyan (matches the entry-line color on
-     *  the chart), MANUAL / unknown → grey. */
+     *  (legacy MANUAL fires), OPTION BUYING → cyan, OPTIONS SELLING → red
+     *  (short-side premium seller), MANUAL / unknown → grey. */
     function strategyPill(strategyId) {
         var id = String(strategyId || '').toLowerCase();
         if (id === 'option-scalping') {
-            return '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;color:#fbbf24;background:rgba(251,191,36,0.10);border:1px solid rgba(251,191,36,0.35);">SELL</span>';
+            return '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;color:#fbbf24;background:rgba(251,191,36,0.10);border:1px solid rgba(251,191,36,0.35);">SCALP</span>';
         }
         if (id === 'option-buying') {
             return '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;color:#7dd3fc;background:rgba(125,211,252,0.10);border:1px solid rgba(125,211,252,0.35);">BUY</span>';
+        }
+        if (id === 'option-selling') {
+            return '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;color:#f87171;background:rgba(248,113,113,0.10);border:1px solid rgba(248,113,113,0.35);">SELL</span>';
         }
         if (id === 'manual') {
             return '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;color:var(--text-secondary);background:rgba(148,163,184,0.10);border:1px solid rgba(148,163,184,0.30);">MAN</span>';
@@ -1173,6 +1208,6 @@
 
 <script src="/js/common.js?v=41"></script>
 <script src="/js/ticker.js?v=36"></script>
-<script src="/js/settings-modal.js?v=76"></script>
+<script src="/js/settings-modal.js?v=77"></script>
 </body>
 </html>

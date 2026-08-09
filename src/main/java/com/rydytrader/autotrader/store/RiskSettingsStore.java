@@ -42,6 +42,24 @@ public class RiskSettingsStore {
         /** Target distance in option premium points. Exit triggers on option LTP ≥
          *  {@code entryPrice + optionBuyingTargetPoints}. Default 20. */
         volatile double  optionBuyingTargetPoints      = 20.0;
+        // ── OPTION SELLING strategy settings (multi-position) ───────────────
+        // VWAP-rejection / crossover premium seller on NIFTY current-month futures
+        // 5-min bars. Serial per side (max 1 open CE + 1 open PE at any moment).
+        // Session caps CE-SELL entries + PE-SELL entries per day independently.
+        // SL fires on 2 consecutive futures 5-min bar closes on the opposite side.
+        // Squareoff at optionSellingSquareOffTime. No option-price target.
+        /** Master kill switch. When OFF the strategy skips new entries; existing
+         *  open positions keep being managed to exit. Default ON. */
+        volatile boolean optionSellingEnabled            = true;
+        volatile int     optionSellingLotsPerLeg         = 1;
+        volatile String  optionSellingOrderType          = "INTRADAY"; // INTRADAY | OVERNIGHT
+        /** Earliest trigger evaluation (IST). Bars closing before this time do not
+         *  fire entries. Default 09:20 — matches OPTION BUYING's first-bar cutover. */
+        volatile String  optionSellingStartTime          = "09:20";
+        volatile String  optionSellingSquareOffTime      = "15:15";
+        /** Max CE-SELL entries per session. Rejections don't count. Default 3. */
+        volatile int     optionSellingMaxCeSellsPerDay   = 3;
+        volatile int     optionSellingMaxPeSellsPerDay   = 3;
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
         /** Initial capital used as the baseline for the Analytics Home page (capital growth %,
@@ -391,6 +409,14 @@ public class RiskSettingsStore {
     public String  getOptionBuyingOrderType()          { return cfg().optionBuyingOrderType; }
     public String  getOptionBuyingSquareOffTime()      { return cfg().optionBuyingSquareOffTime; }
     public double  getOptionBuyingTargetPoints()       { return cfg().optionBuyingTargetPoints; }
+    // OPTION SELLING getters
+    public boolean isOptionSellingEnabled()             { return cfg().optionSellingEnabled; }
+    public int     getOptionSellingLotsPerLeg()         { return cfg().optionSellingLotsPerLeg; }
+    public String  getOptionSellingOrderType()          { return cfg().optionSellingOrderType; }
+    public String  getOptionSellingStartTime()          { return cfg().optionSellingStartTime; }
+    public String  getOptionSellingSquareOffTime()      { return cfg().optionSellingSquareOffTime; }
+    public int     getOptionSellingMaxCeSellsPerDay()   { return cfg().optionSellingMaxCeSellsPerDay; }
+    public int     getOptionSellingMaxPeSellsPerDay()   { return cfg().optionSellingMaxPeSellsPerDay; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getStartingCapital()      { return cfg().startingCapital; }
@@ -576,6 +602,14 @@ public class RiskSettingsStore {
     public void setOptionBuyingOrderType(String v)            { cfg().optionBuyingOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
     public void setOptionBuyingSquareOffTime(String v)        { cfg().optionBuyingSquareOffTime = v == null ? "" : v.trim(); }
     public void setOptionBuyingTargetPoints(double v)         { cfg().optionBuyingTargetPoints = Math.max(0, v); }
+    // OPTION SELLING setters
+    public void setOptionSellingEnabled(boolean v)            { cfg().optionSellingEnabled = v; }
+    public void setOptionSellingLotsPerLeg(int v)             { cfg().optionSellingLotsPerLeg = Math.max(1, v); }
+    public void setOptionSellingOrderType(String v)           { cfg().optionSellingOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
+    public void setOptionSellingStartTime(String v)           { cfg().optionSellingStartTime = v == null ? "" : v.trim(); }
+    public void setOptionSellingSquareOffTime(String v)       { cfg().optionSellingSquareOffTime = v == null ? "" : v.trim(); }
+    public void setOptionSellingMaxCeSellsPerDay(int v)       { cfg().optionSellingMaxCeSellsPerDay = Math.max(0, v); }
+    public void setOptionSellingMaxPeSellsPerDay(int v)       { cfg().optionSellingMaxPeSellsPerDay = Math.max(0, v); }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setStartingCapital(double v)      { cfg().startingCapital = Math.max(0, v); }
@@ -732,6 +766,13 @@ public class RiskSettingsStore {
             upsert("optionBuyingOrderType",            c.optionBuyingOrderType);
             upsert("optionBuyingSquareOffTime",        c.optionBuyingSquareOffTime);
             upsert("optionBuyingTargetPoints",        String.valueOf(c.optionBuyingTargetPoints));
+            upsert("optionSellingEnabled",            String.valueOf(c.optionSellingEnabled));
+            upsert("optionSellingLotsPerLeg",         String.valueOf(c.optionSellingLotsPerLeg));
+            upsert("optionSellingOrderType",          c.optionSellingOrderType);
+            upsert("optionSellingStartTime",          c.optionSellingStartTime);
+            upsert("optionSellingSquareOffTime",      c.optionSellingSquareOffTime);
+            upsert("optionSellingMaxCeSellsPerDay",   String.valueOf(c.optionSellingMaxCeSellsPerDay));
+            upsert("optionSellingMaxPeSellsPerDay",   String.valueOf(c.optionSellingMaxPeSellsPerDay));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("startingCapital",      String.valueOf(c.startingCapital));
@@ -928,6 +969,13 @@ public class RiskSettingsStore {
                          "optionBuyingMaxTradesPerDay",
                          "optionBuyingHardSlPct"         -> { /* retired — silently consume legacy rows */ }
                     case "optionBuyingTargetPoints"      -> c.optionBuyingTargetPoints    = Math.max(0, Double.parseDouble(v));
+                    case "optionSellingEnabled"          -> c.optionSellingEnabled = Boolean.parseBoolean(v);
+                    case "optionSellingLotsPerLeg"       -> c.optionSellingLotsPerLeg = Math.max(1, Integer.parseInt(v));
+                    case "optionSellingOrderType"        -> c.optionSellingOrderType = v;
+                    case "optionSellingStartTime"        -> c.optionSellingStartTime = v;
+                    case "optionSellingSquareOffTime"    -> c.optionSellingSquareOffTime = v;
+                    case "optionSellingMaxCeSellsPerDay" -> c.optionSellingMaxCeSellsPerDay = Math.max(0, Integer.parseInt(v));
+                    case "optionSellingMaxPeSellsPerDay" -> c.optionSellingMaxPeSellsPerDay = Math.max(0, Integer.parseInt(v));
                     // Legacy Camarilla-era keys silently consumed so old risk-settings.json
                     // files round-trip cleanly through the ATM-VWAP cutover. All of these
                     // features were removed with the Camarilla strategy.

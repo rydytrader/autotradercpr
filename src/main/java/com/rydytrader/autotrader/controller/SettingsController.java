@@ -37,6 +37,14 @@ public class SettingsController {
         result.put("optionBuyingOrderType",         riskSettings.getOptionBuyingOrderType());
         result.put("optionBuyingSquareOffTime",     riskSettings.getOptionBuyingSquareOffTime());
         result.put("optionBuyingTargetPoints",      riskSettings.getOptionBuyingTargetPoints());
+        // OPTION SELLING — VWAP-rejection premium seller on 5-min NIFTY futures.
+        result.put("optionSellingEnabled",            riskSettings.isOptionSellingEnabled());
+        result.put("optionSellingLotsPerLeg",         riskSettings.getOptionSellingLotsPerLeg());
+        result.put("optionSellingOrderType",          riskSettings.getOptionSellingOrderType());
+        result.put("optionSellingStartTime",          riskSettings.getOptionSellingStartTime());
+        result.put("optionSellingSquareOffTime",      riskSettings.getOptionSellingSquareOffTime());
+        result.put("optionSellingMaxCeSellsPerDay",   riskSettings.getOptionSellingMaxCeSellsPerDay());
+        result.put("optionSellingMaxPeSellsPerDay",   riskSettings.getOptionSellingMaxPeSellsPerDay());
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
         result.put("maxRiskPerDayPct",    riskSettings.getMaxRiskPerDayPct(effectiveMode));
@@ -78,6 +86,14 @@ public class SettingsController {
             if (body.containsKey("optionBuyingOrderType"))        riskSettings.setOptionBuyingOrderType(body.get("optionBuyingOrderType").toString());
             if (body.containsKey("optionBuyingSquareOffTime"))    riskSettings.setOptionBuyingSquareOffTime(body.get("optionBuyingSquareOffTime").toString());
             if (body.containsKey("optionBuyingTargetPoints"))     riskSettings.setOptionBuyingTargetPoints(Double.parseDouble(body.get("optionBuyingTargetPoints").toString()));
+            // OPTION SELLING — kill switch, sizing, hours, per-side caps.
+            if (body.containsKey("optionSellingEnabled"))          riskSettings.setOptionSellingEnabled(Boolean.parseBoolean(body.get("optionSellingEnabled").toString()));
+            if (body.containsKey("optionSellingLotsPerLeg"))       riskSettings.setOptionSellingLotsPerLeg(Integer.parseInt(body.get("optionSellingLotsPerLeg").toString()));
+            if (body.containsKey("optionSellingOrderType"))        riskSettings.setOptionSellingOrderType(body.get("optionSellingOrderType").toString());
+            if (body.containsKey("optionSellingStartTime"))        riskSettings.setOptionSellingStartTime(body.get("optionSellingStartTime").toString());
+            if (body.containsKey("optionSellingSquareOffTime"))    riskSettings.setOptionSellingSquareOffTime(body.get("optionSellingSquareOffTime").toString());
+            if (body.containsKey("optionSellingMaxCeSellsPerDay")) riskSettings.setOptionSellingMaxCeSellsPerDay(Integer.parseInt(body.get("optionSellingMaxCeSellsPerDay").toString()));
+            if (body.containsKey("optionSellingMaxPeSellsPerDay")) riskSettings.setOptionSellingMaxPeSellsPerDay(Integer.parseInt(body.get("optionSellingMaxPeSellsPerDay").toString()));
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
             if (body.containsKey("maxRiskPerDayPct"))  riskSettings.setMaxRiskPerDayPct(effectiveMode, Double.parseDouble(body.get("maxRiskPerDayPct").toString()));
