@@ -274,6 +274,13 @@ public class GdflService {
             // Day rollover — clear yesterday's subscriptions and reverse map + release
             // any alternate-feed ownership on Fyers's side so yesterday's ATM symbol
             // resumes Fyers ingress if it happens to re-appear in the wild.
+            //
+            // NIFTY-I is EXCLUDED from the wipe — it's GDFL's continuous
+            // current-month identifier, subscribed at boot via initialSubs and
+            // still live on the WS across day boundaries (GDFL rotates the
+            // underlying contract server-side). Re-adding it to every state
+            // set after the clear prevents subscribeOne from re-firing a
+            // duplicate SubscribeRealtime at 09:10:01 every morning.
             String today = LocalDate.now(IST).toString();
             if (!today.equals(subscribedDayKey)) {
                 subscribedGdflSymbols.clear();
@@ -281,6 +288,11 @@ public class GdflService {
                 historyFetchedGdflSymbols.clear();
                 mapper.clear();
                 marketDataService.clearAltFeedOwnedSymbols();
+                // Re-seed the futures state that connect()'s boot-time subscribe
+                // put in — mapper reverse-mapping, altFeed ownership, dedupe set.
+                subscribedGdflSymbols.add(GdflSymbolMapper.GDFL_NIFTY_FUTURES);
+                mapper.fyersToGdfl(GdflSymbolMapper.FYERS_NIFTY_FUTURES);
+                marketDataService.addAltFeedOwnedSymbol(GdflSymbolMapper.FYERS_NIFTY_FUTURES);
                 subscribedDayKey = today;
             }
 
