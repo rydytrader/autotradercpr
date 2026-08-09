@@ -379,13 +379,35 @@ public class GdflService {
         // frame); falls back to LastTradeTime, then wall-clock if neither is set.
         long tickSec = svt > 0 ? svt : (ltt > 0 ? ltt : System.currentTimeMillis() / 1000);
         ZonedDateTime tickZdt = Instant.ofEpochSecond(tickSec).atZone(IST);
-        if (!LocalDate.now(IST).equals(tickZdt.toLocalDate())) {
-            log.debug("[Gdfl] dropping stale-day tick for {} (tickDay={})", fyersSym, tickZdt.toLocalDate());
-            return;
-        }
+        LocalDate today   = LocalDate.now(IST);
+        LocalDate tickDay = tickZdt.toLocalDate();
         LocalTime tickTime = tickZdt.toLocalTime();
-        if (tickTime.isBefore(LocalTime.of(9, 15)) || tickTime.isAfter(LocalTime.of(15, 31))) {
-            log.debug("[Gdfl] dropping out-of-hours tick for {} (tickTime={})", fyersSym, tickTime);
+
+        // Two gates apply BEFORE aggregator dispatch:
+        //   1. Wrong-day OR out-of-market-hours → cache LTP only, skip listener
+        //      fanout. Post-close / pre-open / after-restart, GDFL often pushes
+        //      a "last known" snapshot tick on SubscribeRealtime — that seeds
+        //      the UI cache without polluting bar aggregation with stale-
+        //      timestamped bars. Values older than 5 trading days are rejected
+        //      entirely as clearly stale.
+        //   2. Same-day AND within 09:15-15:31 → normal live path (aggregator +
+        //      listeners).
+        long daysAgo = java.time.temporal.ChronoUnit.DAYS.between(tickDay, today);
+        boolean withinMarketHours = !tickTime.isBefore(LocalTime.of(9, 15))
+                                 && !tickTime.isAfter(LocalTime.of(15, 31));
+        boolean isLive = today.equals(tickDay) && withinMarketHours;
+
+        if (!isLive) {
+            if (daysAgo > 5) {
+                log.debug("[Gdfl] rejecting truly-stale tick for {} (tickDay={}, {}d ago)",
+                    fyersSym, tickDay, daysAgo);
+                return;
+            }
+            // Cache-only path — populates currentTicks so getDisplayLtp returns the
+            // value, but no ltpListeners fire so CandleAggregator stays clean.
+            marketDataService.seedTickData(fyersSym, ltp, 0);
+            log.debug("[Gdfl] out-of-hours/stale-day tick for {} — cached LTP only ({} {})",
+                fyersSym, tickDay, tickTime);
             return;
         }
 
