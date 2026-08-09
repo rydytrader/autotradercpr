@@ -44,9 +44,16 @@ public class ChartController {
     private Map<String, Object> tickBlock(String fyersSymbol) {
         Map<String, Object> m = new LinkedHashMap<>();
         if (fyersSymbol == null || fyersSymbol.isBlank()) return m;
-        m.put("ltp",  round2(marketDataService.getLtp(fyersSymbol)));
-        m.put("ch",   round2(marketDataService.getChange(fyersSymbol)));
-        m.put("chp",  round2(marketDataService.getChangePercent(fyersSymbol)));
+        // Display variants (getDisplayLtp / getDisplayChange / getDisplayChangePct)
+        // skip the today-date guard that getLtp / getChange / getChangePercent apply.
+        // For header + chart display we always want the last known price — pre-market,
+        // post-close, fresh boot — otherwise the tile stays "—" for the whole
+        // pre-open window and after the session ends. VWAP stays session-guarded
+        // (it's meaningful only for today's session; last session's VWAP shouldn't
+        // display as if it were current).
+        m.put("ltp",  round2(marketDataService.getDisplayLtp(fyersSymbol)));
+        m.put("ch",   round2(marketDataService.getDisplayChange(fyersSymbol)));
+        m.put("chp",  round2(marketDataService.getDisplayChangePct(fyersSymbol)));
         m.put("vwap", round2(marketDataService.getVwap(fyersSymbol)));
         return m;
     }
