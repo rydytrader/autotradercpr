@@ -161,7 +161,7 @@ public class OptionSelling implements Strategy {
             log.warn("[OptionSelling] OrderEventService not available at boot — fill capture will fall back to tradebook polling on exit");
         }
 
-        log.info("[OptionSelling] boot — futures subscribed: {} (5-min bars)", NIFTY_SYMBOL);
+        log.info("[OptionSelling] boot — registered aggregator listener for {} (5-min bars). GDFL subscribe happens separately in GdflService on WS auth.", NIFTY_SYMBOL);
         log.info("[OptionSelling] booted — optionSellingEnabled={} openPositions={} ceEntriesToday={} peEntriesToday={} squareoff={}",
             riskSettings.isOptionSellingEnabled(),
             state.openPositions.size(),

@@ -198,7 +198,7 @@ public class OptionScalping implements Strategy {
             log.warn("[OptionScalping] OrderEventService not available at boot — fill capture will fall back to tradebook polling on exit");
         }
 
-        log.info("[OptionScalping] boot — futures subscribed: {} (5-min bars)", NIFTY_SYMBOL);
+        log.info("[OptionScalping] boot — registered aggregator listener for {} (5-min bars). GDFL subscribe happens separately in GdflService on WS auth.", NIFTY_SYMBOL);
         log.info("[OptionScalping] booted — optionBuyingEnabled={} fsmState={} squareoff={} restoredPositions={}",
             riskSettings.isOptionBuyingEnabled(),
             state.fsmState,
