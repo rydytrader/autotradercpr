@@ -71,17 +71,25 @@
 
     // ── HEADER STRIP ─────────────────────────────────────────────────────────
 
-    /** Prepare the #tickerTrack container — kill the old scrolling animation
-     *  and centre a single static row inside the mask-wrapped wrap. */
+    /** Prepare the #tickerTrack container — kill the old scrolling animation,
+     *  left-align a single static row, and neutralise the wrap's edge-fade
+     *  mask so the leftmost chip isn't faded out. */
     function styleTrackForStrip(track) {
         if (!track) return;
         track.style.animation = 'none';
         track.style.width = '100%';
         track.style.display = 'flex';
-        track.style.justifyContent = 'center';
+        track.style.justifyContent = 'flex-start';
         track.style.alignItems = 'center';
         track.style.gap = '0';
         track.style.whiteSpace = 'nowrap';
+        // Neutralise the ticker-wrap mask (used by the old scrolling ticker) so
+        // the leftmost chip doesn't fade into the logo edge.
+        var wrap = track.parentElement;
+        if (wrap && wrap.classList && wrap.classList.contains('ticker-wrap')) {
+            wrap.style.maskImage = 'none';
+            wrap.style.webkitMaskImage = 'none';
+        }
     }
 
     function fmtInr(n) {
@@ -193,8 +201,13 @@
                      : pnl < 0 ? 'var(--accent-red, #f87171)'
                      : 'var(--text-muted)';
 
-        return '' +
-            chip('NIFTY', ltpText + chgText, ltpColor) +
+        // Leading vertical rule separates the strip from the product logo /
+        // menu section on the left. Same visual weight as the mid-strip
+        // divider so the whole header reads as one row of well-spaced items.
+        var leadingRule = '<span style="display:inline-block; width:1px; height:22px; background:var(--border); margin-right:18px; opacity:0.7;"></span>';
+
+        return leadingRule +
+            chip('NIFTY FUT', ltpText + chgText, ltpColor) +
             sep() +
             chip('VWAP',  vwapText, 'var(--text-secondary)') +
             sep() +
