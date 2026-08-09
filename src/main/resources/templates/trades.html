@@ -431,10 +431,13 @@
     function strategyPill(strategyId) {
         var id = String(strategyId || '').toLowerCase();
         if (id === 'option-scalping') {
-            return '<span class="pill" style="color:#fbbf24;background:rgba(251,191,36,0.10);border-color:rgba(251,191,36,0.35);">SELL</span>';
+            return '<span class="pill" style="color:#fbbf24;background:rgba(251,191,36,0.10);border-color:rgba(251,191,36,0.35);">SCALP</span>';
         }
         if (id === 'option-buying') {
             return '<span class="pill" style="color:#7dd3fc;background:rgba(125,211,252,0.10);border-color:rgba(125,211,252,0.35);">BUY</span>';
+        }
+        if (id === 'option-selling') {
+            return '<span class="pill" style="color:#f87171;background:rgba(248,113,113,0.10);border-color:rgba(248,113,113,0.35);">SELL</span>';
         }
         if (id === 'manual') {
             return '<span class="pill" style="color:var(--text-secondary);background:rgba(148,163,184,0.10);border-color:rgba(148,163,184,0.30);">MANUAL</span>';
@@ -456,7 +459,7 @@
     /** Every registered strategy id — used to fan today / range fetches across
      *  BOTH strategies so the Trade Log shows the merged history. Order is
      *  cosmetic (matches the sidebar / settings tabs). */
-    var STRATEGY_IDS = ['option-scalping', 'option-buying'];
+    var STRATEGY_IDS = ['option-scalping', 'option-buying', 'option-selling'];
 
     /** Tag every row in `list` with the strategy id it came from (server rows
      *  from /trades-range already carry strategyId, but the in-memory
