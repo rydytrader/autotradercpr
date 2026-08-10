@@ -1076,7 +1076,12 @@ public class OptionScalping implements Strategy {
         vwap.put("peVwap",       0.0);
         m.put("optionScalping", vwap);
 
-        // Open positions — may still exist for MANUAL-terminal fires.
+        // Open positions — two sources:
+        //  (a) Legacy MANUAL-terminal fires in state.openPositions (typically empty).
+        //  (b) The Phase-4 FSM's active leg — state.entry* fields when fsmState is
+        //      IN_POSITION or PENDING_ENTRY. NOT stored in state.openPositions, so
+        //      we synthesise a row for it here. Without this, the Live Positions
+        //      table on /positions shows nothing after an OPTIONS BUYING entry.
         List<Map<String, Object>> rows = new ArrayList<>();
         for (Position p : state.openPositions.values()) {
             if (p == null) continue;
@@ -1097,6 +1102,31 @@ public class OptionScalping implements Strategy {
             row.put("openMillis",   p.openMillis);
             row.put("entryCandleMs",p.entryCandleMs);
             rows.add(row);
+        }
+        // FSM row (OPTIONS BUYING active leg).
+        if (state.fsmState == FsmState.IN_POSITION || state.fsmState == FsmState.PENDING_ENTRY) {
+            if (state.entrySymbol != null && !state.entrySymbol.isBlank()) {
+                int qty = riskSettings.getOptionBuyingLotsPerLeg() * LOT_SIZE;
+                double ltp = 0;
+                try { ltp = marketDataService.getLtp(state.entrySymbol); } catch (Exception ignored) {}
+                double mtm = fsmOpenPositionMtm();
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("symbol",       state.entrySymbol);
+                row.put("setup",        state.entrySide == null ? "" : (state.entrySide + "_BUY"));
+                row.put("side",         state.entrySide == null ? "" : (state.entrySide + "_BUY"));
+                row.put("qty",          qty);
+                row.put("entryPrice",   round2(state.entryPrice));
+                row.put("ltp",          round2(ltp));
+                row.put("mtm",          round2(mtm));
+                row.put("targetLevel",  round2(state.targetPrice));
+                row.put("slLevel",      0.0);          // SL is bar-close based, not a price level
+                row.put("breakevenMoved", false);
+                row.put("isShort",      false);        // OPTIONS BUYING is always long
+                row.put("openMillis",   0L);
+                row.put("entryCandleMs", 0L);
+                row.put("state",        state.fsmState.name());
+                rows.add(row);
+            }
         }
         m.put("openPositions", rows);
 
