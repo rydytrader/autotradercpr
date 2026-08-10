@@ -347,7 +347,10 @@ public class OptionSelling implements Strategy {
         if (c == null) return;
         if (!NIFTY_SYMBOL.equals(symbol)) return;
         double vwap = c.vwap();
-        log.info("[OptionSelling] futures {}-min bar closed — {} o={} h={} l={} c={} vwap={} startMs={} open={}",
+        // DEBUG heartbeat — 75 bars per session at INFO was too noisy for the
+        // console. Only actionable events (entry [Setup], exit [Exit], reject
+        // [Reject], skip [Info]) fire at INFO from downstream branches.
+        log.debug("[OptionSelling] futures {}-min bar closed — {} o={} h={} l={} c={} vwap={} startMs={} open={}",
             CandleAggregator.BUCKET_MINUTES, symbol,
             c.open(), c.high(), c.low(), c.close(), vwap, c.startMillis(), state.openPositions.size());
 

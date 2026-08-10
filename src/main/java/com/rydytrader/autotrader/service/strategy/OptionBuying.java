@@ -398,7 +398,10 @@ public class OptionBuying implements Strategy {
         if (c == null) return;
         if (!NIFTY_SYMBOL.equals(symbol)) return;   // only the futures leg is subscribed
         double vwap = c.vwap();
-        log.info("[OptionBuying] futures {}-min bar closed — {} o={} h={} l={} c={} vwap={} startMs={} fsm={}",
+        // DEBUG heartbeat — 75 bars per session at INFO was too noisy for the
+        // console. Actionable events (entry [Setup], fill, exit [Exit], reject)
+        // fire at INFO from downstream branches.
+        log.debug("[OptionBuying] futures {}-min bar closed — {} o={} h={} l={} c={} vwap={} startMs={} fsm={}",
             CandleAggregator.BUCKET_MINUTES, symbol,
             c.open(), c.high(), c.low(), c.close(), vwap, c.startMillis(), state.fsmState);
 
