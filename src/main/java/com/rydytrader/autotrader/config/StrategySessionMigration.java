@@ -88,7 +88,7 @@ public class StrategySessionMigration {
             settingRepo.save(new SettingEntity(flagKey, String.valueOf(System.currentTimeMillis())));
 
             log.warn("[StrategyMigration] strategy cutover — purged {} legacy strategy_instances " +
-                "row(s) + {} per-instance setting(s). OptionScalping is now the only strategy.",
+                "row(s) + {} per-instance setting(s). OptionBuying is now the only strategy.",
                 instances, settings);
         } catch (Exception e) {
             log.warn("[StrategyMigration] strategy cutover purge skipped: {}", e.getMessage());

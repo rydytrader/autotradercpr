@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.rydytrader.autotrader.dto.Candle;
 import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.service.MarketDataService;
-import com.rydytrader.autotrader.service.strategy.OptionScalping;
+import com.rydytrader.autotrader.service.strategy.OptionBuying;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
@@ -36,8 +36,8 @@ import java.util.concurrent.TimeUnit;
  *   <li>{@link #boot()} opens the WS connection at Spring startup (if
  *       {@code gdfl.enabled=true}) and completes the {@code Authenticate} handshake.</li>
  *   <li>An in-process poller runs every {@code gdfl.atmPollIntervalSeconds} seconds.
- *       As soon as {@link OptionScalping#getCeSymbol()} + {@link OptionScalping#getPeSymbol()} are
- *       non-blank (i.e. OptionScalping has resolved the day's ATM at ~09:18 IST — either from
+ *       As soon as {@link OptionBuying#getCeSymbol()} + {@link OptionBuying#getPeSymbol()} are
+ *       non-blank (i.e. OptionBuying has resolved the day's ATM at ~09:18 IST — either from
  *       its own first-bar close or from a mid-day operator override), the poller
  *       converts the two Fyers-format symbols to GDFL contractwise identifiers via
  *       {@link GdflSymbolMapper}, sends {@code SubscribeRealtime} for each, and stops
@@ -63,7 +63,7 @@ public class GdflService {
     private final GdflSymbolMapper   mapper;
     private final MarketDataService  marketDataService;
     private final CandleAggregator   candleAggregator;
-    private final ObjectProvider<OptionScalping> optionScalpingProvider;
+    private final ObjectProvider<OptionBuying> optionBuyingProvider;
     private final ScheduledExecutorService executor;
     /** GDFL symbols we've already sent SubscribeSnapshot for TODAY (the trading
      *  pair — ATM CE + PE resolved at 09:16). Prevents the ATM-check poll from
@@ -102,12 +102,12 @@ public class GdflService {
                        GdflSymbolMapper mapper,
                        MarketDataService marketDataService,
                        CandleAggregator candleAggregator,
-                       ObjectProvider<OptionScalping> optionScalpingProvider) {
+                       ObjectProvider<OptionBuying> optionBuyingProvider) {
         this.props             = props;
         this.mapper            = mapper;
         this.marketDataService = marketDataService;
         this.candleAggregator  = candleAggregator;
-        this.optionScalpingProvider   = optionScalpingProvider;
+        this.optionBuyingProvider   = optionBuyingProvider;
         this.executor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "gdfl-lifecycle");
             t.setDaemon(true);
@@ -260,10 +260,10 @@ public class GdflService {
     }
 
     /** Fires every {@code gdfl.atmPollIntervalSeconds}. Discovers today's ATM CE + PE
-     *  from OptionScalping and issues SubscribeRealtime for each — once and only once per day. */
+     *  from OptionBuying and issues SubscribeRealtime for each — once and only once per day. */
     private void checkAtmAndSubscribe() {
         try {
-            // Window opens at 09:10 IST — aligned with OptionScalping.warmupIfDue's
+            // Window opens at 09:10 IST — aligned with OptionBuying.warmupIfDue's
             // pre-market subscribe window. Subscribing the ±10 pre-warm strikes to
             // GDFL BEFORE 09:15 means the exchange's first tick lands in an
             // already-subscribed slot (no first-bar-partial). Closes at 15:31
@@ -306,16 +306,16 @@ public class GdflService {
             // once it's in subscribedGdflSymbols.
             subscribeOne(GdflSymbolMapper.FYERS_NIFTY_FUTURES);
 
-            // Pre-warm window — OptionScalping.warmupIfDue populates ±10 strikes
+            // Pre-warm window — OptionBuying.warmupIfDue populates ±10 strikes
             // (42 CE + PE symbols) at 09:10 IST. Subscribe them all on GDFL so
             // the 09:15 → 09:16 first 1-min bar has tick data for whichever
             // strike ends up being the ATM anchor. Comfortably under GDFL's
             // 50-symbol cap. subscribeOne is idempotent so the 5 s poll doesn't
             // re-send SubscribeRealtime.
             //
-            // Once OptionScalping.trimWarmingSet narrows to just the 1 ITM
+            // Once OptionBuying.trimWarmingSet narrows to just the 1 ITM
             // CE + PE pair (at 09:16), getPreWarmSymbols() returns those two.
-            OptionScalping strategy = optionScalpingProvider.getIfAvailable();
+            OptionBuying strategy = optionBuyingProvider.getIfAvailable();
             if (strategy != null) {
                 for (String sym : strategy.getPreWarmSymbols()) {
                     subscribeOne(sym);
@@ -494,7 +494,7 @@ public class GdflService {
         candleAggregator.overwriteBar(fyersSym, canonical);
     }
 
-    /** Called by the 5 s ATM-check poll once OptionScalping has locked the
+    /** Called by the 5 s ATM-check poll once OptionBuying has locked the
      *  trading pair (CE + PE symbols non-blank). Sends {@code SubscribeSnapshot}
      *  for each leg — GDFL pushes {@code SnapshotResult} frames on every bar
      *  close, giving us canonical server-side aggregated OHLC that matches
@@ -504,7 +504,7 @@ public class GdflService {
      *  sets stop repeats within the session. */
     private void subscribeSnapshotForTradingPair() {
         if (wsClient == null || !wsClient.isAuthenticated()) return;
-        OptionScalping strategy = optionScalpingProvider.getIfAvailable();
+        OptionBuying strategy = optionBuyingProvider.getIfAvailable();
         if (strategy == null) return;
         String ceFy = strategy.getCeSymbol();
         String peFy = strategy.getPeSymbol();

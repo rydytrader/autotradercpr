@@ -97,7 +97,7 @@ public class CandleAggregator {
 
     /** Single-threaded executor for firing user close listeners off the WebSocket thread.
      *  {@link #onLtpTick} runs inline on the WS callback thread — if it also invoked
-     *  {@code OptionScalping.onCandleClose} → {@code saveToDisk} inline, WS tick throughput
+     *  {@code OptionBuying.onCandleClose} → {@code saveToDisk} inline, WS tick throughput
      *  would stall on file I/O. Single-threaded so bar-close events for a given symbol
      *  fire in order. */
     private final ExecutorService closeExecutor = Executors.newSingleThreadExecutor(r -> {
@@ -179,7 +179,7 @@ public class CandleAggregator {
             // slot because Fyers rounds exch_feed_time up to the next second (a print at
             // 09:14:59.9 lands with exch_feed_time = 09:15:00, opening a legit 09:15
             // bucket even though wall-clock is still 09:14:xx). Flushing here would emit
-            // that bucket as a "close" event at 09:14:xx, which OptionScalping.onCandleClose
+            // that bucket as a "close" event at 09:14:xx, which OptionBuying.onCandleClose
             // interprets as the first-bar close and resolves ATM three minutes early.
             // Wait for wall-clock to catch up — in-market-hours flush path handles it.
             return;
@@ -623,7 +623,7 @@ public class CandleAggregator {
     }
 
     /** Overwrites an existing history-ring entry with an authoritative version — used
-     *  after {@code OptionScalping.reconcileBar} pulls the exchange-published OHLC via Fyers
+     *  after {@code OptionBuying.reconcileBar} pulls the exchange-published OHLC via Fyers
      *  {@code /history}, so the /chart page (which polls this ring) shows the same
      *  values TradingView shows for closed bars. Matches by {@code startMillis}; when no
      *  entry with that start exists (very recent boot, or ring rolled past the entry),

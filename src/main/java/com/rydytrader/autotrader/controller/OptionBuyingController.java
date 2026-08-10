@@ -1,7 +1,7 @@
 package com.rydytrader.autotrader.controller;
 
-import com.rydytrader.autotrader.service.OptionScalpingStreamBroker;
-import com.rydytrader.autotrader.service.strategy.OptionScalping;
+import com.rydytrader.autotrader.service.OptionBuyingStreamBroker;
+import com.rydytrader.autotrader.service.strategy.OptionBuying;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -13,39 +13,39 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.Map;
 
 /**
- * REST endpoints for the ATM VWAP strategy.
+ * REST endpoints for the OPTION BUYING strategy.
  * <ul>
- *   <li>{@code GET  /api/option-scalping/state}     — live multi-position state (open positions,
+ *   <li>{@code GET  /api/option-buying/state}     — live multi-position state (open positions,
  *       risk block, today's closes, events, spot)</li>
- *   <li>{@code GET  /api/option-scalping/stream}    — SSE stream of the same payload</li>
- *   <li>{@code POST /api/option-scalping/squareoff} — flatten one symbol or every open position</li>
- *   <li>{@code POST /api/option-scalping/reset}     — recovery: drop in-memory positions without exits</li>
- *   <li>{@code POST /api/option-scalping/enable}    — kill-switch toggle (Trade page)</li>
+ *   <li>{@code GET  /api/option-buying/stream}    — SSE stream of the same payload</li>
+ *   <li>{@code POST /api/option-buying/squareoff} — flatten one symbol or every open position</li>
+ *   <li>{@code POST /api/option-buying/reset}     — recovery: drop in-memory positions without exits</li>
+ *   <li>{@code POST /api/option-buying/enable}    — kill-switch toggle (Trade page)</li>
  * </ul>
  */
 @RestController
-public class OptionScalpingController {
+public class OptionBuyingController {
 
-    private final OptionScalping             strategy;
+    private final OptionBuying             strategy;
     private final RiskSettingsStore   riskSettings;
-    private final OptionScalpingStreamBroker streamBroker;
+    private final OptionBuyingStreamBroker streamBroker;
 
-    public OptionScalpingController(OptionScalping strategy,
+    public OptionBuyingController(OptionBuying strategy,
                              RiskSettingsStore riskSettings,
-                             OptionScalpingStreamBroker streamBroker) {
+                             OptionBuyingStreamBroker streamBroker) {
         this.strategy     = strategy;
         this.riskSettings = riskSettings;
         this.streamBroker = streamBroker;
     }
 
-    @GetMapping(value = "/api/option-scalping/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @GetMapping(value = "/api/option-buying/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream() {
         SseEmitter emitter = new SseEmitter(0L);
         streamBroker.addEmitter(emitter);
         return emitter;
     }
 
-    @GetMapping("/api/option-scalping/state")
+    @GetMapping("/api/option-buying/state")
     public Map<String, Object> getState() {
         return strategy.dashboardState();
     }
@@ -53,12 +53,12 @@ public class OptionScalpingController {
     /** Premium SuperTrend snapshot for both ATM CE and PE legs — consumed by the
      *  /positions NIFTY Technicals row so the operator sees the same premium-ST
      *  values the entry gate + trailing SL evaluate. */
-    @GetMapping("/api/option-scalping/indicators")
+    @GetMapping("/api/option-buying/indicators")
     public Map<String, Object> getIndicators() {
         return strategy.optionIndicatorsSnapshot();
     }
 
-    @PostMapping("/api/option-scalping/squareoff")
+    @PostMapping("/api/option-buying/squareoff")
     public Map<String, Object> squareoff(@RequestBody(required = false) Map<String, Object> body) {
         Object symObj = body == null ? null : body.get("symbol");
         String symbol = symObj == null ? "" : symObj.toString().trim();
@@ -71,13 +71,13 @@ public class OptionScalpingController {
         return Map.of("ok", true, "closedSomething", closed);
     }
 
-    @PostMapping("/api/option-scalping/reset")
+    @PostMapping("/api/option-buying/reset")
     public Map<String, Object> reset() {
         strategy.resetToIdle("MANUAL");
         return Map.of("ok", true);
     }
 
-    @PostMapping("/api/option-scalping/enable")
+    @PostMapping("/api/option-buying/enable")
     public Map<String, Object> setEnabled(@RequestBody Map<String, Object> body) {
         Object v = body == null ? null : body.get("enabled");
         boolean enabled = (v instanceof Boolean) ? (Boolean) v

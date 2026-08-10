@@ -21,8 +21,8 @@ import java.util.Map;
 /**
  * Per-strategy history endpoints. The {@code strategyId} path variable is resolved
  * against every registered {@link Strategy} bean via bean-id-keyed {@code Map<String,
- * Strategy>} injection, so today's live overlay works for OPTION SCALPING, OPTION
- * BUYING, and any future strategy without controller changes.
+ * Strategy>} injection, so today's live overlay works for OPTION BUYING, OPTION
+ * SELLING, and any future strategy without controller changes.
  */
 @RestController
 public class StrategyHistoryController {
@@ -41,6 +41,43 @@ public class StrategyHistoryController {
         this.repo = repo;
         this.tradeRepo = tradeRepo;
         this.strategies = strategies == null ? Map.of() : strategies;
+    }
+
+    /** DB back-compat: rows persisted before the {@code option-scalping} →
+     *  {@code option-buying} rename carry {@code strategyId="option-scalping"}.
+     *  When callers ask for {@code option-buying}, we also union the legacy
+     *  {@code option-scalping} rows in so the calendar / trade log show the
+     *  full history without a data migration. */
+    private static final String LEGACY_OPTION_BUYING_ID = "option-scalping";
+
+    private List<StrategyTradeEntity> tradesByStrategy(String id) {
+        List<StrategyTradeEntity> rows = tradeRepo.findByStrategyIdOrderByClosedAtMillisAsc(id);
+        if ("option-buying".equals(id)) {
+            rows = new ArrayList<>(rows);
+            rows.addAll(tradeRepo.findByStrategyIdOrderByClosedAtMillisAsc(LEGACY_OPTION_BUYING_ID));
+            rows.sort((a, b) -> Long.compare(a.getClosedAtMillis(), b.getClosedAtMillis()));
+        }
+        return rows;
+    }
+
+    private List<StrategyTradeEntity> tradesByStrategyForDate(String id, String date) {
+        List<StrategyTradeEntity> rows = tradeRepo.findByStrategyIdAndSessionDateOrderByClosedAtMillisAsc(id, date);
+        if ("option-buying".equals(id)) {
+            rows = new ArrayList<>(rows);
+            rows.addAll(tradeRepo.findByStrategyIdAndSessionDateOrderByClosedAtMillisAsc(LEGACY_OPTION_BUYING_ID, date));
+            rows.sort((a, b) -> Long.compare(a.getClosedAtMillis(), b.getClosedAtMillis()));
+        }
+        return rows;
+    }
+
+    private List<StrategyTradeEntity> tradesByStrategyForRange(String id, String from, String to) {
+        List<StrategyTradeEntity> rows = tradeRepo.findByStrategyIdAndSessionDateBetweenOrderByClosedAtMillisDesc(id, from, to);
+        if ("option-buying".equals(id)) {
+            rows = new ArrayList<>(rows);
+            rows.addAll(tradeRepo.findByStrategyIdAndSessionDateBetweenOrderByClosedAtMillisDesc(LEGACY_OPTION_BUYING_ID, from, to));
+            rows.sort((a, b) -> Long.compare(b.getClosedAtMillis(), a.getClosedAtMillis()));
+        }
+        return rows;
     }
 
     @GetMapping("/api/strategies/{id}/history")
@@ -73,11 +110,11 @@ public class StrategyHistoryController {
             totalNet     += s.getNetPnl();
             totalRolls   += s.getRolls();
         }
-        // 2. OptionScalping (and any other cycle-based strategies) persist per-cycle trade rows
+        // 2. OptionBuying (and any other cycle-based strategies) persist per-cycle trade rows
         // instead of session rows. Aggregate those by sessionDate into session-shaped maps
         // so the calendar's yearly view + day modal see real data. ONLY emit a row for
         // dates that don't already have a legacy session row, so we don't double-count.
-        List<StrategyTradeEntity> tradeRows = tradeRepo.findByStrategyIdOrderByClosedAtMillisAsc(id);
+        List<StrategyTradeEntity> tradeRows = tradesByStrategy(id);
         Map<String, double[]> tradeAggByDate = new LinkedHashMap<>();   // date → [gross, charges, net, wins, losses, count]
         for (StrategyTradeEntity t : tradeRows) {
             String d = t.getSessionDate();
@@ -132,8 +169,7 @@ public class StrategyHistoryController {
     @GetMapping("/api/strategies/{id}/trades")
     public ResponseEntity<Map<String, Object>> tradesForDate(@PathVariable String id,
                                                              @RequestParam String date) {
-        List<StrategyTradeEntity> rows =
-            tradeRepo.findByStrategyIdAndSessionDateOrderByClosedAtMillisAsc(id, date);
+        List<StrategyTradeEntity> rows = tradesByStrategyForDate(id, date);
         LiveBackfill backfill = liveBackfillForDate(id, date);
         List<Map<String, Object>> trades = new ArrayList<>();
         for (StrategyTradeEntity t : rows) {
@@ -177,8 +213,7 @@ public class StrategyHistoryController {
     public ResponseEntity<Map<String, Object>> tradesForRange(@PathVariable String id,
                                                               @RequestParam String from,
                                                               @RequestParam String to) {
-        List<StrategyTradeEntity> rows =
-            tradeRepo.findByStrategyIdAndSessionDateBetweenOrderByClosedAtMillisDesc(id, from, to);
+        List<StrategyTradeEntity> rows = tradesByStrategyForRange(id, from, to);
         String today = LocalDate.now(IST).toString();
         LiveBackfill backfill = liveBackfillForDate(id, today);
         List<Map<String, Object>> trades = new ArrayList<>();

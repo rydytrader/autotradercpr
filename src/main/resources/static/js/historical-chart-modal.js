@@ -193,7 +193,7 @@ window.HistoricalChartModal = (function() {
         // Parallel fetch — chart snapshot + trades for the same session. Trades
         // drive the entry / exit markers on the futures panel.
         var chartUrl  = '/api/chart/historical?date=' + encodeURIComponent(dateStr);
-        var tradesUrl = '/api/strategies/option-scalping/trades?date=' + encodeURIComponent(dateStr);
+        var tradesUrl = '/api/strategies/option-buying/trades?date=' + encodeURIComponent(dateStr);
         Promise.all([
             fetch(chartUrl).then(function(r) { return r.status === 404 ? null : r.json(); }),
             fetch(tradesUrl).then(function(r) { return r.ok ? r.json() : { trades: [] }; })

@@ -1,6 +1,6 @@
 package com.rydytrader.autotrader.controller;
 
-import com.rydytrader.autotrader.service.strategy.OptionScalping;
+import com.rydytrader.autotrader.service.strategy.OptionBuying;
 
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -16,9 +16,9 @@ import java.util.Map;
 @RestController
 public class MaintenanceController {
 
-    private final OptionScalping strategy;
+    private final OptionBuying strategy;
 
-    public MaintenanceController(OptionScalping strategy) {
+    public MaintenanceController(OptionBuying strategy) {
         this.strategy = strategy;
     }
 

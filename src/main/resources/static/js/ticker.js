@@ -10,7 +10,7 @@
  *
  * Data sources (polled every 3 s):
  *   /api/chart/symbols          — NIFTY futures LTP / change / VWAP
- *   /api/option-scalping/state  — OPB (OPTION BUYING) FSM state + closed cycles
+ *   /api/option-buying/state  — OPB (OPTION BUYING) FSM state + closed cycles
  *   /api/option-selling/state   — OPS (OPTION SELLING) open positions + closed cycles
  *
  * Also runs trade-open / trade-close browser notifications from a 5 s
@@ -120,7 +120,7 @@
     }
 
     function opbSummary(state) {
-        // OPTION BUYING lifecycle from OptionScalping.currentState()
+        // OPTION BUYING lifecycle from OptionBuying.currentState()
         // — WAITING_FOR_TRIGGER / PENDING_ENTRY / IN_POSITION / DONE_FOR_DAY / IDLE
         if (!state) return { text: '—', color: 'var(--text-muted)' };
         var lc = String(state.lifecycle || '').toUpperCase();
@@ -227,7 +227,7 @@
 
         // Fetch all three in parallel; each is resilient to failure.
         var pSym = fetch('/api/chart/symbols').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; });
-        var pOpb = fetch('/api/option-scalping/state').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; });
+        var pOpb = fetch('/api/option-buying/state').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; });
         var pOps = fetch('/api/option-selling/state').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; });
 
         Promise.all([pSym, pOpb, pOps]).then(function(vals) {

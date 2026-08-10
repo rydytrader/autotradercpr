@@ -70,7 +70,7 @@ public class GdflDataWebSocket extends WebSocketClient {
     private final Object unknownFramesLock = new Object();
 
     /** {@code gdflSymbols} may be empty at construction time — {@link GdflService}
-     *  keeps it empty and calls {@link #subscribeSymbol} dynamically once OptionScalping
+     *  keeps it empty and calls {@link #subscribeSymbol} dynamically once OptionBuying
      *  resolves the day's ATM. Any entries passed in at construct time are sent as
      *  soon as {@code AuthenticateResult} arrives.
      *
@@ -229,7 +229,7 @@ public class GdflDataWebSocket extends WebSocketClient {
     }
 
     /** Sends {@code SubscribeRealtime} for one GDFL identifier. Public so
-     *  {@link GdflService} can send subscribes AFTER connect + auth, once OptionScalping has
+     *  {@link GdflService} can send subscribes AFTER connect + auth, once OptionBuying has
      *  resolved today's ATM. Returns {@code true} when the send completed, {@code false}
      *  on any error (caller may retry). Per the official Java sample the payload has
      *  exactly three fields — no {@code Unsubscribe}, which lives on

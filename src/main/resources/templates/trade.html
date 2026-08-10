@@ -204,7 +204,7 @@
     </div>
 
     <!-- ── Overview hero — big Net Day P&L on the left, tiles on the right. ──
-         Everything on this card updates live (risk from /api/option-scalping/state
+         Everything on this card updates live (risk from /api/option-buying/state
          SSE, NIFTY futures / VWAP from /api/chart/symbols poll, clock on 1s tick). -->
     <div class="section-card fade-in" style="margin-bottom:20px;">
         <div class="section-header">
@@ -411,7 +411,7 @@
         var enabled = !!t.checked;
         label.textContent = enabled ? 'Trading ON' : 'Trading OFF';
         wrap.classList.toggle('disabled', !enabled);
-        fetch('/api/option-scalping/enable', {
+        fetch('/api/option-buying/enable', {
             method: 'POST',
             headers: csrfHeaders(),
             body: JSON.stringify({ enabled: enabled })
@@ -427,7 +427,7 @@
             danger:       true
         }).then(function(ok) {
             if (!ok) return;
-            fetch('/api/option-scalping/squareoff', {
+            fetch('/api/option-buying/squareoff', {
                 method: 'POST',
                 headers: csrfHeaders(),
                 body: '{}'
@@ -445,11 +445,11 @@
             if (!ok) return;
             // Route to the correct strategy's squareoff endpoint. Positions
             // tagged with __strategyId at merge time carry that pill; older
-            // rows without a tag default to option-scalping (legacy MANUAL
-            // terminal fires).
+            // rows without a tag default to option-buying (was previously
+            // "option-scalping" — legacy MANUAL terminal fires).
             var endpoint = strategyId === 'option-buying'  ? '/api/option-buying/squareoff'
                          : strategyId === 'option-selling' ? '/api/option-selling/squareoff'
-                                                           : '/api/option-scalping/squareoff';
+                                                           : '/api/option-buying/squareoff';
             fetch(endpoint, {
                 method: 'POST',
                 headers: csrfHeaders(),
@@ -470,16 +470,16 @@
         renderKillSwitch(d);
         // v2 header — NIFTY spot LTP + change + %change. No VWAP (index doesn't
         // have a meaningful VWAP; the gate was retired).
-        if (d.optionScalping) {
+        if (d.optionBuying) {
             // perSymbolLevels is retired (no pivots in the ATM VWAP strategy).
-            renderFutTickerCells(d.optionScalping.futLtp, d.optionScalping.futChange,
-                d.optionScalping.futChangePct, d.optionScalping.futSymbol, null);
+            renderFutTickerCells(d.optionBuying.futLtp, d.optionBuying.futChange,
+                d.optionBuying.futChangePct, d.optionBuying.futSymbol, null);
         }
         // (Market Clock card ticks independently on a 1 s interval — see updateMarketClock())
     }
 
     function renderHeader(d) {
-        // Initial / fallback render from the option-scalping state stream (2 s heartbeat).
+        // Initial / fallback render from the option-buying state stream (2 s heartbeat).
         // VIX still rides the per-tick ticker SSE.
         var vxEl  = document.getElementById('hdrVix');
         if (vxEl)  vxEl.textContent  = d.indiaVix  != null ? Number(d.indiaVix).toFixed(2)  : '—';
@@ -553,34 +553,18 @@
         });
     }
 
-    /** Fetch OPTION BUYING + OPTIONS SELLING state and merge their open positions +
-     *  today's closed cycles + event logs INTO the OPTION SCALPING state object
-     *  that `applyState` renders. OPTION SCALPING is the "primary" strategy on
-     *  this page (its stats power the hero tiles); the other two strategies get
-     *  folded into the merged position + event views without disturbing them.
-     *  Both fetches run in parallel — a failure in either falls back gracefully. */
-    function mergeOptionBuyingInto(sellingState) {
-        var buyingP  = fetch('/api/option-buying/state').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; });
+    /** Fetch OPTION SELLING state and merge its open positions + today's closed
+     *  cycles + event logs INTO the OPTION BUYING state object that `applyState`
+     *  renders. OPTION BUYING is the "primary" strategy on this page (its stats
+     *  power the hero tiles); OPTION SELLING gets folded into the merged
+     *  position + event views without disturbing them. Failure falls back
+     *  gracefully to the buying-only view. */
+    function mergePrimaryStrategyState(buyingState) {
         var sellingP = fetch('/api/option-selling/state').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; });
-        return Promise.all([buyingP, sellingP]).then(function(pair) {
-            var buying  = pair[0];
-            var selling = pair[1];
-            var scalpingPositions = (sellingState.openPositions || []).map(function(p) {
-                var q = Object.assign({}, p);
-                q.__strategyId = 'option-scalping';
-                return q;
-            });
-            var buyingPositions = ((buying && buying.openPositions) || []).map(function(p) {
+        return sellingP.then(function(selling) {
+            var buyingPositions = (buyingState.openPositions || []).map(function(p) {
                 var q = Object.assign({}, p);
                 q.__strategyId = 'option-buying';
-                // OPTION BUYING is long; explicitly flag so renderPositions picks BUY pill.
-                q.isShort = false;
-                // slLevel isn't tracked as a stop level on buys — the SuperTrend flip
-                // exit is bar-driven. Show '—' via 0 sentinel.
-                if (q.slLevel == null) q.slLevel = 0;
-                // Provide ltp for the LTP column — reuses the ticker cache below via
-                // attachTickerPositionUpdates. Preseed with entryPrice so P&L reads 0.
-                if (q.ltp == null) q.ltp = q.entryPrice;
                 return q;
             });
             var sellingPositions = ((selling && selling.openPositions) || []).map(function(p) {
@@ -592,16 +576,9 @@
                 if (q.ltp == null) q.ltp = q.entryPrice;
                 return q;
             });
-            sellingState.__mergedPositions = scalpingPositions.concat(buyingPositions, sellingPositions);
-            // Merge today's closed cycles (all three strategies) into a single sorted list.
-            var mergedClosed = (sellingState.todayClosedTrades || []).slice();
-            if (buying && buying.todayClosedTrades) {
-                buying.todayClosedTrades.forEach(function(t) {
-                    var q = Object.assign({}, t);
-                    if (!q.strategyId) q.strategyId = 'option-buying';
-                    mergedClosed.push(q);
-                });
-            }
+            buyingState.__mergedPositions = buyingPositions.concat(sellingPositions);
+            // Merge today's closed cycles (both strategies) into a single sorted list.
+            var mergedClosed = (buyingState.todayClosedTrades || []).slice();
             if (selling && selling.todayClosedTrades) {
                 selling.todayClosedTrades.forEach(function(t) {
                     var q = Object.assign({}, t);
@@ -612,21 +589,14 @@
             mergedClosed.sort(function(a, b) {
                 return Number(b.closedAtMillis || 0) - Number(a.closedAtMillis || 0);
             });
-            sellingState.todayClosedTrades = mergedClosed;
+            buyingState.todayClosedTrades = mergedClosed;
             // Merge event logs. Each event gets tagged with __strategyId so the
             // event-log renderer can prefix the source with the strategy pill.
-            var mergedEvents = (sellingState.recentEvents || []).map(function(e) {
+            var mergedEvents = (buyingState.recentEvents || []).map(function(e) {
                 var q = Object.assign({}, e);
-                q.__strategyId = 'option-scalping';
+                q.__strategyId = 'option-buying';
                 return q;
             });
-            if (buying && buying.recentEvents) {
-                buying.recentEvents.forEach(function(e) {
-                    var q = Object.assign({}, e);
-                    q.__strategyId = 'option-buying';
-                    mergedEvents.push(q);
-                });
-            }
             if (selling && selling.recentEvents) {
                 selling.recentEvents.forEach(function(e) {
                     var q = Object.assign({}, e);
@@ -637,14 +607,14 @@
             mergedEvents.sort(function(a, b) {
                 return Number(b.ts || 0) - Number(a.ts || 0);
             });
-            sellingState.recentEvents = mergedEvents;
-            return sellingState;
-        }).catch(function() { return sellingState; });
+            buyingState.recentEvents = mergedEvents;
+            return buyingState;
+        }).catch(function() { return buyingState; });
     }
 
     function loadState() {
-        fetch('/api/option-scalping/state').then(function(r) { return r.json(); })
-            .then(mergeOptionBuyingInto)
+        fetch('/api/option-buying/state').then(function(r) { return r.json(); })
+            .then(mergePrimaryStrategyState)
             .then(applyState)
             .catch(function() {});
     }
@@ -661,13 +631,13 @@
     }
     function startStream() {
         try {
-            sseStream = new EventSource('/api/option-scalping/stream');
+            sseStream = new EventSource('/api/option-buying/stream');
             sseStream.addEventListener('state', function(ev) {
                 stopPollFallback();
                 try {
-                    var sellingState = JSON.parse(ev.data);
-                    // OPTION SCALPING pushes via SSE, OPTION BUYING doesn't — fetch it here.
-                    mergeOptionBuyingInto(sellingState).then(applyState);
+                    var buyingState = JSON.parse(ev.data);
+                    // OPTION BUYING pushes via SSE; OPTION SELLING doesn't — fetch it here.
+                    mergePrimaryStrategyState(buyingState).then(applyState);
                 } catch (e) {}
             });
             sseStream.onerror = function() {
@@ -742,7 +712,7 @@
         } else {
             tbody.innerHTML = positions.map(function(p, i) {
                 var pnl = Number(p.mtm || 0);
-                var strategyId = p.__strategyId || 'option-scalping';
+                var strategyId = p.__strategyId || 'option-buying';
                 // BUY position when either isShort=false or the row comes from
                 // OPTION BUYING (which flags side="CE_BUY"/"PE_BUY"). Otherwise SELL.
                 var isBuy = (p.isShort === false)
@@ -773,14 +743,14 @@
     }
 
     /** Small colored pill for the Strategy column.
-     *  option-scalping / option-buying → BUY cyan (legacy bean id
-     *    "option-scalping" is the OPTIONS BUYING strategy — the class file
-     *    name never got renamed).
+     *  option-buying → BUY cyan. Historical DB rows persisted before the
+     *    class-file rename carry strategyId="option-scalping" — treated as
+     *    an alias so old trade rows still render as BUY.
      *  option-selling → SELL red.
      *  MANUAL / unknown → grey. */
     function strategyPill(strategyId) {
         var id = String(strategyId || '').toLowerCase();
-        if (id === 'option-scalping' || id === 'option-buying') {
+        if (id === 'option-buying' || id === 'option-scalping') {
             return '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;color:#7dd3fc;background:rgba(125,211,252,0.10);border:1px solid rgba(125,211,252,0.35);">BUY</span>';
         }
         if (id === 'option-selling') {
@@ -880,7 +850,7 @@
     }
 
     // ── Tick-level position LTP / P&L update via the shared ticker SSE ──────
-    // The option-scalping state stream pushes every 2 s. To get sub-second LTP/P&L
+    // The option-buying state stream pushes every 2 s. To get sub-second LTP/P&L
     // refresh, we tap the same ticker channel used by the scrolling ticker —
     // it streams every WS tick for every subscribed symbol (including position
     // legs). For each tick that matches an open position, surgically update
@@ -897,7 +867,7 @@
         if (rowIdx < 0) return false;
         var p = positions[rowIdx];
         // OPTION BUYING positions are LONG (side ends with _BUY, or isShort=false);
-        // OPTION SCALPING positions are SHORT. Flip P&L sign accordingly.
+        // OPTION SELLING positions are SHORT. Flip P&L sign accordingly.
         var isBuy = (p.isShort === false)
             || (typeof p.side === 'string' && p.side.indexOf('_BUY') >= 0);
         var newMtm = isBuy

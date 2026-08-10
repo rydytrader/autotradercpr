@@ -302,7 +302,7 @@
     // ── Date range selection ────────────────────────────────────────────────
     // "Today" streams via SSE and shows entryPrice / exitPrice (rich in-memory
     // shape). Other presets hit the DB via /trades-range and lack per-leg
-    // entry/exit prices (0 shown as "—"). The option-scalping state feed only
+    // entry/exit prices (0 shown as "—"). The option-buying state feed only
     // carries today's trades, so we detach SSE when the user picks any
     // non-today preset and re-attach when they come back to Today.
     var currentRange = 'today';
@@ -422,13 +422,14 @@
     }
 
     /** Small colored pill for the trade row's Strategy column.
-     *  option-scalping / option-buying → BUY cyan (legacy bean id "option-scalping"
-     *    is the OPTIONS BUYING strategy — the class file name never got renamed).
+     *  option-buying → BUY cyan. Historical DB rows persisted before the
+     *    class-file rename carry strategyId="option-scalping" — treated as
+     *    an alias so old trade rows still render as BUY.
      *  option-selling → SELL red.
      *  Unknown / legacy → grey. */
     function strategyPill(strategyId) {
         var id = String(strategyId || '').toLowerCase();
-        if (id === 'option-scalping' || id === 'option-buying') {
+        if (id === 'option-buying' || id === 'option-scalping') {
             return '<span class="pill" style="color:#7dd3fc;background:rgba(125,211,252,0.10);border-color:rgba(125,211,252,0.35);">BUY</span>';
         }
         if (id === 'option-selling') {
@@ -444,7 +445,7 @@
     /** Every registered strategy id — used to fan today / range fetches across
      *  BOTH strategies so the Trade Log shows the merged history. Order is
      *  cosmetic (matches the sidebar / settings tabs). */
-    var STRATEGY_IDS = ['option-scalping', 'option-buying', 'option-selling'];
+    var STRATEGY_IDS = ['option-buying', 'option-selling'];
 
     /** Tag every row in `list` with the strategy id it came from (server rows
      *  from /trades-range already carry strategyId, but the in-memory
@@ -508,7 +509,7 @@
     function attachTodayStream() {
         if (sseStream) return;
         try {
-            sseStream = new EventSource('/api/option-scalping/stream');
+            sseStream = new EventSource('/api/option-buying/stream');
             sseStream.addEventListener('state', function(ev) {
                 if (currentRange !== 'today') return;
                 if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }

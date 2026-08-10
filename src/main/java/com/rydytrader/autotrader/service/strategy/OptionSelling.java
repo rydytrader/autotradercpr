@@ -759,7 +759,7 @@ public class OptionSelling implements Strategy {
 
     // ── Charges ──────────────────────────────────────────────────────────────
 
-    /** Per-cycle charges — mirrors OptionScalping's implementation. Duplicated
+    /** Per-cycle charges — mirrors OptionBuying's implementation. Duplicated
      *  intentionally: the plan explicitly permits it ("do NOT reach across
      *  strategies"). Costs the same regulatory formula: broker × 2 + STT (sell
      *  side) + exchange + SEBI + stamp + GST. */

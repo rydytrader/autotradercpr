@@ -13,7 +13,7 @@ import java.util.Map;
  * REST endpoints for the OPTIONS SELLING strategy.
  * <ul>
  *   <li>{@code GET  /api/option-selling/state}     — live multi-position state.
- *       Shape matches OptionScalping so {@code mergeOptionBuyingInto} on the
+ *       Shape matches OptionBuying so {@code mergeOptionBuyingInto} on the
  *       Trade page can fold this payload into the primary state object.</li>
  *   <li>{@code POST /api/option-selling/squareoff} — flatten one symbol or every
  *       open position.</li>
