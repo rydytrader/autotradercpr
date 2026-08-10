@@ -67,7 +67,7 @@ public class OptionScalping implements Strategy {
      *  futures ticks under {@link GdflSymbolMapper#FYERS_NIFTY_FUTURES}. */
     private static final String NIFTY_SYMBOL = GdflSymbolMapper.FYERS_NIFTY_FUTURES;
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    private static final String STATE_FILE = "../store/cache/option-scalping-state.json";
+    private static final String STATE_FILE = "../store/cache/option-buying-state.json";
     /** NIFTY option lot size — 65 (post 2025 revision). Exposed for the Manual Terminal
      *  controller (translates operator "lots" input into a contract count) so it
      *  doesn't duplicate the constant. Unused by the stripped Phase 3 body itself. */
