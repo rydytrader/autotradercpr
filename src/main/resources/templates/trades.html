@@ -228,8 +228,6 @@
                         <th>#</th>
                         <th class="text-center">Strategy</th>
                         <th>Time</th>
-                        <th class="text-center">Entry</th>
-                        <th class="text-center">Exit</th>
                         <th>Symbol</th>
                         <th class="text-center">Setup</th>
                         <th class="text-right">Qty</th>
@@ -243,7 +241,7 @@
                 </thead>
                 <tbody id="tradesTableBody">
                     <tr>
-                        <td colspan="14">
+                        <td colspan="12">
                             <div class="empty-state">
                                 <div class="empty-icon">◎</div>
                                 No trades completed today
@@ -410,8 +408,6 @@
                 + '<td>' + (i + 1) + '</td>'
                 + '<td class="text-center">' + strategyPill(t.strategyId) + '</td>'
                 + '<td>' + timeCell + '</td>'
-                + '<td class="text-center">' + fmtBarClose(t.entryCandleMs) + '</td>'
-                + '<td class="text-center">' + fmtBarClose(t.exitCandleMs) + '</td>'
                 + '<td>' + escapeHtml(t.symbol || '—') + '</td>'
                 + '<td class="text-center">' + setupPill(t.setup) + '</td>'
                 + '<td class="text-right">' + escapeHtml(String(t.qty || 0)) + '</td>'
@@ -445,16 +441,6 @@
         return '<span class="pill pill-setup-def">—</span>';
     }
 
-    /** Formats a candle START epoch (ms) as its OPEN time in IST — "HH:MM". Fyers/TV
-     *  canonical: a bar with start 09:18 IS the "09:18 candle" (covers 09:18→09:21).
-     *  This is what the operator identifies the trigger / confirmation / current bar
-     *  by. Empty / null renders as "—" for legacy trade rows that predate
-     *  entry_candle_ms / exit_candle_ms. */
-    function fmtBarClose(candleMs) {
-        if (!candleMs || Number(candleMs) <= 0) return '—';
-        var d = new Date(Number(candleMs) + 5.5 * 3600 * 1000);
-        return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
-    }
 
     /** Every registered strategy id — used to fan today / range fetches across
      *  BOTH strategies so the Trade Log shows the merged history. Order is
