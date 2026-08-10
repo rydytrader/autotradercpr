@@ -421,15 +421,14 @@
         }).join('');
     }
 
-    /** Small colored pill for the trade row's Strategy column. OPTION SCALPING
-     *  → amber (matches theta / sell semantics). OPTION BUYING → cyan (matches
-     *  the entry-line color on the chart). Unknown / legacy → grey. */
+    /** Small colored pill for the trade row's Strategy column.
+     *  option-scalping / option-buying → BUY cyan (legacy bean id "option-scalping"
+     *    is the OPTIONS BUYING strategy — the class file name never got renamed).
+     *  option-selling → SELL red.
+     *  Unknown / legacy → grey. */
     function strategyPill(strategyId) {
         var id = String(strategyId || '').toLowerCase();
-        if (id === 'option-scalping') {
-            return '<span class="pill" style="color:#fbbf24;background:rgba(251,191,36,0.10);border-color:rgba(251,191,36,0.35);">SCALP</span>';
-        }
-        if (id === 'option-buying') {
+        if (id === 'option-scalping' || id === 'option-buying') {
             return '<span class="pill" style="color:#7dd3fc;background:rgba(125,211,252,0.10);border-color:rgba(125,211,252,0.35);">BUY</span>';
         }
         if (id === 'option-selling') {

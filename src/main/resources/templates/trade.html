@@ -772,15 +772,15 @@
         }
     }
 
-    /** Small colored pill for the Strategy column. OPTION SCALPING → amber
-     *  (legacy MANUAL fires), OPTION BUYING → cyan, OPTIONS SELLING → red
-     *  (short-side premium seller), MANUAL / unknown → grey. */
+    /** Small colored pill for the Strategy column.
+     *  option-scalping / option-buying → BUY cyan (legacy bean id
+     *    "option-scalping" is the OPTIONS BUYING strategy — the class file
+     *    name never got renamed).
+     *  option-selling → SELL red.
+     *  MANUAL / unknown → grey. */
     function strategyPill(strategyId) {
         var id = String(strategyId || '').toLowerCase();
-        if (id === 'option-scalping') {
-            return '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;color:#fbbf24;background:rgba(251,191,36,0.10);border:1px solid rgba(251,191,36,0.35);">SCALP</span>';
-        }
-        if (id === 'option-buying') {
+        if (id === 'option-scalping' || id === 'option-buying') {
             return '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;color:#7dd3fc;background:rgba(125,211,252,0.10);border:1px solid rgba(125,211,252,0.35);">BUY</span>';
         }
         if (id === 'option-selling') {
