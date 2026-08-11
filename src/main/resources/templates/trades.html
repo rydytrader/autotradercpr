@@ -422,14 +422,11 @@
     }
 
     /** Small colored pill for the trade row's Strategy column.
-     *  option-buying → BUY cyan. Historical DB rows persisted before the
-     *    class-file rename carry strategyId="option-scalping" — treated as
-     *    an alias so old trade rows still render as BUY.
-     *  option-selling → SELL red.
-     *  Unknown / legacy → grey. */
+     *  option-buying  → BUY cyan.  option-selling → SELL red.
+     *  Legacy option-scalping id migrated at boot by StrategyIdMigration. */
     function strategyPill(strategyId) {
         var id = String(strategyId || '').toLowerCase();
-        if (id === 'option-buying' || id === 'option-scalping') {
+        if (id === 'option-buying') {
             return '<span class="pill" style="color:#7dd3fc;background:rgba(125,211,252,0.10);border-color:rgba(125,211,252,0.35);">BUY</span>';
         }
         if (id === 'option-selling') {

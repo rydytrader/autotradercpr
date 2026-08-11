@@ -281,10 +281,9 @@ public class AnalyticsService {
             default       -> null; // all-time
         };
         boolean allStrategies = strategyId == null || strategyId.isBlank() || "all".equalsIgnoreCase(strategyId);
-        // DB back-compat: rows persisted before the option-scalping → option-buying
-        // rename carry strategyId="option-scalping". Treat them as an alias so a
-        // filter for "option-buying" surfaces the full history without migration.
-        boolean acceptLegacyBuyingAlias = !allStrategies && "option-buying".equals(strategyId);
+        // Legacy option-scalping alias removed — StrategyIdMigration collapses
+        // pre-rename rows to option-buying at boot, so a straight strategy_id
+        // equality check returns full history for either strategy.
 
         // Historical / analytics rows are ALWAYS visible regardless of the
         // kill-switch state. The kill switch only blocks NEW fires; previously
@@ -294,9 +293,7 @@ public class AnalyticsService {
         List<Trade> out = new ArrayList<>();
         // Persisted rows
         for (StrategyTradeEntity e : tradeRepo.findAllByOrderByClosedAtMillisAsc()) {
-            if (!allStrategies
-                && !strategyId.equals(e.getStrategyId())
-                && !(acceptLegacyBuyingAlias && "option-scalping".equals(e.getStrategyId()))) continue;
+            if (!allStrategies && !strategyId.equals(e.getStrategyId())) continue;
             LocalDate d;
             try { d = LocalDate.parse(e.getSessionDate()); }
             catch (Exception ignored) { continue; }

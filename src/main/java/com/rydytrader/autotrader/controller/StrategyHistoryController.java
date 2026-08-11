@@ -43,41 +43,20 @@ public class StrategyHistoryController {
         this.strategies = strategies == null ? Map.of() : strategies;
     }
 
-    /** DB back-compat: rows persisted before the {@code option-scalping} →
-     *  {@code option-buying} rename carry {@code strategyId="option-scalping"}.
-     *  When callers ask for {@code option-buying}, we also union the legacy
-     *  {@code option-scalping} rows in so the calendar / trade log show the
-     *  full history without a data migration. */
-    private static final String LEGACY_OPTION_BUYING_ID = "option-scalping";
+    // Legacy option-scalping alias removed — StrategyIdMigration collapses those
+    // rows to option-buying at boot, so a single strategy_id query returns all
+    // history (past + present) without a runtime union.
 
     private List<StrategyTradeEntity> tradesByStrategy(String id) {
-        List<StrategyTradeEntity> rows = tradeRepo.findByStrategyIdOrderByClosedAtMillisAsc(id);
-        if ("option-buying".equals(id)) {
-            rows = new ArrayList<>(rows);
-            rows.addAll(tradeRepo.findByStrategyIdOrderByClosedAtMillisAsc(LEGACY_OPTION_BUYING_ID));
-            rows.sort((a, b) -> Long.compare(a.getClosedAtMillis(), b.getClosedAtMillis()));
-        }
-        return rows;
+        return tradeRepo.findByStrategyIdOrderByClosedAtMillisAsc(id);
     }
 
     private List<StrategyTradeEntity> tradesByStrategyForDate(String id, String date) {
-        List<StrategyTradeEntity> rows = tradeRepo.findByStrategyIdAndSessionDateOrderByClosedAtMillisAsc(id, date);
-        if ("option-buying".equals(id)) {
-            rows = new ArrayList<>(rows);
-            rows.addAll(tradeRepo.findByStrategyIdAndSessionDateOrderByClosedAtMillisAsc(LEGACY_OPTION_BUYING_ID, date));
-            rows.sort((a, b) -> Long.compare(a.getClosedAtMillis(), b.getClosedAtMillis()));
-        }
-        return rows;
+        return tradeRepo.findByStrategyIdAndSessionDateOrderByClosedAtMillisAsc(id, date);
     }
 
     private List<StrategyTradeEntity> tradesByStrategyForRange(String id, String from, String to) {
-        List<StrategyTradeEntity> rows = tradeRepo.findByStrategyIdAndSessionDateBetweenOrderByClosedAtMillisDesc(id, from, to);
-        if ("option-buying".equals(id)) {
-            rows = new ArrayList<>(rows);
-            rows.addAll(tradeRepo.findByStrategyIdAndSessionDateBetweenOrderByClosedAtMillisDesc(LEGACY_OPTION_BUYING_ID, from, to));
-            rows.sort((a, b) -> Long.compare(b.getClosedAtMillis(), a.getClosedAtMillis()));
-        }
-        return rows;
+        return tradeRepo.findByStrategyIdAndSessionDateBetweenOrderByClosedAtMillisDesc(id, from, to);
     }
 
     @GetMapping("/api/strategies/{id}/history")
