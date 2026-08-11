@@ -28,11 +28,11 @@
         .fixed-card-log { display: flex; flex-direction: column; }
         /* Both cards at 250 px outer; Live Positions table scrolls up to 420 px when full */
         .fixed-card .table-wrap { flex: 1; overflow-y: auto; min-height: 250px; max-height: 420px; }
-        /* Auto-width the table so columns hug their content — the previous
-           width:100% forced the browser to distribute extra space (mostly
-           into the Symbol column, producing a big visible gap). Tighter
-           cell padding also helps close the gap. */
-        .fixed-card .table-wrap .data-table { width: auto; min-width: auto; }
+        .fixed-card .table-wrap .data-table { width: 100%; }
+        /* Cell padding tightened from the shared 20px → 14px to close the
+           visible gap between Symbol and Quantity. Kept width:100% so the
+           table always fills the container (auto width made the empty-state
+           row shrink oddly). */
         .fixed-card .table-wrap .data-table th,
         .fixed-card .table-wrap .data-table td { padding-left: 14px; padding-right: 14px; }
         /* When the empty-state placeholder row is shown, vertically center it inside the wrap. */
