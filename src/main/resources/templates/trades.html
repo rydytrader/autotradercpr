@@ -422,15 +422,14 @@
     }
 
     /** Small colored pill for the trade row's Strategy column.
-     *  option-buying  → BUY cyan.  option-selling → SELL red.
-     *  Legacy option-scalping id migrated at boot by StrategyIdMigration. */
+     *  option-buying → OPTIONS BUY cyan.  option-selling → OPTIONS SELL red. */
     function strategyPill(strategyId) {
         var id = String(strategyId || '').toLowerCase();
         if (id === 'option-buying') {
-            return '<span class="pill" style="color:#7dd3fc;background:rgba(125,211,252,0.10);border-color:rgba(125,211,252,0.35);">BUY</span>';
+            return '<span class="pill" style="color:#7dd3fc;background:rgba(125,211,252,0.10);border-color:rgba(125,211,252,0.35);">OPTIONS BUY</span>';
         }
         if (id === 'option-selling') {
-            return '<span class="pill" style="color:#f87171;background:rgba(248,113,113,0.10);border-color:rgba(248,113,113,0.35);">SELL</span>';
+            return '<span class="pill" style="color:#f87171;background:rgba(248,113,113,0.10);border-color:rgba(248,113,113,0.35);">OPTIONS SELL</span>';
         }
         if (id === 'manual') {
             return '<span class="pill" style="color:var(--text-secondary);background:rgba(148,163,184,0.10);border-color:rgba(148,163,184,0.30);">MANUAL</span>';
