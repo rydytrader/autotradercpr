@@ -93,8 +93,24 @@ public class ChartController {
             candleAggregator.subscribe(symbol, c -> {});
         }
         List<Candle> hist = candleAggregator.getHistory(symbol);
+        Candle current = candleAggregator.getCurrentBucket(symbol);
+        // Dedupe: if the aggregator hasn't rolled the current bucket yet AND a
+        // GDFL snapshot already wrote canonical values for that bar into
+        // history, current would shadow the canonical values on the chart
+        // (client-side pushBar processes current AFTER history at the same
+        // time key). Suppress current here so the canonical bar in history
+        // wins the render.
+        if (current != null && hist != null) {
+            long curStart = current.startMillis();
+            for (Candle h : hist) {
+                if (h != null && h.startMillis() == curStart) {
+                    current = null;
+                    break;
+                }
+            }
+        }
         out.put("history", hist);
-        out.put("current", candleAggregator.getCurrentBucket(symbol));
+        out.put("current", current);
         // Exchange "now" — max exchFeedTime across subscribed symbols. Chart uses this
         // for the bar countdown so it ticks in sync with TradingView (which also runs
         // on exchange time) rather than local wall clock. 0 when no ticks have arrived.
