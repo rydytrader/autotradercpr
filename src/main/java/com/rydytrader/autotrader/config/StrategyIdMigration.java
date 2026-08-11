@@ -48,13 +48,14 @@ public class StrategyIdMigration implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
+        log.info("[StrategyIdMigration] running — scanning strategy_trades + strategy_sessions for legacy '{}' rows", LEGACY_ID);
         int trades   = safeUpdate("strategy_trades");
         int sessions = safeUpdate("strategy_sessions");
         if (trades > 0 || sessions > 0) {
             log.info("[StrategyIdMigration] renamed strategy_id '{}' -> '{}' — trades={} sessions={}",
                 LEGACY_ID, CANONICAL_ID, trades, sessions);
         } else {
-            log.debug("[StrategyIdMigration] no legacy strategy_id rows to migrate — no-op");
+            log.info("[StrategyIdMigration] no legacy '{}' rows found — no-op", LEGACY_ID);
         }
     }
 
