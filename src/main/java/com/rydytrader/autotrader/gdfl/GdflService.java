@@ -583,20 +583,23 @@ public class GdflService {
             log.info("[Gdfl] OHLC bar for unmapped symbol '{}' — ignored", gdflSym);
             return;
         }
-        long closeSec = root.path("LastTradeTime").asLong(0);
+        long ltSec = root.path("LastTradeTime").asLong(0);
         double open   = root.path("Open").asDouble(0);
         double high   = root.path("High").asDouble(0);
         double low    = root.path("Low").asDouble(0);
         double close  = root.path("Close").asDouble(0);
         long   volume = root.path("TradedQty").asLong(0);
-        if (closeSec <= 0 || open <= 0 || high <= 0 || low <= 0 || close <= 0) {
+        if (ltSec <= 0 || open <= 0 || high <= 0 || low <= 0 || close <= 0) {
             log.info("[Gdfl] OHLC bar for {} malformed — skipping ({})", fyersSym, root);
             return;
         }
-        // LastTradeTime is the bar CLOSE. Our aggregator keys bars by OPEN
-        // (startMillis) — subtract one bar length to convert.
-        long barLengthSec = 60L * CandleAggregator.BUCKET_MINUTES;
-        long startMs = (closeSec - barLengthSec) * 1000L;
+        // Empirical (verified 2026-08-11 with operator): GDFL's LastTradeTime on
+        // RealtimeSnapshotResult frames is the bar's OPEN/START time — NOT the
+        // close as our earlier assumption. Snapshot for a bar closing at
+        // 12:55:00 arrives with LastTradeTime=1786432800 which decodes to
+        // 12:50:00 (start of 12:50-12:55 bar). Our aggregator keys bars by
+        // startMillis, so use LastTradeTime directly.
+        long startMs = ltSec * 1000L;
         Candle canonical = new Candle(open, high, low, close, volume, startMs, 0.0);
         candleAggregator.overwriteBar(fyersSym, canonical);
 
