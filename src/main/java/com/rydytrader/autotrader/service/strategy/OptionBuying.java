@@ -615,7 +615,7 @@ public class OptionBuying implements Strategy {
                     "Exit filled @ Rs." + round2(price) + " — gross Rs." + round2(gross)
                         + " charges Rs." + round2(charges) + " net Rs." + round2(net));
 
-                // Append a cycle so consumedRiskToday / liveNetPnlToday /
+                // Append an in-memory cycle so consumedRiskToday / liveNetPnlToday /
                 // PortfolioRiskService see the realised P&L. Same shape closePosition
                 // uses so downstream readers (dashboard, analytics) don't branch.
                 Map<String, Object> cycle = new LinkedHashMap<>();
@@ -636,6 +636,18 @@ public class OptionBuying implements Strategy {
                 cycle.put("entryCandleMs",  0L);
                 state.todayClosedTrades.add(cycle);
                 while (state.todayClosedTrades.size() > 100) state.todayClosedTrades.remove(0);
+
+                // ALSO persist to strategy_trades DB row — without this the
+                // trade evaporates at tomorrow's day-rollover (state.todayClosedTrades
+                // is cleared) and never appears in the historical Trade Log,
+                // calendar, or analytics.
+                persistTradeRow(STRATEGY_ID, state.entrySymbol,
+                    state.entrySide == null ? "" : state.entrySide,
+                    "FSM_EXIT", qty, gross, charges, net,
+                    0,                           // slHits — FSM doesn't track a count
+                    closedAtMillis, 0L,          // openedAtMillis unknown; fill unused
+                    state.entryPrice, price,
+                    0L, 0L);                     // entry/exit candle timestamps unused
 
                 saveToDisk();
             }
