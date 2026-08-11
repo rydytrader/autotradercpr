@@ -286,12 +286,12 @@
                     <tr>
                         <th>#</th>
                         <th class="text-center">Strategy</th>
-                        <th class="text-center">Entry</th>
                         <th>Symbol</th>
                         <th class="text-right">Quantity</th>
                         <th class="text-center">Side</th>
                         <th class="text-center">Setup</th>
-                        <th class="text-right">SL</th>
+                        <th class="text-right">Entry</th>
+                        <th class="text-right">Target</th>
                         <th class="text-right">LTP</th>
                         <th class="text-right">P&amp;L</th>
                         <th class="text-center">Action</th>
@@ -360,39 +360,10 @@
             maximumFractionDigits: 2
         });
     }
-    /** Target / SL level cell formatter — v2 positions render the futures price
-     *  with a 'FUT' suffix (no ₹ sign — these are index points, not currency).
-     *  v1 positions keep the legacy ₹-prefixed option-premium format. The
-     *  position payload carries triggerSymbol; presence = v2 row. */
-    function fmtLevel(p, v) {
-        var n = Number(v);
-        if (!isFinite(n)) return '—';
-        if (p && p.triggerSymbol) {
-            // Spot/futures point value — fixed 2dp, separator-grouped, FUT tag.
-            // Rendered muted so the operator visually distinguishes it from
-            // option-premium values shown on manual trades (which stay coloured
-            // via the parent td's pnl-negative / pnl-positive class). Inline
-            // colour wins over the td class via specificity.
-            return '<span style="color:var(--text-muted);font-weight:500;">'
-                 + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                 + ' <span style="font-size:0.6rem;letter-spacing:0.05em;margin-left:4px;">FUT</span>'
-                 + '</span>';
-        }
-        return fmtRs(v);
-    }
     function fmtTime(ms) {
         if (!ms) return '—';
         var d = new Date(Number(ms));
         return d.toTimeString().slice(0, 8);
-    }
-    /** Candle START epoch → its OPEN time in IST "HH:MM" (Fyers/TV canonical). The
-     *  entry candle for a fire on the 09:21→09:24 confirmation bar renders as "09:21"
-     *  — the bar identifier operators recognise. Legacy positions from a state file
-     *  predating entryCandleMs render "—". */
-    function fmtBarClose(candleMs) {
-        if (!candleMs || Number(candleMs) <= 0) return '—';
-        var d = new Date(Number(candleMs) + 5.5 * 3600 * 1000);
-        return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
     }
     function escapeHtml(s) {
         if (s == null) return '';
@@ -717,10 +688,11 @@
                 // OPTION BUYING (which flags side="CE_BUY"/"PE_BUY"). Otherwise SELL.
                 var isBuy = (p.isShort === false)
                     || (typeof p.side === 'string' && p.side.indexOf('_BUY') >= 0);
+                var entryPx = Number(p.entryPrice || 0);
+                var targetPx = Number(p.targetLevel || 0);
                 return '<tr>'
                     + '<td>' + (i + 1) + '</td>'
                     + '<td class="text-center">' + strategyPill(strategyId) + '</td>'
-                    + '<td class="text-center">' + fmtBarClose(p.entryCandleMs) + '</td>'
                     + '<td>' + escapeHtml(p.symbol) + '</td>'
                     + '<td class="text-right">' + escapeHtml(String(p.qty)) + '</td>'
                     + '<td class="text-center">'
@@ -729,11 +701,8 @@
                             : '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;background:rgba(248,113,113,0.10);color:#f87171;border:1px solid rgba(248,113,113,0.35);">SELL</span>')
                       + '</td>'
                     + '<td class="text-center">' + escapeHtml(p.setup || p.side || '') + '</td>'
-                    + '<td class="text-right pnl-negative">' + fmtLevel(p, p.slLevel)
-                        + (p.breakevenMoved
-                            ? ' <span title="SL moved to breakeven" style="color:#fbbf24;font-size:0.7rem;margin-left:6px;cursor:help;">▲</span>'
-                            : '')
-                        + '</td>'
+                    + '<td class="text-right">' + (entryPx  > 0 ? fmtRs(entryPx)  : '—') + '</td>'
+                    + '<td class="text-right">' + (targetPx > 0 ? fmtRs(targetPx) : '—') + '</td>'
                     + '<td class="text-right">' + fmtRs(p.ltp) + '</td>'
                     + '<td class="text-right ' + pnlClass(pnl) + '" style="font-weight:700;">' + fmtRs(pnl) + '</td>'
                     + '<td class="text-center"><button class="squareoff-btn" style="padding:4px 10px;font-size:0.65rem;" onclick="squareOffRow(\'' + escapeHtml(p.symbol).replace(/'/g, "&#39;") + '\',\'' + strategyId + '\')">×</button></td>'
