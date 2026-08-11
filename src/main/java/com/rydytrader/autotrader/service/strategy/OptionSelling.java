@@ -136,11 +136,19 @@ public class OptionSelling implements Strategy {
         rolloverIfNewDay();
         pruneStaleEventsBeforeToday();
 
-        // Subscribe the NIFTY current-month FUTURES symbol. GdflService already
-        // subscribes it — this attaches our aggregator listener so we get 5-min
-        // bar closes. CandleAggregator.subscribe is multi-listener safe so
-        // OPTION BUYING's parallel subscription keeps working.
-        candleAggregator.subscribe(NIFTY_SYMBOL, c -> onFuturesBar(NIFTY_SYMBOL, c));
+        // Subscribe the NIFTY current-month FUTURES symbol via the CANONICAL bar
+        // dispatch on GdflService — same path OPTION BUYING uses. Server-side
+        // snapshot (~200-300ms after wall-clock close) drives the trigger so OHLC
+        // matches TradingView; a 1500ms fallback fires the tick-aggregated bar
+        // when the snapshot fails to arrive. The aggregator still buckets futures
+        // ticks for chart / VWAP display — we just don't listen to its close
+        // event for the futures leg on the strategy trigger path.
+        GdflService gdflForCanonical = gdflServiceProvider == null ? null : gdflServiceProvider.getIfAvailable();
+        if (gdflForCanonical != null) {
+            gdflForCanonical.addCanonicalBarListener(NIFTY_SYMBOL, c -> onFuturesBar(NIFTY_SYMBOL, c));
+        } else {
+            log.warn("[OptionSelling] GdflService not available at boot — canonical bar dispatch not registered; strategy trigger will never fire");
+        }
 
         // Re-attach candle listeners for any open option positions restored from
         // disk so the aggregator keeps bucketing their ticks. Callback is a no-op
@@ -161,7 +169,7 @@ public class OptionSelling implements Strategy {
             log.warn("[OptionSelling] OrderEventService not available at boot — fill capture will fall back to tradebook polling on exit");
         }
 
-        log.info("[OptionSelling] boot — registered aggregator listener for {} (5-min bars). GDFL subscribe happens separately in GdflService on WS auth.", NIFTY_SYMBOL);
+        log.info("[OptionSelling] boot — registered CANONICAL bar listener for {} (5-min bars) via GdflService. GDFL Realtime + Snapshot subscribes happen separately on WS auth.", NIFTY_SYMBOL);
         log.info("[OptionSelling] booted — optionSellingEnabled={} openPositions={} ceEntriesToday={} peEntriesToday={} squareoff={}",
             riskSettings.isOptionSellingEnabled(),
             state.openPositions.size(),
