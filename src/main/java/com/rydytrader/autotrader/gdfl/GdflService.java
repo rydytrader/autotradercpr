@@ -559,10 +559,31 @@ public class GdflService {
      *  tick-aggregated bar we already had for that timestamp. */
     private void onGdflOhlcBar(JsonNode root) {
         String gdflSym = root.path("InstrumentIdentifier").asText("");
-        if (gdflSym.isBlank()) return;
+        if (gdflSym.isBlank()) {
+            log.info("[Gdfl] OHLC bar received with BLANK InstrumentIdentifier — dropping. Raw: {}", root);
+            return;
+        }
+        // TEMPORARY DIAGNOSTIC — log EVERY OHLC bar arrival at INFO with the
+        // raw InstrumentIdentifier so we can see exactly what GDFL sends for
+        // continuous NIFTY-I snapshots (they may echo the specific contract
+        // like NIFTY27AUG26FUT instead of the alias). Bump to DEBUG once the
+        // mapping situation is resolved.
+        log.info("[Gdfl] OHLC bar arrival — GDFL sym='{}' periodicity='{}' period={} closeSec={}",
+            gdflSym, root.path("Periodicity").asText(""), root.path("Period").asInt(0),
+            root.path("LastTradeTime").asLong(0));
+
         String fyersSym = mapper.gdflToFyers(gdflSym);
+        // Special-case: any OHLC bar on a NIFTY futures identifier that isn't in
+        // the mapper (e.g. GDFL echoing NIFTY27AUG26FUT instead of NIFTY-I when
+        // we subscribed with the continuous alias) — treat it as the futures
+        // symbol we care about. Same underlying instrument, same canonical bar.
+        if ((fyersSym == null || fyersSym.isBlank())
+                && gdflSym.startsWith("NIFTY") && (gdflSym.endsWith("FUT") || gdflSym.contains("-I"))) {
+            fyersSym = GdflSymbolMapper.FYERS_NIFTY_FUTURES;
+            log.info("[Gdfl] OHLC bar for '{}' auto-mapped to NIFTY-I futures (continuous-alias echo)", gdflSym);
+        }
         if (fyersSym == null || fyersSym.isBlank()) {
-            log.debug("[Gdfl] OHLC bar for unmapped symbol {} — ignored", gdflSym);
+            log.info("[Gdfl] OHLC bar for unmapped symbol '{}' — ignored", gdflSym);
             return;
         }
         long closeSec = root.path("LastTradeTime").asLong(0);
@@ -572,7 +593,7 @@ public class GdflService {
         double close  = root.path("Close").asDouble(0);
         long   volume = root.path("TradedQty").asLong(0);
         if (closeSec <= 0 || open <= 0 || high <= 0 || low <= 0 || close <= 0) {
-            log.debug("[Gdfl] OHLC bar for {} malformed — skipping ({})", fyersSym, root);
+            log.info("[Gdfl] OHLC bar for {} malformed — skipping ({})", fyersSym, root);
             return;
         }
         // LastTradeTime is the bar CLOSE. Our aggregator keys bars by OPEN
@@ -582,11 +603,12 @@ public class GdflService {
         Candle canonical = new Candle(open, high, low, close, volume, startMs, 0.0);
         candleAggregator.overwriteBar(fyersSym, canonical);
 
-        // Fan the canonical bar out to registered strategy listeners for
-        // symbols we snapshot-subscribed to (currently NIFTY-I only). This
-        // dispatch cancels any pending fallback timer for the same bar so the
-        // strategy sees the snapshot bar and not the tick-aggregated one.
-        if (snapshotSubscribedGdflSymbols.contains(gdflSym)) {
+        // Fan the canonical bar out to registered strategy listeners for the
+        // futures leg. Match by the RESOLVED fyersSym so continuous-alias
+        // echoes (GDFL sending NIFTY27AUG26FUT instead of NIFTY-I) still route
+        // correctly — the check on snapshotSubscribedGdflSymbols would miss
+        // those since it stores what WE sent ("NIFTY-I"), not what GDFL echoes.
+        if (GdflSymbolMapper.FYERS_NIFTY_FUTURES.equals(fyersSym)) {
             dispatchCanonicalBar(fyersSym, canonical);
         }
     }
