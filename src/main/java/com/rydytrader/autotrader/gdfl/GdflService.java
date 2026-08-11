@@ -72,13 +72,6 @@ public class GdflService {
     /** GDFL symbols we've already fired GetHistory for TODAY (backfilling the
      *  09:15 → 09:16 first bar for the trading pair). */
     private final Set<String> historyFetchedGdflSymbols = new HashSet<>();
-    /** GDFL symbols with a pending daily-history seed request. When a daily-bar
-     *  response arrives for one of these, we treat it as a prevClose seed for
-     *  MarketDataService (so the header change/%change chip works) and
-     *  DO NOT route it to CandleAggregator.overwriteBar. Cleared on first
-     *  seed processed; re-added at day rollover. */
-    private final Set<String> pendingDailySeedGdflSymbols =
-        java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     private volatile GdflDataWebSocket wsClient;
     /** Which GDFL identifiers we've already sent SubscribeRealtime for TODAY. Reset at
@@ -293,7 +286,6 @@ public class GdflService {
                 subscribedGdflSymbols.clear();
                 snapshotSubscribedGdflSymbols.clear();
                 historyFetchedGdflSymbols.clear();
-                pendingDailySeedGdflSymbols.clear();   // re-fire daily-history seed for today
                 mapper.clear();
                 marketDataService.clearAltFeedOwnedSymbols();
                 // Re-seed the futures state that connect()'s boot-time subscribe
@@ -313,12 +305,6 @@ public class GdflService {
             // walkback / rollover code needed. Idempotent — subscribeOne skips
             // once it's in subscribedGdflSymbols.
             subscribeOne(GdflSymbolMapper.FYERS_NIFTY_FUTURES);
-
-            // Seed prevClose from daily-bar history so the header change/%change
-            // chip populates before the first live tick moves. Idempotent —
-            // seedFuturesPrevClose adds to a dedupe set and short-circuits if
-            // already fired today. See onGdflOhlcBar for the response-handling side.
-            seedFuturesPrevClose();
 
             // Pre-warm window — OptionBuying.warmupIfDue populates ±10 strikes
             // (42 CE + PE symbols) at 09:10 IST. Subscribe them all on GDFL so
@@ -500,55 +486,12 @@ public class GdflService {
             log.debug("[Gdfl] OHLC bar for {} malformed — skipping ({})", fyersSym, root);
             return;
         }
-
-        // Daily-seed short-circuit — if we requested a daily-bar history for
-        // this symbol (to seed prevClose so the header change chip works), any
-        // matching response is routed here INSTEAD of the aggregator overwrite
-        // path. First response wins; subsequent daily-bar rows in the same
-        // batch fall through to the normal 5-min-bar overwrite path — but
-        // they'll be rejected there as malformed startMs (daily bars have
-        // startMs way off any 5-min boundary), so effectively no-op.
-        if (pendingDailySeedGdflSymbols.remove(gdflSym)) {
-            marketDataService.seedTickData(fyersSym, 0.0, close);
-            log.info("[Gdfl] seeded prevClose for {} = {} (from daily history)",
-                fyersSym, close);
-            return;
-        }
-
         // LastTradeTime is the bar CLOSE. Our aggregator keys bars by OPEN
         // (startMillis) — subtract one bar length to convert.
         long barLengthSec = 60L * CandleAggregator.BUCKET_MINUTES;
         long startMs = (closeSec - barLengthSec) * 1000L;
         Candle canonical = new Candle(open, high, low, close, volume, startMs, 0.0);
         candleAggregator.overwriteBar(fyersSym, canonical);
-    }
-
-    /** Fires a one-shot daily-bar GetHistory for NIFTY-I so we can seed
-     *  {@code prevClose} into MarketDataService's tick cache. Without this,
-     *  the header change / %change chip stays empty because GDFL's realtime
-     *  frames don't carry the previous-day close. Idempotent per day via
-     *  the dedupe set; cleared on day rollover so tomorrow's boot re-seeds. */
-    private void seedFuturesPrevClose() {
-        String gdflSym = GdflSymbolMapper.GDFL_NIFTY_FUTURES;
-        // Add to pending set BEFORE firing the request so an ultra-fast response
-        // doesn't miss the short-circuit branch. If the send fails, remove.
-        if (!pendingDailySeedGdflSymbols.add(gdflSym)) return;    // already pending / fired this cycle
-        if (wsClient == null || !wsClient.isAuthenticated()) {
-            pendingDailySeedGdflSymbols.remove(gdflSym);
-            return;
-        }
-        // GDFL returns "DAY" bars with MaxNoOfRecords entries. 2 covers pre-open
-        // (yesterday + day-before) or intraday (today-partial + yesterday). The
-        // first row that lands wins the seed — it'll be either yesterday's close
-        // (ideal) or today's in-progress close (close enough — live ticks will
-        // update LTP and change recalculates every tick).
-        boolean ok = wsClient.getHistory(gdflSym, "DAY", 1, 2);
-        if (!ok) {
-            pendingDailySeedGdflSymbols.remove(gdflSym);
-            log.warn("[Gdfl] daily-history request for {} failed to send", gdflSym);
-        } else {
-            log.info("[Gdfl] requested daily history for {} (prevClose seed)", gdflSym);
-        }
     }
 
     /** Called by the 5 s ATM-check poll once OptionBuying has locked the
