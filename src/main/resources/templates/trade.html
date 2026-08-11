@@ -28,7 +28,13 @@
         .fixed-card-log { display: flex; flex-direction: column; }
         /* Both cards at 250 px outer; Live Positions table scrolls up to 420 px when full */
         .fixed-card .table-wrap { flex: 1; overflow-y: auto; min-height: 250px; max-height: 420px; }
-        .fixed-card .table-wrap .data-table { width: 100%; }
+        /* Auto-width the table so columns hug their content — the previous
+           width:100% forced the browser to distribute extra space (mostly
+           into the Symbol column, producing a big visible gap). Tighter
+           cell padding also helps close the gap. */
+        .fixed-card .table-wrap .data-table { width: auto; min-width: auto; }
+        .fixed-card .table-wrap .data-table th,
+        .fixed-card .table-wrap .data-table td { padding-left: 14px; padding-right: 14px; }
         /* When the empty-state placeholder row is shown, vertically center it inside the wrap. */
         .fixed-card .table-wrap .empty-state { padding: 65px 20px; }
         /* Real data rows keep their natural height — no stretching. */
