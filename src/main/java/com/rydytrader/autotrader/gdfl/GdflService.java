@@ -345,15 +345,17 @@ public class GdflService {
                 historyFetchedGdflSymbols.clear();
                 mapper.clear();
                 marketDataService.clearAltFeedOwnedSymbols();
-                // Re-seed the futures state that connect()'s boot-time subscribe
-                // put in — mapper reverse-mapping, altFeed ownership, dedupe set.
+                // Re-seed the Realtime dedupe set that connect()'s boot-time
+                // subscribe put in — mapper reverse-mapping, altFeed ownership.
                 subscribedGdflSymbols.add(GdflSymbolMapper.GDFL_NIFTY_FUTURES);
-                // Snapshot subscription for NIFTY-I persists GDFL-side across
-                // day boundaries too, so re-add to the dedupe set after the
-                // clear() above — otherwise checkAtmAndSubscribe would re-fire
-                // SubscribeSnapshot at 09:10:01 every morning for a subscription
-                // that's already live on the vendor side.
-                snapshotSubscribedGdflSymbols.add(GdflSymbolMapper.GDFL_NIFTY_FUTURES);
+                // Snapshot: intentionally NOT pre-added to the dedupe set here.
+                // The rollover branch also fires on FRESH process boot (when
+                // subscribedDayKey starts as ""), and pre-adding would block the
+                // first-ever SubscribeSnapshot send from firing. Let
+                // checkAtmAndSubscribe below fire the subscribe naturally on
+                // every fresh process — GDFL accepts duplicate SubscribeSnapshot
+                // silently, so a re-fire on true day rollover (rare — bot
+                // running > 24h) is harmless.
                 mapper.fyersToGdfl(GdflSymbolMapper.FYERS_NIFTY_FUTURES);
                 marketDataService.addAltFeedOwnedSymbol(GdflSymbolMapper.FYERS_NIFTY_FUTURES);
                 subscribedDayKey = today;
