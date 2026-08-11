@@ -145,10 +145,18 @@ public class GdflDataWebSocket extends WebSocketClient {
         }
 
         // Server-side aggregated OHLC bar push — one per subscribed symbol per bar close.
-        // Fields per GDFL docs: Exchange, InstrumentIdentifier, LastTradeTime (bar close
-        // epoch sec), TradedQty, OpenInterest, Open, High, Low, Close. Same schema used
-        // for GetHistoryResult rows below.
-        if ("SnapshotResult".equalsIgnoreCase(type)) {
+        // Fields per GDFL docs: Exchange, InstrumentIdentifier, Periodicity, Period,
+        // LastTradeTime (bar close epoch sec), TradedQty, OpenInterest, Open, High,
+        // Low, Close. Same schema used for GetHistoryResult rows below.
+        //
+        // GDFL docs (function-subscribesnapshot) specify the response MessageType as
+        // "RealtimeSnapshotResult". The old "SnapshotResult" match here NEVER fired
+        // — every snapshot frame landed in the unknown-frames ring, and the strategy
+        // dispatcher fell back to the tick-aggregated bar every single time (visible
+        // as [Canonical] FALLBACK WARN lines in the logs). Accepting both names is
+        // defensive in case GDFL runs multiple protocol versions.
+        if ("RealtimeSnapshotResult".equalsIgnoreCase(type)
+                || "SnapshotResult".equalsIgnoreCase(type)) {
             if (ohlcBarListener != null) {
                 try { ohlcBarListener.accept(root); }
                 catch (Exception e) { log.warn("[GdflWS] snapshot listener threw: {}", e.getMessage()); }
