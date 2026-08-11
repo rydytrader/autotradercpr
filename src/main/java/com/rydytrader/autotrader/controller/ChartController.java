@@ -54,17 +54,30 @@ public class ChartController {
         double chp = marketDataService.getDisplayChangePct(fyersSymbol);
         // Fallback: if prevClose isn't populated for this symbol (GDFL frames
         // don't carry it and we don't seed it), MarketDataService.getDisplayChange
-        // returns 0 forever. Use session change (LTP vs today's first 5-min bar
-        // OPEN) so the header + hero tiles show a meaningful number. Session
-        // change is arguably more useful for a scalping trader anyway.
+        // returns 0 forever. Use session change so the header + hero tiles
+        // show a meaningful number.
+        //
+        // sessionOpen source, in priority order:
+        //   1. First CLOSED 5-min bar's OPEN — precise and stable once we
+        //      have any history (available from 09:20 onwards).
+        //   2. In-progress bucket's OPEN — populated on the very first tick
+        //      after market open (09:15), so change/%change starts showing
+        //      immediately instead of waiting for the first bar close.
+        //   3. LTP itself as a last resort — change stays 0 until a second
+        //      tick lands, but at least it's a defined value.
         if (ltp > 0 && ch == 0.0 && chp == 0.0) {
+            double sessionOpen = 0.0;
             java.util.List<Candle> hist = candleAggregator.getHistory(fyersSymbol);
             if (hist != null && !hist.isEmpty()) {
-                double sessionOpen = hist.get(0).open();
-                if (sessionOpen > 0) {
-                    ch  = ltp - sessionOpen;
-                    chp = (ch / sessionOpen) * 100.0;
-                }
+                sessionOpen = hist.get(0).open();
+            }
+            if (sessionOpen <= 0) {
+                Candle current = candleAggregator.getCurrentBucket(fyersSymbol);
+                if (current != null) sessionOpen = current.open();
+            }
+            if (sessionOpen > 0) {
+                ch  = ltp - sessionOpen;
+                chp = (ch / sessionOpen) * 100.0;
             }
         }
         m.put("ltp",  round2(ltp));
