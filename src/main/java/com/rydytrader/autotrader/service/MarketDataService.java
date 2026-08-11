@@ -87,7 +87,14 @@ public class MarketDataService {
      *  {@code exchFeedTimeSec} / {@code lastTradedTimeSec} may be 0 if the source
      *  couldn't extract them; consumers should fall back {@code LTT → EFT → wall-clock}. */
     public record LtpTick(String fyersSymbol, double ltp, double atp,
-                          long exchFeedTimeSec, long lastTradedTimeSec) {}
+                          long exchFeedTimeSec, long lastTradedTimeSec,
+                          double prevClose) {
+        /** Legacy 5-arg constructor kept so any older callers don't break. */
+        public LtpTick(String fyersSymbol, double ltp, double atp,
+                       long exchFeedTimeSec, long lastTradedTimeSec) {
+            this(fyersSymbol, ltp, atp, exchFeedTimeSec, lastTradedTimeSec, 0.0);
+        }
+    }
     private final CopyOnWriteArrayList<java.util.function.Consumer<LtpTick>> ltpListeners = new CopyOnWriteArrayList<>();
 
     /** Registers a listener that receives every LTP tick. Callers must not block —
@@ -136,6 +143,10 @@ public class MarketDataService {
         });
         tick.setLtp(evt.ltp());
         if (evt.atp() > 0) tick.setVwap(evt.atp());
+        // GDFL RealtimeResult frames carry Close (previous trading day's close) on
+        // every tick — cache it so change / % change against prev close is always
+        // available, without needing a separate daily-history seed request.
+        if (evt.prevClose() > 0) tick.setPrevClose(evt.prevClose());
         String today = LocalDate.now(ZoneId.of("Asia/Kolkata")).toString();
         tick.setLastTickDate(today);
         tick.recalcChange();

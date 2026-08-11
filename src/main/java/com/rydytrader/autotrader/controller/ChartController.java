@@ -40,49 +40,19 @@ public class ChartController {
 
     /** Compact tick block for a single symbol. Reads directly from the in-memory tick
      *  cache — always returns the last-known value even off-market-hours, unlike the
-     *  SSE stream which is only push-on-change. */
+     *  SSE stream which is only push-on-change.
+     *
+     *  <p>Change / %change are populated on every tick because GDFL RealtimeResult
+     *  frames carry {@code Close} (previous day's close) as a first-class field —
+     *  GdflService pulls that into {@link MarketDataService.LtpTick#prevClose()} and
+     *  pushLtpTick seeds it into the TickData. So getDisplayChange returns the
+     *  correct value from the very first tick. */
     private Map<String, Object> tickBlock(String fyersSymbol) {
         Map<String, Object> m = new LinkedHashMap<>();
         if (fyersSymbol == null || fyersSymbol.isBlank()) return m;
-        double ltp = marketDataService.getDisplayLtp(fyersSymbol);
-        // Display variants (getDisplayLtp / getDisplayChange / getDisplayChangePct)
-        // skip the today-date guard that getLtp / getChange / getChangePercent apply.
-        // For header + chart display we always want the last known price — pre-market,
-        // post-close, fresh boot — otherwise the tile stays "—" for the whole
-        // pre-open window and after the session ends.
-        double ch  = marketDataService.getDisplayChange(fyersSymbol);
-        double chp = marketDataService.getDisplayChangePct(fyersSymbol);
-        // Fallback: if prevClose isn't populated for this symbol (GDFL frames
-        // don't carry it and we don't seed it), MarketDataService.getDisplayChange
-        // returns 0 forever. Use session change so the header + hero tiles
-        // show a meaningful number.
-        //
-        // sessionOpen source, in priority order:
-        //   1. First CLOSED 5-min bar's OPEN — precise and stable once we
-        //      have any history (available from 09:20 onwards).
-        //   2. In-progress bucket's OPEN — populated on the very first tick
-        //      after market open (09:15), so change/%change starts showing
-        //      immediately instead of waiting for the first bar close.
-        //   3. LTP itself as a last resort — change stays 0 until a second
-        //      tick lands, but at least it's a defined value.
-        if (ltp > 0 && ch == 0.0 && chp == 0.0) {
-            double sessionOpen = 0.0;
-            java.util.List<Candle> hist = candleAggregator.getHistory(fyersSymbol);
-            if (hist != null && !hist.isEmpty()) {
-                sessionOpen = hist.get(0).open();
-            }
-            if (sessionOpen <= 0) {
-                Candle current = candleAggregator.getCurrentBucket(fyersSymbol);
-                if (current != null) sessionOpen = current.open();
-            }
-            if (sessionOpen > 0) {
-                ch  = ltp - sessionOpen;
-                chp = (ch / sessionOpen) * 100.0;
-            }
-        }
-        m.put("ltp",  round2(ltp));
-        m.put("ch",   round2(ch));
-        m.put("chp",  round2(chp));
+        m.put("ltp",  round2(marketDataService.getDisplayLtp(fyersSymbol)));
+        m.put("ch",   round2(marketDataService.getDisplayChange(fyersSymbol)));
+        m.put("chp",  round2(marketDataService.getDisplayChangePct(fyersSymbol)));
         // VWAP stays session-guarded (it's meaningful only for today's session;
         // last session's VWAP shouldn't display as if it were current).
         m.put("vwap", round2(marketDataService.getVwap(fyersSymbol)));

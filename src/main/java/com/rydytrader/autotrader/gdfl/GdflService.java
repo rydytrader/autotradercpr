@@ -403,6 +403,11 @@ public class GdflService {
         double atp = root.path("AverageTradedPrice").asDouble(0);
         long   ltt = root.path("LastTradeTime").asLong(0);   // exchange trade time (epoch sec)
         long   svt = root.path("ServerTime").asLong(0);      // GDFL dissemination time (epoch sec)
+        // GDFL docs (function-subscriberealtime): "Close (previous Day's Close)".
+        // Present on every RealtimeResult frame — we pass it to MarketDataService
+        // so change / % change vs prev close is always available for the header
+        // + hero tiles, without a separate daily-history request.
+        double prevClose = root.path("Close").asDouble(0);
 
         // Market-hours gate — drop pre-market / post-market / stale-day ticks BEFORE
         // they reach MarketDataService. Uses ServerTime primarily (populated on every
@@ -435,20 +440,22 @@ public class GdflService {
             }
             // Cache-only path — populates currentTicks so getDisplayLtp returns the
             // value, but no ltpListeners fire so CandleAggregator stays clean.
-            marketDataService.seedTickData(fyersSym, ltp, 0);
-            log.info("[Gdfl] out-of-hours/stale-day tick for {} ltp={} — cached LTP only ({} {})",
-                fyersSym, ltp, tickDay, tickTime);
+            // Also seeds prevClose from the tick's Close field so the header
+            // change chip works pre-market / post-close too.
+            marketDataService.seedTickData(fyersSym, ltp, prevClose);
+            log.info("[Gdfl] out-of-hours/stale-day tick for {} ltp={} prevClose={} — cached ({} {})",
+                fyersSym, ltp, prevClose, tickDay, tickTime);
             return;
         }
 
         // Log first live tick per symbol so we can visually confirm the pipeline works.
         // Subsequent live ticks go DEBUG to avoid flooding.
         if (firstLiveTickSeen.add(fyersSym)) {
-            log.info("[Gdfl] FIRST LIVE TICK for {} ltp={} ({} {})",
-                fyersSym, ltp, tickDay, tickTime);
+            log.info("[Gdfl] FIRST LIVE TICK for {} ltp={} prevClose={} ({} {})",
+                fyersSym, ltp, prevClose, tickDay, tickTime);
         }
         MarketDataService.LtpTick evt = new MarketDataService.LtpTick(
-            fyersSym, ltp, atp, svt, ltt);
+            fyersSym, ltp, atp, svt, ltt, prevClose);
         marketDataService.pushLtpTick(evt);
     }
 
