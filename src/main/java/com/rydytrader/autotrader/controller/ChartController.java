@@ -44,16 +44,34 @@ public class ChartController {
     private Map<String, Object> tickBlock(String fyersSymbol) {
         Map<String, Object> m = new LinkedHashMap<>();
         if (fyersSymbol == null || fyersSymbol.isBlank()) return m;
+        double ltp = marketDataService.getDisplayLtp(fyersSymbol);
         // Display variants (getDisplayLtp / getDisplayChange / getDisplayChangePct)
         // skip the today-date guard that getLtp / getChange / getChangePercent apply.
         // For header + chart display we always want the last known price — pre-market,
         // post-close, fresh boot — otherwise the tile stays "—" for the whole
-        // pre-open window and after the session ends. VWAP stays session-guarded
-        // (it's meaningful only for today's session; last session's VWAP shouldn't
-        // display as if it were current).
-        m.put("ltp",  round2(marketDataService.getDisplayLtp(fyersSymbol)));
-        m.put("ch",   round2(marketDataService.getDisplayChange(fyersSymbol)));
-        m.put("chp",  round2(marketDataService.getDisplayChangePct(fyersSymbol)));
+        // pre-open window and after the session ends.
+        double ch  = marketDataService.getDisplayChange(fyersSymbol);
+        double chp = marketDataService.getDisplayChangePct(fyersSymbol);
+        // Fallback: if prevClose isn't populated for this symbol (GDFL frames
+        // don't carry it and we don't seed it), MarketDataService.getDisplayChange
+        // returns 0 forever. Use session change (LTP vs today's first 5-min bar
+        // OPEN) so the header + hero tiles show a meaningful number. Session
+        // change is arguably more useful for a scalping trader anyway.
+        if (ltp > 0 && ch == 0.0 && chp == 0.0) {
+            java.util.List<Candle> hist = candleAggregator.getHistory(fyersSymbol);
+            if (hist != null && !hist.isEmpty()) {
+                double sessionOpen = hist.get(0).open();
+                if (sessionOpen > 0) {
+                    ch  = ltp - sessionOpen;
+                    chp = (ch / sessionOpen) * 100.0;
+                }
+            }
+        }
+        m.put("ltp",  round2(ltp));
+        m.put("ch",   round2(ch));
+        m.put("chp",  round2(chp));
+        // VWAP stays session-guarded (it's meaningful only for today's session;
+        // last session's VWAP shouldn't display as if it were current).
         m.put("vwap", round2(marketDataService.getVwap(fyersSymbol)));
         return m;
     }
