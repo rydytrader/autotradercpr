@@ -169,7 +169,6 @@
                 <div class="pill-row" id="strategyPills">
                     <button class="scope-pill active" data-strategy="all"            title="All trades.">All</button>
                     <button class="scope-pill"        data-strategy="option-buying"  title="OPTION BUYING — first 5-min NIFTY futures bar vs VWAP, buy 1 OTM CE/PE.">OPTION BUYING</button>
-                    <button class="scope-pill"        data-strategy="option-selling" title="OPTION SELLING — VWAP rejection/crossover, sell ATM CE/PE with 2-close SL.">OPTION SELLING</button>
                 </div>
             </div>
             <div style="display:flex; align-items:center; gap:10px;">
@@ -439,8 +438,8 @@
     // ── Selectors ────────────────────────────────────────────────────────────
     var currentPeriod   = 'today';
     // Strategy filter — driven by the Strategy pill row. Values: 'all',
-    // 'option-buying', 'option-selling'. Passed as strategyId to the
-    // /api/analytics/* endpoints which already filter by it.
+    // 'option-buying'. Passed as strategyId to the /api/analytics/*
+    // endpoints which already filter by it.
     var currentStrategy = 'all';
     var currentIncludeAdjustments = false;   // Options Terminal removed — always off
     var lastEquityRenderMs = 0;

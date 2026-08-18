@@ -1,6 +1,5 @@
 package com.rydytrader.autotrader.controller;
 
-import com.rydytrader.autotrader.dto.Candle;
 import com.rydytrader.autotrader.gdfl.GdflSymbolMapper;
 import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.service.HistoricalChartStore;
@@ -92,25 +91,13 @@ public class ChartController {
             // from now on. History will be empty on this first response.
             candleAggregator.subscribe(symbol, c -> {});
         }
-        List<Candle> hist = candleAggregator.getHistory(symbol);
-        Candle current = candleAggregator.getCurrentBucket(symbol);
-        // Dedupe: if the aggregator hasn't rolled the current bucket yet AND a
-        // GDFL snapshot already wrote canonical values for that bar into
-        // history, current would shadow the canonical values on the chart
-        // (client-side pushBar processes current AFTER history at the same
-        // time key). Suppress current here so the canonical bar in history
-        // wins the render.
-        if (current != null && hist != null) {
-            long curStart = current.startMillis();
-            for (Candle h : hist) {
-                if (h != null && h.startMillis() == curStart) {
-                    current = null;
-                    break;
-                }
-            }
-        }
-        out.put("history", hist);
-        out.put("current", current);
+        // Chart's VWAP line = exchange ATP (Bucket.vwapLast), pushed into each
+        // Candle.vwap on close. Zero approximation — reflects every actual trade
+        // per NSE. Deliberately does NOT match TradingView's yellow line, which
+        // is a bar-based (H+L+C)/3 × barVol approximation with a few points of
+        // error on top of the true value.
+        out.put("history", candleAggregator.getHistory(symbol));
+        out.put("current", candleAggregator.getCurrentBucket(symbol));
         // Exchange "now" — max exchFeedTime across subscribed symbols. Chart uses this
         // for the bar countdown so it ticks in sync with TradingView (which also runs
         // on exchange time) rather than local wall clock. 0 when no ticks have arrived.

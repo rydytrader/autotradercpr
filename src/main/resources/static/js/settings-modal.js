@@ -27,17 +27,6 @@
                       '<div class="sm-field"><label>Target (option points)</label><input type="number" id="sm-optionBuyingTargetPoints" step="0.5" min="0"><div class="sm-hint">Exit fires when option LTP ≥ entryPrice + this many points. Default 20.</div></div>' +
                     '</div>' +
                   '</div>' +
-                  '<div class="sm-pane" data-pane="option-selling" style="display:none;">' +
-                    '<div class="sm-grid-2col">' +
-                      '<div class="sm-field sm-full"><label><input type="checkbox" id="sm-optionSellingEnabled" style="margin-right:6px;vertical-align:middle;">Strategy enabled</label><div class="sm-hint">Master kill switch. When OFF, no new CE/PE-SELL fires on VWAP rejection; existing shorts keep being managed to SL / squareoff.</div></div>' +
-                      '<div class="sm-field"><label>Lots per Trade</label><input type="number" id="sm-optionSellingLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 65 NIFTY. Each CE-SELL / PE-SELL entry sells this many lots at ATM.</div></div>' +
-                      '<div class="sm-field"><label>Order Type</label><select id="sm-optionSellingOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select><div class="sm-hint">Fyers product type on entry (SELL) and exit (BUY-TO-COVER) orders. INTRADAY for MIS.</div></div>' +
-                      '<div class="sm-field"><label>Start Time (HH:mm IST)</label><input type="time" id="sm-optionSellingStartTime" step="60"><div class="sm-hint">Earliest 5-min bar close eligible for a trigger. Default 09:20.</div></div>' +
-                      '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-optionSellingSquareOffTime" step="60"><div class="sm-hint">Hard BUY-TO-COVER of every open short. Also gates late-day new entries. Default 15:15.</div></div>' +
-                      '<div class="sm-field"><label>Max CE Sells / Day</label><input type="number" id="sm-optionSellingMaxCeSellsPerDay" step="1" min="0"><div class="sm-hint">Per-session cap on CE-SELL entries. Rejections don\'t count. Default 3.</div></div>' +
-                      '<div class="sm-field"><label>Max PE Sells / Day</label><input type="number" id="sm-optionSellingMaxPeSellsPerDay" step="1" min="0"><div class="sm-hint">Per-session cap on PE-SELL entries. Rejections don\'t count. Default 3.</div></div>' +
-                    '</div>' +
-                  '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
                     '<div class="sm-grid-2col">' +
                       '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline for Home analytics. Default ₹10L.</div></div>' +
@@ -145,7 +134,6 @@
         if (!strip) return;
         var html = '';
         html += '<button class="sm-tab" data-tab="option-buying">OPTION BUYING</button>';
-        html += '<button class="sm-tab" data-tab="option-selling">OPTION SELLING</button>';
         html += '<button class="sm-tab" data-tab="portfolio-risk">RISK</button>';
         html += '<button class="sm-tab" data-tab="charges">CHARGES</button>';
         html += '<button class="sm-tab" data-tab="users">USERS</button>';
@@ -166,9 +154,6 @@
         if (tab === 'option-buying') {
             var ob = modalEl.querySelector('[data-pane="option-buying"]'); if (ob) ob.style.display = '';
             loadOptionBuyingValues();
-        } else if (tab === 'option-selling') {
-            var os = modalEl.querySelector('[data-pane="option-selling"]'); if (os) os.style.display = '';
-            loadOptionSellingValues();
         } else if (tab === 'portfolio-risk') {
             var pp = modalEl.querySelector('[data-pane="portfolio-risk"]'); if (pp) pp.style.display = '';
             loadPortfolioRiskValues();
@@ -184,7 +169,6 @@
 
     function saveSettings() {
         if (activeTab === 'option-buying')  return saveOptionBuyingTab();
-        if (activeTab === 'option-selling') return saveOptionSellingTab();
         if (activeTab === 'portfolio-risk') return savePortfolioRiskTab();
         if (activeTab === 'charges')        return saveChargesTab();
         if (activeTab === 'users')          { showBanner('Use the row buttons to manage users.', 'info'); return; }
@@ -211,34 +195,6 @@
             optionBuyingOrderType:         g('sm-optionBuyingOrderType').value,
             optionBuyingSquareOffTime:     (g('sm-optionBuyingSquareOffTime').value || '').trim(),
             optionBuyingTargetPoints:      parseFloat(g('sm-optionBuyingTargetPoints').value) || 0
-        };
-        postSettings('/api/settings/risk', body);
-    }
-
-    function loadOptionSellingValues() {
-        fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
-            if (!d) return;
-            var g = id => document.getElementById(id);
-            if (g('sm-optionSellingEnabled'))            g('sm-optionSellingEnabled').checked = d.optionSellingEnabled !== false;
-            if (g('sm-optionSellingLotsPerLeg'))         g('sm-optionSellingLotsPerLeg').value = d.optionSellingLotsPerLeg != null ? d.optionSellingLotsPerLeg : 1;
-            if (g('sm-optionSellingOrderType'))          g('sm-optionSellingOrderType').value = d.optionSellingOrderType || 'INTRADAY';
-            if (g('sm-optionSellingStartTime'))          g('sm-optionSellingStartTime').value = d.optionSellingStartTime || '09:20';
-            if (g('sm-optionSellingSquareOffTime'))      g('sm-optionSellingSquareOffTime').value = d.optionSellingSquareOffTime || '15:15';
-            if (g('sm-optionSellingMaxCeSellsPerDay'))   g('sm-optionSellingMaxCeSellsPerDay').value = d.optionSellingMaxCeSellsPerDay != null ? d.optionSellingMaxCeSellsPerDay : 3;
-            if (g('sm-optionSellingMaxPeSellsPerDay'))   g('sm-optionSellingMaxPeSellsPerDay').value = d.optionSellingMaxPeSellsPerDay != null ? d.optionSellingMaxPeSellsPerDay : 3;
-        }).catch(function() {});
-    }
-
-    function saveOptionSellingTab() {
-        var g = id => document.getElementById(id);
-        var body = {
-            optionSellingEnabled:            !!(g('sm-optionSellingEnabled') && g('sm-optionSellingEnabled').checked),
-            optionSellingLotsPerLeg:         parseInt(g('sm-optionSellingLotsPerLeg').value, 10) || 1,
-            optionSellingOrderType:          g('sm-optionSellingOrderType').value,
-            optionSellingStartTime:          (g('sm-optionSellingStartTime').value || '').trim(),
-            optionSellingSquareOffTime:      (g('sm-optionSellingSquareOffTime').value || '').trim(),
-            optionSellingMaxCeSellsPerDay:   parseInt(g('sm-optionSellingMaxCeSellsPerDay').value, 10) || 0,
-            optionSellingMaxPeSellsPerDay:   parseInt(g('sm-optionSellingMaxPeSellsPerDay').value, 10) || 0
         };
         postSettings('/api/settings/risk', body);
     }
@@ -348,7 +304,6 @@
             switchTab('option-buying');
         } else {
             if (activeTab === 'option-buying')       loadOptionBuyingValues();
-            else if (activeTab === 'option-selling') loadOptionSellingValues();
             else if (activeTab === 'portfolio-risk') loadPortfolioRiskValues();
             else if (activeTab === 'charges')        loadChargesValues();
             else                                     switchTab('option-buying');

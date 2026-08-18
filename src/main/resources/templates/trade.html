@@ -419,14 +419,7 @@
             danger:       true
         }).then(function(ok) {
             if (!ok) return;
-            // Route to the correct strategy's squareoff endpoint. Positions
-            // tagged with __strategyId at merge time carry that pill; older
-            // rows without a tag default to option-buying (was previously
-            // "option-scalping" — legacy MANUAL terminal fires).
-            var endpoint = strategyId === 'option-buying'  ? '/api/option-buying/squareoff'
-                         : strategyId === 'option-selling' ? '/api/option-selling/squareoff'
-                                                           : '/api/option-buying/squareoff';
-            fetch(endpoint, {
+            fetch('/api/option-buying/squareoff', {
                 method: 'POST',
                 headers: csrfHeaders(),
                 body: JSON.stringify({ symbol: symbol })
@@ -529,68 +522,8 @@
         });
     }
 
-    /** Fetch OPTION SELLING state and merge its open positions + today's closed
-     *  cycles + event logs INTO the OPTION BUYING state object that `applyState`
-     *  renders. OPTION BUYING is the "primary" strategy on this page (its stats
-     *  power the hero tiles); OPTION SELLING gets folded into the merged
-     *  position + event views without disturbing them. Failure falls back
-     *  gracefully to the buying-only view. */
-    function mergePrimaryStrategyState(buyingState) {
-        var sellingP = fetch('/api/option-selling/state').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; });
-        return sellingP.then(function(selling) {
-            var buyingPositions = (buyingState.openPositions || []).map(function(p) {
-                var q = Object.assign({}, p);
-                q.__strategyId = 'option-buying';
-                return q;
-            });
-            var sellingPositions = ((selling && selling.openPositions) || []).map(function(p) {
-                var q = Object.assign({}, p);
-                q.__strategyId = 'option-selling';
-                // OPTIONS SELLING is short; explicitly flag so renderPositions picks SELL pill.
-                q.isShort = true;
-                if (q.slLevel == null) q.slLevel = 0;
-                if (q.ltp == null) q.ltp = q.entryPrice;
-                return q;
-            });
-            buyingState.__mergedPositions = buyingPositions.concat(sellingPositions);
-            // Merge today's closed cycles (both strategies) into a single sorted list.
-            var mergedClosed = (buyingState.todayClosedTrades || []).slice();
-            if (selling && selling.todayClosedTrades) {
-                selling.todayClosedTrades.forEach(function(t) {
-                    var q = Object.assign({}, t);
-                    if (!q.strategyId) q.strategyId = 'option-selling';
-                    mergedClosed.push(q);
-                });
-            }
-            mergedClosed.sort(function(a, b) {
-                return Number(b.closedAtMillis || 0) - Number(a.closedAtMillis || 0);
-            });
-            buyingState.todayClosedTrades = mergedClosed;
-            // Merge event logs. Each event gets tagged with __strategyId so the
-            // event-log renderer can prefix the source with the strategy pill.
-            var mergedEvents = (buyingState.recentEvents || []).map(function(e) {
-                var q = Object.assign({}, e);
-                q.__strategyId = 'option-buying';
-                return q;
-            });
-            if (selling && selling.recentEvents) {
-                selling.recentEvents.forEach(function(e) {
-                    var q = Object.assign({}, e);
-                    q.__strategyId = 'option-selling';
-                    mergedEvents.push(q);
-                });
-            }
-            mergedEvents.sort(function(a, b) {
-                return Number(b.ts || 0) - Number(a.ts || 0);
-            });
-            buyingState.recentEvents = mergedEvents;
-            return buyingState;
-        }).catch(function() { return buyingState; });
-    }
-
     function loadState() {
         fetch('/api/option-buying/state').then(function(r) { return r.json(); })
-            .then(mergePrimaryStrategyState)
             .then(applyState)
             .catch(function() {});
     }
@@ -611,9 +544,7 @@
             sseStream.addEventListener('state', function(ev) {
                 stopPollFallback();
                 try {
-                    var buyingState = JSON.parse(ev.data);
-                    // OPTION BUYING pushes via SSE; OPTION SELLING doesn't — fetch it here.
-                    mergePrimaryStrategyState(buyingState).then(applyState);
+                    applyState(JSON.parse(ev.data));
                 } catch (e) {}
             });
             sseStream.onerror = function() {
@@ -679,16 +610,13 @@
 
     function renderPositions(d) {
         var positions = (d.openPositions || []).slice();
-        // Merge in OPTION BUYING's open positions if the shared cache carries them
-        // (renderMergedPositions writes them to d.__mergedPositions before this call).
-        if (d.__mergedPositions) positions = d.__mergedPositions;
         var tbody = document.getElementById('positionsTableBody');
         if (positions.length === 0) {
             tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="empty-icon">◎</div>No active positions</div></td></tr>';
         } else {
             tbody.innerHTML = positions.map(function(p, i) {
                 var pnl = Number(p.mtm || 0);
-                var strategyId = p.__strategyId || 'option-buying';
+                var strategyId = 'option-buying';
                 var entryPx = Number(p.entryPrice || 0);
                 var targetPx = Number(p.targetLevel || 0);
                 return '<tr>'
@@ -708,15 +636,11 @@
     }
 
     /** Small colored pill for the Strategy column.
-     *  option-buying → OPTIONS BUY cyan.  option-selling → OPTIONS SELL red.
-     *  MANUAL / unknown → grey. */
+     *  option-buying → OPTIONS BUY cyan.  MANUAL / unknown → grey. */
     function strategyPill(strategyId) {
         var id = String(strategyId || '').toLowerCase();
         if (id === 'option-buying') {
             return '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;color:#7dd3fc;background:rgba(125,211,252,0.10);border:1px solid rgba(125,211,252,0.35);">OPTIONS BUY</span>';
-        }
-        if (id === 'option-selling') {
-            return '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;color:#f87171;background:rgba(248,113,113,0.10);border:1px solid rgba(248,113,113,0.35);">OPTIONS SELL</span>';
         }
         if (id === 'manual') {
             return '<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.62rem;font-weight:700;letter-spacing:0.05em;color:var(--text-secondary);background:rgba(148,163,184,0.10);border:1px solid rgba(148,163,184,0.30);">MAN</span>';
@@ -820,7 +744,7 @@
     function patchPositionRow(symbol, ltp) {
         if (!lastState) return false;
         // Prefer merged view (both strategies) when present; fall back to selling-only.
-        var positions = lastState.__mergedPositions || lastState.openPositions;
+        var positions = lastState.openPositions;
         if (!positions || !positions.length) return false;
         var rowIdx = -1;
         for (var i = 0; i < positions.length; i++) {
@@ -828,13 +752,8 @@
         }
         if (rowIdx < 0) return false;
         var p = positions[rowIdx];
-        // OPTION BUYING positions are LONG (side ends with _BUY, or isShort=false);
-        // OPTION SELLING positions are SHORT. Flip P&L sign accordingly.
-        var isBuy = (p.isShort === false)
-            || (typeof p.side === 'string' && p.side.indexOf('_BUY') >= 0);
-        var newMtm = isBuy
-            ? (Number(ltp) - Number(p.entryPrice)) * Number(p.qty)
-            : (Number(p.entryPrice) - Number(ltp)) * Number(p.qty);
+        // OPTION BUYING positions are LONG.
+        var newMtm = (Number(ltp) - Number(p.entryPrice)) * Number(p.qty);
         p.ltp = ltp;
         p.mtm = newMtm;
         // Find the actual DOM row (taking the symbol filter into account)
@@ -864,7 +783,7 @@
         if (!src) { setTimeout(attachTickerPositionUpdates, 500); return; }
         src.addEventListener('ticker', function(ev) {
             if (!lastState) return;
-            var positions = lastState.__mergedPositions || lastState.openPositions;
+            var positions = lastState.openPositions;
             if (!positions || !positions.length) return;
             try {
                 var arr = JSON.parse(ev.data);
@@ -930,7 +849,7 @@
         var mins = h * 60 + m;
         var preMarket   = 9 * 60;           // 09:00
         var marketOpen  = 9 * 60 + 15;     // 09:15
-        var marketClose = 15 * 60 + 30;    // 15:30
+        var marketClose = 15 * 60 + 40;    // 15:40 (NSE extension from 2026-08-03)
         clockEl.textContent = now.toLocaleTimeString('en-IN', { hour12: false });
         if (mins < preMarket) {
             var diff = preMarket - mins;

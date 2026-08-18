@@ -39,8 +39,9 @@ import java.util.function.Consumer;
  * OHLC buckets per symbol. On bucket close (the first sample in a new 5-min window), the closed
  * candle is emitted to every listener registered for that symbol.
  *
- * <p>Buckets are anchored on the IST wall clock — 09:15, 09:20, 09:25, … 15:25, 15:30 — and only
- * emitted during market hours (09:15 ≤ now ≤ 15:31).
+ * <p>Buckets are anchored on the IST wall clock — 09:15, 09:20, 09:25, … 15:30, 15:35 — and only
+ * emitted during market hours (09:15 ≤ now ≤ 15:41). NSE extended session close to 15:40 IST
+ * effective 2026-08-03.
  *
  * <p>{@link #BUCKET_MINUTES} is public so downstream consumers can derive bar length without
  * hardcoding it and risk drifting from the aggregator's actual cadence.
@@ -50,7 +51,7 @@ public class CandleAggregator {
 
     private static final Logger log = LoggerFactory.getLogger(CandleAggregator.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    /** 5-minute bars. Buckets anchor on 09:15 IST → 09:15, 09:20, …, 15:25, 15:30. */
+    /** 5-minute bars. Buckets anchor on 09:15 IST → 09:15, 09:20, …, 15:30, 15:35. */
     public  static final int    BUCKET_MINUTES = 5;
     /** NSE market open in minutes-of-day (IST). Bucket boundaries are computed relative
      *  to this so the first bar spans 09:15→09:15+BUCKET_MINUTES (at 3-min:
@@ -184,7 +185,7 @@ public class CandleAggregator {
             // Wait for wall-clock to catch up — in-market-hours flush path handles it.
             return;
         }
-        if (t.isAfter(LocalTime.of(15, 31))) {
+        if (t.isAfter(LocalTime.of(15, 41))) {
             // Post-market — flush the day's last-bar stragglers. Safe to unconditionally
             // close both active AND pending: no legit forward-dated bucket can exist
             // after market close, and grace-window buckets should not linger overnight.
@@ -485,7 +486,7 @@ public class CandleAggregator {
         } else {
             tickTime = ZonedDateTime.now(IST).toLocalTime();
         }
-        if (tickTime.isBefore(LocalTime.of(9, 15)) || tickTime.isAfter(LocalTime.of(15, 31))) return;
+        if (tickTime.isBefore(LocalTime.of(9, 15)) || tickTime.isAfter(LocalTime.of(15, 41))) return;
         int bucketStart = bucketStartMinute(tickTime.getHour() * 60 + tickTime.getMinute());
 
         // Stale-bucket guard — a tick whose bucketStart is BEHIND the current wall
@@ -667,61 +668,6 @@ public class CandleAggregator {
             existing.high(),  merged.high(),
             existing.low(),   merged.low(),
             existing.close(), merged.close());
-    }
-
-    /** Overwrite-or-insert a canonical OHLC bar (typically from GDFL
-     *  SnapshotResult / HistoryResult — server-side aggregated, so matches
-     *  TradingView). Unlike {@link #updateHistoryEntry} which only replaces
-     *  existing rows, this one INSERTS in chronological order when no row
-     *  exists at the bar's startMillis. Preserves aggregator's VWAP on the
-     *  matching row when the canonical bar has vwap=0 (GDFL's OHLC frames
-     *  don't publish session VWAP; we use per-symbol ATP for that).
-     *
-     *  <p>Does NOT re-fire close listeners — this is a "correct the closed
-     *  bar the operator sees on the chart" path, not a "fire the FSM again"
-     *  path. Tick-aggregated close listeners have already run once. */
-    public void overwriteBar(String symbol, Candle canonical) {
-        if (symbol == null || symbol.isBlank() || canonical == null) return;
-        long targetStart = canonical.startMillis();
-        if (targetStart <= 0) return;
-        Deque<Candle> ring = historyBySymbol.computeIfAbsent(symbol, k -> new ConcurrentLinkedDeque<>());
-        synchronized (ring) {
-            List<Candle> snapshot = new ArrayList<>(ring);
-            int foundIdx = -1;
-            int insertIdx = snapshot.size();   // default: append
-            for (int i = snapshot.size() - 1; i >= 0; i--) {
-                long s = snapshot.get(i).startMillis();
-                if (s == targetStart) { foundIdx = i; break; }
-                if (s < targetStart)  { insertIdx = i + 1; break; }
-                insertIdx = i;   // canonical is older than snapshot.get(i)
-            }
-            Candle merged;
-            if (foundIdx >= 0) {
-                Candle existing = snapshot.get(foundIdx);
-                merged = new Candle(
-                    canonical.open(), canonical.high(), canonical.low(), canonical.close(),
-                    canonical.volume() > 0 ? canonical.volume() : existing.volume(),
-                    existing.startMillis(),
-                    canonical.vwap() > 0 ? canonical.vwap() : existing.vwap());
-                snapshot.set(foundIdx, merged);
-                log.info("[CandleAggregator] {} canonical OVERWRITE at index {}/{} startMillis={} — o {}→{} h {}→{} l {}→{} c {}→{}",
-                    symbol, foundIdx, snapshot.size() - 1, targetStart,
-                    existing.open(),  merged.open(),
-                    existing.high(),  merged.high(),
-                    existing.low(),   merged.low(),
-                    existing.close(), merged.close());
-            } else {
-                merged = canonical;
-                snapshot.add(insertIdx, merged);
-                log.info("[CandleAggregator] {} canonical INSERT at index {}/{} startMillis={} — {} / {} / {} / {}",
-                    symbol, insertIdx, snapshot.size() - 1, targetStart,
-                    merged.open(), merged.high(), merged.low(), merged.close());
-            }
-            ring.clear();
-            ring.addAll(snapshot);
-            while (ring.size() > HISTORY_CAP) ring.pollFirst();
-        }
-        dirty = true;
     }
 
     /** Closed candles for {@code symbol} in chronological order. Empty when the

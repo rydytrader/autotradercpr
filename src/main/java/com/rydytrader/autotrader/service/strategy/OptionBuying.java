@@ -179,17 +179,12 @@ public class OptionBuying implements Strategy {
 
         // Subscribe the NIFTY current-month FUTURES symbol. GdflService already
         // subscribes it Realtime on its own poller. Strategy trigger fires on the
-        // CANONICAL bar (server-side snapshot with ~200-300ms delay, or a 1500ms
-        // fallback to the tick-aggregated bar) so OHLC matches TradingView. The
-        // aggregator still buckets ticks for chart / VWAP display — we just don't
-        // listen to its close event for the futures leg on the strategy trigger path.
+        // aggregator's own tick-aggregated bar close (snapshot path removed —
+        // OHLC is derived from GDFL Realtime ticks only, so the first tick's LTP
+        // becomes the bar OPEN with 1Hz throttling — may differ from
+        // TradingView by a few paise at open, acceptable trade-off).
         state.futuresSymbol = NIFTY_SYMBOL;
-        GdflService gdflForCanonical = gdflServiceProvider == null ? null : gdflServiceProvider.getIfAvailable();
-        if (gdflForCanonical != null) {
-            gdflForCanonical.addCanonicalBarListener(NIFTY_SYMBOL, c -> onCandleClose(NIFTY_SYMBOL, c));
-        } else {
-            log.warn("[OptionBuying] GdflService not available at boot — canonical bar dispatch not registered; FSM trigger will never fire");
-        }
+        candleAggregator.subscribe(NIFTY_SYMBOL, c -> onCandleClose(NIFTY_SYMBOL, c));
 
         // LTP listener — drives the target-hit exit for the option leg. Filtered
         // to entrySymbol inside the callback so the fanout is O(1) for all other
@@ -206,7 +201,7 @@ public class OptionBuying implements Strategy {
             log.warn("[OptionBuying] OrderEventService not available at boot — fill capture will fall back to tradebook polling on exit");
         }
 
-        log.info("[OptionBuying] boot — registered CANONICAL bar listener for {} (5-min bars) via GdflService. GDFL Realtime + Snapshot subscribes happen separately on WS auth.", NIFTY_SYMBOL);
+        log.info("[OptionBuying] boot — registered aggregator close listener for {} (tick-aggregated 5-min bars).", NIFTY_SYMBOL);
         log.info("[OptionBuying] booted — optionBuyingEnabled={} fsmState={} squareoff={} restoredPositions={}",
             riskSettings.isOptionBuyingEnabled(),
             state.fsmState,

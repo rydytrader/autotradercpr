@@ -1,8 +1,7 @@
 package com.rydytrader.autotrader.gdfl;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.rydytrader.autotrader.dto.Candle;
-import com.rydytrader.autotrader.service.CandleAggregator;
+import com.rydytrader.autotrader.service.EventService;
 import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.strategy.OptionBuying;
 import jakarta.annotation.PostConstruct;
@@ -22,15 +21,10 @@ import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
 
 /**
  * Spring lifecycle owner for the GDFL WebSocket client.
@@ -63,43 +57,13 @@ public class GdflService {
 
     private static final Logger log = LoggerFactory.getLogger(GdflService.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    /** How long the canonical dispatcher waits after the wall-clock bar close
-     *  for a GDFL {@code SnapshotResult} frame before falling back to the
-     *  tick-aggregated bar. GDFL typically pushes snapshots ~200-300ms after
-     *  the wall-clock close, so 1500ms leaves generous headroom on a healthy
-     *  session and still guarantees the strategy sees a bar on a bad-network
-     *  day (fires WARN so operators can spot the miss). */
-    private static final long CANONICAL_FALLBACK_MS = 1500L;
 
     private final GdflProperties     props;
     private final GdflSymbolMapper   mapper;
     private final MarketDataService  marketDataService;
-    private final CandleAggregator   candleAggregator;
+    private final EventService       eventService;
     private final ObjectProvider<OptionBuying> optionBuyingProvider;
     private final ScheduledExecutorService executor;
-    /** GDFL symbols we've already sent SubscribeSnapshot for TODAY. Prevents the
-     *  ATM-check poll from re-subscribing every 5 seconds. Reset on day rollover
-     *  + fresh connect. Currently used for the NIFTY-I hybrid subscribe (Realtime
-     *  for LTP + Snapshot for canonical 5-min OHLC); previously held the trading
-     *  pair (ATM CE + PE) — that path is disabled but the set is reused here. */
-    private final Set<String> snapshotSubscribedGdflSymbols = new HashSet<>();
-    /** Fyers symbol → canonical-bar listeners. Fired once per 5-min bar for
-     *  the futures leg — with either GDFL snapshot values (~200-300ms after
-     *  wall-clock close) or, if the snapshot doesn't arrive within
-     *  {@link #CANONICAL_FALLBACK_MS}, the tick-aggregated bar as a fallback.
-     *  {@link CopyOnWriteArrayList} so subscribes can happen while dispatch is
-     *  iterating without ConcurrentModificationException. */
-    private final Map<String, CopyOnWriteArrayList<Consumer<Candle>>>
-        canonicalBarListeners = new ConcurrentHashMap<>();
-    /** Per-symbol last bar {@code startMillis} that fired the canonical dispatch
-     *  — dedupe so snapshot + fallback don't both fire for the same bar. */
-    private final Map<String, Long> lastCanonicalFiredBarStartMs = new ConcurrentHashMap<>();
-    /** Pending {@link #CANONICAL_FALLBACK_MS} fallback tasks — cancelled the
-     *  instant a snapshot frame lands (snapshot won the race). */
-    private final Map<String, ScheduledFuture<?>> pendingFallbackTasks = new ConcurrentHashMap<>();
-    /** GDFL symbols we've already fired GetHistory for TODAY (backfilling the
-     *  09:15 → 09:16 first bar for the trading pair). */
-    private final Set<String> historyFetchedGdflSymbols = new HashSet<>();
 
     private volatile GdflDataWebSocket wsClient;
     /** Which GDFL identifiers we've already sent SubscribeRealtime for TODAY. Reset at
@@ -129,12 +93,12 @@ public class GdflService {
     public GdflService(GdflProperties props,
                        GdflSymbolMapper mapper,
                        MarketDataService marketDataService,
-                       CandleAggregator candleAggregator,
+                       EventService eventService,
                        ObjectProvider<OptionBuying> optionBuyingProvider) {
         this.props             = props;
         this.mapper            = mapper;
         this.marketDataService = marketDataService;
-        this.candleAggregator  = candleAggregator;
+        this.eventService      = eventService;
         this.optionBuyingProvider   = optionBuyingProvider;
         this.executor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "gdfl-lifecycle");
@@ -168,33 +132,10 @@ public class GdflService {
         }
         connect();
 
-        // Fallback timer REMOVED — strategy now fires ONLY when a GDFL
-        // SubscribeSnapshot frame lands. If snapshot never arrives for a bar,
-        // the strategy skips that bar entirely. Trade-off: accuracy over
-        // guaranteed coverage. Per operator ask 2026-08-11.
-
         // Poll for ATM resolution every configured interval. As soon as CE + PE are
         // resolved, subscribe. Idempotent — won't re-subscribe the same symbol.
         int pollSec = Math.max(1, props.getAtmPollIntervalSeconds());
         executor.scheduleWithFixedDelay(this::checkAtmAndSubscribe, pollSec, pollSec, TimeUnit.SECONDS);
-    }
-
-    /** Register a listener fired once per 5-min bar for {@code fyersSymbol}
-     *  with the CANONICAL bar values — either from a GDFL
-     *  {@code SubscribeSnapshot} frame (~200-300ms after wall-clock bar close)
-     *  or a {@link #CANONICAL_FALLBACK_MS} fallback using the tick-aggregated
-     *  bar when the snapshot doesn't arrive.
-     *
-     *  <p>The strategy trigger (OPTIONS BUYING + OPTIONS SELLING onFuturesBar)
-     *  registers here so its OHLC matches TradingView. The aggregator's own
-     *  close event is not used on the trigger path — the aggregator only
-     *  buckets ticks for chart / VWAP display. */
-    public void addCanonicalBarListener(String fyersSymbol, Consumer<Candle> listener) {
-        if (fyersSymbol == null || listener == null) return;
-        canonicalBarListeners
-            .computeIfAbsent(fyersSymbol, k -> new CopyOnWriteArrayList<>())
-            .add(listener);
-        log.info("[Canonical] registered canonical-bar listener for {}", fyersSymbol);
     }
 
     /** Public health-check for UI status widgets. Values:
@@ -284,7 +225,7 @@ public class GdflService {
         marketDataService.addAltFeedOwnedSymbol(GdflSymbolMapper.FYERS_NIFTY_FUTURES);
 
         wsClient = new GdflDataWebSocket(endpoint, props.getApiKey(), props.getExchange(),
-            initialSubs, this::onGdflTick, this::onGdflOhlcBar, onDisconnect);
+            initialSubs, this::onGdflTick, null, onDisconnect);
         wsClient.setConnectionLostTimeout(30);
         try {
             boolean connected = wsClient.connectBlocking(15, TimeUnit.SECONDS);
@@ -318,10 +259,11 @@ public class GdflService {
             // Window opens at 09:10 IST — aligned with OptionBuying.warmupIfDue's
             // pre-market subscribe window. Subscribing the ±10 pre-warm strikes to
             // GDFL BEFORE 09:15 means the exchange's first tick lands in an
-            // already-subscribed slot (no first-bar-partial). Closes at 15:31
-            // (~1 min past market close) to catch the final flush.
+            // already-subscribed slot (no first-bar-partial). Closes at 15:41
+            // (~1 min past market close — NSE extended session to 15:40 effective
+            // 2026-08-03) to catch the final flush.
             LocalTime now = ZonedDateTime.now(IST).toLocalTime();
-            if (now.isBefore(LocalTime.of(9, 10)) || now.isAfter(LocalTime.of(15, 31))) return;
+            if (now.isBefore(LocalTime.of(9, 10)) || now.isAfter(LocalTime.of(15, 41))) return;
 
             // Day rollover — clear yesterday's subscriptions and reverse map + release
             // any alternate-feed ownership on Fyers's side so yesterday's ATM symbol
@@ -336,21 +278,11 @@ public class GdflService {
             String today = LocalDate.now(IST).toString();
             if (!today.equals(subscribedDayKey)) {
                 subscribedGdflSymbols.clear();
-                snapshotSubscribedGdflSymbols.clear();
-                historyFetchedGdflSymbols.clear();
                 mapper.clear();
                 marketDataService.clearAltFeedOwnedSymbols();
                 // Re-seed the Realtime dedupe set that connect()'s boot-time
                 // subscribe put in — mapper reverse-mapping, altFeed ownership.
                 subscribedGdflSymbols.add(GdflSymbolMapper.GDFL_NIFTY_FUTURES);
-                // Snapshot: intentionally NOT pre-added to the dedupe set here.
-                // The rollover branch also fires on FRESH process boot (when
-                // subscribedDayKey starts as ""), and pre-adding would block the
-                // first-ever SubscribeSnapshot send from firing. Let
-                // checkAtmAndSubscribe below fire the subscribe naturally on
-                // every fresh process — GDFL accepts duplicate SubscribeSnapshot
-                // silently, so a re-fire on true day rollover (rare — bot
-                // running > 24h) is harmless.
                 mapper.fyersToGdfl(GdflSymbolMapper.FYERS_NIFTY_FUTURES);
                 marketDataService.addAltFeedOwnedSymbol(GdflSymbolMapper.FYERS_NIFTY_FUTURES);
                 subscribedDayKey = today;
@@ -363,27 +295,10 @@ public class GdflService {
             // strategy pre-warm. Uses GDFL's continuous "NIFTY-I" identifier which
             // auto-rolls at expiry server-side, so no local expiry math / holiday
             // walkback / rollover code needed. Idempotent — subscribeOne skips
-            // once it's in subscribedGdflSymbols.
+            // once it's in subscribedGdflSymbols. Realtime ticks only — snapshot
+            // subscription retired; strategy trigger reads tick-aggregated bar
+            // close from CandleAggregator.
             subscribeOne(GdflSymbolMapper.FYERS_NIFTY_FUTURES);
-
-            // HYBRID subscribe — Realtime (above) gives us live LTP for the
-            // header / hero / live P&L; Snapshot below gives us GDFL-side
-            // aggregated 5-min OHLC that matches TradingView. Snapshot frames
-            // land in onGdflOhlcBar and drive the canonical-bar dispatch that
-            // fires the strategy trigger. Idempotent — the snapshot dedupe
-            // set stops repeat sends within the session. GDFL-side subscription
-            // persists across day boundaries (see the day-rollover re-add).
-            if (snapshotSubscribedGdflSymbols.add(GdflSymbolMapper.GDFL_NIFTY_FUTURES)) {
-                boolean sent = wsClient.subscribeSnapshot(
-                    GdflSymbolMapper.GDFL_NIFTY_FUTURES, "MINUTE", CandleAggregator.BUCKET_MINUTES);
-                if (sent) {
-                    log.info("[Canonical] SubscribeSnapshot fired for NIFTY-I ({}m bars)",
-                        CandleAggregator.BUCKET_MINUTES);
-                } else {
-                    snapshotSubscribedGdflSymbols.remove(GdflSymbolMapper.GDFL_NIFTY_FUTURES);
-                    log.warn("[Canonical] SubscribeSnapshot for NIFTY-I failed to send");
-                }
-            }
 
             // Pre-warm window — OptionBuying.warmupIfDue populates ±10 strikes
             // (42 CE + PE symbols) at 09:10 IST. Subscribe them all on GDFL so
@@ -403,13 +318,8 @@ public class GdflService {
                 // list is empty once trimmed on some code paths).
                 subscribeOne(strategy.getCeSymbol());
                 subscribeOne(strategy.getPeSymbol());
-                // SubscribeSnapshot + GetHistory backfill for the trading pair
-                // temporarily DISABLED — operator wants to test whether the 3
-                // client-side aggregation fixes (OPEN by earliest-LTT, CLOSE
-                // by latest-LTT, grace window 1500ms) alone are enough to
-                // match TradingView. Re-enable by uncommenting.
-                // subscribeSnapshotForTradingPair();
             }
+
         } catch (Exception e) {
             log.warn("[Gdfl] atm-check loop threw: {}", e.getMessage());
         }
@@ -504,11 +414,11 @@ public class GdflService {
         //      the UI cache without polluting bar aggregation with stale-
         //      timestamped bars. Values older than 5 trading days are rejected
         //      entirely as clearly stale.
-        //   2. Same-day AND within 09:15-15:31 → normal live path (aggregator +
+        //   2. Same-day AND within 09:15-15:41 → normal live path (aggregator +
         //      listeners).
         long daysAgo = java.time.temporal.ChronoUnit.DAYS.between(tickDay, today);
         boolean withinMarketHours = !tickTime.isBefore(LocalTime.of(9, 15))
-                                 && !tickTime.isAfter(LocalTime.of(15, 31));
+                                 && !tickTime.isAfter(LocalTime.of(15, 41));
         boolean isLive = today.equals(tickDay) && withinMarketHours;
 
         if (!isLive) {
@@ -530,160 +440,16 @@ public class GdflService {
         // Log first live tick per symbol so we can visually confirm the pipeline works.
         // Subsequent live ticks go DEBUG to avoid flooding.
         if (firstLiveTickSeen.add(fyersSym)) {
-            log.info("[Gdfl] FIRST LIVE TICK for {} ltp={} prevClose={} ({} {})",
-                fyersSym, ltp, prevClose, tickDay, tickTime);
+            log.info("[Gdfl] FIRST LIVE TICK for {} ltp={} atp={} prevClose={} ({} {})",
+                fyersSym, ltp, atp, prevClose, tickDay, tickTime);
+            try {
+                eventService.log(String.format("[Gdfl] First live tick — %s ltp=%.2f atp=%.2f (%s)",
+                    fyersSym, ltp, atp, tickTime));
+            } catch (Exception ignored) {}
         }
         MarketDataService.LtpTick evt = new MarketDataService.LtpTick(
             fyersSym, ltp, atp, svt, ltt, prevClose);
         marketDataService.pushLtpTick(evt);
     }
 
-    /** Fires for each GDFL server-side aggregated OHLC bar — one on every bar
-     *  close for symbols we've SubscribeSnapshot'd, and each row of a GetHistory
-     *  response. Frame schema per GDFL docs:
-     *  <ul>
-     *    <li>{@code Exchange}, {@code InstrumentIdentifier} — stamped by
-     *        {@link GdflDataWebSocket#onMessage} even when the row itself
-     *        omits them (GetHistory nests them at the top level).</li>
-     *    <li>{@code LastTradeTime} — bar CLOSE epoch (seconds). We subtract
-     *        the bar length to derive startMillis.</li>
-     *    <li>{@code Open}, {@code High}, {@code Low}, {@code Close},
-     *        {@code TradedQty}, {@code OpenInterest}.</li>
-     *  </ul>
-     *  We map the GDFL symbol back to its Fyers form (that's the key
-     *  {@link CandleAggregator} uses) and hand the canonical bar to
-     *  {@link CandleAggregator#overwriteBar} which replaces whatever
-     *  tick-aggregated bar we already had for that timestamp. */
-    private void onGdflOhlcBar(JsonNode root) {
-        String gdflSym = root.path("InstrumentIdentifier").asText("");
-        if (gdflSym.isBlank()) {
-            log.info("[Gdfl] OHLC bar received with BLANK InstrumentIdentifier — dropping. Raw: {}", root);
-            return;
-        }
-        // TEMPORARY DIAGNOSTIC — log EVERY OHLC bar arrival at INFO with the
-        // raw InstrumentIdentifier so we can see exactly what GDFL sends for
-        // continuous NIFTY-I snapshots (they may echo the specific contract
-        // like NIFTY27AUG26FUT instead of the alias). Bump to DEBUG once the
-        // mapping situation is resolved.
-        log.info("[Gdfl] OHLC bar arrival — GDFL sym='{}' periodicity='{}' period={} closeSec={}",
-            gdflSym, root.path("Periodicity").asText(""), root.path("Period").asInt(0),
-            root.path("LastTradeTime").asLong(0));
-
-        String fyersSym = mapper.gdflToFyers(gdflSym);
-        // Special-case: any OHLC bar on a NIFTY futures identifier that isn't in
-        // the mapper (e.g. GDFL echoing NIFTY27AUG26FUT instead of NIFTY-I when
-        // we subscribed with the continuous alias) — treat it as the futures
-        // symbol we care about. Same underlying instrument, same canonical bar.
-        if ((fyersSym == null || fyersSym.isBlank())
-                && gdflSym.startsWith("NIFTY") && (gdflSym.endsWith("FUT") || gdflSym.contains("-I"))) {
-            fyersSym = GdflSymbolMapper.FYERS_NIFTY_FUTURES;
-            log.info("[Gdfl] OHLC bar for '{}' auto-mapped to NIFTY-I futures (continuous-alias echo)", gdflSym);
-        }
-        if (fyersSym == null || fyersSym.isBlank()) {
-            log.info("[Gdfl] OHLC bar for unmapped symbol '{}' — ignored", gdflSym);
-            return;
-        }
-        long ltSec = root.path("LastTradeTime").asLong(0);
-        double open   = root.path("Open").asDouble(0);
-        double high   = root.path("High").asDouble(0);
-        double low    = root.path("Low").asDouble(0);
-        double close  = root.path("Close").asDouble(0);
-        long   volume = root.path("TradedQty").asLong(0);
-        if (ltSec <= 0 || open <= 0 || high <= 0 || low <= 0 || close <= 0) {
-            log.info("[Gdfl] OHLC bar for {} malformed — skipping ({})", fyersSym, root);
-            return;
-        }
-        // Empirical (verified 2026-08-11 with operator): GDFL's LastTradeTime on
-        // RealtimeSnapshotResult frames is the bar's OPEN/START time — NOT the
-        // close as our earlier assumption. Snapshot for a bar closing at
-        // 12:55:00 arrives with LastTradeTime=1786432800 which decodes to
-        // 12:50:00 (start of 12:50-12:55 bar). Our aggregator keys bars by
-        // startMillis, so use LastTradeTime directly.
-        long startMs = ltSec * 1000L;
-        Candle canonical = new Candle(open, high, low, close, volume, startMs, 0.0);
-        candleAggregator.overwriteBar(fyersSym, canonical);
-
-        // Fan the canonical bar out to registered strategy listeners for the
-        // futures leg. Match by the RESOLVED fyersSym so continuous-alias
-        // echoes (GDFL sending NIFTY27AUG26FUT instead of NIFTY-I) still route
-        // correctly — the check on snapshotSubscribedGdflSymbols would miss
-        // those since it stores what WE sent ("NIFTY-I"), not what GDFL echoes.
-        if (GdflSymbolMapper.FYERS_NIFTY_FUTURES.equals(fyersSym)) {
-            dispatchCanonicalBar(fyersSym, canonical);
-        }
-    }
-
-    /** Called from {@link #onGdflOhlcBar} for every snapshot-subscribed symbol.
-     *  Dedupes against the fallback path via {@link #lastCanonicalFiredBarStartMs}
-     *  and cancels any pending fallback timer for this symbol. Logs the arrival
-     *  time + delay from wall-clock bar close. */
-    private synchronized void dispatchCanonicalBar(String fyersSymbol, Candle bar) {
-        Long prev = lastCanonicalFiredBarStartMs.get(fyersSymbol);
-        if (prev != null && prev == bar.startMillis()) {
-            // Fallback already fired for this bar — snapshot arrived late.
-            log.info("[Canonical] {} snapshot arrived LATE (fallback already fired) — bar startMs={}",
-                fyersSymbol, bar.startMillis());
-            return;
-        }
-        lastCanonicalFiredBarStartMs.put(fyersSymbol, bar.startMillis());
-
-        long barCloseMs = bar.startMillis() + CandleAggregator.BUCKET_MINUTES * 60_000L;
-        long nowMs = System.currentTimeMillis();
-        long delayMs = nowMs - barCloseMs;
-        log.info("[Canonical] SNAPSHOT ARRIVED for {} — bar startMs={} closeMs={} nowMs={} delayMs={} (O={} H={} L={} C={})",
-            fyersSymbol, bar.startMillis(), barCloseMs, nowMs, delayMs,
-            bar.open(), bar.high(), bar.low(), bar.close());
-
-        fireCanonicalListeners(fyersSymbol, bar);
-    }
-
-    /** Invoke every registered canonical listener for {@code fyersSymbol}. A
-     *  throwing listener is logged and swallowed — one strategy's bug must not
-     *  cascade into another's dispatch. */
-    private void fireCanonicalListeners(String fyersSymbol, Candle bar) {
-        List<Consumer<Candle>> ls = canonicalBarListeners.get(fyersSymbol);
-        if (ls == null || ls.isEmpty()) return;
-        for (Consumer<Candle> l : ls) {
-            try { l.accept(bar); }
-            catch (Exception e) {
-                log.warn("[Canonical] listener for {} threw: {}", fyersSymbol, e.getMessage());
-            }
-        }
-    }
-
-    /** Called by the 5 s ATM-check poll once OptionBuying has locked the
-     *  trading pair (CE + PE symbols non-blank). Sends {@code SubscribeSnapshot}
-     *  for each leg — GDFL pushes {@code SnapshotResult} frames on every bar
-     *  close, giving us canonical server-side aggregated OHLC that matches
-     *  TradingView. Also fires a one-shot {@code GetHistory} per leg to
-     *  backfill the 09:15 → 09:16 first bar which the snapshot push misses
-     *  (we subscribe AFTER it closes). Idempotent — the sent-today dedupe
-     *  sets stop repeats within the session. */
-    private void subscribeSnapshotForTradingPair() {
-        if (wsClient == null || !wsClient.isAuthenticated()) return;
-        OptionBuying strategy = optionBuyingProvider.getIfAvailable();
-        if (strategy == null) return;
-        String ceFy = strategy.getCeSymbol();
-        String peFy = strategy.getPeSymbol();
-        subscribeSnapshotAndBackfill(ceFy);
-        subscribeSnapshotAndBackfill(peFy);
-    }
-
-    private void subscribeSnapshotAndBackfill(String fyersSym) {
-        if (fyersSym == null || fyersSym.isBlank()) return;
-        String gdflSym = mapper.fyersToGdfl(fyersSym);
-        if (gdflSym == null || gdflSym.isBlank()) return;
-        if (!snapshotSubscribedGdflSymbols.contains(gdflSym)) {
-            if (wsClient.subscribeSnapshot(gdflSym, "MINUTE", CandleAggregator.BUCKET_MINUTES)) {
-                snapshotSubscribedGdflSymbols.add(gdflSym);
-            }
-        }
-        if (!historyFetchedGdflSymbols.contains(gdflSym)) {
-            // Ask for the last 5 bars — covers the just-closed first bar plus
-            // a small buffer in case the caller ran a minute or two late.
-            if (wsClient.getHistory(gdflSym, "MINUTE", CandleAggregator.BUCKET_MINUTES, 5)) {
-                historyFetchedGdflSymbols.add(gdflSym);
-            }
-        }
-    }
 }

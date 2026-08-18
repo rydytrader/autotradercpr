@@ -77,11 +77,11 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     private volatile boolean hasConnectedSinceStart = false;
 
     /** Market-window guard so the reconnect loop doesn't churn overnight. NSE F&O hours are
-     *  09:15–15:30 IST; we use a small buffer either side for pre-market connect and any
-     *  post-close order events still being pushed. */
+     *  09:15–15:40 IST (extended from 15:30 effective 2026-08-03); we use a small buffer
+     *  either side for pre-market connect and any post-close order events still being pushed. */
     private static final ZoneId   IST          = ZoneId.of("Asia/Kolkata");
     private static final LocalTime MARKET_OPEN  = LocalTime.of(9, 10);
-    private static final LocalTime MARKET_CLOSE = LocalTime.of(15, 45);
+    private static final LocalTime MARKET_CLOSE = LocalTime.of(15, 55);
 
     /** Fill prices keyed by Fyers orderId, populated by {@link #onOrderEvent} as Fyers pushes
      *  filled-status events. ShortStraddle reads from here for any post-hoc race recovery; the

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org" data-strategy-id="strategy">
 <head>
-    <title>TraderEdge — Strategy · OPTIONS BUYING &amp; SELLING</title>
+    <title>TraderEdge — Strategy · OPTIONS BUYING</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
@@ -143,7 +143,7 @@
     <div class="page-header fade-in" style="margin-bottom:18px;">
         <div>
             <div class="page-title">Strategy</div>
-            <div class="page-subtitle">Two strategies running on the same NIFTY futures 5-min bars — OPTIONS BUYING (long the trigger bar) &middot; OPTIONS SELLING (short VWAP rejections)</div>
+            <div class="page-subtitle">OPTIONS BUYING &middot; long an OTM CE/PE on the first 5-min NIFTY futures bar vs VWAP</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -326,193 +326,6 @@
             <li>No re-entry after exit — one trade per day, then <code>DONE_FOR_DAY</code>.</li>
             <li>No scanner, no watchlist filter, no CPR levels, no probability tiers.</li>
             <li>No trailing SL and no tick-based SL — SL is bar-close only.</li>
-        </ul>
-    </div>
-
-    <!-- ────────────────────────  OPTIONS SELLING  ──────────────────────── -->
-    <div class="doc-section fade-in" style="border-top:2px solid var(--accent-red, #f87171); margin-top:32px;">
-        <h2 class="doc-h2" style="color:var(--accent-red, #f87171);">
-            <span class="doc-h2-dot" style="background:var(--accent-red, #f87171);"></span>
-            OPTIONS SELLING &middot; VWAP-rejection premium seller
-        </h2>
-        <p class="doc-p">
-            Second strategy on the same NIFTY current-month future. On every 5-min bar
-            close where the bar's range spans VWAP AND the close is on one side of it,
-            the bot <strong>sells an ATM option</strong> — CE if bearish, PE if bullish
-            — collecting premium and running until the SL or squareoff fires. Multiple
-            positions can be open simultaneously (one CE + one PE), and each side has
-            its own session cap.
-        </p>
-        <p class="doc-p">
-            Orders are placed as <strong>real Fyers MARKET</strong> orders — SELL on
-            entry, BUY-TO-COVER on every exit path. No per-position price target — SL
-            or timed squareoff is the only way out.
-        </p>
-    </div>
-
-    <!-- OPTIONS SELLING · Session flow -->
-    <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-amber, #fbbf24);"></span> OPTIONS SELLING &middot; Session flow</h2>
-        <div style="margin-top:4px;">
-            <div class="phase-row">
-                <div class="phase-tag">09:15</div>
-                <div class="phase-desc"><strong>Market opens.</strong> GDFL futures ticks flow on
-                    <code>NIFTY-I</code>. Session VWAP is delivered on every tick as
-                    <code>AveragedTradedPrice</code> — the same data feed OPTIONS BUYING uses.</div>
-            </div>
-            <div class="phase-row">
-                <div class="phase-tag">09:20 &rarr;</div>
-                <div class="phase-desc"><strong>Trigger evaluation begins</strong> at
-                    <code>optionSellingStartTime</code> (default 09:20). Every 5-min futures
-                    bar close is inspected: <code>low &le; vwap &le; high</code> AND
-                    close on one side of VWAP fires a new short entry on the corresponding
-                    ATM leg, subject to the serial-per-side rule and per-side cap.</div>
-            </div>
-            <div class="phase-row">
-                <div class="phase-tag">Any bar</div>
-                <div class="phase-desc"><strong>Per-position SL watch</strong> runs on every
-                    subsequent futures 5-min bar close. Two back-to-back opposite-side
-                    closes &rarr; BUY-TO-COVER market exit for that position. Counter
-                    starts from the bar <em>after</em> entry.</div>
-            </div>
-            <div class="phase-row">
-                <div class="phase-tag">15:15</div>
-                <div class="phase-desc"><strong>Timed squareoff.</strong> Default. Every open
-                    short (and defensively any stuck <code>PENDING_ENTRY</code>) gets a
-                    MARKET BUY-TO-COVER. Configurable via
-                    <code>optionSellingSquareOffTime</code>.</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- OPTIONS SELLING · The triggers -->
-    <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-red, #f87171);"></span> OPTIONS SELLING &middot; The triggers</h2>
-        <p class="doc-p">
-            Both setups require the bar's range to span VWAP (<code>low &le; vwap &le; high</code>)
-            — that's how we catch both <strong>crossover</strong> (body traverses VWAP
-            and closes on the far side) and <strong>wick rejection</strong> (wick reaches
-            VWAP but body closes back on the original side). Bars entirely above or
-            entirely below VWAP do NOT trigger.
-            <code>close == VWAP</code> is skipped as an edge case.
-        </p>
-        <div class="setup-grid">
-            <div class="setup-card bear">
-                <div class="setup-tag">Bearish rejection &middot; close &lt; VWAP</div>
-                <div class="setup-name">SELL 1 ATM CE</div>
-                <div class="setup-body">
-                    Range spans VWAP and futures <strong>close &lt; VWAP</strong>. Sell the
-                    call at strike <code>round(close/50)*50</code> — same current-week
-                    Tuesday expiry as OPTIONS BUYING (walked back one day if that
-                    Tuesday is an NSE holiday).
-                </div>
-            </div>
-            <div class="setup-card bull">
-                <div class="setup-tag">Bullish rejection &middot; close &gt; VWAP</div>
-                <div class="setup-name">SELL 1 ATM PE</div>
-                <div class="setup-body">
-                    Range spans VWAP and futures <strong>close &gt; VWAP</strong>. Sell the
-                    put at strike <code>round(close/50)*50</code> — same current-week
-                    Tuesday expiry resolution.
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- OPTIONS SELLING · Exit rules -->
-    <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-red, #f87171);"></span> OPTIONS SELLING &middot; Exit rules</h2>
-        <p class="doc-p">
-            <strong>Two exit paths</strong> — SL or timed squareoff. There is
-            <strong>no per-position option-price target</strong> — premium sellers keep
-            their edge by running to expiration or SL.
-        </p>
-        <h3 class="doc-h3">Stop loss &middot; 2 back-to-back opposite closes</h3>
-        <ul class="doc-list">
-            <li>Short CE &rarr; two consecutive futures 5-min bars close <strong>&gt; VWAP</strong>
-                (thesis broke — market wants to rally).</li>
-            <li>Short PE &rarr; two consecutive futures 5-min bars close <strong>&lt; VWAP</strong>
-                (thesis broke — market wants to fall).</li>
-            <li>Counter starts from the bar <strong>after</strong> the trigger bar and
-                resets to 0 on any correct-side close.</li>
-            <li>Evaluated only at 5-min futures bar close — not on ticks.</li>
-        </ul>
-        <h3 class="doc-h3">Squareoff &middot; hard flatten</h3>
-        <ul class="doc-list">
-            <li>At <code>optionSellingSquareOffTime</code> (default <strong>15:15 IST</strong>)
-                every open short is flattened at market via BUY-TO-COVER.</li>
-            <li>Also catches any stuck <code>PENDING_ENTRY</code> defensively — if the
-                entry filled but the fill push hasn't landed, we place the exit anyway
-                and let the tradebook reconcile.</li>
-        </ul>
-    </div>
-
-    <!-- OPTIONS SELLING · Concurrency + caps -->
-    <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-purple, #a78bfa);"></span> OPTIONS SELLING &middot; Concurrency + caps</h2>
-        <ul class="doc-list">
-            <li><strong>Serial per side</strong> &mdash; at most ONE open CE + ONE open PE at
-                any moment. Re-triggers while a same-side position is open are silently
-                skipped (event-logged).</li>
-            <li><strong>Per-side session caps</strong> &mdash;
-                <code>optionSellingMaxCeSellsPerDay</code> (default 3) and
-                <code>optionSellingMaxPeSellsPerDay</code> (default 3) independently
-                limit new entries.</li>
-            <li><strong>Rejections don't burn slots</strong> &mdash; the per-side counter
-                only advances when the entry order returns <code>ok</code> with an
-                orderId. Fyers rejections leave the counter untouched.</li>
-        </ul>
-    </div>
-
-    <!-- OPTIONS SELLING · Position sizing -->
-    <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-purple, #a78bfa);"></span> OPTIONS SELLING &middot; Position sizing</h2>
-        <ul class="doc-list">
-            <li><strong>Quantity</strong> = <code>optionSellingLotsPerLeg &times; 65</code>
-                per entry. Fixed at trigger time.</li>
-            <li><strong>Order type</strong> — Fyers <code>MARKET</code>, side
-                <code>SELL</code> on entry and <code>BUY</code> on every exit path
-                (BUY-TO-COVER).</li>
-            <li><strong>Product</strong> — <code>optionSellingOrderType</code>, default
-                <code>INTRADAY</code>. <code>OVERNIGHT</code> is available for carry.</li>
-            <li><strong>Cycle P&amp;L</strong> for a short = <code>(entryPrice &minus; exitPrice) &times; qty</code>
-                minus per-cycle charges.</li>
-        </ul>
-    </div>
-
-    <!-- OPTIONS SELLING · Settings -->
-    <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-amber, #fbbf24);"></span> OPTIONS SELLING &middot; Settings</h2>
-        <p class="doc-p">
-            Seven knobs, all under <strong>Settings &rarr; OPTION SELLING</strong>.
-        </p>
-        <div class="band-grid">
-            <div class="band-row"><span class="left">Strategy enabled</span><span class="right">kill switch</span></div>
-            <div class="band-row"><span class="left">Lots per Trade</span><span class="right">1</span></div>
-            <div class="band-row"><span class="left">Order Type</span><span class="right">INTRADAY</span></div>
-            <div class="band-row"><span class="left">Start Time</span><span class="right">09:20 IST</span></div>
-            <div class="band-row"><span class="left">Squareoff Time</span><span class="right">15:15 IST</span></div>
-            <div class="band-row"><span class="left">Max CE Sells / Day</span><span class="right">3</span></div>
-            <div class="band-row"><span class="left">Max PE Sells / Day</span><span class="right">3</span></div>
-        </div>
-        <p class="doc-p" style="margin-top:8px;">
-            Toggling <strong>Strategy enabled</strong> OFF only blocks new entries —
-            open shorts keep being managed to SL / squareoff. State is persisted at
-            <code>store/cache/option-selling-state.json</code>; bot restart mid-day
-            resumes correctly.
-        </p>
-    </div>
-
-    <!-- OPTIONS SELLING · What's NOT in this strategy -->
-    <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--text-muted);"></span> What's NOT in OPTIONS SELLING</h2>
-        <ul class="doc-list">
-            <li>No option-price target — pure SL / squareoff exit.</li>
-            <li>No trailing SL — SL is bar-close on the futures leg only.</li>
-            <li>No stacking — max ONE open CE + ONE open PE at any moment.</li>
-            <li>No monthly expiries — weekly Tuesday only.</li>
-            <li>No indicators, no scanner, no probability filters — VWAP interaction is
-                the sole trigger.</li>
         </ul>
     </div>
 

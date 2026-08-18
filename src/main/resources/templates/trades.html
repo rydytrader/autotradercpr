@@ -422,14 +422,11 @@
     }
 
     /** Small colored pill for the trade row's Strategy column.
-     *  option-buying → OPTIONS BUY cyan.  option-selling → OPTIONS SELL red. */
+     *  option-buying → OPTIONS BUY cyan. */
     function strategyPill(strategyId) {
         var id = String(strategyId || '').toLowerCase();
         if (id === 'option-buying') {
             return '<span class="pill" style="color:#7dd3fc;background:rgba(125,211,252,0.10);border-color:rgba(125,211,252,0.35);">OPTIONS BUY</span>';
-        }
-        if (id === 'option-selling') {
-            return '<span class="pill" style="color:#f87171;background:rgba(248,113,113,0.10);border-color:rgba(248,113,113,0.35);">OPTIONS SELL</span>';
         }
         if (id === 'manual') {
             return '<span class="pill" style="color:var(--text-secondary);background:rgba(148,163,184,0.10);border-color:rgba(148,163,184,0.30);">MANUAL</span>';
@@ -438,10 +435,8 @@
     }
 
 
-    /** Every registered strategy id — used to fan today / range fetches across
-     *  BOTH strategies so the Trade Log shows the merged history. Order is
-     *  cosmetic (matches the sidebar / settings tabs). */
-    var STRATEGY_IDS = ['option-buying', 'option-selling'];
+    /** Every registered strategy id — used to fan today / range fetches. */
+    var STRATEGY_IDS = ['option-buying'];
 
     /** Tag every row in `list` with the strategy id it came from (server rows
      *  from /trades-range already carry strategyId, but the in-memory

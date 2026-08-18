@@ -359,8 +359,7 @@ public class AnalyticsService {
 
         // Iterate every registered strategy independently. Each contributes its own
         // ring of today-closed cycles + its own OPEN_POSITION_MTM remainder so today's
-        // analytics rolls up across BOTH OPTION BUYING and OPTION SELLING once the
-        // second strategy lands.
+        // analytics rolls up across every enabled strategy.
         for (Strategy strat : strategies.values()) {
             if (strat == null) continue;
             // Kill switch state is irrelevant here — the strategy still holds today's

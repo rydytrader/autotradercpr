@@ -6,12 +6,11 @@
  * scrolling ticker DOM):
  *
  *   NIFTY  24587.50  +12.35 (+0.05%)  ·  VWAP 24575.20  ·  ▲ BULLISH   |
- *   OPB  WAITING  ·  OPS  1CE  ·  P&L +₹1,240
+ *   OPB  WAITING  ·  P&L +₹1,240
  *
  * Data sources (polled every 3 s):
  *   /api/chart/symbols          — NIFTY futures LTP / change / VWAP
  *   /api/option-buying/state  — OPB (OPTION BUYING) FSM state + closed cycles
- *   /api/option-selling/state   — OPS (OPTION SELLING) open positions + closed cycles
  *
  * Also runs trade-open / trade-close browser notifications from a 5 s
  * /api/positions poll (unchanged from the previous ticker implementation).
@@ -108,17 +107,6 @@
         return sum;
     }
 
-    function countOpenBySide(state) {
-        var out = { ce: 0, pe: 0 };
-        if (!state || !Array.isArray(state.openPositions)) return out;
-        state.openPositions.forEach(function(p) {
-            var s = String((p && (p.side || p.setup)) || '').toUpperCase();
-            if (s.indexOf('CE') >= 0) out.ce++;
-            else if (s.indexOf('PE') >= 0) out.pe++;
-        });
-        return out;
-    }
-
     function opbSummary(state) {
         // OPTION BUYING lifecycle from OptionBuying.currentState()
         // — WAITING_FOR_TRIGGER / PENDING_ENTRY / IN_POSITION / DONE_FOR_DAY / IDLE
@@ -130,18 +118,6 @@
         if (lc === 'WAITING_FOR_TRIGGER') return { text: 'WAITING', color: 'var(--text-secondary)' };
         if (lc === 'IDLE')         return { text: 'IDLE',          color: 'var(--text-muted)' };
         return { text: lc || '—', color: 'var(--text-secondary)' };
-    }
-
-    function opsSummary(state) {
-        if (!state) return { text: '—', color: 'var(--text-muted)' };
-        var counts = countOpenBySide(state);
-        if (counts.ce === 0 && counts.pe === 0) {
-            return { text: 'IDLE', color: 'var(--text-muted)' };
-        }
-        var parts = [];
-        if (counts.ce > 0) parts.push(counts.ce + 'CE');
-        if (counts.pe > 0) parts.push(counts.pe + 'PE');
-        return { text: parts.join(' + '), color: 'var(--accent-red, #f87171)' };
     }
 
     function esc(s) {
@@ -161,7 +137,7 @@
         return '<span style="color:var(--text-muted); margin:0 18px; opacity:0.35; font-weight:400;">|</span>';
     }
 
-    function buildStripHtml(sym, opb, ops) {
+    function buildStripHtml(sym, opb) {
         var ft = (sym && sym.futuresTick) || {};
         var ltp  = Number(ft.ltp  || 0);
         var ch   = Number(ft.ch   || 0);
@@ -191,12 +167,11 @@
             else                 { trendText = 'NEUTRAL';   trendColor = 'var(--text-muted)'; }
         }
 
-        // Strategy states
+        // Strategy state
         var opbSum = opbSummary(opb);
-        var opsSum = opsSummary(ops);
 
-        // Day P&L (realised across both strategies)
-        var pnl = sumRealizedPnl(opb) + sumRealizedPnl(ops);
+        // Day P&L (realised)
+        var pnl = sumRealizedPnl(opb);
         var pnlColor = pnl > 0 ? 'var(--accent-green, #34d399)'
                      : pnl < 0 ? 'var(--accent-red, #f87171)'
                      : 'var(--text-muted)';
@@ -215,8 +190,6 @@
             divider() +
             chip('OPB', opbSum.text, opbSum.color) +
             sep() +
-            chip('OPS', opsSum.text, opsSum.color) +
-            sep() +
             chip('P&L', fmtInr(pnl), pnlColor);
     }
 
@@ -225,15 +198,14 @@
         if (!track) return;
         styleTrackForStrip(track);
 
-        // Fetch all three in parallel; each is resilient to failure.
+        // Fetch both in parallel; each is resilient to failure.
         var pSym = fetch('/api/chart/symbols').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; });
         var pOpb = fetch('/api/option-buying/state').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; });
-        var pOps = fetch('/api/option-selling/state').then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; });
 
-        Promise.all([pSym, pOpb, pOps]).then(function(vals) {
+        Promise.all([pSym, pOpb]).then(function(vals) {
             var track = document.getElementById('tickerTrack');
             if (!track) return;
-            track.innerHTML = buildStripHtml(vals[0], vals[1], vals[2]);
+            track.innerHTML = buildStripHtml(vals[0], vals[1]);
         }).catch(function() {});
     }
 

@@ -80,10 +80,10 @@ public class MarketHolidayService {
 
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     public static final int MARKET_OPEN_MINUTE = 9 * 60 + 15;   // 9:15 AM = 555
-    public static final int MARKET_CLOSE_MINUTE = 15 * 60 + 30;  // 3:30 PM = 930
+    public static final int MARKET_CLOSE_MINUTE = 15 * 60 + 40;  // 3:40 PM = 940 (NSE extension from 2026-08-03)
     public static final int PRE_MARKET_MINUTE = 9 * 60;           // 9:00 AM = 540
 
-    /** Is the market currently open (9:15 to 15:30 on a trading day)? */
+    /** Is the market currently open (9:15 to 15:40 on a trading day)? */
     public boolean isMarketOpen() {
         if (!isTradingDay()) return false;
         int nowMin = getNowMinute();
