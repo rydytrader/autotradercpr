@@ -88,11 +88,17 @@ public class MarketDataService {
      *  couldn't extract them; consumers should fall back {@code LTT → EFT → wall-clock}. */
     public record LtpTick(String fyersSymbol, double ltp, double atp,
                           long exchFeedTimeSec, long lastTradedTimeSec,
-                          double prevClose) {
+                          double prevClose, long sessionVolume, double sessionTurnover) {
         /** Legacy 5-arg constructor kept so any older callers don't break. */
         public LtpTick(String fyersSymbol, double ltp, double atp,
                        long exchFeedTimeSec, long lastTradedTimeSec) {
-            this(fyersSymbol, ltp, atp, exchFeedTimeSec, lastTradedTimeSec, 0.0);
+            this(fyersSymbol, ltp, atp, exchFeedTimeSec, lastTradedTimeSec, 0.0, 0L, 0.0);
+        }
+        /** Legacy 6-arg constructor (pre-sessionVolume). */
+        public LtpTick(String fyersSymbol, double ltp, double atp,
+                       long exchFeedTimeSec, long lastTradedTimeSec,
+                       double prevClose) {
+            this(fyersSymbol, ltp, atp, exchFeedTimeSec, lastTradedTimeSec, prevClose, 0L, 0.0);
         }
     }
     private final CopyOnWriteArrayList<java.util.function.Consumer<LtpTick>> ltpListeners = new CopyOnWriteArrayList<>();

@@ -62,6 +62,23 @@
             margin-left: 8px;
         }
         .chart-expand-btn:hover { color: var(--accent-cyan); border-color: rgba(125,211,252,0.35); }
+        .interval-toggle {
+            display: inline-flex; align-items: center; overflow: hidden;
+            border: 1px solid var(--border); border-radius: 6px; background: transparent;
+        }
+        .interval-btn {
+            font-family: var(--font-mono); font-size: 0.72rem; font-weight: 600;
+            letter-spacing: 0.04em;
+            padding: 4px 10px; min-width: 34px;
+            background: transparent; border: none; border-right: 1px solid var(--border);
+            color: var(--text-muted); cursor: pointer;
+            transition: color 0.15s, background 0.15s;
+        }
+        .interval-btn:last-child { border-right: none; }
+        .interval-btn:hover      { color: var(--text-primary); }
+        .interval-btn.active     {
+            color: var(--accent-cyan); background: rgba(125,211,252,0.12);
+        }
         .chart-hdr-sym {
             font-family: var(--font-mono); font-size: 0.62rem; font-weight: 700;
             letter-spacing: 0.06em; color: var(--text-muted);
@@ -207,12 +224,16 @@
             <div class="section-header">
                 <div class="section-title" style="display:flex; align-items:center; gap:10px;">
                     <div class="section-title-dot" style="background:var(--accent-cyan, #7dd3fc);"></div>
-                    <span>NIFTY FUT (5-min)</span>
+                    <span id="futTitleLabel">NIFTY FUT (1-min)</span>
                     <span class="chart-hdr-sym" id="futSymbolLabel">—</span>
                     <span class="chart-hdr-price" id="futPrice">—</span>
                     <span class="chart-hdr-chg" id="futChg"></span>
                 </div>
                 <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
+                    <div class="interval-toggle" role="group" aria-label="Timeframe">
+                        <button type="button" class="interval-btn active" data-interval="1" onclick="setChartInterval('fut', 1)">1m</button>
+                        <button type="button" class="interval-btn"        data-interval="5" onclick="setChartInterval('fut', 5)">5m</button>
+                    </div>
                     <button class="chart-expand-btn" data-panel="fut" onclick="toggleExpand('fut')" title="Expand chart">⛶</button>
                 </div>
             </div>
@@ -240,6 +261,9 @@
 
     var charts = { fut: null };
     var currentFutSym = '';
+    // Chart timeframe (1 = 1-min bars, 5 = 5-min aggregates). Persisted in
+    // localStorage so a page reload keeps the user's choice.
+    var chartInterval = { fut: Number(localStorage.getItem('traderedge-chart-interval-fut')) || 1 };
 
     function fmtHhmm(ms) {
         try {
@@ -408,7 +432,8 @@
 
     function updatePanel(panelKey, symbol, priceElId, chgElId, emptyElId, priceDecimals) {
         if (!symbol) return;
-        fetch('/api/chart/candles?symbol=' + encodeURIComponent(symbol)).then(function(r) { return r.json(); }).then(function(d) {
+        var interval = chartInterval[panelKey] || 1;
+        fetch('/api/chart/candles?symbol=' + encodeURIComponent(symbol) + '&interval=' + interval).then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
             if (d.exchangeNowMs && Number(d.exchangeNowMs) > 0) {
                 exchangeClockOffsetMs = Number(d.exchangeNowMs) - Date.now();
@@ -445,6 +470,48 @@
             setHeaderCells('futPrice', 'futChg', ft.ltp, ft.ch, ft.chp, 2);
         }).catch(function() {});
     }
+
+    // ── Timeframe toggle (1m / 5m) ──────────────────────────────────────────
+    function setChartInterval(panelKey, interval) {
+        var n = Number(interval) === 5 ? 5 : 1;
+        if (chartInterval[panelKey] === n) return;
+        chartInterval[panelKey] = n;
+        try { localStorage.setItem('traderedge-chart-interval-' + panelKey, String(n)); } catch (e) {}
+        syncIntervalButtons(panelKey);
+        updateTitleForInterval(panelKey);
+        // Force chart re-init so the new bar-size fits properly. Must also
+        // null the series refs — ensureChart short-circuits when
+        // candleSeries[panelKey] is non-null, and re-using a series from a
+        // .remove()'d chart silently drops setData() calls (blank chart).
+        if (charts[panelKey]) {
+            try { charts[panelKey].remove(); } catch (e) {}
+            charts[panelKey] = null;
+        }
+        candleSeries[panelKey] = null;
+        vwapSeries[panelKey]   = null;
+        if (currentFutSym && panelKey === 'fut') {
+            updatePanel('fut', currentFutSym, 'futPrice', 'futChg', 'chartFutEmpty', 2);
+        }
+    }
+    function syncIntervalButtons(panelKey) {
+        // panelKey → the button set to inspect (fut only for now).
+        var current = chartInterval[panelKey] || 1;
+        var btns = document.querySelectorAll('.interval-btn');
+        btns.forEach(function(b) {
+            var v = Number(b.getAttribute('data-interval'));
+            if (v === current) b.classList.add('active');
+            else               b.classList.remove('active');
+        });
+    }
+    function updateTitleForInterval(panelKey) {
+        if (panelKey !== 'fut') return;
+        var el = document.getElementById('futTitleLabel');
+        if (el) el.textContent = 'NIFTY FUT (' + (chartInterval[panelKey] || 1) + '-min)';
+    }
+    document.addEventListener('DOMContentLoaded', function() {
+        syncIntervalButtons('fut');
+        updateTitleForInterval('fut');
+    });
 
     // ── Panel fullscreen expand / collapse ──────────────────────────────────
     var expandedPanel = null;

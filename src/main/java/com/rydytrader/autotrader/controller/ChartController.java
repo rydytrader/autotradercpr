@@ -52,9 +52,18 @@ public class ChartController {
         m.put("ltp",  round2(marketDataService.getDisplayLtp(fyersSymbol)));
         m.put("ch",   round2(marketDataService.getDisplayChange(fyersSymbol)));
         m.put("chp",  round2(marketDataService.getDisplayChangePct(fyersSymbol)));
-        // VWAP stays session-guarded (it's meaningful only for today's session;
-        // last session's VWAP shouldn't display as if it were current).
-        m.put("vwap", round2(marketDataService.getVwap(fyersSymbol)));
+        // Header VWAP = pandas_ta value from the last closed 5-min bar, which is
+        // exactly what the chart's yellow line reads. Same source, same value,
+        // no drift. Falls back to exchange ATP when no bar exists yet (first
+        // 5 min of the session before the initial snapshot arrives).
+        double vwap = 0.0;
+        var history = candleAggregator.getHistory(fyersSymbol);
+        if (!history.isEmpty()) {
+            double lastVwap = history.get(history.size() - 1).vwap();
+            if (lastVwap > 0) vwap = lastVwap;
+        }
+        if (vwap == 0.0) vwap = marketDataService.getVwap(fyersSymbol);
+        m.put("vwap", round2(vwap));
         return m;
     }
 
@@ -73,14 +82,19 @@ public class ChartController {
         return out;
     }
 
-    /** Closed 5-min candles for {@code symbol} plus the in-progress bucket. Polling this
-     *  every couple of seconds gives a live-updating rightmost candle without SSE. Phase 3
-     *  only serves the futures symbol; any other request returns an empty payload so a
-     *  stale client can't accidentally start bucketing an unrelated symbol. */
+    /** Closed candles for {@code symbol} at {@code interval} granularity.
+     *  Aggregator stores 1-min bars from GDFL {@code SubscribeSnapshot MINUTE 1};
+     *  {@code interval=1} returns them raw, {@code interval=5} groups them into
+     *  5-min aggregates. Session VWAP is carried from the last contributing 1-min
+     *  bar so the yellow line matches the strategy SL check regardless of
+     *  timeframe. */
     @GetMapping("/candles")
-    public Map<String, Object> candles(@RequestParam String symbol) {
+    public Map<String, Object> candles(
+            @RequestParam String symbol,
+            @RequestParam(required = false, defaultValue = "1") int interval) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("symbol", symbol);
+        out.put("interval", interval);
         if (symbol == null || symbol.isBlank() || !FUTURES_SYMBOL.equals(symbol)) {
             out.put("history", List.of());
             out.put("current", null);
@@ -91,12 +105,8 @@ public class ChartController {
             // from now on. History will be empty on this first response.
             candleAggregator.subscribe(symbol, c -> {});
         }
-        // Chart's VWAP line = exchange ATP (Bucket.vwapLast), pushed into each
-        // Candle.vwap on close. Zero approximation — reflects every actual trade
-        // per NSE. Deliberately does NOT match TradingView's yellow line, which
-        // is a bar-based (H+L+C)/3 × barVol approximation with a few points of
-        // error on top of the true value.
-        out.put("history", candleAggregator.getHistory(symbol));
+        int safeInterval = (interval == 5) ? 5 : 1;
+        out.put("history", candleAggregator.getHistory(symbol, safeInterval));
         out.put("current", candleAggregator.getCurrentBucket(symbol));
         // Exchange "now" — max exchFeedTime across subscribed symbols. Chart uses this
         // for the bar countdown so it ticks in sync with TradingView (which also runs

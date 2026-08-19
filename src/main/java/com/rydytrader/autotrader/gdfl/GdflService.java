@@ -1,6 +1,8 @@
 package com.rydytrader.autotrader.gdfl;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.rydytrader.autotrader.dto.Candle;
+import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.service.EventService;
 import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.strategy.OptionBuying;
@@ -61,6 +63,7 @@ public class GdflService {
     private final GdflProperties     props;
     private final GdflSymbolMapper   mapper;
     private final MarketDataService  marketDataService;
+    private final CandleAggregator   candleAggregator;
     private final EventService       eventService;
     private final ObjectProvider<OptionBuying> optionBuyingProvider;
     private final ScheduledExecutorService executor;
@@ -70,6 +73,12 @@ public class GdflService {
      *  day rollover AND on every fresh connect (each new WS starts with zero
      *  live subscriptions). */
     private final Set<String> subscribedGdflSymbols = new HashSet<>();
+    /** Which GDFL identifiers we've already sent SubscribeSnapshot for TODAY.
+     *  Snapshot delivers canonical 1-min OHLC bars from GDFL's server (which
+     *  sees every trade on the tape), pushed ~1.5-2.5s after each minute
+     *  boundary. Used to correct our 1Hz-throttled tick-aggregated bars for
+     *  opening-burst OHLC accuracy. Reset on day rollover. */
+    private final Set<String> snapshotSubscribedGdflSymbols = new HashSet<>();
     /** Fyers symbols we've already logged a "FIRST LIVE TICK" line for. Used only
      *  for diagnostic visibility — once a symbol is in here, subsequent live ticks
      *  go through the silent hot path. Not persisted; reset on process restart
@@ -93,11 +102,13 @@ public class GdflService {
     public GdflService(GdflProperties props,
                        GdflSymbolMapper mapper,
                        MarketDataService marketDataService,
+                       CandleAggregator candleAggregator,
                        EventService eventService,
                        ObjectProvider<OptionBuying> optionBuyingProvider) {
         this.props             = props;
         this.mapper            = mapper;
         this.marketDataService = marketDataService;
+        this.candleAggregator  = candleAggregator;
         this.eventService      = eventService;
         this.optionBuyingProvider   = optionBuyingProvider;
         this.executor = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -203,6 +214,7 @@ public class GdflService {
         // would think each symbol is "already subscribed" (from the previous
         // WS) and skip, leaving the new WS silent.
         subscribedGdflSymbols.clear();
+        snapshotSubscribedGdflSymbols.clear();
         // The onDisconnect lambda captures myGeneration; when it fires, it
         // reconnects only if we haven't already replaced this client. That
         // way the old leaked client's onClose becomes a no-op instead of
@@ -225,7 +237,7 @@ public class GdflService {
         marketDataService.addAltFeedOwnedSymbol(GdflSymbolMapper.FYERS_NIFTY_FUTURES);
 
         wsClient = new GdflDataWebSocket(endpoint, props.getApiKey(), props.getExchange(),
-            initialSubs, this::onGdflTick, null, onDisconnect);
+            initialSubs, this::onGdflTick, this::onCanonicalMinuteBar, onDisconnect);
         wsClient.setConnectionLostTimeout(30);
         try {
             boolean connected = wsClient.connectBlocking(15, TimeUnit.SECONDS);
@@ -278,6 +290,7 @@ public class GdflService {
             String today = LocalDate.now(IST).toString();
             if (!today.equals(subscribedDayKey)) {
                 subscribedGdflSymbols.clear();
+                snapshotSubscribedGdflSymbols.clear();
                 mapper.clear();
                 marketDataService.clearAltFeedOwnedSymbols();
                 // Re-seed the Realtime dedupe set that connect()'s boot-time
@@ -295,10 +308,24 @@ public class GdflService {
             // strategy pre-warm. Uses GDFL's continuous "NIFTY-I" identifier which
             // auto-rolls at expiry server-side, so no local expiry math / holiday
             // walkback / rollover code needed. Idempotent — subscribeOne skips
-            // once it's in subscribedGdflSymbols. Realtime ticks only — snapshot
-            // subscription retired; strategy trigger reads tick-aggregated bar
-            // close from CandleAggregator.
+            // once it's in subscribedGdflSymbols.
             subscribeOne(GdflSymbolMapper.FYERS_NIFTY_FUTURES);
+
+            // Canonical 1-min OHLC push — GDFL's server-side aggregation of every
+            // trade on the exchange tape, delivered ~1.5-2 s after each 5-min
+            // close. Feeds the aggregator's history ring directly — bar OHLC
+            // matches TradingView by construction (no tick-side aggregation).
+            // Idempotent per day via snapshotSubscribedGdflSymbols set.
+            if (snapshotSubscribedGdflSymbols.add(GdflSymbolMapper.GDFL_NIFTY_FUTURES)) {
+                boolean sent = wsClient.subscribeSnapshot(
+                    GdflSymbolMapper.GDFL_NIFTY_FUTURES, "MINUTE", 1);
+                if (sent) {
+                    log.info("[Gdfl] SubscribeSnapshot fired for NIFTY-I (MINUTE, 1) — canonical 1-min bars feed the chart, aggregator emits 5-min aggregate to strategy every 5th minute");
+                } else {
+                    snapshotSubscribedGdflSymbols.remove(GdflSymbolMapper.GDFL_NIFTY_FUTURES);
+                    log.warn("[Gdfl] SubscribeSnapshot for NIFTY-I failed to send — will retry next poll");
+                }
+            }
 
             // Pre-warm window — OptionBuying.warmupIfDue populates ±10 strikes
             // (42 CE + PE symbols) at 09:10 IST. Subscribe them all on GDFL so
@@ -397,6 +424,13 @@ public class GdflService {
         // so change / % change vs prev close is always available for the header
         // + hero tiles, without a separate daily-history request.
         double prevClose = root.path("Close").asDouble(0);
+        // Exchange-cumulative session volume (Σ qty since 09:15) and turnover
+        // (Σ price × qty since 09:15). Used by CandleAggregator to capture a
+        // one-shot SessionVwapSeed on the first tick per day — powers the
+        // restart-tolerant pandas_ta VWAP calc on the chart so a mid-day boot
+        // shows an anchored-at-09:15 VWAP instead of an anchored-at-boot one.
+        long   sessionVolume    = root.path("TotalQtyTraded").asLong(0);
+        double sessionTurnover  = root.path("Value").asDouble(0);
 
         // Market-hours gate — drop pre-market / post-market / stale-day ticks BEFORE
         // they reach MarketDataService. Uses ServerTime primarily (populated on every
@@ -448,8 +482,56 @@ public class GdflService {
             } catch (Exception ignored) {}
         }
         MarketDataService.LtpTick evt = new MarketDataService.LtpTick(
-            fyersSym, ltp, atp, svt, ltt, prevClose);
+            fyersSym, ltp, atp, svt, ltt, prevClose, sessionVolume, sessionTurnover);
         marketDataService.pushLtpTick(evt);
+    }
+
+    /** Handler for every OHLC frame GDFL pushes on our SubscribeSnapshot channel.
+     *  Each frame is a canonical 1-min bar for NIFTY-I, delivered ~1.5-2 s after
+     *  the minute boundary. Passed straight to
+     *  {@link CandleAggregator#appendOneMinBar} — chart uses the 1-min bar
+     *  directly; the aggregator emits a synthetic 5-min bar to strategy
+     *  listeners every 5th minute.
+     *
+     *  <p>Frame schema (verified 2026-08-08 empirically):
+     *  <ul>
+     *    <li>{@code Exchange}, {@code InstrumentIdentifier}</li>
+     *    <li>{@code LastTradeTime} — bar START epoch (seconds), NOT close</li>
+     *    <li>{@code Open}, {@code High}, {@code Low}, {@code Close}</li>
+     *    <li>{@code TradedQty} — trades in this 1-min window (not cumulative)</li>
+     *    <li>{@code Periodicity} = "MINUTE", {@code Period} = 1</li>
+     *  </ul> */
+    private void onCanonicalMinuteBar(JsonNode root) {
+        String gdflSym = root.path("InstrumentIdentifier").asText("");
+        if (gdflSym.isBlank()) return;
+        String fyersSym = mapper.gdflToFyers(gdflSym);
+        // Continuous-alias echo: GDFL sometimes echoes the specific contract
+        // (NIFTY27AUG26FUT) instead of the "NIFTY-I" alias we subscribed with.
+        // Same underlying — route to the futures symbol so the append lands.
+        if ((fyersSym == null || fyersSym.isBlank())
+                && gdflSym.startsWith("NIFTY")
+                && (gdflSym.endsWith("FUT") || gdflSym.contains("-I"))) {
+            fyersSym = GdflSymbolMapper.FYERS_NIFTY_FUTURES;
+        }
+        if (fyersSym == null || fyersSym.isBlank()) return;
+        // Only interested in NIFTY futures for now; other snapshots (if any) ignored.
+        if (!GdflSymbolMapper.FYERS_NIFTY_FUTURES.equals(fyersSym)) return;
+
+        long ltSec  = root.path("LastTradeTime").asLong(0);
+        double open  = root.path("Open").asDouble(0);
+        double high  = root.path("High").asDouble(0);
+        double low   = root.path("Low").asDouble(0);
+        double close = root.path("Close").asDouble(0);
+        long volume  = root.path("TradedQty").asLong(0);
+        if (ltSec <= 0 || open <= 0 || high <= 0 || low <= 0 || close <= 0) {
+            log.warn("[Gdfl] canonical 1-min bar MALFORMED for {} — {}", fyersSym, root);
+            return;
+        }
+        long startMs = ltSec * 1000L;
+        Candle bar = new Candle(open, high, low, close, volume, startMs, 0.0);
+        log.info("[Gdfl] canonical 1-min bar for {} — startMs={} o={} h={} l={} c={} v={}",
+            fyersSym, startMs, open, high, low, close, volume);
+        candleAggregator.appendOneMinBar(fyersSym, bar);
     }
 
 }
