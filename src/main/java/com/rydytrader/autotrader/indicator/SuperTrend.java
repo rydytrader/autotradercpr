@@ -79,4 +79,60 @@ public final class SuperTrend {
     public record State(double line, boolean isUp, boolean available) {
         public static final State UNAVAILABLE = new State(0, false, false);
     }
+
+    /** Per-bar SuperTrend series — same recurrence as {@link #at}, but returns
+     *  the {@code line} and {@code isUp} value at EVERY bar (index-aligned with
+     *  the input list). Bars before the seed (indexes {@code 0..atrPeriod-1})
+     *  get {@code {NaN, false}} entries — callers plotting a line series should
+     *  skip {@code NaN}s and start the trace at index {@code atrPeriod}. */
+    public static Series series(List<Candle> bars, int atrPeriod, double multiplier) {
+        if (bars == null || bars.isEmpty()) return new Series(new double[0], new boolean[0]);
+        int n = bars.size();
+        double[] lineOut = new double[n];
+        boolean[] upOut  = new boolean[n];
+        java.util.Arrays.fill(lineOut, Double.NaN);
+        if (n < atrPeriod + 1) return new Series(lineOut, upOut);
+
+        Candle[] arr = bars.toArray(new Candle[0]);
+        double[] atr = Atr.series(bars, atrPeriod);
+        double[] finalUpper = new double[n];
+        double[] finalLower = new double[n];
+        boolean[] isUp = new boolean[n];
+
+        int seed = atrPeriod - 1;
+        double hl2Seed = (arr[seed].high() + arr[seed].low()) / 2.0;
+        finalUpper[seed] = hl2Seed + multiplier * atr[seed];
+        finalLower[seed] = hl2Seed - multiplier * atr[seed];
+        isUp[seed] = true;
+        lineOut[seed] = finalLower[seed];
+        upOut[seed]   = true;
+
+        for (int i = seed + 1; i < n; i++) {
+            double hl2 = (arr[i].high() + arr[i].low()) / 2.0;
+            double upper = hl2 + multiplier * atr[i];
+            double lower = hl2 - multiplier * atr[i];
+            double prevClose = arr[i - 1].close();
+
+            finalUpper[i] = (upper < finalUpper[i - 1] || prevClose > finalUpper[i - 1])
+                ? upper : finalUpper[i - 1];
+            finalLower[i] = (lower > finalLower[i - 1] || prevClose < finalLower[i - 1])
+                ? lower : finalLower[i - 1];
+
+            boolean prevUp = isUp[i - 1];
+            double close = arr[i].close();
+            if (prevUp) {
+                isUp[i] = close >= finalLower[i];
+            } else {
+                isUp[i] = close > finalUpper[i];
+            }
+            lineOut[i] = isUp[i] ? finalLower[i] : finalUpper[i];
+            upOut[i]   = isUp[i];
+        }
+        return new Series(lineOut, upOut);
+    }
+
+    /** Per-bar arrays returned by {@link #series}. Both are length-equal to the
+     *  input bar list; entries at indexes before the ATR seed carry
+     *  {@code NaN} / {@code false}. */
+    public record Series(double[] line, boolean[] isUp) {}
 }

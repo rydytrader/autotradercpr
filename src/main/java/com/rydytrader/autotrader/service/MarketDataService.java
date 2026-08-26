@@ -104,7 +104,14 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
      *  Either or both may be 0 if the parser couldn't extract them; consumers should
      *  fall back {@code LTT → EFT → wall-clock} in that order. */
     public record LtpTick(String fyersSymbol, double ltp, double atp,
-                          long exchFeedTimeSec, long lastTradedTimeSec) {}
+                          long exchFeedTimeSec, long lastTradedTimeSec,
+                          long sessionVolume) {
+        /** Legacy 5-arg constructor for callers that don't have volume. */
+        public LtpTick(String fyersSymbol, double ltp, double atp,
+                       long exchFeedTimeSec, long lastTradedTimeSec) {
+            this(fyersSymbol, ltp, atp, exchFeedTimeSec, lastTradedTimeSec, 0L);
+        }
+    }
     private final CopyOnWriteArrayList<java.util.function.Consumer<LtpTick>> ltpListeners = new CopyOnWriteArrayList<>();
     /** Registers a listener that receives every LTP tick — this is the pub-sub sibling of
      *  {@link #addOiListener}. Use it instead of polling {@link #getLtp} on a scheduler
@@ -414,7 +421,7 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         // snapshots/sec per symbol, so this path catches all 4 vs the poll's 1.
         if (raw.ltp > 0 && !ltpListeners.isEmpty()) {
             LtpTick evt = new LtpTick(fyersSymbol, raw.ltp, raw.atp,
-                raw.exchFeedTime, raw.lastTradedTime);
+                raw.exchFeedTime, raw.lastTradedTime, raw.volume);
             for (var l : ltpListeners) {
                 try { l.accept(evt); } catch (Exception ignored) {}
             }
