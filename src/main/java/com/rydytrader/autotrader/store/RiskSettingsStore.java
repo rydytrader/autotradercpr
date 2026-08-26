@@ -50,7 +50,7 @@ public class RiskSettingsStore {
         volatile int     vwapStLotsPerLeg        = 1;
         volatile String  vwapStSquareOffTime     = "15:25";
         volatile double  vwapStTargetPremium     = 250.0;   // rupee premium to pick nearest CE/PE
-        volatile int     vwapStStrikesRange      = 15;      // ±N strikes around market-open ATM
+        volatile int     vwapStStrikesRange      = 20;      // ±N strikes around ATM (subscribed pre-market on prev close, refined at spot open)
         volatile int     vwapStCandleMinutes     = 3;       // timeframe for signal candles
         volatile int     vwapStAtrPeriod         = 10;      // Supertrend ATR period
         volatile double  vwapStMultiplier        = 3.0;     // Supertrend ATR multiplier

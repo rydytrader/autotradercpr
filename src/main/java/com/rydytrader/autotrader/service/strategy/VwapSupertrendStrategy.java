@@ -69,10 +69,8 @@ public class VwapSupertrendStrategy implements Strategy {
     /** NIFTY lot size — matches OptionBuying constant. Fyers changes this once
      *  per year; hardcoded for now. */
     private static final int    LOT_SIZE = 65;
-    /** Delay between subscribing ±N strikes and picking the nearest-to-target
-     *  pair. Gives Fyers enough time to deliver first LTPs on every subscribed
-     *  strike. */
-    private static final long   PAIR_PICK_DELAY_MS = 15_000L;
+    /** Time-of-day at which the pre-market strike subscription fires. */
+    private static final LocalTime PRE_MARKET_SUB_TIME = LocalTime.of(9, 10);
 
     private final CandleAggregator    candleAggregator;
     private final MarketDataService   marketDataService;
@@ -116,6 +114,13 @@ public class VwapSupertrendStrategy implements Strategy {
     private volatile long   atmStrike = 0;
     private volatile long   strikesSubscribedAtMs = 0;
     private volatile String todayKey = "";
+    /** Whether today's pre-market subscription has already fired (idempotency
+     *  guard). Reset on day rollover. */
+    private volatile boolean preMarketSubscribedToday = false;
+    /** ATM strike used for the pre-market subscription (based on prev NIFTY
+     *  close). Kept so we can detect when the actual 09:15 ATM falls outside
+     *  the pre-subscribed range and top up the subscription. */
+    private volatile long   preMarketAtm = 0;
     /** Total closed trades today for liveNetPnlToday accumulation. */
     private final AtomicReference<Double> realisedPnlToday = new AtomicReference<>(0.0);
     private final Map<Long, ClosedTrade> tradesTodayById = new ConcurrentHashMap<>();
@@ -199,21 +204,114 @@ public class VwapSupertrendStrategy implements Strategy {
         LocalDate today = LocalDate.now(IST);
         LocalDate expiry = NiftyExpiryResolver.currentWeeklyExpiry(today, holidays);
 
-        List<String> allSymbols = new ArrayList<>(range * 2 * 2);
-        for (int i = -range; i <= range; i++) {
-            long strike = atmStrike + i * STRIKE_INTERVAL;
-            if (strike <= 0) continue;
-            allSymbols.add(NiftyOptionSymbolBuilder.buildFyersSymbol(expiry, strike, "CE"));
-            allSymbols.add(NiftyOptionSymbolBuilder.buildFyersSymbol(expiry, strike, "PE"));
+        // Top-up subscription only if actual ATM differs materially from the
+        // pre-market anchor — pre-market ±N covers most cases. If NIFTY gaps
+        // >N×50 from prev close, subscribe the missing strikes around the
+        // actual ATM.
+        List<String> topUp = new ArrayList<>();
+        if (preMarketSubscribedToday && preMarketAtm > 0) {
+            long lowestPre  = preMarketAtm - range * STRIKE_INTERVAL;
+            long highestPre = preMarketAtm + range * STRIKE_INTERVAL;
+            long lowestNow  = atmStrike - range * STRIKE_INTERVAL;
+            long highestNow = atmStrike + range * STRIKE_INTERVAL;
+            for (long strike = lowestNow; strike <= highestNow; strike += STRIKE_INTERVAL) {
+                if (strike <= 0) continue;
+                if (strike >= lowestPre && strike <= highestPre) continue;   // already subscribed
+                topUp.add(NiftyOptionSymbolBuilder.buildFyersSymbol(expiry, strike, "CE"));
+                topUp.add(NiftyOptionSymbolBuilder.buildFyersSymbol(expiry, strike, "PE"));
+            }
+        } else {
+            // No pre-market subscription happened (bot booted after 09:15?).
+            // Subscribe the full ±N range now — we'll pay the 15-s LTP wait
+            // penalty on this path.
+            for (int i = -range; i <= range; i++) {
+                long strike = atmStrike + i * STRIKE_INTERVAL;
+                if (strike <= 0) continue;
+                topUp.add(NiftyOptionSymbolBuilder.buildFyersSymbol(expiry, strike, "CE"));
+                topUp.add(NiftyOptionSymbolBuilder.buildFyersSymbol(expiry, strike, "PE"));
+            }
         }
-        marketDataService.subscribeAdditional(allSymbols);
+        if (!topUp.isEmpty()) marketDataService.subscribeAdditional(topUp);
         strikesSubscribedAtMs = System.currentTimeMillis();
         fsm = FsmState.STRIKES_SUBSCRIBING;
         event("[INFO]", "VwapST",
             "Spot open captured — spotOpen=" + fmt(spotOpen)
                 + " atmStrike=" + atmStrike
-                + " expiry=" + expiry
-                + " subscribed " + allSymbols.size() + " strikes (±" + range + ")");
+                + " preMarketAtm=" + preMarketAtm
+                + " topUpSubs=" + topUp.size());
+        // Try pair pick immediately — LTPs may already be flowing from the
+        // pre-market subscription. If not, tick() retries every 5 s.
+        pickPairAndWarmup();
+    }
+
+    /** Fires once daily at 09:10 IST via @Scheduled cron, or from tick() as
+     *  a catch-up when the bot boots inside the 09:10-09:15 window. Fetches
+     *  yesterday's NIFTY 50 spot close via Fyers /data/history (D bars),
+     *  computes ATM = round(prevClose/50)×50, and subscribes ±N strikes for
+     *  both CE and PE. When the 09:15 tick fires, subscription is already
+     *  active — LTPs stream from the first trade and pair pick can happen
+     *  in ~3 s instead of 15. */
+    @org.springframework.scheduling.annotation.Scheduled(cron = "0 10 9 * * MON-FRI", zone = "Asia/Kolkata")
+    public void preMarketScheduledFire() {
+        preMarketSubscribe();
+    }
+
+    private synchronized void preMarketSubscribe() {
+        if (preMarketSubscribedToday) return;
+        if (!riskSettings.isVwapStEnabled()) return;
+        try {
+            double prevClose = fetchNiftySpotPrevClose();
+            if (prevClose <= 0) {
+                event("[WARNING]", "VwapST",
+                    "Pre-market subscribe SKIPPED — could not resolve NIFTY spot prev close");
+                return;
+            }
+            long anchor = Math.round(prevClose / (double) STRIKE_INTERVAL) * STRIKE_INTERVAL;
+            int range = Math.max(1, riskSettings.getVwapStStrikesRange());
+            LocalDate today = LocalDate.now(IST);
+            LocalDate expiry = NiftyExpiryResolver.currentWeeklyExpiry(today, holidays);
+            List<String> allSymbols = new ArrayList<>(range * 2 * 2);
+            for (int i = -range; i <= range; i++) {
+                long strike = anchor + i * STRIKE_INTERVAL;
+                if (strike <= 0) continue;
+                allSymbols.add(NiftyOptionSymbolBuilder.buildFyersSymbol(expiry, strike, "CE"));
+                allSymbols.add(NiftyOptionSymbolBuilder.buildFyersSymbol(expiry, strike, "PE"));
+            }
+            marketDataService.subscribeAdditional(allSymbols);
+            preMarketAtm = anchor;
+            preMarketSubscribedToday = true;
+            event("[INFO]", "VwapST",
+                "Pre-market subscribe — prevClose=" + fmt(prevClose)
+                    + " anchor=" + anchor + " expiry=" + expiry
+                    + " subscribed " + allSymbols.size() + " strikes (±" + range + ")");
+        } catch (Exception e) {
+            event("[ERROR]", "VwapST", "Pre-market subscribe THREW — " + e.getMessage());
+        }
+    }
+
+    /** NIFTY 50 spot's most recent daily close from Fyers /data/history.
+     *  Returns 0 if the call fails or returns no bars — caller logs and skips. */
+    private double fetchNiftySpotPrevClose() {
+        try {
+            LocalDate today = LocalDate.now(IST);
+            JsonNode resp = fyersClient.getHistory(
+                "NSE:NIFTY50-INDEX", "D",
+                today.minusDays(7).format(ISO_DATE), today.format(ISO_DATE),
+                authHeader());
+            JsonNode candles = resp == null ? null : resp.path("candles");
+            if (candles == null || !candles.isArray() || candles.size() == 0) return 0;
+            // Last row's close (index 4). Skip today's bar if the D endpoint
+            // includes it (row 0 = time, 1 open, 2 high, 3 low, 4 close, 5 vol).
+            JsonNode last = candles.get(candles.size() - 1);
+            long epochSec = last.get(0).asLong(0);
+            LocalDate barDate = java.time.Instant.ofEpochSecond(epochSec).atZone(IST).toLocalDate();
+            if (barDate.equals(today) && candles.size() >= 2) {
+                last = candles.get(candles.size() - 2);
+            }
+            return last.get(4).asDouble(0);
+        } catch (Exception e) {
+            return 0;
+        }
     }
 
     // ── Scheduler tick — pair pick + squareoff cutoff ──────────────────────
@@ -224,9 +322,20 @@ public class VwapSupertrendStrategy implements Strategy {
         String today = LocalDate.now(IST).toString();
         if (!today.equals(todayKey)) rolloverIfNewDay(today);
 
-        if (fsm == FsmState.STRIKES_SUBSCRIBING
-                && strikesSubscribedAtMs > 0
-                && System.currentTimeMillis() - strikesSubscribedAtMs >= PAIR_PICK_DELAY_MS) {
+        // Pre-market subscription — fire once daily between 09:10 and 09:15 IST.
+        // Cron @Scheduled fires this at 09:10 exactly; the check here is a catch-up
+        // path for bots that boot mid-window (or if the cron misses for any reason).
+        if (!preMarketSubscribedToday) {
+            LocalTime nowIst = ZonedDateTime.now(IST).toLocalTime();
+            if (!nowIst.isBefore(PRE_MARKET_SUB_TIME) && nowIst.isBefore(LocalTime.of(9, 15))) {
+                preMarketSubscribe();
+            }
+        }
+
+        // Retry pair pick on every scheduler tick while STRIKES_SUBSCRIBING —
+        // pickPairAndWarmup() bails silently when no LTPs are available yet,
+        // succeeds and transitions to ARMED the moment enough LTPs land.
+        if (fsm == FsmState.STRIKES_SUBSCRIBING) {
             pickPairAndWarmup();
         }
 
@@ -272,9 +381,9 @@ public class VwapSupertrendStrategy implements Strategy {
             }
         }
         if (bestCe == null || bestPe == null) {
-            event("[WARNING]", "VwapST",
-                "Pair pick FAILED — no LTPs yet (bestCe=" + bestCe + " bestPe=" + bestPe + "). Will retry next tick.");
-            strikesSubscribedAtMs = System.currentTimeMillis(); // reset wait
+            // Silent retry — logging every 5 s during the first minute
+            // would be spam. tick() will call us again on the next cycle.
+            log.debug("[VwapSupertrend] pair pick retry — bestCe={} bestPe={}", bestCe, bestPe);
             return;
         }
         ceLeg.chosenSymbol = bestCe;
