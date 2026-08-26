@@ -18,13 +18,16 @@
                 '</div>' +
                 '<div id="sm-tabstrip" style="display:flex;border-bottom:1px solid var(--border);padding:0 24px;overflow-x:auto;"></div>' +
                 '<div class="sm-body" id="sm-body" style="flex:1;overflow-y:auto;padding:20px 24px;">' +
-                  '<div class="sm-pane" data-pane="option-buying" style="display:none;">' +
+                  '<div class="sm-pane" data-pane="vwap-supertrend" style="display:none;">' +
                     '<div class="sm-grid-2col">' +
-                      '<div class="sm-field sm-full"><label><input type="checkbox" id="sm-optionBuyingEnabled" style="margin-right:6px;vertical-align:middle;">Strategy enabled</label><div class="sm-hint">Master kill switch. When OFF, no new trade fires at the 09:20 trigger; an open position keeps being managed to target / SL / squareoff.</div></div>' +
-                      '<div class="sm-field"><label>Lots per Trade</label><input type="number" id="sm-optionBuyingLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 65 NIFTY. Buys this many lots of a 1 OTM CE (when first 5-min futures bar closes above VWAP) or 1 OTM PE (closes below VWAP).</div></div>' +
-                      '<div class="sm-field"><label>Order Type</label><select id="sm-optionBuyingOrderType"><option value="INTRADAY">INTRADAY</option><option value="OVERNIGHT">OVERNIGHT</option></select><div class="sm-hint">Fyers product type on both entry and exit orders. INTRADAY for MIS.</div></div>' +
-                      '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-optionBuyingSquareOffTime" step="60"><div class="sm-hint">Hard market-sell of the open leg if target and SL both never fire. Default 15:15.</div></div>' +
-                      '<div class="sm-field"><label>Target (option points)</label><input type="number" id="sm-optionBuyingTargetPoints" step="0.5" min="0"><div class="sm-hint">Exit fires when option LTP ≥ entryPrice + this many points. Default 20.</div></div>' +
+                      '<div class="sm-field sm-full"><label><input type="checkbox" id="sm-vwapStEnabled" style="margin-right:6px;vertical-align:middle;">Strategy enabled</label><div class="sm-hint">Master kill switch. When OFF the strategy skips new entries; open positions keep running to SL / ST-flip / squareoff.</div></div>' +
+                      '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-vwapStLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 65 NIFTY. Per-leg fixed sizing (CE and PE track independently).</div></div>' +
+                      '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-vwapStSquareOffTime" step="60"><div class="sm-hint">Hard market-exit of any open leg. Default 15:25.</div></div>' +
+                      '<div class="sm-field"><label>Target Premium (₹)</label><input type="number" id="sm-vwapStTargetPremium" step="1" min="1"><div class="sm-hint">After spot open, pick the CE and PE trading closest to this premium as the tracked pair. Default 250.</div></div>' +
+                      '<div class="sm-field"><label>Strikes Range (±)</label><input type="number" id="sm-vwapStStrikesRange" step="1" min="1"><div class="sm-hint">±N strikes around market-open ATM are subscribed to Fyers for LTP scan. Default 15.</div></div>' +
+                      '<div class="sm-field"><label>Candle Minutes</label><input type="number" id="sm-vwapStCandleMinutes" step="1" min="1"><div class="sm-hint">Timeframe for signal candles + Supertrend calc. Default 3.</div></div>' +
+                      '<div class="sm-field"><label>Supertrend ATR Period</label><input type="number" id="sm-vwapStAtrPeriod" step="1" min="2"><div class="sm-hint">Bars in the Supertrend ATR window. Default 10.</div></div>' +
+                      '<div class="sm-field"><label>Supertrend Multiplier</label><input type="number" id="sm-vwapStMultiplier" step="0.1" min="0.1"><div class="sm-hint">ATR × this = band distance. Default 3.0.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
@@ -133,7 +136,7 @@
         var strip = document.getElementById('sm-tabstrip');
         if (!strip) return;
         var html = '';
-        html += '<button class="sm-tab" data-tab="option-buying">OPTION BUYING</button>';
+        html += '<button class="sm-tab" data-tab="vwap-supertrend">VWAP + SUPERTREND</button>';
         html += '<button class="sm-tab" data-tab="portfolio-risk">RISK</button>';
         html += '<button class="sm-tab" data-tab="charges">CHARGES</button>';
         html += '<button class="sm-tab" data-tab="users">USERS</button>';
@@ -151,9 +154,9 @@
             b.classList.toggle('active', b.getAttribute('data-tab') === tab);
         });
         modalEl.querySelectorAll('.sm-pane').forEach(function(p) { p.style.display = 'none'; });
-        if (tab === 'option-buying') {
-            var ob = modalEl.querySelector('[data-pane="option-buying"]'); if (ob) ob.style.display = '';
-            loadOptionBuyingValues();
+        if (tab === 'vwap-supertrend') {
+            var ob = modalEl.querySelector('[data-pane="vwap-supertrend"]'); if (ob) ob.style.display = '';
+            loadVwapStValues();
         } else if (tab === 'portfolio-risk') {
             var pp = modalEl.querySelector('[data-pane="portfolio-risk"]'); if (pp) pp.style.display = '';
             loadPortfolioRiskValues();
@@ -168,33 +171,39 @@
     }
 
     function saveSettings() {
-        if (activeTab === 'option-buying')  return saveOptionBuyingTab();
+        if (activeTab === 'vwap-supertrend') return saveVwapStTab();
         if (activeTab === 'portfolio-risk') return savePortfolioRiskTab();
         if (activeTab === 'charges')        return saveChargesTab();
         if (activeTab === 'users')          { showBanner('Use the row buttons to manage users.', 'info'); return; }
         showBanner('No save action for this tab.', 'info');
     }
 
-    function loadOptionBuyingValues() {
+    function loadVwapStValues() {
         fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
             var g = id => document.getElementById(id);
-            if (g('sm-optionBuyingEnabled'))         g('sm-optionBuyingEnabled').checked = d.optionBuyingEnabled !== false;
-            if (g('sm-optionBuyingLotsPerLeg'))      g('sm-optionBuyingLotsPerLeg').value = d.optionBuyingLotsPerLeg != null ? d.optionBuyingLotsPerLeg : 1;
-            if (g('sm-optionBuyingOrderType'))       g('sm-optionBuyingOrderType').value = d.optionBuyingOrderType || 'INTRADAY';
-            if (g('sm-optionBuyingSquareOffTime'))   g('sm-optionBuyingSquareOffTime').value = d.optionBuyingSquareOffTime || '15:15';
-            if (g('sm-optionBuyingTargetPoints'))    g('sm-optionBuyingTargetPoints').value = d.optionBuyingTargetPoints != null ? d.optionBuyingTargetPoints : 20;
+            if (g('sm-vwapStEnabled'))         g('sm-vwapStEnabled').checked = d.vwapStEnabled !== false;
+            if (g('sm-vwapStLotsPerLeg'))      g('sm-vwapStLotsPerLeg').value = d.vwapStLotsPerLeg != null ? d.vwapStLotsPerLeg : 1;
+            if (g('sm-vwapStSquareOffTime'))   g('sm-vwapStSquareOffTime').value = d.vwapStSquareOffTime || '15:25';
+            if (g('sm-vwapStTargetPremium'))   g('sm-vwapStTargetPremium').value = d.vwapStTargetPremium != null ? d.vwapStTargetPremium : 250;
+            if (g('sm-vwapStStrikesRange'))    g('sm-vwapStStrikesRange').value = d.vwapStStrikesRange != null ? d.vwapStStrikesRange : 15;
+            if (g('sm-vwapStCandleMinutes'))   g('sm-vwapStCandleMinutes').value = d.vwapStCandleMinutes != null ? d.vwapStCandleMinutes : 3;
+            if (g('sm-vwapStAtrPeriod'))       g('sm-vwapStAtrPeriod').value = d.vwapStAtrPeriod != null ? d.vwapStAtrPeriod : 10;
+            if (g('sm-vwapStMultiplier'))      g('sm-vwapStMultiplier').value = d.vwapStMultiplier != null ? d.vwapStMultiplier : 3.0;
         }).catch(function() {});
     }
 
-    function saveOptionBuyingTab() {
+    function saveVwapStTab() {
         var g = id => document.getElementById(id);
         var body = {
-            optionBuyingEnabled:           !!(g('sm-optionBuyingEnabled') && g('sm-optionBuyingEnabled').checked),
-            optionBuyingLotsPerLeg:        parseInt(g('sm-optionBuyingLotsPerLeg').value, 10) || 1,
-            optionBuyingOrderType:         g('sm-optionBuyingOrderType').value,
-            optionBuyingSquareOffTime:     (g('sm-optionBuyingSquareOffTime').value || '').trim(),
-            optionBuyingTargetPoints:      parseFloat(g('sm-optionBuyingTargetPoints').value) || 0
+            vwapStEnabled:        !!(g('sm-vwapStEnabled') && g('sm-vwapStEnabled').checked),
+            vwapStLotsPerLeg:     parseInt(g('sm-vwapStLotsPerLeg').value, 10) || 1,
+            vwapStSquareOffTime:  (g('sm-vwapStSquareOffTime').value || '').trim(),
+            vwapStTargetPremium:  parseFloat(g('sm-vwapStTargetPremium').value) || 250,
+            vwapStStrikesRange:   parseInt(g('sm-vwapStStrikesRange').value, 10) || 15,
+            vwapStCandleMinutes:  parseInt(g('sm-vwapStCandleMinutes').value, 10) || 3,
+            vwapStAtrPeriod:      parseInt(g('sm-vwapStAtrPeriod').value, 10) || 10,
+            vwapStMultiplier:     parseFloat(g('sm-vwapStMultiplier').value) || 3.0
         };
         postSettings('/api/settings/risk', body);
     }
@@ -301,12 +310,12 @@
             buildTabs();
             loadChargesValues();
             modalEl.dataset.tabsBuilt = '1';
-            switchTab('option-buying');
+            switchTab('vwap-supertrend');
         } else {
-            if (activeTab === 'option-buying')       loadOptionBuyingValues();
+            if (activeTab === 'vwap-supertrend')       loadVwapStValues();
             else if (activeTab === 'portfolio-risk') loadPortfolioRiskValues();
             else if (activeTab === 'charges')        loadChargesValues();
-            else                                     switchTab('option-buying');
+            else                                     switchTab('vwap-supertrend');
         }
     }
 

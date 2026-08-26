@@ -37,6 +37,16 @@ public class SettingsController {
         result.put("optionBuyingOrderType",         riskSettings.getOptionBuyingOrderType());
         result.put("optionBuyingSquareOffTime",     riskSettings.getOptionBuyingSquareOffTime());
         result.put("optionBuyingTargetPoints",      riskSettings.getOptionBuyingTargetPoints());
+        // VWAP + SUPERTREND — chosen CE/PE nearest to target premium, VWAP-bounce
+        // entry + Supertrend trail.
+        result.put("vwapStEnabled",           riskSettings.isVwapStEnabled());
+        result.put("vwapStLotsPerLeg",        riskSettings.getVwapStLotsPerLeg());
+        result.put("vwapStSquareOffTime",     riskSettings.getVwapStSquareOffTime());
+        result.put("vwapStTargetPremium",     riskSettings.getVwapStTargetPremium());
+        result.put("vwapStStrikesRange",      riskSettings.getVwapStStrikesRange());
+        result.put("vwapStCandleMinutes",     riskSettings.getVwapStCandleMinutes());
+        result.put("vwapStAtrPeriod",         riskSettings.getVwapStAtrPeriod());
+        result.put("vwapStMultiplier",        riskSettings.getVwapStMultiplier());
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
         result.put("maxRiskPerDayPct",    riskSettings.getMaxRiskPerDayPct(effectiveMode));
@@ -78,6 +88,15 @@ public class SettingsController {
             if (body.containsKey("optionBuyingOrderType"))        riskSettings.setOptionBuyingOrderType(body.get("optionBuyingOrderType").toString());
             if (body.containsKey("optionBuyingSquareOffTime"))    riskSettings.setOptionBuyingSquareOffTime(body.get("optionBuyingSquareOffTime").toString());
             if (body.containsKey("optionBuyingTargetPoints"))     riskSettings.setOptionBuyingTargetPoints(Double.parseDouble(body.get("optionBuyingTargetPoints").toString()));
+            // VWAP + SUPERTREND
+            if (body.containsKey("vwapStEnabled"))          riskSettings.setVwapStEnabled(Boolean.parseBoolean(body.get("vwapStEnabled").toString()));
+            if (body.containsKey("vwapStLotsPerLeg"))       riskSettings.setVwapStLotsPerLeg(Integer.parseInt(body.get("vwapStLotsPerLeg").toString()));
+            if (body.containsKey("vwapStSquareOffTime"))    riskSettings.setVwapStSquareOffTime(body.get("vwapStSquareOffTime").toString());
+            if (body.containsKey("vwapStTargetPremium"))    riskSettings.setVwapStTargetPremium(Double.parseDouble(body.get("vwapStTargetPremium").toString()));
+            if (body.containsKey("vwapStStrikesRange"))     riskSettings.setVwapStStrikesRange(Integer.parseInt(body.get("vwapStStrikesRange").toString()));
+            if (body.containsKey("vwapStCandleMinutes"))    riskSettings.setVwapStCandleMinutes(Integer.parseInt(body.get("vwapStCandleMinutes").toString()));
+            if (body.containsKey("vwapStAtrPeriod"))        riskSettings.setVwapStAtrPeriod(Integer.parseInt(body.get("vwapStAtrPeriod").toString()));
+            if (body.containsKey("vwapStMultiplier"))       riskSettings.setVwapStMultiplier(Double.parseDouble(body.get("vwapStMultiplier").toString()));
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
             if (body.containsKey("maxRiskPerDayPct"))  riskSettings.setMaxRiskPerDayPct(effectiveMode, Double.parseDouble(body.get("maxRiskPerDayPct").toString()));

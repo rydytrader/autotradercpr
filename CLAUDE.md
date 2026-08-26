@@ -1,105 +1,90 @@
-# TraderEdge CPR AutoTrader
+# TraderEdge AutoTrader — VWAP + Supertrend Options Strategy
 
 ## Project Overview
-Automated intraday trading bot for Indian equity markets. Receives TradingView alerts via webhook, places orders on Fyers broker, manages SL/target OCO, and tracks P&L.
+Intraday options-buying bot on NIFTY. On the first NIFTY spot tick each morning
+after 09:15 IST, subscribes ±N strikes around the ATM anchor and picks the CE
+and PE trading closest to a configurable target premium (default ₹250). Each
+leg is monitored independently on its own 3-min chart:
+
+- **Entry**: VWAP-bounce candle (low ≤ VWAP AND close > VWAP AND close > open)
+  AND Supertrend(10, 3) is up.
+- **SL**: entry candle's low. Enforced in-memory via LTP tick listener; market
+  exit fires the instant LTP ≤ SL.
+- **Exit trail**: Supertrend flip on the option's own chart. Unlimited re-entries
+  (each fresh VWAP-bounce green bar re-arms).
+- **Concurrency**: CE and PE positions can be open simultaneously.
+- **Squareoff**: hard market-exit at configurable cutoff (default 15:25).
 
 ## Tech Stack
 - **Backend**: Spring Boot 4.0.3, Java 17
-- **Frontend**: Thymeleaf templates, vanilla JS, Bootstrap 5, Chart.js
-- **Broker API**: Fyers v3 REST + WebSocket
-- **WebSocket**: Java-WebSocket 1.5.3
-- **Logging**: SLF4J + Logback (daily rolling file)
-- **Persistence**: JSON files on disk (no database)
+- **Frontend**: Thymeleaf templates, vanilla JS, lightweight-charts, Bootstrap 5
+- **Broker + Data**: Fyers v3 REST + two WebSockets (HSM binary market data, JSON order)
+- **WebSocket lib**: Java-WebSocket 1.5.3
+- **Persistence**: H2 (settings + trades), JSON files (cache), SLF4J + Logback logs
 - **Build**: Maven
 
 ## Architecture
 
-### Live-Only Mode
-The app runs exclusively in LIVE mode — no simulator. All mock/simulator code has been removed.
-
-### WebSocket Connections (LIVE mode)
-1. **Market Data WebSocket** (`wss://socket.fyers.in/hsm/v1-5/prod`)
-   - Binary protocol (HsmBinaryParser), full mode (LTP + VWAP + volume)
-   - Feeds real-time ticker + position P&L via SSE to browser
-   - Handles trailing SL trigger detection
-   - Feeds CandleAggregator for internal scanner
-   - Service: `MarketDataService`
-
-2. **Order Update WebSocket** (`wss://socket.fyers.in/trade/v3`)
-   - JSON protocol, subscribes to orders/trades/positions
-   - Detects entry fills, SL/target fills, cancellations, modifications
-   - Detects manual positions and external closes
-   - Service: `OrderEventService`
-
-### When both WebSockets are connected:
-- Zero API polling (syncPosition skipped entirely)
-- Entry fills detected via push (replaces 2s polling)
-- OCO fills detected via push (replaces 5s polling)
-- Manual SL/target modifications detected in real-time
-- Status shows "WS CONNECTED"
-
-### Fallback
-- If WebSockets disconnect, PollingService resumes polling automatically
-- syncPosition runs every 10s as safety net
-- Status shows "POLLING"
-
-### Signal Flow (two sources)
+### Data pipeline (Fyers-only as of 2026-08-26)
 ```
-Source 1: TradingView Alert → POST /placeorder → SignalProcessor
-Source 2: BreakoutScanner (internal) → 15-min candle close → TradingController
-
-Both → SignalProcessor (filters/qty) → OrderService.placeOrder → Fyers API
-  → OrderEventService tracks order ID (if WS connected)
-  OR PollingService.monitorEntry (polling fallback)
-  → On fill: place SL + Target
-  → OrderEventService tracks OCO (if WS connected)
-  OR PollingService.monitorOCO (polling fallback)
-  → On SL/target fill: cancel counterpart, record trade, clear state
+Fyers HSM WebSocket (wss://socket.fyers.in/hsm/v1-5/prod)
+  ↓ binary frames, FULL mode (mode byte 70 / 'F') — LTP + ATP + volume + LTT + EFT
+HsmBinaryParser
+  ↓ RawTick
+MarketDataService.onTick → pushLtpTick → LtpListener fanout
+  ├─ FyersMinuteBarBuilder — aggregates ticks into 1-min OHLC per symbol,
+  │    volume = sessionVol delta within bucket, emit at minute boundary
+  │    ↓ appendOneMinBar
+  │  CandleAggregator (1-min ring per symbol, session VWAP recomputed per bar)
+  │    ↓ getHistory(sym, N) aggregates 1-min → N-min buckets on demand
+  └─ VwapSupertrendStrategy.onTick (SL enforcement, spot-open capture)
 ```
 
-### Internal Scanner (Bot-Managed Signals)
-When signal source is INTERNAL, the bot generates its own breakout signals:
+GDFL removed entirely on branch `VWAP_SUPERTREND_STRATEGY`. Fyers HSM is the
+sole market-data source. Bar OHLC is built LOCALLY from ticks (Fyers has no
+canonical bar push equivalent to GDFL's SubscribeSnapshot); user accepted the
+tick-aggregation trade-off.
+
+### Order pipeline
 ```
-WebSocket Ticks → CandleAggregator (15-min candles) → BreakoutScanner
-  → Detects CPR level breakouts (Path 1: standard, Path 2: wick rejection)
-  → Checks: green/red candle, VWAP, probability (HPT/MPT/LPT)
-  → Feeds into TradingController (same pipeline as TradingView)
+Fyers Order WebSocket (wss://socket.fyers.in/trade/v3)  — JSON, orders/trades/positions
+  ↓
+OrderEventService.onOrderEvent — captures fills, cancels, modifications
+  ↓ FillListener fanout
+VwapSupertrendStrategy.onOrderFill → matches ceLeg/peLeg.entryOrderId,
+  transitions PENDING_ENTRY → IN_POSITION, freezes fillPrice
 ```
 
-**Breakout Detection (matches Pine Script)**:
-- Buy: close > level + (open or low below level OR low dips below and closes above)
-- Sell: close < level + (open or high above level OR high pokes above and closes below)
-- Green candle required for buys, red candle for sells
-- Priority: highest level wins (R4 > R3 > R2 > R1/PDH > CPR > S1/PDL)
-- `brokenLevels` prevents re-fire — only marked when trade is placed, cleared on position close
+Strategy places MARKET orders via `OrderService.placeOrder(sym, qty, 1, 0.0, "INTRADAY")`.
+Exits via `placeExitOrder(sym, qty, -1, "INTRADAY")`.
 
-**Key Scanner Services**:
-- `CandleAggregator` — buffers WebSocket ticks into 15-min candles, tracks VWAP
-- `AtrService` — ATR(14) from Fyers daily history, updated from completed candles
-- `WeeklyCprService` — weekly/daily CPR trends using LTP vs levels (fetches daily candles, aggregates weekly OHLC)
-- `BreakoutScanner` — breakout detection, feeds signals into trading pipeline
+### Strategy FSM
+```
+BOOT
+  ↓ (first NIFTY spot tick ≥ 09:15 IST)
+STRIKES_SUBSCRIBING  (subscribe ±N strikes for both CE and PE via
+  ↓                   marketDataService.subscribeAdditional)
+ARMED
+  ↓ Per-leg: WAITING → PENDING_ENTRY (on entry order) → IN_POSITION (on fill)
+  ↓          → WAITING (on SL / ST-flip / squareoff)
+DONE_FOR_DAY  (on 15:25 cutoff)
+```
 
-### Universe vs Watchlist scope
-All 50 NIFTY stocks AND all 18 sector indices receive full indicator computation
-(5-min + 1-hour candles, EMA20, HTF EMA20, ATR, daily/weekly CPR) regardless of
-watchlist membership. The watchlist filter ONLY decides which stocks
-`BreakoutScanner` evaluates for trade signals. Anything that would prune,
-clear, or skip indicator state for a non-watchlist symbol is a regression —
-`pruneTo()` calls take the seedUniverse, not the filtered watchlist.
+Pair pick happens ~15 s after strike subscription (`tick()` polls). Scans LTPs
+for all 30 subscribed strikes, picks the CE nearest to `vwapStTargetPremium`
+and the PE nearest to the same. Then fetches historical 1-min bars via
+`fyersClient.getHistory(sym, "1", today.minusDays(3), today)` for both chosen
+symbols and prepends via `candleAggregator.prependHistory` so Supertrend is
+valid from BAR 1 of today's session.
 
-### Key Design Patterns
-- **FyersClient interface** → LiveFyersClient (single implementation)
-- **FyersClientRouter** → delegates to LiveFyersClient
-- **PositionManager** — static in-memory LONG/SHORT/NONE per symbol
-- **PositionStateStore** — JSON files on disk (store/data/positions/)
-- **OrderEventService ↔ PollingService** — circular dependency avoided via `setPollingService()` setter
+### Chart page (`/chart`)
+Two side-by-side panels — CE (green dot) and PE (red dot) — each showing 3-min
+candles + session VWAP (yellow) + Supertrend step line (colored per latest
+direction, green when up, red when down). Panels populate as soon as the
+strategy picks the pair (~09:15:15 IST). Poll cadence 2 s.
 
-### SSE (Server-Sent Events)
-- Single SSE connection per page (ticker.js manages `window.__tickerSSE`)
-- `ticker` event — market data for scrolling ticker
-- `positions` event — live LTP + P&L for open positions
-- Pages reuse shared EventSource, no duplicate connections
-- Fallback to REST polling if SSE disconnects
+`/api/chart/symbols` returns `{ ceSymbol, peSymbol, ceTick, peTick, spotOpen, atmStrike }`.
+`/api/chart/candles?symbol=X` returns `{ history, stSeries, exchangeNowMs }`.
 
 ## Fyers API
 
@@ -111,125 +96,115 @@ clear, or skip indicator state for a non-watchlist symbol is a regression —
 
 ### Endpoints Used
 - POST `/api/v3/orders/sync` — place order
-- PUT `/api/v3/orders/sync` — modify order (trailing SL)
+- PUT  `/api/v3/orders/sync` — modify order
 - DELETE `/api/v3/orders/sync` — cancel order
 - GET `/api/v3/orders` — order book
 - GET `/api/v3/positions` — positions
-- GET `/api/v3/tradebook` — trade history
-- GET `/api/v3/profile` — user profile
+- GET `/api/v3/tradebook` — tradebook
+- GET `/api/v3/profile` — profile
 - GET `/data/quotes` — market quotes (fallback)
+- GET `/data/history` — historical OHLC bars (used for Supertrend warmup)
 - POST `/data/symbol-token` — HSM token resolution
 - POST `/api/v3/validate-authcode` — login
 
 ### Auth Pattern
-- Header: `Authorization: clientId:accessToken`
-- Order WS: `authorization` HTTP header during handshake
+- REST header: `Authorization: clientId:accessToken`
+- Order WS: same header during handshake
 - Data WS: JWT → decode → `hsm_key` for binary auth
+
+## Key Services
+
+### MarketDataService
+- Owns the Fyers HSM WebSocket lifecycle (connect, auth, subscribe, reconnect,
+  401 handling, ping keepalive).
+- Implements `FyersDataWebSocket.TickCallback`. `onTick(RawTick)` fans out via
+  `pushLtpTick(LtpTick)` to registered `LtpListener`s.
+- SSE emitter management for the browser ticker.
+- `subscribeAdditional(Collection<String>)` — strategy calls this to subscribe
+  option strikes on demand. `unsubscribeAdditional` for cleanup.
+- LTP cache (`currentTicks`) — every ingress updates last-known LTP / open /
+  high / low / prevClose / ATP.
+
+### CandleAggregator
+- Stores 1-min bars per symbol in a bounded FIFO ring.
+- `appendOneMinBar(sym, bar)` — called by `FyersMinuteBarBuilder` on minute
+  boundary. Recomputes pandas_ta session VWAP for every bar in the ring
+  (`Σ((H+L+C)/3 × v) / Σ(v)`, cumulative from IST midnight day-key).
+- `getHistory(sym, intervalMinutes)` — returns 1-min bars raw when interval=1,
+  or aggregates into N-min buckets (open=first, high=max, low=min, close=last,
+  volume=sum, vwap=last contributing bar's vwap).
+- `subscribe(sym, listener)` — fires listener on every 1-min bar close.
+
+### FyersMinuteBarBuilder
+- Bridge between MarketDataService LTP stream and CandleAggregator.
+- Per-symbol current bucket state keyed by `ExchFeedTime / 60`. On boundary
+  crossing, emits the closed bucket via `appendOneMinBar`.
+- Volume per bar = `endSessionVol - startSessionVol` (delta within bucket).
+- 1 Hz `@Scheduled` sweep closes stale buckets on symbols that stop ticking
+  mid-minute (illiquid safety net).
+
+### OrderEventService
+- Fyers Order WebSocket handler. Captures fills, cancels, modifications.
+- `addFillListener(BiConsumer<orderId, price>)` — strategy hooks this to
+  detect entry / exit fills.
+
+### VwapSupertrendStrategy
+- Sole strategy on this branch. Full FSM + per-leg state + persistence.
+- Implements `Strategy` — auto-picked by `StrategyScheduler` (tick every 5 s)
+  and `PortfolioRiskService` (portfolio-wide kill switch).
 
 ## File Structure
 ```
 src/main/java/com/rydytrader/autotrader/
-├── config/          AsyncConfig, FyersProperties, TelegramProperties
-├── controller/      TradingController, ViewController, SimulatorController,
-│                    SettingsController, ScannerController, MarketTickerController, MarketTickerSseController
-├── dto/             OrderDTO, PositionsDTO, TickData, TradeRecord, ProcessedSignal, CprLevels, JournalMetrics
-├── fyers/           FyersClient (interface), LiveFyersClient, FyersClientRouter
-├── manager/         PositionManager (static)
-├── service/         PollingService, OrderService, OrderEventService, MarketDataService,
-│                    SignalProcessor, EventService, TradeHistoryService, BhavcopyService,
-│                    MarketHolidayService, SymbolMasterService, TelegramService, LoginService,
-│                    MarginDataService, QuantityService, BreakoutScanner, CandleAggregator,
-│                    AtrService, WeeklyCprService
-├── store/           PositionStateStore, RiskSettingsStore, TokenStore, TradingStateStore
-└── websocket/       FyersDataWebSocket, FyersOrderWebSocket, HsmBinaryParser
+├── config/          FyersProperties, AsyncConfig, TelegramProperties
+├── controller/      TradingController, ViewController, ChartController,
+│                    SettingsController, StrategyHistoryController,
+│                    MarketTickerController, MarketTickerSseController
+├── dto/             Candle, OrderDTO, PositionsDTO, TickData, ...
+├── entity/          StrategyTradeEntity (H2 row per closed trade)
+├── fyers/           FyersClient, LiveFyersClient, FyersClientRouter
+├── indicator/       SuperTrend, Atr, TrueRange, FloorPivots
+├── manager/         PositionManager
+├── service/
+│   ├── strategy/    Strategy, VwapSupertrendStrategy
+│   ├── MarketDataService  (Fyers HSM WS lifecycle + LTP cache + SSE)
+│   ├── FyersMinuteBarBuilder  (tick→1min bar bridge)
+│   ├── CandleAggregator   (1-min ring + N-min aggregation + VWAP)
+│   ├── OrderService, OrderEventService, PollingService
+│   ├── HistoricalChartStore, EventService, TokenStore, ...
+├── store/           RiskSettingsStore, PositionStateStore, TokenStore, ...
+├── util/            NiftyExpiryResolver, NiftyOptionSymbolBuilder, ...
+└── websocket/       FyersDataWebSocket, HsmBinaryParser, FyersOrderWebSocket
 
 src/main/resources/
-├── templates/       home, scanner (watchlist), positions, trades, journal, settings, console, login
-├── static/css/      shared.css (3 themes: dark, light, forest)
-├── static/js/       common.js, ticker.js
+├── templates/       chart, home, strategy, trades, calendar, trade, login
+├── static/css/      shared.css (dark / light / forest themes)
+├── static/js/       common.js, ticker.js, settings-modal.js, ...
 ├── logback-spring.xml
 └── application.properties
 
-src/main/pine/       TraderEdge CPR AutoTrader.txt (Pine Script indicator)
-
 store/
-├── config/              Configuration files
-│   ├── risk-settings.json   Risk management settings
-│   ├── cpr-data.json        Cached CPR levels from NSE bhavcopy
-│   └── nse-holidays.json    Cached NSE trading holidays
-├── data/                Runtime data
-│   ├── positions/       Position JSON files (one per symbol)
-│   ├── events/          Daily event log files
-│   └── history/         Daily trade history files
-└── logs/                Application logs
-    └── autotrader.log   Daily rolling log (30 days, 200MB cap)
+├── config/          cpr-data.json, nse-holidays.json
+├── cache/           candle-aggregator-state.json, vwap-supertrend-state.json
+├── data/            positions/, events/, history/, charts/
+└── logs/            autotrader.log (30-day roll, 200 MB cap)
 ```
 
-## Key Services
-
-### PollingService
-- Core trading engine — entry monitor, OCO monitor, position sync, squareoff
-- Falls back to polling when WebSockets are down
-- Guards: pendingEntrySymbols, ocoHandledSymbols, ocoMonitoredSymbols (for polling path)
-- Public helpers for WS: setSymbolState, clearSymbolStateFromWs, addCachedPosition
-
-### OrderEventService
-- Handles Order WebSocket events
-- Tracks entry/OCO orders by ID
-- On fill: places SL/target, cancels counterpart, records trade
-- Detects manual positions and external closes
-- Detects SL/target price modifications
-
-### MarketDataService
-- Manages Data WebSocket lifecycle
-- SSE push to browser (ticker + positions)
-- Trailing SL: monitors LTP, modifies SL when trigger hit
-
-### SignalProcessor
-- Validates and filters incoming signals
-- Computes targets from CPR levels
-- Target shift logic, small/large candle filters
-- Session move limit (day open + PDC based)
-- Risk-based quantity calculation
-- TradingView symbol conversion (_ to -)
-
-## Signal Probability
-Probability is determined by **breakout direction + weekly trend** (not daily trend):
-
-| Weekly Trend | Breakout Direction | Category |
-|-------------|-------------------|----------|
-| Bullish | Buy | **HPT** (High Probable Trade) |
-| Bearish | Sell | **HPT** |
-| Neutral | Buy or Sell | **MPT** (Medium Probable Trade) |
-| Bearish | Buy | **LPT** (Low Probable Trade) |
-| Bullish | Sell | **LPT** |
-
-Daily trend is irrelevant for classification — what matters is the breakout direction vs weekly bias.
-Each category is independently toggleable in settings. TradingView alerts include `"probability"` field.
-For internal scanner signals, probability is computed after breakout direction is detected.
-
-## Trading Features
-- **SL from fill price**: SL recalculated using actual fill price (not Pine Script close)
-- **Trailing SL**: configurable trigger % and lock % (default 75%/50%)
-- **Auto Square Off**: scheduled at configurable time
-- **Session Move Limit**: halves qty if price moved too far from day open/PDC
-- **Target Shift**: shifts to next CPR level if default target < 1 ATR
-- **Small/Large Candle Filters**: reject based on ATR multiples
-- **Risk Gating**: max daily loss, risk per trade, exposure limits
-- **Dedup Guard**: 5-second window prevents duplicate trade recordings
-
-## UI Pages (nav order)
-- **Home** — day P&L hero, equity curve, trade stats
-- **Watchlist** (`/scanner`) — narrow/inside CPR stock cards with real-time LTP, VWAP, ATR, weekly/daily trends, CPR levels, breakout signals. Filters: CPR type, HPT/MPT/LPT, has signal. Narrow/Inside CPR list modals.
-- **Positions** — live positions table, market clock, P&L stats
-- **Trade Log** — all trades with P&L
-- **Journal** — win/loss analysis, profit factor
-- **Settings** — all configurable parameters (signal source: TRADINGVIEW/INTERNAL, HPT/MPT/LPT enables, VWAP check)
-- **Console** — color-coded application logs with search/filter
+## Settings (VWAP + Supertrend tab in gear modal)
+| Setting              | Default   | Purpose                                                  |
+|----------------------|-----------|----------------------------------------------------------|
+| Strategy enabled     | true      | Master kill switch                                        |
+| Lots per Leg         | 1         | ×65 = qty per entry                                       |
+| Squareoff Time       | 15:25     | Hard exit cutoff                                          |
+| Target Premium (₹)   | 250       | Pick CE + PE nearest to this LTP                          |
+| Strikes Range (±)    | 15        | Subscribe ATM ± N strikes                                 |
+| Candle Minutes       | 3         | Signal timeframe                                          |
+| Supertrend ATR       | 10        | ATR period                                                |
+| Supertrend Multiplier| 3.0       | ATR × this = band distance                                |
 
 ## Conventions
 - Event log prefixes: `[SUCCESS]`, `[WARNING]`, `[ERROR]`, `[INFO]`, `[WS]`
 - Log format: `HH:mm:ss.SSS LEVEL [ClassName] message`
-- All settings persisted as JSON in store/config/
 - Prices rounded to tick size via SymbolMasterService (loaded from Fyers CSV)
-- No database — all state in JSON files (store/) and in-memory maps
+- Persistence: H2 for durable trade rows + risk settings; JSON files in
+  `store/cache/` for in-memory FSM snapshots
