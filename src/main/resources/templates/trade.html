@@ -233,29 +233,15 @@
                     <div class="stat-value" id="riskBudgetVal" style="font-size:1.3rem; margin-top:4px;">—</div>
                     <div class="stat-sub" id="riskBudgetSub" style="margin-top:4px; color:var(--text-muted);">Consumed / Total</div>
                 </div>
-                <!-- NIFTY Futures — LTP + change vs previous close. -->
+                <!-- NIFTY spot — LTP + change vs previous close. Replaces the
+                     legacy NIFTY FUT / VWAP / Trend tiles (removed 2026-08-26). -->
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
-                     title="NIFTY current-month futures">
-                    <div class="stat-label">NIFTY FUT</div>
-                    <div class="stat-value" id="statFutLtp" style="font-size:1.3rem; margin-top:4px;">—</div>
+                     title="NIFTY 50 spot index">
+                    <div class="stat-label">NIFTY SPOT</div>
+                    <div class="stat-value" id="statSpotLtp" style="font-size:1.3rem; margin-top:4px;">—</div>
                     <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">
-                        <span id="statFutChg" style="font-weight:400;">—</span>
+                        <span id="statSpotChg" style="font-weight:400;">—</span>
                     </div>
-                </div>
-                <!-- NIFTY VWAP — session VWAP of futures. -->
-                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
-                     title="Session VWAP of NIFTY futures — reference for the OPTION BUYING trigger">
-                    <div class="stat-label">VWAP</div>
-                    <div class="stat-value" id="statFutVwap" style="font-size:1.3rem; margin-top:4px;">—</div>
-                    <div class="stat-sub" style="margin-top:4px; color:var(--text-muted);">Session-anchored</div>
-                </div>
-                <!-- Trend — derived from futures LTP vs VWAP.
-                     LTP > VWAP → BULLISH; LTP < VWAP → BEARISH; ==  → NEUTRAL. -->
-                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
-                     title="Futures trading above VWAP = bullish, below = bearish">
-                    <div class="stat-label">Trend</div>
-                    <div class="stat-value" id="statFutTrend" style="font-size:1.3rem; margin-top:4px;">—</div>
-                    <div class="stat-sub" id="statFutTrendSub" style="margin-top:4px; color:var(--text-muted);">Futures vs VWAP</div>
                 </div>
                 <!-- Market Clock — session clock + market status. Rightmost tile. -->
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
@@ -964,24 +950,22 @@
         if (cardChg) { cardChg.textContent = chgText || '—'; cardChg.style.color = 'var(--text-muted)'; }
     }
 
-    // ── NIFTY Futures + VWAP tile poll ─────────────────────────────────────
-    // Every 3s hits /api/chart/symbols (a purely in-memory read on the server) and
-    // updates the two futures-side hero tiles: LTP + change and session VWAP.
-    // Same endpoint the /chart page uses, so no duplicate machinery.
+    // ── NIFTY spot tile poll ───────────────────────────────────────────────
+    // 3-s poll to /api/chart/symbols → paints the NIFTY SPOT tile (LTP +
+    // change). Replaces the retired NIFTY FUT / VWAP / Trend tiles that
+    // referenced the pre-strategy-cutover futures leg.
     function pollFuturesTick() {
         if (document.visibilityState !== 'visible') return;
         fetch('/api/chart/symbols')
             .then(function(r) { return r.ok ? r.json() : null; })
             .then(function(d) {
                 if (!d) return;
-                var ft = d.futuresTick || {};
-                var ltp  = Number(ft.ltp  || 0);
-                var ch   = Number(ft.ch   || 0);
-                var chp  = Number(ft.chp  || 0);
-                var vwap = Number(ft.vwap || 0);
+                var ltp  = Number(d.spotLtp       || 0);
+                var ch   = Number(d.spotChange    || 0);
+                var chp  = Number(d.spotChangePct || 0);
 
-                var ltpEl = document.getElementById('statFutLtp');
-                var chgEl = document.getElementById('statFutChg');
+                var ltpEl = document.getElementById('statSpotLtp');
+                var chgEl = document.getElementById('statSpotChg');
                 if (ltpEl) {
                     ltpEl.textContent = ltp > 0 ? ltp.toFixed(2) : '—';
                     ltpEl.style.color = ltp <= 0 ? 'var(--text-primary)'
@@ -995,41 +979,6 @@
                         chgEl.textContent = sign + Math.abs(ch).toFixed(2) + ' (' + sign + Math.abs(chp).toFixed(2) + '%)';
                     } else {
                         chgEl.textContent = '—';
-                    }
-                }
-
-                var vwapEl = document.getElementById('statFutVwap');
-                if (vwapEl) {
-                    vwapEl.textContent = vwap > 0 ? vwap.toFixed(2) : '—';
-                    // Colour VWAP by where LTP sits relative to it — above = green (bullish
-                    // context for CE), below = red (bullish context for PE).
-                    vwapEl.style.color = (ltp <= 0 || vwap <= 0) ? 'var(--text-primary)'
-                                       : ltp > vwap ? 'var(--accent-green, #34d399)'
-                                       : ltp < vwap ? 'var(--accent-red, #f87171)'
-                                       : 'var(--text-primary)';
-                }
-
-                // Trend tile — BULLISH above VWAP, BEARISH below, NEUTRAL at exactly
-                // equal. Also shows the signed distance from VWAP in the sub-line.
-                var trendEl = document.getElementById('statFutTrend');
-                var trendSubEl = document.getElementById('statFutTrendSub');
-                if (trendEl) {
-                    if (ltp <= 0 || vwap <= 0) {
-                        trendEl.textContent = '—';
-                        trendEl.style.color = 'var(--text-primary)';
-                        if (trendSubEl) trendSubEl.textContent = 'Futures vs VWAP';
-                    } else if (ltp > vwap) {
-                        trendEl.textContent = 'BULLISH';
-                        trendEl.style.color = 'var(--accent-green, #34d399)';
-                        if (trendSubEl) trendSubEl.textContent = '+' + (ltp - vwap).toFixed(2) + ' vs VWAP';
-                    } else if (ltp < vwap) {
-                        trendEl.textContent = 'BEARISH';
-                        trendEl.style.color = 'var(--accent-red, #f87171)';
-                        if (trendSubEl) trendSubEl.textContent = '−' + (vwap - ltp).toFixed(2) + ' vs VWAP';
-                    } else {
-                        trendEl.textContent = 'NEUTRAL';
-                        trendEl.style.color = 'var(--text-muted)';
-                        if (trendSubEl) trendSubEl.textContent = 'At VWAP';
                     }
                 }
             })

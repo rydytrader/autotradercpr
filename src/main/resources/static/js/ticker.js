@@ -138,13 +138,12 @@
     }
 
     function buildStripHtml(sym, opb) {
-        var ft = (sym && sym.futuresTick) || {};
-        var ltp  = Number(ft.ltp  || 0);
-        var ch   = Number(ft.ch   || 0);
-        var chp  = Number(ft.chp  || 0);
-        var vwap = Number(ft.vwap || 0);
+        var ltp  = Number((sym && sym.spotLtp)       || 0);
+        var ch   = Number((sym && sym.spotChange)    || 0);
+        var chp  = Number((sym && sym.spotChangePct) || 0);
 
-        // NIFTY LTP
+        // NIFTY SPOT LTP + change (post-strategy-cutover: no futures/VWAP/trend
+        // chips — strategy uses each option's own VWAP + ST, not spot VWAP).
         var ltpText = ltp > 0 ? ltp.toFixed(2) : '—';
         var ltpColor = ltp <= 0 ? 'var(--text-primary)'
                      : ch > 0  ? 'var(--accent-green, #34d399)'
@@ -156,17 +155,6 @@
             chgText = ' ' + sign + Math.abs(ch).toFixed(2) + ' (' + sign + Math.abs(chp).toFixed(2) + '%)';
         }
 
-        // VWAP
-        var vwapText = vwap > 0 ? vwap.toFixed(2) : '—';
-
-        // Trend
-        var trendText = '—', trendColor = 'var(--text-muted)';
-        if (ltp > 0 && vwap > 0) {
-            if (ltp > vwap)      { trendText = '▲ BULLISH'; trendColor = 'var(--accent-green, #34d399)'; }
-            else if (ltp < vwap) { trendText = '▼ BEARISH'; trendColor = 'var(--accent-red, #f87171)'; }
-            else                 { trendText = 'NEUTRAL';   trendColor = 'var(--text-muted)'; }
-        }
-
         // Strategy state
         var opbSum = opbSummary(opb);
 
@@ -176,19 +164,12 @@
                      : pnl < 0 ? 'var(--accent-red, #f87171)'
                      : 'var(--text-muted)';
 
-        // Leading vertical rule separates the strip from the product logo /
-        // menu section on the left. Same visual weight as the mid-strip
-        // divider so the whole header reads as one row of well-spaced items.
         var leadingRule = '<span style="display:inline-block; width:1px; height:22px; background:var(--border); margin-right:18px; opacity:0.7;"></span>';
 
         return leadingRule +
-            chip('NIFTY FUT', ltpText + chgText, ltpColor) +
-            sep() +
-            chip('VWAP',  vwapText, 'var(--text-secondary)') +
-            sep() +
-            '<span style="color:' + trendColor + '; font-weight:700; font-size:0.72rem; letter-spacing:0.03em;">' + esc(trendText) + '</span>' +
+            chip('NIFTY', ltpText + chgText, ltpColor) +
             divider() +
-            chip('OPB', opbSum.text, opbSum.color) +
+            chip('STRAT', opbSum.text, opbSum.color) +
             sep() +
             chip('P&L', fmtInr(pnl), pnlColor);
     }
