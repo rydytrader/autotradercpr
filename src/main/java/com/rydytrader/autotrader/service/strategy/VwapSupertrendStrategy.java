@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.dto.Candle;
 import com.rydytrader.autotrader.dto.OrderDTO;
-import com.rydytrader.autotrader.fyers.FyersClient;
+import com.rydytrader.autotrader.fyers.FyersClientRouter;
 import com.rydytrader.autotrader.indicator.SuperTrend;
 import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.service.EventService;
@@ -45,7 +45,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * premium (default ₹250) as the tracked pair.
  *
  * <p>Historical bars for both chosen symbols are pulled via
- * {@code FyersClient.getHistory} REST to prime Supertrend so its output is
+ * {@code FyersClientRouter.getHistory} REST to prime Supertrend so its output is
  * valid from BAR 1 of today's session.
  *
  * <p>On every N-min bar close for either chosen symbol (default 3-min): enters
@@ -79,7 +79,7 @@ public class VwapSupertrendStrategy implements Strategy {
     private final OrderService        orderService;
     private final EventService        eventService;
     private final RiskSettingsStore   riskSettings;
-    private final FyersClient         fyersClient;
+    private final FyersClientRouter         fyersClient;
     private final TokenStore          tokenStore;
     private final FyersProperties     fyersProperties;
     private final MarketHolidayService holidays;
@@ -128,7 +128,7 @@ public class VwapSupertrendStrategy implements Strategy {
                                    OrderService orderService,
                                    EventService eventService,
                                    RiskSettingsStore riskSettings,
-                                   FyersClient fyersClient,
+                                   FyersClientRouter fyersClient,
                                    TokenStore tokenStore,
                                    FyersProperties fyersProperties,
                                    MarketHolidayService holidays,
