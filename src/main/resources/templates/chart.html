@@ -23,16 +23,28 @@
         .nav-icon:hover { color:var(--text-primary) !important; background:var(--bg-card-hover) !important; border-color:var(--border) !important; }
         .nav-icon.active { color:var(--accent-cyan) !important; background:rgba(125,211,252,0.12) !important; border-color:rgba(125,211,252,0.35) !important; }
 
-        /* Single full-height panel — NIFTY FUT 5-min. */
+        /* Two panels side-by-side — CE + PE 3-min. Stacks on narrow screens. */
         .chart-grid {
             display: grid;
-            grid-template-columns: 1fr;
+            grid-template-columns: 1fr 1fr;
             grid-template-rows: 1fr;
             gap: 16px;
             height: calc(100vh - 240px);
             min-height: 420px;
         }
-        .chart-panel-fut   { grid-column: 1; grid-row: 1; }
+        @media (max-width: 1100px) {
+            .chart-grid {
+                grid-template-columns: 1fr;
+                grid-template-rows: 1fr 1fr;
+                height: calc(100vh - 200px);
+            }
+        }
+        .chart-panel-ce { grid-column: 1; grid-row: 1; }
+        .chart-panel-pe { grid-column: 2; grid-row: 1; }
+        @media (max-width: 1100px) {
+            .chart-panel-ce { grid-column: 1; grid-row: 1; }
+            .chart-panel-pe { grid-column: 1; grid-row: 2; }
+        }
         .chart-panel { display: flex; flex-direction: column; margin: 0; }
         .chart-panel .chart-wrap {
             flex: 1; min-height: 0;
@@ -223,7 +235,7 @@
     <div class="page-header fade-in" style="margin-bottom:14px;">
         <div>
             <div class="page-title">Chart</div>
-            <div class="page-subtitle">NIFTY FUT (5-min) · OHLC with VWAP</div>
+            <div class="page-subtitle">Chosen CE + PE · 3-min OHLC with VWAP + Supertrend</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -234,28 +246,44 @@
     </div>
 
     <div class="chart-grid fade-in">
-        <!-- NIFTY FUTURES — 5-min -->
-        <div class="section-card chart-panel chart-panel-fut">
+        <!-- CE 3-min -->
+        <div class="section-card chart-panel chart-panel-ce">
             <div class="section-header">
                 <div class="section-title" style="display:flex; align-items:center; gap:10px;">
-                    <div class="section-title-dot" style="background:var(--accent-cyan, #7dd3fc);"></div>
-                    <span id="futTitleLabel">NIFTY FUT (1-min)</span>
-                    <span class="chart-hdr-sym" id="futSymbolLabel">—</span>
-                    <span class="chart-hdr-price" id="futPrice">—</span>
-                    <span class="chart-hdr-chg" id="futChg"></span>
+                    <div class="section-title-dot" style="background:var(--accent-green, #34d399);"></div>
+                    <span>CE (3-min)</span>
+                    <span class="chart-hdr-sym" id="ceSymbolLabel">—</span>
+                    <span class="chart-hdr-price" id="cePrice">—</span>
+                    <span class="chart-hdr-chg" id="ceChg"></span>
                 </div>
                 <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
-                    <div class="interval-toggle" role="group" aria-label="Timeframe">
-                        <button type="button" class="interval-btn active" data-interval="1" onclick="setChartInterval('fut', 1)">1m</button>
-                        <button type="button" class="interval-btn"        data-interval="5" onclick="setChartInterval('fut', 5)">5m</button>
-                    </div>
-                    <button class="chart-expand-btn" data-panel="fut" onclick="toggleExpand('fut')" title="Expand chart">⛶</button>
+                    <button class="chart-expand-btn" data-panel="ce" onclick="toggleExpand('ce')" title="Expand chart">⛶</button>
                 </div>
             </div>
             <div class="chart-wrap">
-                <div id="chartFut" style="position:absolute; inset:0;"></div>
-                <div class="chart-ohlc-overlay" id="chartFutOverlay"></div>
-                <div class="chart-empty" id="chartFutEmpty">Waiting for first tick…</div>
+                <div id="chartCe" style="position:absolute; inset:0;"></div>
+                <div class="chart-ohlc-overlay" id="chartCeOverlay"></div>
+                <div class="chart-empty" id="chartCeEmpty">Waiting for strategy to pick CE…</div>
+            </div>
+        </div>
+        <!-- PE 3-min -->
+        <div class="section-card chart-panel chart-panel-pe">
+            <div class="section-header">
+                <div class="section-title" style="display:flex; align-items:center; gap:10px;">
+                    <div class="section-title-dot" style="background:var(--accent-red, #f87171);"></div>
+                    <span>PE (3-min)</span>
+                    <span class="chart-hdr-sym" id="peSymbolLabel">—</span>
+                    <span class="chart-hdr-price" id="pePrice">—</span>
+                    <span class="chart-hdr-chg" id="peChg"></span>
+                </div>
+                <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
+                    <button class="chart-expand-btn" data-panel="pe" onclick="toggleExpand('pe')" title="Expand chart">⛶</button>
+                </div>
+            </div>
+            <div class="chart-wrap">
+                <div id="chartPe" style="position:absolute; inset:0;"></div>
+                <div class="chart-ohlc-overlay" id="chartPeOverlay"></div>
+                <div class="chart-empty" id="chartPeEmpty">Waiting for strategy to pick PE…</div>
             </div>
         </div>
     </div>
@@ -274,11 +302,10 @@
     //   • /api/chart/candles per symbol every 2 s — smooth live rightmost point.
     //   • /api/chart/symbols  every 2 s (folded into pollAll) — header LTP + change cells.
 
-    var charts = { fut: null };
-    var currentFutSym = '';
-    // Chart timeframe (1 = 1-min bars, 5 = 5-min aggregates). Persisted in
-    // localStorage so a page reload keeps the user's choice.
-    var chartInterval = { fut: Number(localStorage.getItem('traderedge-chart-interval-fut')) || 1 };
+    var charts = { ce: null, pe: null };
+    var currentSyms = { ce: '', pe: '' };
+    // Chart timeframe fixed to whatever the strategy uses (default 3-min).
+    // Server picks based on RiskSettingsStore.vwapStCandleMinutes.
 
     function fmtHhmm(ms) {
         try {
@@ -296,13 +323,14 @@
     }
     function pnlClass(v) { return v > 0 ? 'pnl-positive' : (v < 0 ? 'pnl-negative' : ''); }
 
-    // TradingView Lightweight Charts — candlestick + VWAP line overlay per panel.
-    var candleSeries = { fut: null };
-    var vwapSeries   = { fut: null };
+    // TradingView Lightweight Charts — candlestick + VWAP line + Supertrend line per panel.
+    var candleSeries  = { ce: null, pe: null };
+    var vwapSeries    = { ce: null, pe: null };
+    var stSeries      = { ce: null, pe: null };
     // Last real close per panel — the countdown price line is pinned here.
-    var lastClosePerPanel = { fut: null };
-    var countdownPriceLine  = { fut: null };
-    var countdownPriceLevel = { fut: 0 };
+    var lastClosePerPanel = { ce: null, pe: null };
+    var countdownPriceLine  = { ce: null, pe: null };
+    var countdownPriceLevel = { ce: 0, pe: 0 };
     // IST offset used to shift bar timestamps so LightweightCharts (which formats in UTC
     // by default) renders IST wall-clock labels. 5 h 30 min = 19800 s.
     var IST_OFFSET_S = 5.5 * 3600;
@@ -365,6 +393,17 @@
             crosshairMarkerVisible: false,
             priceFormat: { type: 'price', precision: priceDecimals, minMove: minMove }
         });
+        // Supertrend step line — colored per segment (green when up, red when down).
+        // lightweight-charts baseline series lets us bicolor with topLine/bottomLine.
+        stSeries[panelKey] = chart.addLineSeries({
+            color: col.up,
+            lineWidth: 2,
+            lineStyle: LightweightCharts.LineStyle.Solid,
+            priceLineVisible: false,
+            lastValueVisible: true,
+            crosshairMarkerVisible: false,
+            priceFormat: { type: 'price', precision: priceDecimals, minMove: minMove }
+        });
 
         var overlayId = 'chart' + panelKey.charAt(0).toUpperCase() + panelKey.slice(1) + 'Overlay';
         var chartWrap = document.getElementById(containerId).parentElement;
@@ -413,9 +452,10 @@
         return candleSeries[panelKey];
     }
 
-    function applyData(panelKey, history, current) {
+    function applyData(panelKey, history, stArr) {
         var candles = candleSeries[panelKey];
         var vwap    = vwapSeries[panelKey];
+        var stLine  = stSeries[panelKey];
         if (!candles) return { firstClose: null, lastClose: null };
         var byTime = {};
         var vwapMap = {};
@@ -426,7 +466,6 @@
             if (v > 0) vwapMap[t] = v;
         }
         (history || []).forEach(pushBar);
-        if (current) pushBar(current);
 
         var bars = Object.keys(byTime)
             .map(function(k) { return byTime[Number(k)]; })
@@ -437,20 +476,23 @@
         var vwapPoints = Object.keys(vwapMap)
             .map(function(k) { return { time: Number(k), value: vwapMap[k] }; })
             .sort(function(a, b) { return a.time - b.time; });
-        // Futures feed doesn't carry Fyers ATP the same way an equity spot does — fall
-        // back to a session-anchored typical-price average when the server-side vwap
-        // field is 0.
-        if (vwapPoints.length === 0 && bars.length > 0) {
-            var cumTyp = 0, cnt = 0;
-            for (var i = 0; i < bars.length; i++) {
-                var b = bars[i];
-                cumTyp += (b.high + b.low + b.close) / 3;
-                cnt++;
-                vwapPoints.push({ time: b.time, value: cumTyp / cnt });
-            }
+
+        // Supertrend points from server (indexes NaN-skipped).
+        var stPoints = [];
+        var latestIsUp = null;
+        (stArr || []).forEach(function(p) {
+            var t = Math.floor(Number(p.t) / 1000) + IST_OFFSET_S;
+            stPoints.push({ time: t, value: Number(p.line) });
+            latestIsUp = !!p.isUp;
+        });
+        var col = themeColors();
+        if (stLine && latestIsUp !== null) {
+            try { stLine.applyOptions({ color: latestIsUp ? col.up : col.down }); } catch (e) {}
         }
+
         candles.setData(bars);
         vwap.setData(vwapPoints);
+        if (stLine) stLine.setData(stPoints);
         lastClosePerPanel[panelKey] = lastClose;
         try { charts[panelKey].timeScale().fitContent(); } catch (e) {}
         return { firstClose: firstClose, lastClose: lastClose };
@@ -458,20 +500,19 @@
 
     function updatePanel(panelKey, symbol, priceElId, chgElId, emptyElId, priceDecimals) {
         if (!symbol) return;
-        var interval = chartInterval[panelKey] || 1;
-        fetch('/api/chart/candles?symbol=' + encodeURIComponent(symbol) + '&interval=' + interval).then(function(r) { return r.json(); }).then(function(d) {
+        fetch('/api/chart/candles?symbol=' + encodeURIComponent(symbol)).then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
             if (d.exchangeNowMs && Number(d.exchangeNowMs) > 0) {
                 exchangeClockOffsetMs = Number(d.exchangeNowMs) - Date.now();
             }
             var history = d.history || [];
-            var current = d.current || null;
+            var stArr   = d.stSeries || [];
             var empty = document.getElementById(emptyElId);
-            var hasData = history.length > 0 || current;
+            var hasData = history.length > 0;
             if (empty) empty.style.display = hasData ? 'none' : 'flex';
             if (!hasData) return;
             ensureChart(panelKey, 'chart' + panelKey.charAt(0).toUpperCase() + panelKey.slice(1), priceDecimals);
-            applyData(panelKey, history, current);
+            applyData(panelKey, history, stArr);
         }).catch(function() {});
     }
 
@@ -488,61 +529,25 @@
     function refreshSymbols() {
         fetch('/api/chart/symbols').then(function(r) { return r.json(); }).then(function(d) {
             if (!d) return;
-            var fut = d.futuresSymbol || '';
-            currentFutSym = fut;
-            var lbl = document.getElementById('futSymbolLabel');
-            if (lbl) lbl.textContent = fut || '—';
-            var ft = d.futuresTick || {};
-            setHeaderCells('futPrice', 'futChg', ft.ltp, ft.ch, ft.chp, 1);
+            var ce = d.ceSymbol || '';
+            var pe = d.peSymbol || '';
+            currentSyms.ce = ce;
+            currentSyms.pe = pe;
+            var ceLbl = document.getElementById('ceSymbolLabel');
+            if (ceLbl) ceLbl.textContent = ce || '—';
+            var peLbl = document.getElementById('peSymbolLabel');
+            if (peLbl) peLbl.textContent = pe || '—';
+            var ct = d.ceTick || {};
+            var pt = d.peTick || {};
+            setHeaderCells('cePrice', 'ceChg', ct.ltp, ct.ch, ct.chp, 1);
+            setHeaderCells('pePrice', 'peChg', pt.ltp, pt.ch, pt.chp, 1);
         }).catch(function() {});
     }
-
-    // ── Timeframe toggle (1m / 5m) ──────────────────────────────────────────
-    function setChartInterval(panelKey, interval) {
-        var n = Number(interval) === 5 ? 5 : 1;
-        if (chartInterval[panelKey] === n) return;
-        chartInterval[panelKey] = n;
-        try { localStorage.setItem('traderedge-chart-interval-' + panelKey, String(n)); } catch (e) {}
-        syncIntervalButtons(panelKey);
-        updateTitleForInterval(panelKey);
-        // Force chart re-init so the new bar-size fits properly. Must also
-        // null the series refs — ensureChart short-circuits when
-        // candleSeries[panelKey] is non-null, and re-using a series from a
-        // .remove()'d chart silently drops setData() calls (blank chart).
-        if (charts[panelKey]) {
-            try { charts[panelKey].remove(); } catch (e) {}
-            charts[panelKey] = null;
-        }
-        candleSeries[panelKey] = null;
-        vwapSeries[panelKey]   = null;
-        if (currentFutSym && panelKey === 'fut') {
-            updatePanel('fut', currentFutSym, 'futPrice', 'futChg', 'chartFutEmpty', 1);
-        }
-    }
-    function syncIntervalButtons(panelKey) {
-        // panelKey → the button set to inspect (fut only for now).
-        var current = chartInterval[panelKey] || 1;
-        var btns = document.querySelectorAll('.interval-btn');
-        btns.forEach(function(b) {
-            var v = Number(b.getAttribute('data-interval'));
-            if (v === current) b.classList.add('active');
-            else               b.classList.remove('active');
-        });
-    }
-    function updateTitleForInterval(panelKey) {
-        if (panelKey !== 'fut') return;
-        var el = document.getElementById('futTitleLabel');
-        if (el) el.textContent = 'NIFTY FUT (' + (chartInterval[panelKey] || 1) + '-min)';
-    }
-    document.addEventListener('DOMContentLoaded', function() {
-        syncIntervalButtons('fut');
-        updateTitleForInterval('fut');
-    });
 
     // ── Panel fullscreen expand / collapse ──────────────────────────────────
     var expandedPanel = null;
     function toggleExpand(panelKey) {
-        var panelIds = { fut: 'chart-panel-fut' };
+        var panelIds = { ce: 'chart-panel-ce', pe: 'chart-panel-pe' };
         var panel = document.querySelector('.' + panelIds[panelKey]);
         if (!panel) return;
         if (expandedPanel === panelKey) {
@@ -572,7 +577,8 @@
     function pollAll() {
         if (document.visibilityState !== 'visible') return;
         refreshSymbols();
-        if (currentFutSym) updatePanel('fut', currentFutSym, 'futPrice', 'futChg', 'chartFutEmpty', 1);
+        if (currentSyms.ce) updatePanel('ce', currentSyms.ce, 'cePrice', 'ceChg', 'chartCeEmpty', 1);
+        if (currentSyms.pe) updatePanel('pe', currentSyms.pe, 'pePrice', 'peChg', 'chartPeEmpty', 1);
     }
 
     function setHeaderCells(priceElId, chgElId, ltp, ch, chp, decimals) {
@@ -624,7 +630,7 @@
         var sec = computeBarCountdown();
         var txt = '⏱ ' + fmtMmSs(sec);
         var bgColor = '#fbbf24';
-        ['fut'].forEach(function(panelKey) {
+        ['ce', 'pe'].forEach(function(panelKey) {
             var series = candleSeries[panelKey];
             if (!series || typeof series.createPriceLine !== 'function') return;
             var last = lastClosePerPanel[panelKey];
