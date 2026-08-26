@@ -193,8 +193,8 @@ public class PollingService {
 
     public String getConnectionStatus() {
         // After the strip-Fyers-data refactor there is no Fyers data-side WebSocket to
-        // report on — only the order-side stream. Data-feed status (GDFL) is surfaced
-        // separately by GdflService.
+        // report on — only the order-side stream. Data-feed status is surfaced
+        // separately by MarketDataService.
         boolean orderWs     = orderEventService != null && orderEventService.isConnected();
         boolean orderPaused = orderEventService != null && orderEventService.isPaused();
         if (orderWs) return "FYERS CONNECTED";

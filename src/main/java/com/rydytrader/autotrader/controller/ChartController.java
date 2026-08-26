@@ -1,6 +1,5 @@
 package com.rydytrader.autotrader.controller;
 
-import com.rydytrader.autotrader.gdfl.GdflSymbolMapper;
 import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.service.HistoricalChartStore;
 import com.rydytrader.autotrader.service.MarketDataService;
@@ -23,7 +22,9 @@ import java.util.Map;
 @RequestMapping("/api/chart")
 public class ChartController {
 
-    private static final String FUTURES_SYMBOL = GdflSymbolMapper.FYERS_NIFTY_FUTURES;
+    // Legacy synthetic futures symbol from the GDFL era. Kept as an inline
+    // constant until the chart page is rewritten for CE + PE 3-min panels.
+    private static final String FUTURES_SYMBOL = "NSE:NIFTY-I-FUT";
 
     private final CandleAggregator  candleAggregator;
     private final MarketDataService marketDataService;

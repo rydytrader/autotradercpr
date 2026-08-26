@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.rydytrader.autotrader.dto.Candle;
-import com.rydytrader.autotrader.gdfl.GdflSymbolMapper;
 import com.rydytrader.autotrader.util.FileIoUtils;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
@@ -48,7 +47,9 @@ public class HistoricalChartStore {
     private static final Logger log = LoggerFactory.getLogger(HistoricalChartStore.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final String STORAGE_DIR = "../store/data/charts";
-    private static final String FUTURES_SYMBOL = GdflSymbolMapper.FYERS_NIFTY_FUTURES;
+    // Legacy synthetic futures symbol from the GDFL era. Kept as an inline
+    // constant until this service is retargeted to CE + PE snapshot persistence.
+    private static final String FUTURES_SYMBOL = "NSE:NIFTY-I-FUT";
 
     private final ObjectMapper mapper = new ObjectMapper()
         .registerModule(new JavaTimeModule())
