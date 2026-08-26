@@ -23,28 +23,17 @@
         .nav-icon:hover { color:var(--text-primary) !important; background:var(--bg-card-hover) !important; border-color:var(--border) !important; }
         .nav-icon.active { color:var(--accent-cyan) !important; background:rgba(125,211,252,0.12) !important; border-color:rgba(125,211,252,0.35) !important; }
 
-        /* Two panels side-by-side — CE + PE 3-min. Stacks on narrow screens. */
+        /* Two panels stacked vertically — CE on top, PE below. */
         .chart-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            grid-template-rows: 1fr;
+            grid-template-columns: 1fr;
+            grid-template-rows: 1fr 1fr;
             gap: 16px;
-            height: calc(100vh - 240px);
-            min-height: 420px;
-        }
-        @media (max-width: 1100px) {
-            .chart-grid {
-                grid-template-columns: 1fr;
-                grid-template-rows: 1fr 1fr;
-                height: calc(100vh - 200px);
-            }
+            height: calc(100vh - 200px);
+            min-height: 640px;
         }
         .chart-panel-ce { grid-column: 1; grid-row: 1; }
-        .chart-panel-pe { grid-column: 2; grid-row: 1; }
-        @media (max-width: 1100px) {
-            .chart-panel-ce { grid-column: 1; grid-row: 1; }
-            .chart-panel-pe { grid-column: 1; grid-row: 2; }
-        }
+        .chart-panel-pe { grid-column: 1; grid-row: 2; }
         .chart-panel { display: flex; flex-direction: column; margin: 0; }
         .chart-panel .chart-wrap {
             flex: 1; min-height: 0;
@@ -105,6 +94,18 @@
             font-family: var(--font-mono); font-size: 0.72rem; font-weight: 700;
             letter-spacing: 0.02em;
         }
+        .chart-hdr-metric {
+            display: inline-flex; align-items: baseline; gap: 4px;
+            font-family: var(--font-mono); font-size: 0.72rem; font-weight: 600;
+            padding: 3px 8px; border-radius: 6px;
+            background: rgba(128,128,128,0.10);
+            border: 1px solid rgba(128,128,128,0.20);
+        }
+        .chart-hdr-metric .lab { color: var(--text-muted); font-size: 0.62rem; letter-spacing: 0.06em; text-transform: uppercase; }
+        .chart-hdr-metric .val { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+        .chart-hdr-metric .val-vwap { color: #fbbf24; }
+        .chart-hdr-metric .val-up   { color: var(--accent-green, #34d399); }
+        .chart-hdr-metric .val-down { color: var(--accent-red, #f87171); }
         .chart-empty {
             position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
             color: var(--text-muted); font-size: 0.78rem; font-family: var(--font-mono);
@@ -249,12 +250,14 @@
         <!-- CE 3-min -->
         <div class="section-card chart-panel chart-panel-ce">
             <div class="section-header">
-                <div class="section-title" style="display:flex; align-items:center; gap:10px;">
+                <div class="section-title" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                     <div class="section-title-dot" style="background:var(--accent-green, #34d399);"></div>
                     <span>CE (3-min)</span>
                     <span class="chart-hdr-sym" id="ceSymbolLabel">—</span>
                     <span class="chart-hdr-price" id="cePrice">—</span>
                     <span class="chart-hdr-chg" id="ceChg"></span>
+                    <span class="chart-hdr-metric"><span class="lab">VWAP</span><span id="ceVwap" class="val val-vwap">—</span></span>
+                    <span class="chart-hdr-metric"><span class="lab">ST</span><span id="ceSt"  class="val">—</span></span>
                 </div>
                 <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
                     <button class="chart-expand-btn" data-panel="ce" onclick="toggleExpand('ce')" title="Expand chart">⛶</button>
@@ -269,12 +272,14 @@
         <!-- PE 3-min -->
         <div class="section-card chart-panel chart-panel-pe">
             <div class="section-header">
-                <div class="section-title" style="display:flex; align-items:center; gap:10px;">
+                <div class="section-title" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                     <div class="section-title-dot" style="background:var(--accent-red, #f87171);"></div>
                     <span>PE (3-min)</span>
                     <span class="chart-hdr-sym" id="peSymbolLabel">—</span>
                     <span class="chart-hdr-price" id="pePrice">—</span>
                     <span class="chart-hdr-chg" id="peChg"></span>
+                    <span class="chart-hdr-metric"><span class="lab">VWAP</span><span id="peVwap" class="val val-vwap">—</span></span>
+                    <span class="chart-hdr-metric"><span class="lab">ST</span><span id="peSt"  class="val">—</span></span>
                 </div>
                 <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
                     <button class="chart-expand-btn" data-panel="pe" onclick="toggleExpand('pe')" title="Expand chart">⛶</button>
@@ -541,7 +546,27 @@
             var pt = d.peTick || {};
             setHeaderCells('cePrice', 'ceChg', ct.ltp, ct.ch, ct.chp, 1);
             setHeaderCells('pePrice', 'peChg', pt.ltp, pt.ch, pt.chp, 1);
+            setHeaderMetric('ceVwap', ct.vwap, null);
+            setHeaderMetric('ceSt',   ct.stLine, ct.stIsUp);
+            setHeaderMetric('peVwap', pt.vwap, null);
+            setHeaderMetric('peSt',   pt.stLine, pt.stIsUp);
         }).catch(function() {});
+    }
+    // Populate a header metric chip. When `isUp` is a boolean, the value is
+    // colored green (up) or red (down); when null, keeps the base color (VWAP
+    // uses its amber theme class from CSS).
+    function setHeaderMetric(elId, value, isUp) {
+        var el = document.getElementById(elId);
+        if (!el) return;
+        if (value == null || !isFinite(Number(value))) {
+            el.textContent = '—';
+            el.className = 'val';
+            return;
+        }
+        el.textContent = fmtPx(value);
+        if (isUp === true)       el.className = 'val val-up';
+        else if (isUp === false) el.className = 'val val-down';
+        else                     el.className = 'val val-vwap';
     }
 
     // ── Panel fullscreen expand / collapse ──────────────────────────────────

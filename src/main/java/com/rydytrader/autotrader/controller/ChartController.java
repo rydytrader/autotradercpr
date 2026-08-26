@@ -2,6 +2,7 @@ package com.rydytrader.autotrader.controller;
 
 import com.rydytrader.autotrader.dto.Candle;
 import com.rydytrader.autotrader.indicator.SuperTrend;
+
 import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.service.HistoricalChartStore;
 import com.rydytrader.autotrader.service.MarketDataService;
@@ -66,8 +67,11 @@ public class ChartController {
         return out;
     }
 
-    /** Compact tick block for a single symbol — LTP + change + VWAP. VWAP
-     *  reads the last bar's pandas_ta value so header matches the chart line. */
+    /** Compact tick block for a single symbol — LTP + change + VWAP + Supertrend.
+     *  VWAP reads the last N-min bar's pandas_ta value (matches chart yellow line).
+     *  Supertrend runs on the same N-min bars using the configured atrPeriod +
+     *  multiplier and reports both {@code stLine} (numeric level) and
+     *  {@code stIsUp} (boolean — green when true, red when false). */
     private Map<String, Object> tickBlock(String fyersSymbol) {
         Map<String, Object> m = new LinkedHashMap<>();
         if (fyersSymbol == null || fyersSymbol.isBlank()) return m;
@@ -75,14 +79,25 @@ public class ChartController {
         m.put("ch",   round2(marketDataService.getDisplayChange(fyersSymbol)));
         m.put("chp",  round2(marketDataService.getDisplayChangePct(fyersSymbol)));
         double vwap = 0.0;
+        Double stLine = null;
+        Boolean stIsUp = null;
         int tf = Math.max(1, riskSettings.getVwapStCandleMinutes());
         var history = candleAggregator.getHistory(fyersSymbol, tf);
         if (!history.isEmpty()) {
             double lastVwap = history.get(history.size() - 1).vwap();
             if (lastVwap > 0) vwap = lastVwap;
+            int atrPeriod = Math.max(2, riskSettings.getVwapStAtrPeriod());
+            double mult   = Math.max(0.1, riskSettings.getVwapStMultiplier());
+            var st = SuperTrend.at(history, atrPeriod, mult);
+            if (st.available()) {
+                stLine = round2(st.line());
+                stIsUp = st.isUp();
+            }
         }
         if (vwap == 0.0) vwap = marketDataService.getVwap(fyersSymbol);
-        m.put("vwap", round2(vwap));
+        m.put("vwap",   round2(vwap));
+        m.put("stLine", stLine);
+        m.put("stIsUp", stIsUp);
         return m;
     }
 
