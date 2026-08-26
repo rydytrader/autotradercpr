@@ -42,6 +42,18 @@ public class RiskSettingsStore {
         /** Target distance in option premium points. Exit triggers on option LTP ≥
          *  {@code entryPrice + optionBuyingTargetPoints}. Default 20. */
         volatile double  optionBuyingTargetPoints      = 20.0;
+        // ── VWAP + SUPERTREND strategy settings (branch VWAP_SUPERTREND_STRATEGY) ──
+        // Buy ~₹250 CE and PE at market open. Enter on VWAP bounce candle
+        // (low ≤ VWAP AND close > VWAP AND green) + Supertrend green. SL = entry
+        // candle low. Exit trail = Supertrend flip. Unlimited re-entries.
+        volatile boolean vwapStEnabled           = true;
+        volatile int     vwapStLotsPerLeg        = 1;
+        volatile String  vwapStSquareOffTime     = "15:25";
+        volatile double  vwapStTargetPremium     = 250.0;   // rupee premium to pick nearest CE/PE
+        volatile int     vwapStStrikesRange      = 15;      // ±N strikes around market-open ATM
+        volatile int     vwapStCandleMinutes     = 3;       // timeframe for signal candles
+        volatile int     vwapStAtrPeriod         = 10;      // Supertrend ATR period
+        volatile double  vwapStMultiplier        = 3.0;     // Supertrend ATR multiplier
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
         /** Initial capital used as the baseline for the Analytics Home page (capital growth %,
@@ -391,6 +403,14 @@ public class RiskSettingsStore {
     public String  getOptionBuyingOrderType()          { return cfg().optionBuyingOrderType; }
     public String  getOptionBuyingSquareOffTime()      { return cfg().optionBuyingSquareOffTime; }
     public double  getOptionBuyingTargetPoints()       { return cfg().optionBuyingTargetPoints; }
+    public boolean isVwapStEnabled()           { return cfg().vwapStEnabled; }
+    public int     getVwapStLotsPerLeg()       { return cfg().vwapStLotsPerLeg; }
+    public String  getVwapStSquareOffTime()    { return cfg().vwapStSquareOffTime; }
+    public double  getVwapStTargetPremium()    { return cfg().vwapStTargetPremium; }
+    public int     getVwapStStrikesRange()     { return cfg().vwapStStrikesRange; }
+    public int     getVwapStCandleMinutes()    { return cfg().vwapStCandleMinutes; }
+    public int     getVwapStAtrPeriod()        { return cfg().vwapStAtrPeriod; }
+    public double  getVwapStMultiplier()       { return cfg().vwapStMultiplier; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getStartingCapital()      { return cfg().startingCapital; }
@@ -576,6 +596,14 @@ public class RiskSettingsStore {
     public void setOptionBuyingOrderType(String v)            { cfg().optionBuyingOrderType = (v == null || v.isBlank()) ? "INTRADAY" : v.trim().toUpperCase(); }
     public void setOptionBuyingSquareOffTime(String v)        { cfg().optionBuyingSquareOffTime = v == null ? "" : v.trim(); }
     public void setOptionBuyingTargetPoints(double v)         { cfg().optionBuyingTargetPoints = Math.max(0, v); }
+    public void setVwapStEnabled(boolean v)         { cfg().vwapStEnabled = v; }
+    public void setVwapStLotsPerLeg(int v)          { cfg().vwapStLotsPerLeg = Math.max(1, v); }
+    public void setVwapStSquareOffTime(String v)    { cfg().vwapStSquareOffTime = v == null ? "" : v.trim(); }
+    public void setVwapStTargetPremium(double v)    { cfg().vwapStTargetPremium = Math.max(1.0, v); }
+    public void setVwapStStrikesRange(int v)        { cfg().vwapStStrikesRange = Math.max(1, v); }
+    public void setVwapStCandleMinutes(int v)       { cfg().vwapStCandleMinutes = Math.max(1, v); }
+    public void setVwapStAtrPeriod(int v)           { cfg().vwapStAtrPeriod = Math.max(2, v); }
+    public void setVwapStMultiplier(double v)       { cfg().vwapStMultiplier = Math.max(0.1, v); }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setStartingCapital(double v)      { cfg().startingCapital = Math.max(0, v); }
@@ -732,6 +760,14 @@ public class RiskSettingsStore {
             upsert("optionBuyingOrderType",            c.optionBuyingOrderType);
             upsert("optionBuyingSquareOffTime",        c.optionBuyingSquareOffTime);
             upsert("optionBuyingTargetPoints",        String.valueOf(c.optionBuyingTargetPoints));
+            upsert("vwapStEnabled",                   String.valueOf(c.vwapStEnabled));
+            upsert("vwapStLotsPerLeg",                String.valueOf(c.vwapStLotsPerLeg));
+            upsert("vwapStSquareOffTime",             c.vwapStSquareOffTime);
+            upsert("vwapStTargetPremium",             String.valueOf(c.vwapStTargetPremium));
+            upsert("vwapStStrikesRange",              String.valueOf(c.vwapStStrikesRange));
+            upsert("vwapStCandleMinutes",             String.valueOf(c.vwapStCandleMinutes));
+            upsert("vwapStAtrPeriod",                 String.valueOf(c.vwapStAtrPeriod));
+            upsert("vwapStMultiplier",                String.valueOf(c.vwapStMultiplier));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("startingCapital",      String.valueOf(c.startingCapital));
@@ -928,6 +964,14 @@ public class RiskSettingsStore {
                          "optionBuyingMaxTradesPerDay",
                          "optionBuyingHardSlPct"         -> { /* retired — silently consume legacy rows */ }
                     case "optionBuyingTargetPoints"      -> c.optionBuyingTargetPoints    = Math.max(0, Double.parseDouble(v));
+                    case "vwapStEnabled"                 -> c.vwapStEnabled           = Boolean.parseBoolean(v);
+                    case "vwapStLotsPerLeg"              -> c.vwapStLotsPerLeg        = Math.max(1, Integer.parseInt(v));
+                    case "vwapStSquareOffTime"           -> c.vwapStSquareOffTime     = v;
+                    case "vwapStTargetPremium"           -> c.vwapStTargetPremium     = Math.max(1.0, Double.parseDouble(v));
+                    case "vwapStStrikesRange"            -> c.vwapStStrikesRange      = Math.max(1, Integer.parseInt(v));
+                    case "vwapStCandleMinutes"           -> c.vwapStCandleMinutes     = Math.max(1, Integer.parseInt(v));
+                    case "vwapStAtrPeriod"               -> c.vwapStAtrPeriod         = Math.max(2, Integer.parseInt(v));
+                    case "vwapStMultiplier"              -> c.vwapStMultiplier        = Math.max(0.1, Double.parseDouble(v));
                     // OPTION SELLING keys silently consumed for backward compat after strategy removal.
                     case "optionSellingEnabled",
                          "optionSellingLotsPerLeg",
