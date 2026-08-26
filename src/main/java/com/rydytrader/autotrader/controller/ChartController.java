@@ -64,6 +64,11 @@ public class ChartController {
         out.put("peTick",    tickBlock(peSym));
         out.put("spotOpen",  s == null ? 0 : round2(s.getSpotOpen()));
         out.put("atmStrike", s == null ? 0 : s.getAtmStrike());
+        // Live NIFTY spot LTP + change since prev close — for the header chip.
+        String spotSym = "NSE:NIFTY50-INDEX";
+        out.put("spotLtp",     round2(marketDataService.getDisplayLtp(spotSym)));
+        out.put("spotChange",  round2(marketDataService.getDisplayChange(spotSym)));
+        out.put("spotChangePct", round2(marketDataService.getDisplayChangePct(spotSym)));
         return out;
     }
 

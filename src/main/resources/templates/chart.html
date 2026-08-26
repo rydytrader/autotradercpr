@@ -106,6 +106,20 @@
         .chart-hdr-metric .val-vwap { color: #fbbf24; }
         .chart-hdr-metric .val-up   { color: var(--accent-green, #34d399); }
         .chart-hdr-metric .val-down { color: var(--accent-red, #f87171); }
+        /* NIFTY spot chip on the page header — LTP + change + open + ATM strike. */
+        .spot-chip {
+            display: inline-flex; align-items: baseline; gap: 8px;
+            font-family: var(--font-mono); font-size: 0.78rem; font-weight: 600;
+            padding: 6px 14px; border-radius: 8px;
+            background: rgba(125,211,252,0.10);
+            border: 1px solid rgba(125,211,252,0.28);
+        }
+        .spot-chip .lab { color: var(--text-muted); font-size: 0.64rem; letter-spacing: 0.06em; text-transform: uppercase; }
+        .spot-chip .val { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+        .spot-chip .val-chg { font-variant-numeric: tabular-nums; font-size: 0.72rem; }
+        .spot-chip .val-chg.up   { color: var(--accent-green, #34d399); }
+        .spot-chip .val-chg.down { color: var(--accent-red, #f87171); }
+        .spot-chip .sep { color: var(--text-muted); opacity: 0.6; }
         .chart-empty {
             position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
             color: var(--text-muted); font-size: 0.78rem; font-family: var(--font-mono);
@@ -234,9 +248,19 @@
 <div class="app-main" style="flex:1;min-width:0;margin-left:0;width:auto;padding:20px 24px;">
 
     <div class="page-header fade-in" style="margin-bottom:14px;">
-        <div>
+        <div style="display:flex; align-items:center; gap:16px;">
             <div class="page-title">Chart</div>
-            <div class="page-subtitle">Chosen CE + PE · 3-min OHLC with VWAP + Supertrend</div>
+            <div class="spot-chip">
+                <span class="lab">NIFTY SPOT</span>
+                <span id="spotLtp"    class="val">—</span>
+                <span id="spotChg"    class="val-chg">—</span>
+                <span class="sep">·</span>
+                <span class="lab">OPEN</span>
+                <span id="spotOpenVal" class="val">—</span>
+                <span class="sep">·</span>
+                <span class="lab">ATM</span>
+                <span id="atmStrikeVal" class="val">—</span>
+            </div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -550,6 +574,26 @@
             setHeaderMetric('ceSt',   ct.stLine, ct.stIsUp);
             setHeaderMetric('peVwap', pt.vwap, null);
             setHeaderMetric('peSt',   pt.stLine, pt.stIsUp);
+            // NIFTY spot chip — LTP + change + captured open + ATM anchor.
+            var sl = document.getElementById('spotLtp');
+            if (sl) sl.textContent = d.spotLtp > 0 ? Number(d.spotLtp).toFixed(2) : '—';
+            var sc = document.getElementById('spotChg');
+            if (sc) {
+                var chg = Number(d.spotChange || 0);
+                var pct = Number(d.spotChangePct || 0);
+                if (Number(d.spotLtp) > 0 && (chg !== 0 || pct !== 0)) {
+                    var sign = chg >= 0 ? '+' : '';
+                    sc.textContent = sign + chg.toFixed(2) + ' (' + sign + pct.toFixed(2) + '%)';
+                    sc.className = 'val-chg ' + (chg >= 0 ? 'up' : 'down');
+                } else {
+                    sc.textContent = '—';
+                    sc.className = 'val-chg';
+                }
+            }
+            var so = document.getElementById('spotOpenVal');
+            if (so) so.textContent = d.spotOpen > 0 ? Number(d.spotOpen).toFixed(2) : '—';
+            var atm = document.getElementById('atmStrikeVal');
+            if (atm) atm.textContent = d.atmStrike > 0 ? String(d.atmStrike) : '—';
         }).catch(function() {});
     }
     // Populate a header metric chip. When `isUp` is a boolean, the value is
