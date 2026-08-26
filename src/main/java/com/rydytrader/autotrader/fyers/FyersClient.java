@@ -3,11 +3,7 @@ package com.rydytrader.autotrader.fyers;
 import com.fasterxml.jackson.databind.JsonNode;
 
 /**
- * Abstraction over Fyers order-side and login-side API calls.
- *
- * <p>Data endpoints (history, quotes, option chain, WebSocket ticks) were removed —
- * all market data now flows in via GDFL. Fyers is retained solely for order placement,
- * order/position/tradebook queries, and login/auth.
+ * Abstraction over Fyers order-side, login-side, and market-data API calls.
  *
  * <p>Implementation: LiveFyersClient (real Fyers API).
  */
@@ -39,4 +35,12 @@ public interface FyersClient {
 
     /** PUT /api/v3/orders/sync — modify an existing order */
     JsonNode modifyOrder(String orderJson, String authHeader) throws Exception;
+
+    /** GET /data/history — historical OHLC bars for {@code symbol}.
+     *  {@code resolution} is Fyers-shape: "1", "3", "5", "15", "30", "60", "D".
+     *  {@code rangeFromIso} / {@code rangeToIso} are {@code YYYY-MM-DD} strings.
+     *  Response JSON contains {@code candles: [[epoch_sec, o, h, l, c, v], ...]}. */
+    JsonNode getHistory(String symbol, String resolution,
+                        String rangeFromIso, String rangeToIso,
+                        String authHeader) throws Exception;
 }

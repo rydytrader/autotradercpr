@@ -60,6 +60,20 @@ public class LiveFyersClient implements FyersClient {
         return patch(BASE + "/orders/sync", orderJson, authHeader);
     }
 
+    @Override
+    public JsonNode getHistory(String symbol, String resolution,
+                                String rangeFromIso, String rangeToIso,
+                                String authHeader) throws Exception {
+        String url = "https://api-t1.fyers.in/data/history"
+            + "?symbol="     + java.net.URLEncoder.encode(symbol, java.nio.charset.StandardCharsets.UTF_8)
+            + "&resolution=" + java.net.URLEncoder.encode(resolution, java.nio.charset.StandardCharsets.UTF_8)
+            + "&date_format=1"
+            + "&range_from=" + rangeFromIso
+            + "&range_to="   + rangeToIso
+            + "&cont_flag=1";
+        return get(url, authHeader);
+    }
+
     // ── HTTP HELPERS ──────────────────────────────────────────────────────────
     private static final int CONNECT_TIMEOUT = 10_000; // 10 seconds
     private static final int READ_TIMEOUT    = 10_000; // 10 seconds
