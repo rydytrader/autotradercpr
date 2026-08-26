@@ -101,27 +101,42 @@
         .pnl-positive { color: var(--accent-green, #34d399); }
         .pnl-negative { color: var(--accent-red, #f87171); }
 
-        /* TradingView-style OHLC/VWAP tooltip pinned to top-left of the chart-wrap. */
+        /* Floating tooltip — follows the crosshair while hovering over the chart. */
         .chart-ohlc-overlay {
-            position: absolute; top: 10px; left: 14px;
+            position: absolute; top: 0; left: 0;
             font-family: var(--font-mono); font-size: 0.68rem; font-weight: 600;
             color: var(--text-secondary);
-            background: rgba(0,0,0,0.42);
+            background: rgba(0,0,0,0.72);
             backdrop-filter: blur(6px);
             padding: 5px 10px; border-radius: 6px;
-            border: 1px solid rgba(128,128,128,0.18);
+            border: 1px solid rgba(128,128,128,0.28);
             pointer-events: none;
             z-index: 4;
             display: none;
             letter-spacing: 0.02em;
             white-space: nowrap;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.35);
         }
-        .chart-ohlc-overlay .ov-lab   { color: var(--text-muted); margin-right: 2px; }
+        .chart-ohlc-overlay .ov-row   {
+            display: grid;
+            grid-template-columns: 34px auto;
+            align-items: baseline;
+            column-gap: 10px;
+            line-height: 1.55;
+        }
+        .chart-ohlc-overlay .ov-lab   { color: var(--text-muted); text-align: left; }
+        .chart-ohlc-overlay .ov-val   { text-align: right; font-variant-numeric: tabular-nums; }
         .chart-ohlc-overlay .ov-up    { color: var(--accent-green, #34d399); }
         .chart-ohlc-overlay .ov-dn    { color: var(--accent-red, #f87171); }
         .chart-ohlc-overlay .ov-vwap  { color: #fbbf24; }
-        .chart-ohlc-overlay .ov-time  { color: var(--text-muted); margin-left: 8px; }
-        .chart-ohlc-overlay .ov-sep   { margin: 0 8px; opacity: 0.5; }
+        .chart-ohlc-overlay .ov-time  {
+            color: var(--text-muted);
+            font-weight: 700;
+            padding-bottom: 4px;
+            margin-bottom: 4px;
+            border-bottom: 1px solid rgba(128,128,128,0.25);
+            text-align: right;
+        }
     </style>
 </head>
 <body style="margin:0;display:flex;flex-direction:column;min-height:100vh;">
@@ -277,7 +292,7 @@
         if (v == null) return '—';
         var n = Number(v);
         if (!isFinite(n)) return '—';
-        return n.toFixed(2);
+        return n.toFixed(1);
     }
     function pnlClass(v) { return v > 0 ? 'pnl-positive' : (v < 0 ? 'pnl-negative' : ''); }
 
@@ -352,6 +367,7 @@
         });
 
         var overlayId = 'chart' + panelKey.charAt(0).toUpperCase() + panelKey.slice(1) + 'Overlay';
+        var chartWrap = document.getElementById(containerId).parentElement;
         chart.subscribeCrosshairMove(function(param) {
             var overlay = document.getElementById(overlayId);
             if (!overlay) return;
@@ -370,18 +386,28 @@
             var v   = (vwapData && vwapData.value != null) ? vwapData.value : null;
             var timeMs = (Number(param.time) - IST_OFFSET_S) * 1000;
             overlay.innerHTML =
-                '<span class="ov-lab">O</span><span class="' + cls + '">' + fmtPx(o) + '</span>'
-              + '<span class="ov-sep">·</span>'
-              + '<span class="ov-lab">H</span><span class="' + cls + '">' + fmtPx(h) + '</span>'
-              + '<span class="ov-sep">·</span>'
-              + '<span class="ov-lab">L</span><span class="' + cls + '">' + fmtPx(l) + '</span>'
-              + '<span class="ov-sep">·</span>'
-              + '<span class="ov-lab">C</span><span class="' + cls + '">' + fmtPx(c) + '</span>'
+                '<div class="ov-time">' + fmtHhmm(timeMs) + '</div>'
+              + '<div class="ov-row"><span class="ov-lab">O</span><span class="ov-val ' + cls + '">' + fmtPx(o) + '</span></div>'
+              + '<div class="ov-row"><span class="ov-lab">H</span><span class="ov-val ' + cls + '">' + fmtPx(h) + '</span></div>'
+              + '<div class="ov-row"><span class="ov-lab">L</span><span class="ov-val ' + cls + '">' + fmtPx(l) + '</span></div>'
+              + '<div class="ov-row"><span class="ov-lab">C</span><span class="ov-val ' + cls + '">' + fmtPx(c) + '</span></div>'
               + (v != null
-                    ? '<span class="ov-sep">·</span>'
-                    + '<span class="ov-lab">VWAP</span><span class="ov-vwap">' + fmtPx(v) + '</span>'
-                    : '')
-              + '<span class="ov-time">' + fmtHhmm(timeMs) + '</span>';
+                    ? '<div class="ov-row"><span class="ov-lab">VWAP</span><span class="ov-val ov-vwap">' + fmtPx(v) + '</span></div>'
+                    : '');
+            // Position tooltip near the crosshair, flipping sides / clamping to the
+            // wrap so it never spills off-screen or hides the cursor. 12 px offset.
+            var wrapRect = chartWrap.getBoundingClientRect();
+            var tooltipW = overlay.offsetWidth  || 220;
+            var tooltipH = overlay.offsetHeight || 28;
+            var px = param.point.x, py = param.point.y;
+            var left = px + 12;
+            var top  = py + 12;
+            if (left + tooltipW > wrapRect.width)  left = px - 12 - tooltipW;
+            if (top  + tooltipH > wrapRect.height) top  = py - 12 - tooltipH;
+            if (left < 0) left = 0;
+            if (top  < 0) top  = 0;
+            overlay.style.left = left + 'px';
+            overlay.style.top  = top  + 'px';
             overlay.style.display = 'block';
         });
         return candleSeries[panelKey];
@@ -467,7 +493,7 @@
             var lbl = document.getElementById('futSymbolLabel');
             if (lbl) lbl.textContent = fut || '—';
             var ft = d.futuresTick || {};
-            setHeaderCells('futPrice', 'futChg', ft.ltp, ft.ch, ft.chp, 2);
+            setHeaderCells('futPrice', 'futChg', ft.ltp, ft.ch, ft.chp, 1);
         }).catch(function() {});
     }
 
@@ -490,7 +516,7 @@
         candleSeries[panelKey] = null;
         vwapSeries[panelKey]   = null;
         if (currentFutSym && panelKey === 'fut') {
-            updatePanel('fut', currentFutSym, 'futPrice', 'futChg', 'chartFutEmpty', 2);
+            updatePanel('fut', currentFutSym, 'futPrice', 'futChg', 'chartFutEmpty', 1);
         }
     }
     function syncIntervalButtons(panelKey) {
@@ -546,7 +572,7 @@
     function pollAll() {
         if (document.visibilityState !== 'visible') return;
         refreshSymbols();
-        if (currentFutSym) updatePanel('fut', currentFutSym, 'futPrice', 'futChg', 'chartFutEmpty', 2);
+        if (currentFutSym) updatePanel('fut', currentFutSym, 'futPrice', 'futChg', 'chartFutEmpty', 1);
     }
 
     function setHeaderCells(priceElId, chgElId, ltp, ch, chp, decimals) {
