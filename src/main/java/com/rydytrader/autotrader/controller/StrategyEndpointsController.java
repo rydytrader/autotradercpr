@@ -108,16 +108,48 @@ public class StrategyEndpointsController {
         }
     }
 
+    // Event line shape: "HH:mm:ss - [SEVERITY] [SOURCE] message body" (SEVERITY
+    // and SOURCE both optional). Parse into the fields the trade page expects
+    // ({ts, severity, source, message}) — otherwise the frontend renders empty
+    // rows tagged "[Strategy]" (its default when source is undefined).
+    private static final java.util.regex.Pattern EVENT_LINE = java.util.regex.Pattern.compile(
+        "^(\\d{2}:\\d{2}:\\d{2})\\s*-\\s*"
+      + "(?:\\[([A-Z_-]+)\\]\\s*)?"                          // optional severity
+      + "(?:\\[([A-Za-z0-9 _.:-]+)\\]\\s*)?"                 // optional source
+      + "(.*)$");
+
     private List<Map<String, Object>> buildRecentEvents(int limit) {
         try {
             List<String> all = eventService.getTradeLogs();
             int from = Math.max(0, all.size() - Math.max(1, limit));
             List<String> tail = new ArrayList<>(all.subList(from, all.size()));
             Collections.reverse(tail);
+            java.time.LocalDate today = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
             List<Map<String, Object>> out = new ArrayList<>(tail.size());
             for (String line : tail) {
                 Map<String, Object> m = new LinkedHashMap<>();
-                m.put("text", line);
+                java.util.regex.Matcher mt = EVENT_LINE.matcher(line);
+                if (mt.matches()) {
+                    // Build a ts (epoch ms in the browser's local TZ = IST) from the
+                    // HH:mm:ss + today's date so frontend fmtTime renders correctly.
+                    try {
+                        java.time.LocalTime lt = java.time.LocalTime.parse(mt.group(1));
+                        long ts = today.atTime(lt)
+                            .atZone(java.time.ZoneId.of("Asia/Kolkata"))
+                            .toInstant().toEpochMilli();
+                        m.put("ts", ts);
+                    } catch (Exception ignored) {}
+                    String sev = mt.group(2);
+                    if (sev == null || sev.isBlank()) sev = "INFO";
+                    m.put("severity", sev);
+                    m.put("source",   mt.group(3) != null ? mt.group(3) : "Strategy");
+                    m.put("message",  mt.group(4) != null ? mt.group(4).trim() : "");
+                } else {
+                    // Line didn't match — pass the whole thing as message.
+                    m.put("severity", "INFO");
+                    m.put("source",   "Strategy");
+                    m.put("message",  line);
+                }
                 out.add(m);
             }
             return out;
