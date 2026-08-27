@@ -477,7 +477,26 @@
                 minPadding: 0,
                 maxPadding: 0.02,
                 startOnTick: false,
-                endOnTick: false
+                endOnTick: false,
+                // Force ticks to land ONLY on actual bar timestamps so the
+                // first label reads 09:15 (the bar's start) instead of a
+                // Highcharts-auto-picked 09:14. Samples the candle series'
+                // xData every N bars for ~8-10 visible ticks.
+                tickPositioner: function() {
+                    var chart = this.chart;
+                    if (!chart) return undefined;
+                    var s = chart.get && chart.get('candles');
+                    var xd = s && s.xData;
+                    if (!xd || xd.length === 0) return undefined;
+                    var target = 10;
+                    var step = Math.max(1, Math.floor(xd.length / target));
+                    var out = [];
+                    for (var i = 0; i < xd.length; i += step) out.push(xd[i]);
+                    var lastVal = xd[xd.length - 1];
+                    if (out[out.length - 1] !== lastVal) out.push(lastVal);
+                    out.info = { unitName: 'minute', higherRanks: {} };
+                    return out;
+                }
             },
             yAxis: [{
                 opposite: true,   // y-axis on RIGHT
