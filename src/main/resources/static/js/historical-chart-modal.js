@@ -12,6 +12,8 @@ window.HistoricalChartModal = (function() {
     var charts = { ce: null, pe: null };
     var candleSeries = { ce: null, pe: null };
     var vwapSeries   = { ce: null, pe: null };
+    var stUpSeries   = { ce: null, pe: null };
+    var stDnSeries   = { ce: null, pe: null };
     var IST_OFFSET_S = 5.5 * 3600; // shift epoch so LightweightCharts renders IST wall-clock
 
     function build() {
@@ -77,6 +79,7 @@ window.HistoricalChartModal = (function() {
         ['ce', 'pe'].forEach(function(k) {
             if (charts[k]) { try { charts[k].remove(); } catch (e) {} }
             charts[k] = null; candleSeries[k] = null; vwapSeries[k] = null;
+            stUpSeries[k] = null; stDnSeries[k] = null;
         });
     }
 
@@ -92,7 +95,7 @@ window.HistoricalChartModal = (function() {
         };
     }
 
-    function renderPanel(panelKey, containerId, candles, priceDecimals) {
+    function renderPanel(panelKey, containerId, candles, stArr, priceDecimals) {
         var container = document.getElementById(containerId);
         if (!container || typeof LightweightCharts === 'undefined') return;
         var col = themeColors();
@@ -120,6 +123,16 @@ window.HistoricalChartModal = (function() {
             priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false,
             priceFormat: { type: 'price', precision: priceDecimals, minMove: minMove }
         });
+        var stUp = chart.addLineSeries({
+            color: col.up, lineWidth: 2,
+            priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+            priceFormat: { type: 'price', precision: priceDecimals, minMove: minMove }
+        });
+        var stDn = chart.addLineSeries({
+            color: col.down, lineWidth: 2,
+            priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+            priceFormat: { type: 'price', precision: priceDecimals, minMove: minMove }
+        });
 
         var bars = [], vwaps = [];
         (candles || []).forEach(function(c) {
@@ -129,13 +142,32 @@ window.HistoricalChartModal = (function() {
             var v = Number(c.vwap || 0);
             if (v > 0) vwaps.push({ time: t, value: v });
         });
+        // Split ST into up-runs (green) and down-runs (red), patching each
+        // flip point into BOTH so the two colored segments visually meet.
+        var stUpData = [], stDnData = [], prevUp = null;
+        (stArr || []).forEach(function(p) {
+            var t = Math.floor(Number(p.t) / 1000) + IST_OFFSET_S;
+            var v = Number(p.line);
+            if (p.isUp) {
+                stUpData.push({ time: t, value: v });
+                if (prevUp === false) stDnData.push({ time: t, value: v });
+            } else {
+                stDnData.push({ time: t, value: v });
+                if (prevUp === true) stUpData.push({ time: t, value: v });
+            }
+            prevUp = !!p.isUp;
+        });
         cs.setData(bars);
         vs.setData(vwaps);
+        stUp.setData(stUpData);
+        stDn.setData(stDnData);
         try { chart.timeScale().fitContent(); } catch (e) {}
 
         charts[panelKey] = chart;
         candleSeries[panelKey] = cs;
         vwapSeries[panelKey] = vs;
+        stUpSeries[panelKey] = stUp;
+        stDnSeries[panelKey] = stDn;
     }
 
     function open(dateStr) {
@@ -181,8 +213,8 @@ window.HistoricalChartModal = (function() {
 
                 // Render both panels after a tick so LWC sees the container.
                 setTimeout(function() {
-                    renderPanel('ce', 'histChartCe', ceBars, 1);
-                    renderPanel('pe', 'histChartPe', peBars, 1);
+                    renderPanel('ce', 'histChartCe', ceBars, d.ceStSeries || [], 1);
+                    renderPanel('pe', 'histChartPe', peBars, d.peStSeries || [], 1);
                 }, 30);
             })
             .catch(function(err) {

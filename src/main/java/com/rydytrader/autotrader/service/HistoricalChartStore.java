@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.rydytrader.autotrader.dto.Candle;
+import com.rydytrader.autotrader.indicator.SuperTrend;
 import com.rydytrader.autotrader.service.strategy.VwapSupertrendStrategy;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
 import com.rydytrader.autotrader.util.FileIoUtils;
@@ -69,15 +70,29 @@ public class HistoricalChartStore {
     }
 
     /** DTO written to disk. CE and PE bars are the aggregated N-min bars at
-     *  the strategy's configured timeframe (default 3-min). */
+     *  the strategy's configured timeframe (default 3-min). ceStSeries /
+     *  peStSeries are the per-bar Supertrend { t, line, isUp } aligned with
+     *  the candles, so the historical modal can render the same ST overlay
+     *  as the live chart. */
     public static class DailySnapshot {
         public String date;
         public double spotOpen;
         public long   atmStrike;
         public String ceSymbol;
         public List<Candle> ceCandles = new ArrayList<>();
+        public List<StPoint> ceStSeries = new ArrayList<>();
         public String peSymbol;
         public List<Candle> peCandles = new ArrayList<>();
+        public List<StPoint> peStSeries = new ArrayList<>();
+    }
+    /** Per-bar Supertrend point. {@code t} is the bar's startMillis so the
+     *  frontend can align it with the candle series index-for-index. */
+    public static class StPoint {
+        public long    t;
+        public double  line;
+        public boolean isUp;
+        public StPoint() {}
+        public StPoint(long t, double line, boolean isUp) { this.t = t; this.line = line; this.isUp = isUp; }
     }
 
     @PostConstruct
@@ -124,13 +139,35 @@ public class HistoricalChartStore {
         snap.atmStrike = s.getAtmStrike();
         snap.ceSymbol  = ceSym;
         snap.peSymbol  = peSym;
+        int atrPeriod = Math.max(2, riskSettings.getVwapStAtrPeriod());
+        double mult   = Math.max(0.1, riskSettings.getVwapStMultiplier());
         if (ceSym != null && !ceSym.isBlank()) {
-            snap.ceCandles = candleAggregator.getHistory(ceSym, tf);
+            snap.ceCandles  = candleAggregator.getHistory(ceSym, tf);
+            snap.ceStSeries = buildStSeries(snap.ceCandles, atrPeriod, mult);
         }
         if (peSym != null && !peSym.isBlank()) {
-            snap.peCandles = candleAggregator.getHistory(peSym, tf);
+            snap.peCandles  = candleAggregator.getHistory(peSym, tf);
+            snap.peStSeries = buildStSeries(snap.peCandles, atrPeriod, mult);
         }
         writeSnapshot(today, snap);
+    }
+
+    /** Per-bar Supertrend aligned to {@code bars}. Emits one {@link StPoint}
+     *  per bar where the ST line is defined (bars 0..atrPeriod-2 have NaN
+     *  and are skipped). Matches the shape ChartController.buildStSeries
+     *  produces for the live chart. */
+    private static List<StPoint> buildStSeries(List<Candle> bars, int atrPeriod, double mult) {
+        if (bars == null || bars.isEmpty()) return new ArrayList<>();
+        SuperTrend.Series ser = SuperTrend.series(bars, atrPeriod, mult);
+        List<StPoint> out = new ArrayList<>(bars.size());
+        for (int i = 0; i < bars.size(); i++) {
+            double line = ser.line()[i];
+            if (Double.isNaN(line)) continue;
+            out.add(new StPoint(bars.get(i).startMillis(),
+                Math.round(line * 100.0) / 100.0,
+                ser.isUp()[i]));
+        }
+        return out;
     }
 
     /** Reads a stored snapshot. Empty when the file doesn't exist. */
