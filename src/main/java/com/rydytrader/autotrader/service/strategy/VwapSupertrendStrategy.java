@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.dto.Candle;
 import com.rydytrader.autotrader.dto.OrderDTO;
+import com.rydytrader.autotrader.entity.StrategyTradeEntity;
+import com.rydytrader.autotrader.repository.StrategyTradeRepository;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
 import com.rydytrader.autotrader.indicator.SuperTrend;
 import com.rydytrader.autotrader.service.CandleAggregator;
@@ -89,6 +91,7 @@ public class VwapSupertrendStrategy implements Strategy {
     private final FyersProperties     fyersProperties;
     private final MarketHolidayService holidays;
     private final ObjectProvider<OrderEventService> orderEventServiceProvider;
+    private final StrategyTradeRepository tradeRepository;
 
     enum FsmState { BOOT, STRIKES_SUBSCRIBING, ARMED, DONE_FOR_DAY }
     enum LegState { WAITING, PENDING_ENTRY, IN_POSITION }
@@ -153,7 +156,8 @@ public class VwapSupertrendStrategy implements Strategy {
                                    TokenStore tokenStore,
                                    FyersProperties fyersProperties,
                                    MarketHolidayService holidays,
-                                   ObjectProvider<OrderEventService> orderEventServiceProvider) {
+                                   ObjectProvider<OrderEventService> orderEventServiceProvider,
+                                   StrategyTradeRepository tradeRepository) {
         this.candleAggregator          = candleAggregator;
         this.marketDataService         = marketDataService;
         this.orderService              = orderService;
@@ -164,6 +168,7 @@ public class VwapSupertrendStrategy implements Strategy {
         this.fyersProperties           = fyersProperties;
         this.holidays                  = holidays;
         this.orderEventServiceProvider = orderEventServiceProvider;
+        this.tradeRepository           = tradeRepository;
     }
 
     @PostConstruct
@@ -667,6 +672,7 @@ public class VwapSupertrendStrategy implements Strategy {
                 realisedPnlToday.updateAndGet(v -> v + pnl);
                 long id = System.currentTimeMillis();
                 tradesTodayById.put(id, new ClosedTrade(sideLabel, sym, entry, exitLtp, qty, id, reason));
+                persistTradeRow(sideLabel, sym, entry, exitLtp, qty, id, reason, leg);
             }
         } catch (Exception e) {
             event("[ERROR]", "VwapST", sideLabel + " EXIT threw — " + e.getMessage());
@@ -761,13 +767,17 @@ public class VwapSupertrendStrategy implements Strategy {
         List<Map<String, Object>> out = new ArrayList<>(tradesTodayById.size());
         for (ClosedTrade t : tradesTodayById.values()) {
             Map<String, Object> m = new LinkedHashMap<>();
+            m.put("setup",          "VWAP+ST");
+            m.put("side",           t.side);
+            m.put("symbol",         t.symbol);
+            m.put("qty",            t.qty);
+            m.put("entryPrice",     t.entry);
+            m.put("exitPrice",      t.exit);
             m.put("grossPnl",       (t.exit - t.entry) * t.qty);
             m.put("charges",        riskSettings.getBrokeragePerOrder() * 2);
             m.put("netPnl",         (t.exit - t.entry) * t.qty - riskSettings.getBrokeragePerOrder() * 2);
             m.put("closedAtMillis", t.closedMs);
             m.put("closeReason",    t.reason);
-            m.put("side",           t.side);
-            m.put("symbol",         t.symbol);
             out.add(m);
         }
         return out;
@@ -828,6 +838,38 @@ public class VwapSupertrendStrategy implements Strategy {
     }
     private void event(String level, String tag, String msg) {
         eventService.log(level + " [" + tag + "] " + msg);
+    }
+
+    /** Persists a single-leg closed trade to the strategy_trades table so it
+     *  shows up on /trades. Called from fireExit once we have the exit LTP.
+     *  Charges = flat brokerage × 2 (buy + sell). */
+    private void persistTradeRow(String side, String sym, double entry, double exit,
+                                  int qty, long closedMs, String reason, Leg leg) {
+        try {
+            double gross   = (exit - entry) * qty;
+            double charges = riskSettings.getBrokeragePerOrder() * 2;
+            double net     = gross - charges;
+            StrategyTradeEntity e = new StrategyTradeEntity();
+            e.setStrategyId("vwap-supertrend");
+            e.setSymbol(sym);
+            e.setSetup("VWAP+ST " + side);
+            e.setInstrument("OPT");
+            e.setSessionDate(LocalDate.now(IST).toString());
+            e.setClosedAtMillis(closedMs);
+            e.setOpenedAtMillis(leg.entryBarStartMs > 0 ? leg.entryBarStartMs : closedMs);
+            e.setQty(qty);
+            e.setEntryPrice(entry);
+            e.setExitPrice(exit);
+            e.setGrossPnl(gross);
+            e.setCharges(charges);
+            e.setNetPnl(net);
+            e.setCloseReason(reason);
+            e.setEntryCandleMs(leg.entryBarStartMs > 0 ? leg.entryBarStartMs : null);
+            e.setExitCandleMs(closedMs);
+            tradeRepository.save(e);
+        } catch (Exception ex) {
+            log.warn("[VwapSupertrend] persistTradeRow failed: {}", ex.getMessage());
+        }
     }
 
     /** Re-runs the history warmup for both currently-chosen legs. Callable
