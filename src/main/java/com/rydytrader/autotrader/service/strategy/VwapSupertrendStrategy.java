@@ -193,6 +193,13 @@ public class VwapSupertrendStrategy implements Strategy {
             if (peLeg.chosenSymbol != null) {
                 candleAggregator.subscribe(peLeg.chosenSymbol, c -> onBarClose(peLeg, "PE", c));
             }
+            // Re-fetch prior-session 1-min bars for both chosen legs so ATR
+            // warmup is valid from bar 1 of today. CandleAggregator's on-load
+            // filter drops yesterday's bars, so without this the first ~10
+            // three-min bars of today (09:15 - 09:42) would have NaN
+            // Supertrend and no ST line on the chart after a mid-day restart.
+            if (ceLeg.chosenSymbol != null) warmupHistory(ceLeg.chosenSymbol, "CE");
+            if (peLeg.chosenSymbol != null) warmupHistory(peLeg.chosenSymbol, "PE");
             log.info("[VwapSupertrend] restored state — fsm={} spotOpen={} atm={} CE={} PE={}",
                 fsm, spotOpen, atmStrike, ceLeg.chosenSymbol, peLeg.chosenSymbol);
             event("[INFO]", "VwapST",
