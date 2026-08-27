@@ -8,7 +8,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Roboto:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/shared.css?v=36">
-    <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+    <script src="https://code.highcharts.com/stock/highstock.js"></script>
     <script>
         (function() {
             const t = localStorage.getItem('traderedge-theme') || 'dark';
@@ -352,20 +352,11 @@
     }
     function pnlClass(v) { return v > 0 ? 'pnl-positive' : (v < 0 ? 'pnl-negative' : ''); }
 
-    // TradingView Lightweight Charts — candlestick + VWAP line + Supertrend
-    // line per panel. Single ST series whose color reflects the current
-    // direction (green when below candles / uptrend, red when above /
-    // downtrend). Matches TradingView's SUPERTREND indicator look.
-    var candleSeries  = { ce: null, pe: null };
-    var vwapSeries    = { ce: null, pe: null };
-    var stSeries      = { ce: null, pe: null };
-    // Last real close per panel — the countdown price line is pinned here.
+    // Highcharts Stock — candlestick + VWAP line + Supertrend line per panel.
+    // ST is colored per-point (green when line is below the bar's close =
+    // uptrend / support, red when above = downtrend / resistance). Per-point
+    // color natively supported by Highcharts line series.
     var lastClosePerPanel = { ce: null, pe: null };
-    var countdownPriceLine  = { ce: null, pe: null };
-    var countdownPriceLevel = { ce: 0, pe: 0 };
-    // IST offset used to shift bar timestamps so LightweightCharts (which formats in UTC
-    // by default) renders IST wall-clock labels. 5 h 30 min = 19800 s.
-    var IST_OFFSET_S = 5.5 * 3600;
 
     function themeColors() {
         var t = document.documentElement.getAttribute('data-theme') || 'dark';
@@ -381,159 +372,132 @@
     }
 
     function ensureChart(panelKey, containerId, priceDecimals) {
-        if (candleSeries[panelKey]) return candleSeries[panelKey];
+        if (charts[panelKey]) return charts[panelKey];
         var container = document.getElementById(containerId);
-        if (!container || typeof LightweightCharts === 'undefined') return null;
+        if (!container || typeof Highcharts === 'undefined') return null;
         var col = themeColors();
-        var minMove = priceDecimals >= 1 ? Math.pow(10, -priceDecimals) : 1;
-        var chart = LightweightCharts.createChart(container, {
-            autoSize: true,
-            layout: {
-                background: { type: 'solid', color: 'transparent' },
-                textColor: col.text,
-                fontFamily: 'Roboto Mono, monospace',
-                fontSize: 10
+        var chart = Highcharts.stockChart(container, {
+            chart: {
+                backgroundColor: 'transparent',
+                animation: false,
+                style: { fontFamily: 'Roboto Mono, monospace' }
             },
-            grid: {
-                vertLines: { color: col.grid },
-                horzLines: { color: col.grid }
+            credits: { enabled: false },
+            rangeSelector: { enabled: false },
+            navigator:     { enabled: false },
+            scrollbar:     { enabled: false },
+            time: { timezoneOffset: -330 },   // IST = UTC+5:30 → offset is -330 min for tz formatter
+            plotOptions: {
+                candlestick: {
+                    animation: false,
+                    color:       col.down,   // down candle body
+                    upColor:     col.up,
+                    lineColor:   col.down,
+                    upLineColor: col.up
+                },
+                line: { animation: false, marker: { enabled: false } },
+                series: { states: { inactive: { opacity: 1 } } }
             },
-            rightPriceScale: { borderVisible: false, scaleMargins: { top: 0.08, bottom: 0.08 } },
-            timeScale: {
-                borderVisible: false,
-                timeVisible: true,
-                secondsVisible: false,
-                rightOffset: 6,
-                shiftVisibleRangeOnNewBar: true
+            xAxis: {
+                type: 'datetime',
+                lineColor: col.grid,
+                tickColor: col.grid,
+                labels: { style: { color: col.text, fontSize: '10px' } }
             },
-            crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
+            yAxis: [{
+                labels: { align: 'right', x: -4, style: { color: col.text, fontSize: '10px' } },
+                gridLineColor: col.grid,
+                lineColor: col.grid,
+                crosshair: { color: col.text, dashStyle: 'dot' }
+            }],
+            tooltip: {
+                shared: true,
+                useHTML: true,
+                backgroundColor: 'rgba(0,0,0,0.72)',
+                borderColor: 'rgba(128,128,128,0.28)',
+                borderRadius: 6,
+                style: { color: col.text, fontSize: '11px' },
+                formatter: function() {
+                    var pts = this.points || [];
+                    var candle = pts.find(p => p.series.userOptions.id === 'candles');
+                    var vwapP  = pts.find(p => p.series.userOptions.id === 'vwap');
+                    var stP    = pts.find(p => p.series.userOptions.id === 'st');
+                    var t = Highcharts.dateFormat('%H:%M', this.x);
+                    var out = '<div style="font-weight:700;color:' + col.text + ';margin-bottom:4px;border-bottom:1px solid rgba(128,128,128,0.25);padding-bottom:4px;">' + t + '</div>';
+                    if (candle && candle.point && candle.point.open != null) {
+                        var o = candle.point.open, h = candle.point.high, l = candle.point.low, c = candle.point.close;
+                        var cls = c >= o ? col.up : col.down;
+                        out += '<div>O <span style="color:' + cls + '">' + fmtPx(o) + '</span></div>'
+                             + '<div>H <span style="color:' + cls + '">' + fmtPx(h) + '</span></div>'
+                             + '<div>L <span style="color:' + cls + '">' + fmtPx(l) + '</span></div>'
+                             + '<div>C <span style="color:' + cls + '">' + fmtPx(c) + '</span></div>';
+                    }
+                    if (vwapP) out += '<div>VWAP <span style="color:' + col.vwap + '">' + fmtPx(vwapP.y) + '</span></div>';
+                    if (stP)   out += '<div>ST <span style="color:' + (stP.point.color || col.text) + '">' + fmtPx(stP.y) + '</span></div>';
+                    return out;
+                }
+            },
+            series: [
+                { id: 'candles', name: 'CE', type: 'candlestick', data: [], yAxis: 0 },
+                { id: 'vwap',    name: 'VWAP', type: 'line', color: col.vwap, lineWidth: 2, data: [], yAxis: 0, enableMouseTracking: true },
+                { id: 'st',      name: 'ST',   type: 'line', lineWidth: 2, data: [], yAxis: 0, enableMouseTracking: true }
+            ]
         });
         charts[panelKey] = chart;
-        candleSeries[panelKey] = chart.addCandlestickSeries({
-            upColor: col.up,
-            downColor: col.down,
-            wickUpColor: col.up,
-            wickDownColor: col.down,
-            borderVisible: false,
-            priceFormat: { type: 'price', precision: priceDecimals, minMove: minMove }
-        });
-        vwapSeries[panelKey] = chart.addLineSeries({
-            color: col.vwap,
-            lineWidth: 2,
-            priceLineVisible: false,
-            lastValueVisible: true,
-            crosshairMarkerVisible: false,
-            priceFormat: { type: 'price', precision: priceDecimals, minMove: minMove }
-        });
-        // Supertrend — single line series, color updated on every setData
-        // based on the LATEST bar's direction (green when up = line below
-        // price / support, red when down = line above price / resistance).
-        stSeries[panelKey] = chart.addLineSeries({
-            color: col.up,
-            lineWidth: 2,
-            lineStyle: LightweightCharts.LineStyle.Solid,
-            priceLineVisible: false,
-            lastValueVisible: true,
-            crosshairMarkerVisible: false,
-            priceFormat: { type: 'price', precision: priceDecimals, minMove: minMove }
-        });
-
-        var overlayId = 'chart' + panelKey.charAt(0).toUpperCase() + panelKey.slice(1) + 'Overlay';
-        var chartWrap = document.getElementById(containerId).parentElement;
-        chart.subscribeCrosshairMove(function(param) {
-            var overlay = document.getElementById(overlayId);
-            if (!overlay) return;
-            if (!param || !param.time || !param.point) {
-                overlay.style.display = 'none';
-                return;
-            }
-            var candleData = param.seriesData.get(candleSeries[panelKey]);
-            var vwapData   = param.seriesData.get(vwapSeries[panelKey]);
-            if (!candleData || candleData.open == null) {
-                overlay.style.display = 'none';
-                return;
-            }
-            var o = candleData.open, h = candleData.high, l = candleData.low, c = candleData.close;
-            var cls = c >= o ? 'ov-up' : 'ov-dn';
-            var v   = (vwapData && vwapData.value != null) ? vwapData.value : null;
-            var timeMs = (Number(param.time) - IST_OFFSET_S) * 1000;
-            overlay.innerHTML =
-                '<div class="ov-time">' + fmtHhmm(timeMs) + '</div>'
-              + '<div class="ov-row"><span class="ov-lab">O</span><span class="ov-val ' + cls + '">' + fmtPx(o) + '</span></div>'
-              + '<div class="ov-row"><span class="ov-lab">H</span><span class="ov-val ' + cls + '">' + fmtPx(h) + '</span></div>'
-              + '<div class="ov-row"><span class="ov-lab">L</span><span class="ov-val ' + cls + '">' + fmtPx(l) + '</span></div>'
-              + '<div class="ov-row"><span class="ov-lab">C</span><span class="ov-val ' + cls + '">' + fmtPx(c) + '</span></div>'
-              + (v != null
-                    ? '<div class="ov-row"><span class="ov-lab">VWAP</span><span class="ov-val ov-vwap">' + fmtPx(v) + '</span></div>'
-                    : '');
-            // Position tooltip near the crosshair, flipping sides / clamping to the
-            // wrap so it never spills off-screen or hides the cursor. 12 px offset.
-            var wrapRect = chartWrap.getBoundingClientRect();
-            var tooltipW = overlay.offsetWidth  || 220;
-            var tooltipH = overlay.offsetHeight || 28;
-            var px = param.point.x, py = param.point.y;
-            var left = px + 12;
-            var top  = py + 12;
-            if (left + tooltipW > wrapRect.width)  left = px - 12 - tooltipW;
-            if (top  + tooltipH > wrapRect.height) top  = py - 12 - tooltipH;
-            if (left < 0) left = 0;
-            if (top  < 0) top  = 0;
-            overlay.style.left = left + 'px';
-            overlay.style.top  = top  + 'px';
-            overlay.style.display = 'block';
-        });
-        return candleSeries[panelKey];
+        return chart;
     }
 
     function applyData(panelKey, history, stArr, current) {
-        var candles = candleSeries[panelKey];
-        var vwap    = vwapSeries[panelKey];
-        var stLine  = stSeries[panelKey];
-        if (!candles) return { firstClose: null, lastClose: null };
+        var chart = charts[panelKey];
+        if (!chart) return { firstClose: null, lastClose: null };
+        var col = themeColors();
+
+        // Merge history + in-progress bar keyed by startMillis.
         var byTime = {};
-        var vwapMap = {};
         function pushBar(c) {
-            var t = Math.floor(Number(c.startMillis) / 1000) + IST_OFFSET_S;
-            byTime[t] = { time: t, open: Number(c.open), high: Number(c.high), low: Number(c.low), close: Number(c.close) };
-            var v = Number(c.vwap || 0);
-            if (v > 0) vwapMap[t] = v;
+            var t = Number(c.startMillis);
+            byTime[t] = [t, Number(c.open), Number(c.high), Number(c.low), Number(c.close)];
         }
         (history || []).forEach(pushBar);
-        // In-progress N-min bar from the server — overwrites the aggregator's
-        // partial bar at the same startMillis (server merges the in-progress
-        // 1-min bucket's live close into it). Rightmost candle updates on
-        // every tick.
         if (current) pushBar(current);
+        var candleData = Object.keys(byTime).map(function(k){return byTime[Number(k)];}).sort(function(a,b){return a[0]-b[0];});
 
-        var bars = Object.keys(byTime)
-            .map(function(k) { return byTime[Number(k)]; })
-            .sort(function(a, b) { return a.time - b.time; });
-        var firstClose = bars.length ? bars[0].close : null;
-        var lastClose  = bars.length ? bars[bars.length - 1].close : null;
-
-        var vwapPoints = Object.keys(vwapMap)
-            .map(function(k) { return { time: Number(k), value: vwapMap[k] }; })
-            .sort(function(a, b) { return a.time - b.time; });
-
-        // Supertrend — single line, color reflects the LATEST bar's direction.
-        var stPoints = [];
-        var latestIsUp = null;
-        (stArr || []).forEach(function(p) {
-            var t = Math.floor(Number(p.t) / 1000) + IST_OFFSET_S;
-            stPoints.push({ time: t, value: Number(p.line) });
-            latestIsUp = !!p.isUp;
+        // VWAP points — align by bar startMillis, only when > 0.
+        var vwapMap = {};
+        (history || []).forEach(function(c) {
+            var v = Number(c.vwap || 0);
+            if (v > 0) vwapMap[Number(c.startMillis)] = v;
         });
-        var col = themeColors();
-        if (stLine && latestIsUp !== null) {
-            try { stLine.applyOptions({ color: latestIsUp ? col.up : col.down }); } catch (e) {}
+        if (current) {
+            var vc = Number(current.vwap || 0);
+            if (vc > 0) vwapMap[Number(current.startMillis)] = vc;
         }
+        var vwapData = Object.keys(vwapMap).map(function(k){return [Number(k), vwapMap[Number(k)]];}).sort(function(a,b){return a[0]-b[0];});
 
-        candles.setData(bars);
-        vwap.setData(vwapPoints);
-        if (stLine) stLine.setData(stPoints);
+        // Supertrend — build a candle-close lookup, then color EACH ST point
+        // green when it sits BELOW that bar's close (uptrend = line acts as
+        // support) or red when ABOVE (downtrend = resistance). Highcharts
+        // per-point `color` sets the incoming line segment's color.
+        var closeByTime = {};
+        candleData.forEach(function(row) { closeByTime[row[0]] = row[4]; });
+        var stData = (stArr || []).map(function(p) {
+            var t = Number(p.t);
+            var y = Number(p.line);
+            var close = closeByTime[t];
+            var color = (close != null && y < close) ? col.up : col.down;
+            return { x: t, y: y, color: color };
+        });
+
+        var lastClose = candleData.length ? candleData[candleData.length - 1][4] : null;
+        var candlesSeries = chart.get('candles');
+        var vwapSeries    = chart.get('vwap');
+        var stSeries      = chart.get('st');
+        if (candlesSeries) candlesSeries.setData(candleData, false);
+        if (vwapSeries)    vwapSeries.setData(vwapData, false);
+        if (stSeries)      stSeries.setData(stData, false);
+        chart.redraw(false);
         lastClosePerPanel[panelKey] = lastClose;
-        try { charts[panelKey].timeScale().fitContent(); } catch (e) {}
-        return { firstClose: firstClose, lastClose: lastClose };
+        return { firstClose: null, lastClose: lastClose };
     }
 
     function updatePanel(panelKey, symbol, priceElId, chgElId, emptyElId, priceDecimals) {
@@ -644,8 +608,8 @@
         }
         requestAnimationFrame(function() {
             var chart = charts[panelKey];
-            if (chart && typeof chart.applyOptions === 'function') {
-                try { chart.applyOptions({ autoSize: true }); } catch (e) {}
+            if (chart && typeof chart.reflow === 'function') {
+                try { chart.reflow(); } catch (e) {}
             }
         });
     }
@@ -706,37 +670,27 @@
         return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
     }
     function tickCountdown() {
+        // Highcharts equivalent — draw a horizontal plot line at the last
+        // close on each panel's yAxis, labeled with the mm:ss countdown.
         var sec = computeBarCountdown();
         var txt = '⏱ ' + fmtMmSs(sec);
         var bgColor = '#fbbf24';
         ['ce', 'pe'].forEach(function(panelKey) {
-            var series = candleSeries[panelKey];
-            if (!series || typeof series.createPriceLine !== 'function') return;
+            var chart = charts[panelKey];
+            if (!chart || !chart.yAxis || !chart.yAxis[0]) return;
             var last = lastClosePerPanel[panelKey];
             if (last == null) return;
-            var line = countdownPriceLine[panelKey];
-            var needsRecreate = !line || countdownPriceLevel[panelKey] !== last;
-            if (needsRecreate) {
-                if (line) {
-                    try { series.removePriceLine(line); } catch (e) {}
-                }
-                try {
-                    countdownPriceLine[panelKey] = series.createPriceLine({
-                        price: last,
-                        color: bgColor,
-                        lineWidth: 1,
-                        lineStyle: LightweightCharts.LineStyle.Dotted,
-                        lineVisible: false,
-                        axisLabelVisible: true,
-                        title: txt
-                    });
-                    countdownPriceLevel[panelKey] = last;
-                } catch (e) {}
-            } else {
-                try {
-                    line.applyOptions({ title: txt, color: bgColor });
-                } catch (e) {}
-            }
+            try {
+                chart.yAxis[0].removePlotLine('countdown-' + panelKey);
+                chart.yAxis[0].addPlotLine({
+                    id: 'countdown-' + panelKey,
+                    value: last,
+                    color: bgColor,
+                    width: 1,
+                    dashStyle: 'Dot',
+                    label: { text: txt, align: 'right', style: { color: bgColor, fontSize: '10px' } }
+                });
+            } catch (e) {}
         });
     }
 
