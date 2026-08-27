@@ -917,6 +917,16 @@ public class VwapSupertrendStrategy implements Strategy {
         }
     }
 
+    /** Wipes today's in-memory trade tracking — the ClosedTrade ring backing
+     *  {@link #todayClosedTrades()} and the realised-P&L counter. Called by
+     *  the Maintenance / Clear All action so /positions and P&L displays
+     *  reset alongside the DB wipe. FSM + leg state are NOT touched (open
+     *  positions on Fyers continue to be managed). */
+    public synchronized void clearInMemoryTradeState() {
+        tradesTodayById.clear();
+        realisedPnlToday.set(0.0);
+    }
+
     /** Re-runs the history warmup for both currently-chosen legs. Callable
      *  from ViewController after a fresh /fyers/callback so ST can populate
      *  from 09:15 without needing an app restart when the previous warmup
