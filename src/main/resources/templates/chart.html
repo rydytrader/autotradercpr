@@ -476,10 +476,10 @@
                 type: 'datetime',
                 lineColor: col.grid,
                 tickColor: col.grid,
-                ordinal: true,       // treat bars as sequential — no visual half-range padding on the ends
+                ordinal: false,      // real datetime axis so tick positions are honored exactly
                 minPadding: 0,
-                maxPadding: 0.02,
-                startOnTick: false,
+                maxPadding: 0,
+                startOnTick: true,   // force first tick at the exact `min` value
                 endOnTick: false,
                 events: {
                     // Detect user-initiated zoom/pan; suppress the auto
@@ -530,7 +530,6 @@
                     for (var i = 0; i < xd.length; i += step) out.push(xd[i]);
                     var lastVal = xd[xd.length - 1];
                     if (out[out.length - 1] !== lastVal) out.push(lastVal);
-                    out.info = { unitName: 'minute', higherRanks: {} };
                     return out;
                 }
             },

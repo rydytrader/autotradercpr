@@ -313,6 +313,13 @@ public class CandleAggregator {
                 if (c == null || c.startMillis() <= 0) continue;
                 if (present.contains(c.startMillis())) continue;
                 if (c.startMillis() >= earliestLive) continue;
+                // Same 09:15-15:35 IST session filter as appendOneMinBar —
+                // Fyers history can include pre-open bars for indices; those
+                // don't belong on the strategy's chart and would push the
+                // first visible bar to 09:07 / 09:14 rather than 09:15.
+                long istMs = c.startMillis() + 19_800_000L;
+                long minuteOfDay = (istMs % 86_400_000L) / 60_000L;
+                if (minuteOfDay < (9 * 60 + 15) || minuteOfDay > (15 * 60 + 35)) continue;
                 toAdd.add(c);
             }
             if (toAdd.isEmpty()) return;
