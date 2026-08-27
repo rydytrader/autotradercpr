@@ -88,6 +88,7 @@ public class StrategyEndpointsController {
 
     private List<Map<String, Object>> buildOpenPositions() {
         try {
+            VwapSupertrendStrategy s = strategyProvider.getIfAvailable();
             List<Map<String, Object>> out = new ArrayList<>();
             pollingService.fetchPositions().forEach(p -> {
                 Map<String, Object> m = new LinkedHashMap<>();
@@ -100,6 +101,23 @@ public class StrategyEndpointsController {
                     ? (p.getLtp() - p.getAvgPrice()) * p.getQty()
                     : (p.getAvgPrice() - p.getLtp()) * p.getQty();
                 m.put("pnl", pnl);
+                m.put("mtm", pnl);   // trade.html reads either field
+                // Merge strategy-computed levels: entryPrice (fill), slPrice,
+                // targetPrice, and a leg-side setup label (CE / PE). Only
+                // present when this symbol matches the strategy's chosen pair.
+                if (s != null) {
+                    Map<String, Object> leg = s.getLegSnapshot(p.getSymbol());
+                    if (!leg.isEmpty()) {
+                        Object entry = leg.get("entryPrice");
+                        Object sl    = leg.get("slPrice");
+                        Object tgt   = leg.get("targetPrice");
+                        Object side  = leg.get("side");
+                        if (entry instanceof Number && ((Number) entry).doubleValue() > 0) m.put("entryPrice", entry);
+                        if (sl    instanceof Number && ((Number) sl).doubleValue()    > 0) m.put("slPrice",     sl);
+                        if (tgt   instanceof Number && ((Number) tgt).doubleValue()   > 0) m.put("targetLevel", tgt);
+                        if (side  != null) m.put("setup", side);
+                    }
+                }
                 out.add(m);
             });
             return out;

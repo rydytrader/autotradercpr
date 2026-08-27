@@ -282,6 +282,7 @@
                         <th class="text-right">Quantity</th>
                         <th class="text-center">Setup</th>
                         <th class="text-right">Entry</th>
+                        <th class="text-right">SL</th>
                         <th class="text-right">Target</th>
                         <th class="text-right">LTP</th>
                         <th class="text-right">P&amp;L</th>
@@ -290,7 +291,7 @@
                 </thead>
                 <tbody id="positionsTableBody">
                     <tr>
-                        <td colspan="10">
+                        <td colspan="11">
                             <div class="empty-state">
                                 <div class="empty-icon">◎</div>
                                 No active positions
@@ -598,12 +599,13 @@
         var positions = (d.openPositions || []).slice();
         var tbody = document.getElementById('positionsTableBody');
         if (positions.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="empty-icon">◎</div>No active positions</div></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="11"><div class="empty-state"><div class="empty-icon">◎</div>No active positions</div></td></tr>';
         } else {
             tbody.innerHTML = positions.map(function(p, i) {
                 var pnl = Number(p.mtm || 0);
                 var strategyId = 'option-buying';
                 var entryPx = Number(p.entryPrice || 0);
+                var slPx    = Number(p.slPrice || 0);
                 var targetPx = Number(p.targetLevel || 0);
                 return '<tr>'
                     + '<td>' + (i + 1) + '</td>'
@@ -612,7 +614,8 @@
                     + '<td class="text-right">' + escapeHtml(String(p.qty)) + '</td>'
                     + '<td class="text-center">' + escapeHtml(p.setup || p.side || '') + '</td>'
                     + '<td class="text-right">' + (entryPx  > 0 ? fmtRs(entryPx)  : '—') + '</td>'
-                    + '<td class="text-right">' + (targetPx > 0 ? fmtRs(targetPx) : '—') + '</td>'
+                    + '<td class="text-right" style="color:var(--accent-red, #f87171);">' + (slPx > 0 ? fmtRs(slPx) : '—') + '</td>'
+                    + '<td class="text-right" style="color:var(--accent-green, #34d399);">' + (targetPx > 0 ? fmtRs(targetPx) : '—') + '</td>'
                     + '<td class="text-right">' + fmtRs(p.ltp) + '</td>'
                     + '<td class="text-right ' + pnlClass(pnl) + '" style="font-weight:700;">' + fmtRs(pnl) + '</td>'
                     + '<td class="text-center"><button class="squareoff-btn" style="padding:4px 10px;font-size:0.65rem;" onclick="squareOffRow(\'' + escapeHtml(p.symbol).replace(/'/g, "&#39;") + '\',\'' + strategyId + '\')">×</button></td>'

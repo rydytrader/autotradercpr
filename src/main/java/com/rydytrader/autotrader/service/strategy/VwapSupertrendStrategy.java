@@ -703,6 +703,25 @@ public class VwapSupertrendStrategy implements Strategy {
     public double getSpotOpen()       { return spotOpen; }
     public long   getAtmStrike()      { return atmStrike; }
 
+    /** Per-symbol strategy-computed levels for the live positions table.
+     *  Returns a snapshot of { entryPrice, slPrice, targetPrice, side } for
+     *  the requested Fyers symbol, or empty when the symbol isn't tracked
+     *  or the leg isn't in position. */
+    public java.util.Map<String, Object> getLegSnapshot(String fyersSymbol) {
+        java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+        if (fyersSymbol == null) return m;
+        Leg leg = null; String side = null;
+        if (fyersSymbol.equals(ceLeg.chosenSymbol)) { leg = ceLeg; side = "CE"; }
+        else if (fyersSymbol.equals(peLeg.chosenSymbol)) { leg = peLeg; side = "PE"; }
+        if (leg == null) return m;
+        m.put("side",        side);
+        m.put("entryPrice",  leg.fillPrice);
+        m.put("slPrice",     leg.slPrice);
+        m.put("targetPrice", leg.targetPrice);
+        m.put("legState",    leg.state.name());
+        return m;
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     private String authHeader() {
