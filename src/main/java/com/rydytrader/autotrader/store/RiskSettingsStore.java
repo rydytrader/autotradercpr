@@ -48,6 +48,7 @@ public class RiskSettingsStore {
         // candle low. Exit trail = Supertrend flip. Unlimited re-entries.
         volatile boolean vwapStEnabled           = true;
         volatile int     vwapStLotsPerLeg        = 1;
+        volatile String  vwapStStartTime         = "09:15";   // no entries before this time (prep still runs at 09:15)
         volatile String  vwapStSquareOffTime     = "15:25";
         volatile double  vwapStTargetPremium     = 250.0;   // rupee premium to pick nearest CE/PE
         volatile int     vwapStStrikesRange      = 20;      // ±N strikes around ATM (subscribed pre-market on prev close, refined at spot open)
@@ -407,6 +408,7 @@ public class RiskSettingsStore {
     public double  getOptionBuyingTargetPoints()       { return cfg().optionBuyingTargetPoints; }
     public boolean isVwapStEnabled()           { return cfg().vwapStEnabled; }
     public int     getVwapStLotsPerLeg()       { return cfg().vwapStLotsPerLeg; }
+    public String  getVwapStStartTime()        { return cfg().vwapStStartTime; }
     public String  getVwapStSquareOffTime()    { return cfg().vwapStSquareOffTime; }
     public double  getVwapStTargetPremium()    { return cfg().vwapStTargetPremium; }
     public int     getVwapStStrikesRange()     { return cfg().vwapStStrikesRange; }
@@ -602,6 +604,7 @@ public class RiskSettingsStore {
     public void setOptionBuyingTargetPoints(double v)         { cfg().optionBuyingTargetPoints = Math.max(0, v); }
     public void setVwapStEnabled(boolean v)         { cfg().vwapStEnabled = v; }
     public void setVwapStLotsPerLeg(int v)          { cfg().vwapStLotsPerLeg = Math.max(1, v); }
+    public void setVwapStStartTime(String v)        { cfg().vwapStStartTime = v == null ? "" : v.trim(); }
     public void setVwapStSquareOffTime(String v)    { cfg().vwapStSquareOffTime = v == null ? "" : v.trim(); }
     public void setVwapStTargetPremium(double v)    { cfg().vwapStTargetPremium = Math.max(1.0, v); }
     public void setVwapStStrikesRange(int v)        { cfg().vwapStStrikesRange = Math.max(1, v); }
@@ -768,6 +771,7 @@ public class RiskSettingsStore {
             upsert("optionBuyingTargetPoints",        String.valueOf(c.optionBuyingTargetPoints));
             upsert("vwapStEnabled",                   String.valueOf(c.vwapStEnabled));
             upsert("vwapStLotsPerLeg",                String.valueOf(c.vwapStLotsPerLeg));
+            upsert("vwapStStartTime",                 c.vwapStStartTime);
             upsert("vwapStSquareOffTime",             c.vwapStSquareOffTime);
             upsert("vwapStTargetPremium",             String.valueOf(c.vwapStTargetPremium));
             upsert("vwapStStrikesRange",              String.valueOf(c.vwapStStrikesRange));
@@ -974,6 +978,7 @@ public class RiskSettingsStore {
                     case "optionBuyingTargetPoints"      -> c.optionBuyingTargetPoints    = Math.max(0, Double.parseDouble(v));
                     case "vwapStEnabled"                 -> c.vwapStEnabled           = Boolean.parseBoolean(v);
                     case "vwapStLotsPerLeg"              -> c.vwapStLotsPerLeg        = Math.max(1, Integer.parseInt(v));
+                    case "vwapStStartTime"               -> c.vwapStStartTime         = v;
                     case "vwapStSquareOffTime"           -> c.vwapStSquareOffTime     = v;
                     case "vwapStTargetPremium"           -> c.vwapStTargetPremium     = Math.max(1.0, Double.parseDouble(v));
                     case "vwapStStrikesRange"            -> c.vwapStStrikesRange      = Math.max(1, Integer.parseInt(v));

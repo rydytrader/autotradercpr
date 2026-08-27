@@ -41,6 +41,7 @@ public class SettingsController {
         // entry + Supertrend trail.
         result.put("vwapStEnabled",           riskSettings.isVwapStEnabled());
         result.put("vwapStLotsPerLeg",        riskSettings.getVwapStLotsPerLeg());
+        result.put("vwapStStartTime",         riskSettings.getVwapStStartTime());
         result.put("vwapStSquareOffTime",     riskSettings.getVwapStSquareOffTime());
         result.put("vwapStTargetPremium",     riskSettings.getVwapStTargetPremium());
         result.put("vwapStStrikesRange",      riskSettings.getVwapStStrikesRange());
@@ -93,6 +94,7 @@ public class SettingsController {
             // VWAP + SUPERTREND
             if (body.containsKey("vwapStEnabled"))          riskSettings.setVwapStEnabled(Boolean.parseBoolean(body.get("vwapStEnabled").toString()));
             if (body.containsKey("vwapStLotsPerLeg"))       riskSettings.setVwapStLotsPerLeg(Integer.parseInt(body.get("vwapStLotsPerLeg").toString()));
+            if (body.containsKey("vwapStStartTime"))        riskSettings.setVwapStStartTime(body.get("vwapStStartTime").toString());
             if (body.containsKey("vwapStSquareOffTime"))    riskSettings.setVwapStSquareOffTime(body.get("vwapStSquareOffTime").toString());
             if (body.containsKey("vwapStTargetPremium"))    riskSettings.setVwapStTargetPremium(Double.parseDouble(body.get("vwapStTargetPremium").toString()));
             if (body.containsKey("vwapStStrikesRange"))     riskSettings.setVwapStStrikesRange(Integer.parseInt(body.get("vwapStStrikesRange").toString()));

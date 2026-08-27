@@ -22,6 +22,7 @@
                     '<div class="sm-grid-2col">' +
                       '<div class="sm-field sm-full"><label><input type="checkbox" id="sm-vwapStEnabled" style="margin-right:6px;vertical-align:middle;">Strategy enabled</label><div class="sm-hint">Master kill switch. When OFF the strategy skips new entries; open positions keep running to SL / ST-flip / squareoff.</div></div>' +
                       '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-vwapStLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 65 NIFTY. Per-leg fixed sizing (CE and PE track independently).</div></div>' +
+                      '<div class="sm-field"><label>Start Time (HH:mm IST)</label><input type="time" id="sm-vwapStStartTime" step="60"><div class="sm-hint">Earliest time an entry can fire. Prep still runs at 09:15 (spot open + pair pick); entries suppressed until this time. Default 09:15.</div></div>' +
                       '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-vwapStSquareOffTime" step="60"><div class="sm-hint">Hard market-exit of any open leg. Default 15:25.</div></div>' +
                       '<div class="sm-field"><label>Target Premium (₹)</label><input type="number" id="sm-vwapStTargetPremium" step="1" min="1"><div class="sm-hint">After spot open, pick the CE and PE trading closest to this premium as the tracked pair. Default 250.</div></div>' +
                       '<div class="sm-field"><label>Candle Minutes</label><input type="number" id="sm-vwapStCandleMinutes" step="1" min="1"><div class="sm-hint">Timeframe for signal candles + Supertrend calc. Default 3.</div></div>' +
@@ -185,6 +186,7 @@
             var g = id => document.getElementById(id);
             if (g('sm-vwapStEnabled'))         g('sm-vwapStEnabled').checked = d.vwapStEnabled !== false;
             if (g('sm-vwapStLotsPerLeg'))      g('sm-vwapStLotsPerLeg').value = d.vwapStLotsPerLeg != null ? d.vwapStLotsPerLeg : 1;
+            if (g('sm-vwapStStartTime'))       g('sm-vwapStStartTime').value = d.vwapStStartTime || '09:15';
             if (g('sm-vwapStSquareOffTime'))   g('sm-vwapStSquareOffTime').value = d.vwapStSquareOffTime || '15:25';
             if (g('sm-vwapStTargetPremium'))   g('sm-vwapStTargetPremium').value = d.vwapStTargetPremium != null ? d.vwapStTargetPremium : 250;
             if (g('sm-vwapStCandleMinutes'))   g('sm-vwapStCandleMinutes').value = d.vwapStCandleMinutes != null ? d.vwapStCandleMinutes : 3;
@@ -198,6 +200,7 @@
         var body = {
             vwapStEnabled:        !!(g('sm-vwapStEnabled') && g('sm-vwapStEnabled').checked),
             vwapStLotsPerLeg:     parseInt(g('sm-vwapStLotsPerLeg').value, 10) || 1,
+            vwapStStartTime:      (g('sm-vwapStStartTime').value || '').trim(),
             vwapStSquareOffTime:  (g('sm-vwapStSquareOffTime').value || '').trim(),
             vwapStTargetPremium:  parseFloat(g('sm-vwapStTargetPremium').value) || 250,
             vwapStCandleMinutes:  parseInt(g('sm-vwapStCandleMinutes').value, 10) || 3,

@@ -529,6 +529,20 @@ public class VwapSupertrendStrategy implements Strategy {
     // ── Entry / exit ────────────────────────────────────────────────────────
 
     private void fireEntry(Leg leg, String sideLabel, Candle triggerBar) {
+        // Start-time gate — no entries before the configured cutoff. Prep
+        // (spot capture, pair pick, warmup) still runs at 09:15; this only
+        // suppresses the order placement until the operator's chosen start.
+        String startTime = riskSettings.getVwapStStartTime();
+        if (startTime != null && !startTime.isBlank()) {
+            try {
+                LocalTime start = LocalTime.parse(startTime);
+                if (ZonedDateTime.now(IST).toLocalTime().isBefore(start)) {
+                    log.debug("[VwapSupertrend] {} entry skipped — wall clock < startTime {}",
+                        sideLabel, startTime);
+                    return;
+                }
+            } catch (Exception ignored) {}
+        }
         int lots = Math.max(1, riskSettings.getVwapStLotsPerLeg());
         int qty = lots * LOT_SIZE;
         try {
