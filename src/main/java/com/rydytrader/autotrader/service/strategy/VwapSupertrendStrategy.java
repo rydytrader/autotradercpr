@@ -541,8 +541,9 @@ public class VwapSupertrendStrategy implements Strategy {
         boolean closeAboveVwap = bar.close() >  bar.vwap();
         boolean stUp           = st.available() && st.isUp();
 
-        log.info("[VwapSupertrend] {} bar close — o={} h={} l={} c={} vwap={} st_line={} st_up={} wick_below_vwap={} close_above_vwap={} legState={}",
-            sideLabel, fmt(bar.open()), fmt(bar.high()), fmt(bar.low()), fmt(bar.close()),
+        log.info("[VwapSupertrend] {} {} bar close — o={} h={} l={} c={} vwap={} st_line={} st_up={} wick_below_vwap={} close_above_vwap={} legState={}",
+            sideLabel, leg.chosenSymbol,
+            fmt(bar.open()), fmt(bar.high()), fmt(bar.low()), fmt(bar.close()),
             fmt(bar.vwap()), fmt(st.line()), stUp, wickBelowVwap, closeAboveVwap, leg.state);
 
         // Entry — VWAP crossover bar + ST up + leg is idle.
