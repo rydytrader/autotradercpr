@@ -352,15 +352,13 @@
     }
     function pnlClass(v) { return v > 0 ? 'pnl-positive' : (v < 0 ? 'pnl-negative' : ''); }
 
-    // TradingView Lightweight Charts — candlestick + VWAP line + two Supertrend
-    // lines per panel (green when ST is BELOW candles = uptrend / support, red
-    // when ABOVE candles = downtrend / resistance). Split into two series so
-    // per-segment coloring can be shown — lightweight-charts doesn't support
-    // per-point color on a single line series.
+    // TradingView Lightweight Charts — candlestick + VWAP line + Supertrend
+    // line per panel. Single ST series whose color reflects the current
+    // direction (green when below candles / uptrend, red when above /
+    // downtrend). Matches TradingView's SUPERTREND indicator look.
     var candleSeries  = { ce: null, pe: null };
     var vwapSeries    = { ce: null, pe: null };
-    var stSeriesUp    = { ce: null, pe: null };
-    var stSeriesDown  = { ce: null, pe: null };
+    var stSeries      = { ce: null, pe: null };
     // Last real close per panel — the countdown price line is pinned here.
     var lastClosePerPanel = { ce: null, pe: null };
     var countdownPriceLine  = { ce: null, pe: null };
@@ -427,20 +425,11 @@
             crosshairMarkerVisible: false,
             priceFormat: { type: 'price', precision: priceDecimals, minMove: minMove }
         });
-        // Supertrend — two overlapping line series with gaps at flip boundaries
-        // so up-trend segments render green (line below price = support) and
-        // down-trend segments render red (line above price = resistance).
-        stSeriesUp[panelKey] = chart.addLineSeries({
+        // Supertrend — single line series, color updated on every setData
+        // based on the LATEST bar's direction (green when up = line below
+        // price / support, red when down = line above price / resistance).
+        stSeries[panelKey] = chart.addLineSeries({
             color: col.up,
-            lineWidth: 2,
-            lineStyle: LightweightCharts.LineStyle.Solid,
-            priceLineVisible: false,
-            lastValueVisible: true,
-            crosshairMarkerVisible: false,
-            priceFormat: { type: 'price', precision: priceDecimals, minMove: minMove }
-        });
-        stSeriesDown[panelKey] = chart.addLineSeries({
-            color: col.down,
             lineWidth: 2,
             lineStyle: LightweightCharts.LineStyle.Solid,
             priceLineVisible: false,
@@ -499,8 +488,7 @@
     function applyData(panelKey, history, stArr, current) {
         var candles = candleSeries[panelKey];
         var vwap    = vwapSeries[panelKey];
-        var stUp    = stSeriesUp[panelKey];
-        var stDown  = stSeriesDown[panelKey];
+        var stLine  = stSeries[panelKey];
         if (!candles) return { firstClose: null, lastClose: null };
         var byTime = {};
         var vwapMap = {};
@@ -527,27 +515,22 @@
             .map(function(k) { return { time: Number(k), value: vwapMap[k] }; })
             .sort(function(a, b) { return a.time - b.time; });
 
-        // Supertrend — split into two colored series with a whitespace point
-        // at each flip so the up (green, below candles) and down (red, above
-        // candles) segments render distinctly. Whitespace = {time} without
-        // value — lightweight-charts uses it as a gap in the line.
-        var upPts = [], downPts = [];
+        // Supertrend — single line, color reflects the LATEST bar's direction.
+        var stPoints = [];
+        var latestIsUp = null;
         (stArr || []).forEach(function(p) {
             var t = Math.floor(Number(p.t) / 1000) + IST_OFFSET_S;
-            var v = Number(p.line);
-            if (p.isUp) {
-                upPts.push({ time: t, value: v });
-                downPts.push({ time: t });       // gap on the down series here
-            } else {
-                downPts.push({ time: t, value: v });
-                upPts.push({ time: t });         // gap on the up series here
-            }
+            stPoints.push({ time: t, value: Number(p.line) });
+            latestIsUp = !!p.isUp;
         });
+        var col = themeColors();
+        if (stLine && latestIsUp !== null) {
+            try { stLine.applyOptions({ color: latestIsUp ? col.up : col.down }); } catch (e) {}
+        }
 
         candles.setData(bars);
         vwap.setData(vwapPoints);
-        if (stUp)   stUp.setData(upPts);
-        if (stDown) stDown.setData(downPts);
+        if (stLine) stLine.setData(stPoints);
         lastClosePerPanel[panelKey] = lastClose;
         try { charts[panelKey].timeScale().fitContent(); } catch (e) {}
         return { firstClose: firstClose, lastClose: lastClose };
