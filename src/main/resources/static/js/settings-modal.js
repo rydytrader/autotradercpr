@@ -28,15 +28,15 @@
                       '<div class="sm-field"><label>Candle Minutes</label><input type="number" id="sm-vwapStCandleMinutes" step="1" min="1"><div class="sm-hint">Timeframe for signal candles + Supertrend calc. Default 3.</div></div>' +
                       '<div class="sm-field"><label>Supertrend ATR Period</label><input type="number" id="sm-vwapStAtrPeriod" step="1" min="2"><div class="sm-hint">Bars in the Supertrend ATR window. Default 10.</div></div>' +
                       '<div class="sm-field"><label>Supertrend Multiplier</label><input type="number" id="sm-vwapStMultiplier" step="0.1" min="0.1"><div class="sm-hint">ATR × this = band distance. Default 3.0.</div></div>' +
-                      '<div class="sm-field"><label>SL Buffer (₹)</label><input type="number" id="sm-vwapStSlBufferPoints" step="0.05" min="0"><div class="sm-hint">SL = entry candle low − this many rupees. Wider buffer avoids getting stopped out by a wick that just touches the low. Default 5.0.</div></div>' +
-                      '<div class="sm-field"><label>Reward : Risk Ratio</label><input type="number" id="sm-vwapStRewardRiskRatio" step="0.1" min="0.1"><div class="sm-hint">Target = fill + N × (fill − SL). 2.0 = 1:2 RR. Default 2.0.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
                     '<div class="sm-grid-2col">' +
                       '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline for Home analytics. Default ₹10L.</div></div>' +
                       '<div class="sm-field"><label>Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Kill switch when net day P&L drops below this % of capital. 0 = off.</div></div>' +
-                      '<div class="sm-field"><label>Max Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto from Capital × Risk %.</div></div>' +
+                      '<div class="sm-field"><label>Max Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto from Capital × Risk %. Same value shown as \'Risk Budget\' on the positions page.</div></div>' +
+                      '<div class="sm-field"><label>SL Buffer (₹)</label><input type="number" id="sm-vwapStSlBufferPoints" step="0.05" min="0"><div class="sm-hint">SL = entry candle low − this many rupees. Wider buffer avoids getting stopped out by a wick that just touches the low. Default 5.0.</div></div>' +
+                      '<div class="sm-field"><label>Reward : Risk Ratio</label><input type="number" id="sm-vwapStRewardRiskRatio" step="0.1" min="0.1"><div class="sm-hint">Target = fill + N × (fill − SL). 2.0 = 1:2 RR. Default 2.0.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
@@ -192,8 +192,6 @@
             if (g('sm-vwapStCandleMinutes'))   g('sm-vwapStCandleMinutes').value = d.vwapStCandleMinutes != null ? d.vwapStCandleMinutes : 3;
             if (g('sm-vwapStAtrPeriod'))       g('sm-vwapStAtrPeriod').value = d.vwapStAtrPeriod != null ? d.vwapStAtrPeriod : 10;
             if (g('sm-vwapStMultiplier'))      g('sm-vwapStMultiplier').value = d.vwapStMultiplier != null ? d.vwapStMultiplier : 3.0;
-            if (g('sm-vwapStSlBufferPoints'))  g('sm-vwapStSlBufferPoints').value = d.vwapStSlBufferPoints != null ? d.vwapStSlBufferPoints : 5.0;
-            if (g('sm-vwapStRewardRiskRatio')) g('sm-vwapStRewardRiskRatio').value = d.vwapStRewardRiskRatio != null ? d.vwapStRewardRiskRatio : 2.0;
         }).catch(function() {});
     }
 
@@ -207,9 +205,7 @@
             vwapStStrikesRange:   parseInt(g('sm-vwapStStrikesRange').value, 10) || 15,
             vwapStCandleMinutes:  parseInt(g('sm-vwapStCandleMinutes').value, 10) || 3,
             vwapStAtrPeriod:      parseInt(g('sm-vwapStAtrPeriod').value, 10) || 10,
-            vwapStMultiplier:     parseFloat(g('sm-vwapStMultiplier').value) || 3.0,
-            vwapStSlBufferPoints: parseFloat(g('sm-vwapStSlBufferPoints').value) || 0,
-            vwapStRewardRiskRatio: parseFloat(g('sm-vwapStRewardRiskRatio').value) || 2.0
+            vwapStMultiplier:     parseFloat(g('sm-vwapStMultiplier').value) || 3.0
         };
         postSettings('/api/settings/risk', body);
     }
@@ -217,8 +213,10 @@
     function savePortfolioRiskTab() {
         var g = id => document.getElementById(id);
         var body = {
-            startingCapital:          parseFloat(g('sm-startingCapital').value) || 0,
-            portfolioMaxRiskPct:      parseFloat(g('sm-portfolioMaxRiskPct').value) || 0
+            startingCapital:       parseFloat(g('sm-startingCapital').value) || 0,
+            portfolioMaxRiskPct:   parseFloat(g('sm-portfolioMaxRiskPct').value) || 0,
+            vwapStSlBufferPoints:  parseFloat(g('sm-vwapStSlBufferPoints').value) || 0,
+            vwapStRewardRiskRatio: parseFloat(g('sm-vwapStRewardRiskRatio').value) || 2.0
         };
         postSettings('/api/settings/risk', body);
     }
@@ -274,6 +272,8 @@
             var pctInput = g('sm-portfolioMaxRiskPct');
             if (capInput) capInput.value = d.startingCapital != null ? d.startingCapital : 1000000;
             if (pctInput) pctInput.value = d.portfolioMaxRiskPct != null ? d.portfolioMaxRiskPct : 0;
+            if (g('sm-vwapStSlBufferPoints'))  g('sm-vwapStSlBufferPoints').value = d.vwapStSlBufferPoints != null ? d.vwapStSlBufferPoints : 5.0;
+            if (g('sm-vwapStRewardRiskRatio')) g('sm-vwapStRewardRiskRatio').value = d.vwapStRewardRiskRatio != null ? d.vwapStRewardRiskRatio : 2.0;
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {
                 updatePortfolioRiskHint(parseFloat(capInput.value) || 0, parseFloat(pctInput && pctInput.value) || 0);

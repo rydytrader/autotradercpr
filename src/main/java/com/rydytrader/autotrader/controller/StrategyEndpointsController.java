@@ -180,7 +180,11 @@ public class StrategyEndpointsController {
         Map<String, Object> r = new LinkedHashMap<>();
         double net = s == null ? 0.0 : s.liveNetPnlToday();
         double consumed = Math.min(0, net) * -1.0;
-        double budget = riskSettings.getMaxDailyLoss();
+        // Uses portfolioMaxRiskPct × startingCapital — same source of truth the
+        // Risk tab in the settings modal shows. Was previously getMaxDailyLoss()
+        // (totalCapital × maxRiskPerDayPct), a legacy pair the UI never edits,
+        // which caused the trade page to show stale defaults.
+        double budget = riskSettings.getPortfolioMaxDailyLoss();
         r.put("consumedRisk",    consumed);
         r.put("dailyRiskBudget", budget);
         r.put("realisedPnl",     net);
