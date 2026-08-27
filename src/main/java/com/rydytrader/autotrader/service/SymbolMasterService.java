@@ -49,11 +49,15 @@ public class SymbolMasterService {
     private final ConcurrentHashMap<String, Double> tickSizes = new ConcurrentHashMap<>();
 
     /**
-     * Load on startup. Tries disk cache first; if cache is from today, skip the two CSV downloads
-     * entirely (saves 30–60 s when Fyers endpoint is slow). Otherwise refreshes from Fyers and
-     * writes a fresh cache. The @Scheduled 8 AM job always re-fetches and overwrites the cache.
+     * Startup load disabled on branch VWAP_SUPERTREND_STRATEGY — the sole
+     * strategy places MARKET orders only, so tick-size rounding
+     * (roundToTick / placeLimitOrder / placeStopLoss / modifyOrder) is never
+     * exercised. {@link #getTickSize} falls back to 0.05 (NIFTY option tick),
+     * which is safe if any of those paths ever fire.
+     *
+     * <p>To re-enable: uncomment the @PostConstruct + @Scheduled annotations.
      */
-    @PostConstruct
+    // @PostConstruct
     public void loadOnStartup() {
         if (loadCache()) {
             String msg = "[CACHE] Symbol master restored from cache (" + tickSizes.size() + " symbols)";
@@ -65,8 +69,7 @@ public class SymbolMasterService {
         saveCache();
     }
 
-    /** Reload every trading day at 8:00 AM IST to pick up new contract expirations. */
-    @Scheduled(cron = "0 0 8 * * MON-FRI", zone = "Asia/Kolkata")
+    // @Scheduled(cron = "0 0 8 * * MON-FRI", zone = "Asia/Kolkata")
     public void reloadAtMarketOpen() {
         loadAll();
         saveCache();
