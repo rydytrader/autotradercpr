@@ -546,8 +546,12 @@ public class VwapSupertrendStrategy implements Strategy {
         Candle bar = bars.get(bars.size() - 1);
         SuperTrend.State st = SuperTrend.at(bars, atrPeriod, mult);
 
-        boolean wickBelowVwap  = bar.low()   <= bar.vwap();
-        boolean closeAboveVwap = bar.close() >  bar.vwap();
+        // Wick-crossover: the bar's price range must STRADDLE VWAP — high
+        // reached at/above VWAP AND low dipped at/below VWAP. Prevents the
+        // false positive where an entire bar sits well below VWAP: low ≤ VWAP
+        // is trivially true, but no crossover actually happened.
+        boolean wickBelowVwap  = bar.low()  <= bar.vwap() && bar.high() >= bar.vwap();
+        boolean closeAboveVwap = bar.close() > bar.vwap();
         boolean stUp           = st.available() && st.isUp();
 
         log.info("[VwapSupertrend] {} {} bar close — o={} h={} l={} c={} vwap={} st_line={} st_up={} wick_below_vwap={} close_above_vwap={} legState={}",
