@@ -643,7 +643,6 @@
         if (vwapSeries)    vwapSeries.setData(vwapData, false);
         if (stUpSeries)    stUpSeries.setData(stUpData, false);
         if (stDownSeries)  stDownSeries.setData(stDownData, false);
-        refreshStBands(panelKey, stArr || [], candleData);
         // Pin the visible x-range to actual bar timestamps so the plot
         // area's leftmost gridline sits at 09:15 (the first bar), not at
         // 09:14 (half-a-candle-width earlier). Bar bodies still center on
@@ -708,59 +707,6 @@
         placeChip(prefix + 'PxChip',   lastClose, '#1f2937', '#f3f4f6');
         placeChip(prefix + 'VwapChip', lastVwap,  col.vwap,  '#111827');
         placeChip(prefix + 'StChip',   lastSt,    stIsUp ? col.up : col.down, stIsUp ? '#111827' : '#ffffff');
-    }
-
-    // TradingView-style ST direction bands: shade the plot-area background
-    // green while ST is up and red while ST is down. Uses xAxis.plotBands
-    // segmented by contiguous direction runs from the ST series. Very light
-    // opacity so candles stay legible.
-    function refreshStBands(panelKey, stArr, candleData) {
-        var chart = charts[panelKey];
-        if (!chart || !chart.xAxis || !chart.xAxis[0]) return;
-        var xAxis = chart.xAxis[0];
-        // Wipe prior bands.
-        var prior = (xAxis.plotLinesAndBands || []).slice();
-        prior.forEach(function(b) {
-            if (b && b.id && String(b.id).indexOf('st-band-') === 0) {
-                try { xAxis.removePlotBand(b.id); } catch (e) {}
-            }
-        });
-        if (!stArr.length || !candleData.length) return;
-        // Half of the (approx) bar width so bands cover full candles.
-        var barMs = candleData.length > 1
-            ? (candleData[1][0] - candleData[0][0]) : (3 * 60 * 1000);
-        var half = barMs / 2;
-        // Walk ST points, collect contiguous direction runs.
-        var runStart = null, runIsUp = null, bandIdx = 0;
-        function emit(from, to, isUp) {
-            var color = isUp ? 'rgba(52,211,153,0.10)' : 'rgba(248,113,113,0.10)';
-            try {
-                xAxis.addPlotBand({
-                    id:    'st-band-' + panelKey + '-' + (bandIdx++),
-                    from:  from,
-                    to:    to,
-                    color: color,
-                    zIndex: 0
-                });
-            } catch (e) {}
-        }
-        for (var i = 0; i < stArr.length; i++) {
-            var p = stArr[i];
-            var t = Number(p.t);
-            var up = !!p.isUp;
-            if (runIsUp === null) {
-                runStart = t; runIsUp = up;
-            } else if (up !== runIsUp) {
-                // Flip — close prior run at CURRENT point (so bands meet).
-                emit(runStart - half, t, runIsUp);
-                runStart = t; runIsUp = up;
-            }
-        }
-        // Tail run — extend to last candle + half.
-        if (runIsUp !== null) {
-            var lastT = candleData[candleData.length - 1][0] + half;
-            emit(runStart - half, lastT, runIsUp);
-        }
     }
 
     // Draw entry / SL / target as horizontal plotLines on the y-axis when
