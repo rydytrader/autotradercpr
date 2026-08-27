@@ -146,40 +146,53 @@ public class ChartController {
     /** Builds the in-progress N-min bar by combining any closed 1-min bars
      *  inside the current N-min window (already in {@code bars} if their
      *  bucket start matches) with the live 1-min bucket from
-     *  {@link FyersMinuteBarBuilder}. Result: the rightmost 3-min bar on the
-     *  chart updates on every tick, not once per minute.
+     *  {@link FyersMinuteBarBuilder}. Also computes a LIVE session VWAP
+     *  that includes the in-progress 1-min bucket's contribution — so the
+     *  yellow VWAP line updates on every tick, not once per minute.
      *
      *  <p>Returns {@code null} when we can't determine a window (no bar
      *  builder state for the symbol) — chart JS treats null as no live bar. */
     private Candle buildFormingBar(String symbol, List<Candle> bars, int tf) {
         Candle live1m = minuteBarBuilder.getInProgressBar(symbol);
         if (live1m == null) return null;
-        // Which N-min window does the in-progress 1-min bar belong to?
         long bucketMs      = tf * 60_000L;
         long windowStartMs = live1m.startMillis() - (live1m.startMillis() % bucketMs);
-        long windowEndMs   = windowStartMs + bucketMs;
-        // If the current window is already fully represented in `bars`
-        // (an aggregated 3-min bar with this exact startMillis) — the closed
-        // 1-min bars in this window are already merged there. Otherwise the
-        // aggregator returned a partial (1 or 2 1-min bars grouped).
         double open = live1m.open(), high = live1m.high(), low = live1m.low(), close = live1m.close();
         long vol = Math.max(0, live1m.volume());
-        double vwap = 0.0;
         Candle latestAgg = bars.isEmpty() ? null : bars.get(bars.size() - 1);
         if (latestAgg != null && latestAgg.startMillis() == windowStartMs) {
-            // Aggregator already has a partial bar for this window (built from
-            // ONE or TWO closed 1-min bars — the in-progress 1-min isn't in it).
-            // Merge: open from aggregator (older), high/low widened, close from
-            // live 1m, volume summed, vwap from aggregator (recomputed on next
-            // append; live-tick chart VWAP moves in 1-min steps not tick).
             open = latestAgg.open();
             high = Math.max(latestAgg.high(), high);
             low  = latestAgg.low() > 0 ? Math.min(latestAgg.low(), low) : low;
             vol  = latestAgg.volume() + vol;
-            vwap = latestAgg.vwap();
         }
+        double liveVwap = computeLiveSessionVwap(symbol, live1m);
         return new Candle(round2(open), round2(high), round2(low), round2(close),
-            vol, windowStartMs, round2(vwap));
+            vol, windowStartMs, round2(liveVwap));
+    }
+
+    /** Session-cumulative pandas_ta VWAP that includes the in-progress 1-min
+     *  bucket's contribution — matches how each closed bar's VWAP is computed
+     *  in {@code CandleAggregator.recomputeVwapsAndReturnLast}. Iterates all
+     *  today's 1-min bars in the ring, sums (H+L+C)/3 × volume, adds the
+     *  in-progress bucket, divides. */
+    private double computeLiveSessionVwap(String symbol, Candle live1m) {
+        java.util.List<Candle> bars1m = candleAggregator.getHistory(symbol, 1);
+        long istMs = live1m.startMillis() + 19_800_000L;
+        long dayEpochMs = (istMs - (istMs % 86_400_000L)) - 19_800_000L;
+        double cumTypVol = 0.0, cumVol = 0.0;
+        for (Candle b : bars1m) {
+            long ist = b.startMillis() + 19_800_000L;
+            long day = (ist - (ist % 86_400_000L)) - 19_800_000L;
+            if (day != dayEpochMs) continue;
+            double typ = (b.high() + b.low() + b.close()) / 3.0;
+            long v = b.volume();
+            if (v > 0 && typ > 0) { cumTypVol += typ * v; cumVol += v; }
+        }
+        double typLive = (live1m.high() + live1m.low() + live1m.close()) / 3.0;
+        long vLive = live1m.volume();
+        if (vLive > 0 && typLive > 0) { cumTypVol += typLive * vLive; cumVol += vLive; }
+        return cumVol > 0 ? cumTypVol / cumVol : 0.0;
     }
 
     /** Per-bar Supertrend points aligned index-for-index with {@code bars}.
