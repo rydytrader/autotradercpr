@@ -481,7 +481,29 @@
                 maxPadding: 0.02,
                 startOnTick: false,
                 endOnTick: false,
-                labels: { style: { color: col.text, fontSize: '10px' } },
+                labels: {
+                    style: { color: col.text, fontSize: '10px' },
+                    // Snap whatever tick timestamp Highcharts picks to the
+                    // closest actual bar timestamp before formatting.
+                    // Highcharts' ordinal-axis tick picker sometimes lands
+                    // BEFORE the first bar (e.g. 09:14 when the first data
+                    // is 09:15); snap moves that label onto the real bar.
+                    formatter: function() {
+                        var chart = this.chart;
+                        var s = chart && chart.get && chart.get('candles');
+                        var xd = s && s.xData;
+                        var v = this.value;
+                        if (xd && xd.length) {
+                            var best = xd[0], bestDiff = Math.abs(xd[0] - v);
+                            for (var i = 1; i < xd.length; i++) {
+                                var dd = Math.abs(xd[i] - v);
+                                if (dd < bestDiff) { bestDiff = dd; best = xd[i]; }
+                            }
+                            v = best;
+                        }
+                        return Highcharts.dateFormat('%H:%M', v);
+                    }
+                },
                 events: {
                     setExtremes: function(e) {
                         if (e && (e.trigger === 'zoom' || e.trigger === 'pan' || e.trigger === 'mousewheel' || e.trigger === 'navigator')) {
