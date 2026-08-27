@@ -616,10 +616,10 @@ public class VwapSupertrendStrategy implements Strategy {
         //   B. ST_FLIP      — ST just flipped red→green AND close above VWAP
         if (leg.state == LegState.WAITING) {
             if (wickBelowVwap && closeAboveVwap && stUp) {
-                leg.entryReason = "VWAP_BOUNCE";
+                leg.entryReason = "VWAP_BREAKOUT";
                 fireEntry(leg, sideLabel, bar);
             } else if (stFlipUp && closeAboveVwap) {
-                leg.entryReason = "ST_FLIP";
+                leg.entryReason = "SUPER_TREND_FLIP";
                 fireEntry(leg, sideLabel, bar);
             } else if (wickBelowVwap && closeAboveVwap && !stUp) {
                 // VWAP-bounce fired but Supertrend is red — surface an event
