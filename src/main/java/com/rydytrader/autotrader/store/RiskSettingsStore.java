@@ -54,7 +54,7 @@ public class RiskSettingsStore {
         volatile int     vwapStCandleMinutes     = 3;       // timeframe for signal candles
         volatile int     vwapStAtrPeriod         = 10;      // Supertrend ATR period
         volatile double  vwapStMultiplier        = 3.0;     // Supertrend ATR multiplier
-        volatile double  vwapStSlBufferPoints    = 1.0;     // SL = entryCandleLow − N points (1 rupee buffer default)
+        volatile double  vwapStSlBufferPoints    = 5.0;     // SL = entryCandleLow − N points (5 rupee buffer default)
         volatile double  vwapStRewardRiskRatio   = 2.0;     // Target = fill + N × (fill − SL). 1:2 RR default
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
