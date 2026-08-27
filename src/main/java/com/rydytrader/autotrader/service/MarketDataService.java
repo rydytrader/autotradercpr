@@ -646,11 +646,26 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         updateSubscriptions();
     }
 
-    /** Remove symbols from the ad-hoc subscription set. (HSM unsubscription is deferred —
-     *  symbols stay on the wire until the next reconnect; harmless for short-lived option legs.) */
+    /** Remove symbols from the ad-hoc set AND send HSM unsubscribe frames so
+     *  the wire actually stops delivering their ticks. Was deferred-until-
+     *  reconnect before — meant the ~80 pre-market strikes the strategy
+     *  dropped after pair pick kept ticking and getting aggregated. */
     public void unsubscribeAdditional(Collection<String> symbols) {
         if (symbols == null || symbols.isEmpty()) return;
         adHocSymbols.removeAll(symbols);
+        if (wsClient == null || !wsClient.isOpen()) return;
+        List<String> hsmToDrop = new ArrayList<>();
+        for (String fyers : symbols) {
+            String hsm = fyersToHsmToken.get(fyers);
+            if (hsm != null && subscribedHsmTokens.contains(hsm)) {
+                hsmToDrop.add(hsm);
+                subscribedHsmTokens.remove(hsm);
+            }
+        }
+        if (!hsmToDrop.isEmpty()) {
+            wsClient.unsubscribeSymbols(hsmToDrop);
+            log.info("[MarketData] Unsubscribed {} HSM tokens on the wire", hsmToDrop.size());
+        }
     }
 
     // ── HSM token resolution (copied from the old service) ───────────────────
