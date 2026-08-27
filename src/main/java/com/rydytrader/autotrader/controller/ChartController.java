@@ -2,6 +2,8 @@ package com.rydytrader.autotrader.controller;
 
 import com.rydytrader.autotrader.dto.Candle;
 import com.rydytrader.autotrader.indicator.SuperTrend;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.rydytrader.autotrader.service.CandleAggregator;
 import com.rydytrader.autotrader.service.FyersMinuteBarBuilder;
@@ -31,6 +33,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/chart")
 public class ChartController {
+
+    private static final Logger log = LoggerFactory.getLogger(ChartController.class);
 
     private final CandleAggregator      candleAggregator;
     private final MarketDataService     marketDataService;
@@ -257,6 +261,28 @@ public class ChartController {
         SuperTrend.Series ser = SuperTrend.series(allBars, atrPeriod, mult);
         java.util.Set<Long> todayStarts = new java.util.HashSet<>();
         for (Candle c : todayBars) todayStarts.add(c.startMillis());
+        // Diagnostic — how many yesterday-vs-today bars, and does the first
+        // today bar have a valid ST value? Logged at DEBUG. If ST is missing
+        // from 09:15, this pinpoints whether it's a warmup issue (yesterday
+        // bar count too small) or a filter issue (today bar not in the set).
+        if (!todayBars.isEmpty()) {
+            long firstTodayTs = todayBars.get(0).startMillis();
+            int firstTodayIdx = -1;
+            for (int i = 0; i < allBars.size(); i++) {
+                if (allBars.get(i).startMillis() == firstTodayTs) { firstTodayIdx = i; break; }
+            }
+            int priorSessionBars = firstTodayIdx < 0 ? 0 : firstTodayIdx;
+            Double stAtFirstToday = firstTodayIdx >= 0 && firstTodayIdx < ser.line().length
+                ? ser.line()[firstTodayIdx] : null;
+            // Sampled once every ~30 requests (~30 s at 1 Hz poll) so the log
+            // isn't flooded but you can see whether ST is missing at 09:15.
+            long nowSec = System.currentTimeMillis() / 1000L;
+            if (nowSec % 30 == 0) {
+                log.info("[ST-DIAG] allBars={} todayBars={} priorSessionBars={} firstTodayIdx={} stAtFirstToday={}",
+                    allBars.size(), todayBars.size(), priorSessionBars, firstTodayIdx,
+                    stAtFirstToday == null ? "n/a" : (Double.isNaN(stAtFirstToday) ? "NaN" : stAtFirstToday));
+            }
+        }
         List<Map<String, Object>> out = new ArrayList<>(allBars.size());
         for (int i = 0; i < allBars.size(); i++) {
             double line = ser.line()[i];
