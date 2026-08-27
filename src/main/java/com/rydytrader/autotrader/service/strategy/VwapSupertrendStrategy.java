@@ -580,12 +580,12 @@ public class VwapSupertrendStrategy implements Strategy {
         boolean closeAboveVwap = bar.close() > bar.vwap();
         boolean stUp           = st.available() && st.isUp();
 
-        // Log only near-signals — when at least one entry condition is TRUE.
-        // Every-condition-false bars (typical: ST red AND bar entirely below
-        // VWAP) tell us nothing useful and would flood the log. When any
-        // condition trips, we can see WHY the entry was skipped or that it
-        // fired.
-        if (wickBelowVwap || closeAboveVwap || stUp) {
+        // Log only bars where the wick actually straddled VWAP — that's the
+        // gating condition for entry, so a bar without a wick can NEVER
+        // produce a trade regardless of ST or close position. This keeps
+        // the log focused on 'the bar touched VWAP — here's whether we
+        // entered or which filter blocked'.
+        if (wickBelowVwap) {
             log.info("[VwapSupertrend] {} {} bar close — o={} h={} l={} c={} vwap={} st_line={} st_up={} wick_below_vwap={} close_above_vwap={} legState={}",
                 sideLabel, leg.chosenSymbol,
                 fmt(bar.open()), fmt(bar.high()), fmt(bar.low()), fmt(bar.close()),
