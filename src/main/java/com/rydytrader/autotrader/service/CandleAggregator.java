@@ -121,6 +121,18 @@ public class CandleAggregator {
         if (symbol == null || symbol.isBlank() || rawBar == null) return;
         if (rawBar.startMillis() <= 0 || rawBar.open() <= 0) return;
 
+        // Drop bars whose IST minute is BEFORE 09:15 or AFTER 15:35. Pre-open
+        // ticks (index calc from ~09:07) and post-close carry-over don't
+        // belong on the strategy's chart. Filter here (single choke-point)
+        // rather than at every downstream reader.
+        long istMs = rawBar.startMillis() + 19_800_000L;
+        long minuteOfDay = (istMs % 86_400_000L) / 60_000L;
+        if (minuteOfDay < (9 * 60 + 15) || minuteOfDay > (15 * 60 + 35)) {
+            log.debug("[CandleAggregator] {} bar dropped — outside 09:15-15:35 IST (minuteOfDay={}, startMs={})",
+                symbol, minuteOfDay, rawBar.startMillis());
+            return;
+        }
+
         Candle stagedBar = new Candle(
             round(rawBar.open()), round(rawBar.high()),
             round(rawBar.low()),  round(rawBar.close()),

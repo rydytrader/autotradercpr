@@ -389,8 +389,8 @@
                 backgroundColor: 'transparent',
                 animation: false,
                 style: { fontFamily: 'Roboto Mono, monospace' },
-                spacingRight: 60,   // room for the y-axis price labels so candles don't overlap them
                 spacingLeft: 4,
+                spacingRight: 4,   // no wasted space — labels sit right against the candles
                 spacingTop: 8,
                 spacingBottom: 4
             },
@@ -417,14 +417,21 @@
                 type: 'datetime',
                 lineColor: col.grid,
                 tickColor: col.grid,
-                labels: { style: { color: col.text, fontSize: '10px' } }
+                labels: { style: { color: col.text, fontSize: '10px' } },
+                ordinal: true,       // treat bars as sequential — no visual half-range padding on the ends
+                minPadding: 0,
+                maxPadding: 0.02,
+                startOnTick: false,
+                endOnTick: false
             },
             yAxis: [{
-                opposite: true,
-                labels: { align: 'left', x: 6, style: { color: col.text, fontSize: '10px' } },
+                opposite: true,   // y-axis on RIGHT
+                labels: { align: 'left', x: 4, style: { color: col.text, fontSize: '10px' } },
                 gridLineColor: col.grid,
                 lineColor: col.grid,
-                crosshair: { color: col.text, dashStyle: 'dot' }
+                crosshair: { color: col.text, dashStyle: 'dot' },
+                offset: 0,   // no gap between plot area and axis line
+                tickWidth: 0
             }],
             tooltip: {
                 shared: true,
@@ -456,12 +463,34 @@
             },
             series: [
                 { id: 'candles', name: 'CE', type: 'candlestick', data: [], yAxis: 0 },
-                { id: 'vwap',    name: 'VWAP', type: 'line', color: col.vwap, lineWidth: 2, data: [], yAxis: 0, enableMouseTracking: true },
-                // Supertrend split into two same-x-axis series so each colored
-                // segment renders as a native single-color line. `null` in the
-                // opposite series creates a gap so segments don't overlap.
-                { id: 'stUp',   name: 'ST',    type: 'line', color: col.up,   lineWidth: 2, data: [], yAxis: 0, enableMouseTracking: true, showInLegend: false },
-                { id: 'stDown', name: 'ST',    type: 'line', color: col.down, lineWidth: 2, data: [], yAxis: 0, enableMouseTracking: true, showInLegend: false }
+                {
+                    id: 'vwap', name: 'VWAP', type: 'line',
+                    color: col.vwap, lineWidth: 2, data: [], yAxis: 0,
+                    enableMouseTracking: true,
+                    // Colored last-value chip on the y-axis at the current VWAP.
+                    lastVisiblePrice: {
+                        enabled: true,
+                        label: { enabled: true, backgroundColor: col.vwap, style: { color: '#000' } }
+                    }
+                },
+                {
+                    id: 'stUp', name: 'ST', type: 'line',
+                    color: col.up, lineWidth: 2, data: [], yAxis: 0,
+                    enableMouseTracking: true, showInLegend: false,
+                    lastVisiblePrice: {
+                        enabled: true,
+                        label: { enabled: true, backgroundColor: col.up, style: { color: '#000' } }
+                    }
+                },
+                {
+                    id: 'stDown', name: 'ST', type: 'line',
+                    color: col.down, lineWidth: 2, data: [], yAxis: 0,
+                    enableMouseTracking: true, showInLegend: false,
+                    lastVisiblePrice: {
+                        enabled: true,
+                        label: { enabled: true, backgroundColor: col.down, style: { color: '#fff' } }
+                    }
+                }
             ]
         });
         charts[panelKey] = chart;
