@@ -81,10 +81,10 @@ public class ChartController {
     }
 
     /** Compact tick block for a single symbol — LTP + change + VWAP + Supertrend.
-     *  VWAP reads the last N-min bar's pandas_ta value (matches chart yellow line).
-     *  Supertrend runs on the same N-min bars using the configured atrPeriod +
-     *  multiplier and reports both {@code stLine} (numeric level) and
-     *  {@code stIsUp} (boolean — green when true, red when false). */
+     *  VWAP reads the current forming bar (live tick) if present, else the last
+     *  closed bar. Supertrend runs on closed bars PLUS the in-progress forming
+     *  bar so the returned {@code stLine} / {@code stIsUp} update mid-bar on
+     *  every tick (matches the chart's live ST chip). */
     private Map<String, Object> tickBlock(String fyersSymbol) {
         Map<String, Object> m = new LinkedHashMap<>();
         if (fyersSymbol == null || fyersSymbol.isBlank()) return m;
@@ -96,12 +96,22 @@ public class ChartController {
         Boolean stIsUp = null;
         int tf = Math.max(1, riskSettings.getVwapStCandleMinutes());
         var history = candleAggregator.getHistory(fyersSymbol, tf);
-        if (!history.isEmpty()) {
-            double lastVwap = history.get(history.size() - 1).vwap();
+        // Append the in-progress N-min bar so ST sees the live-tick close.
+        Candle forming = buildFormingBar(fyersSymbol, filterToToday(history), tf);
+        List<Candle> live = new ArrayList<>(history);
+        if (forming != null) {
+            if (!live.isEmpty() && live.get(live.size() - 1).startMillis() == forming.startMillis()) {
+                live.set(live.size() - 1, forming);
+            } else {
+                live.add(forming);
+            }
+        }
+        if (!live.isEmpty()) {
+            double lastVwap = live.get(live.size() - 1).vwap();
             if (lastVwap > 0) vwap = lastVwap;
             int atrPeriod = Math.max(2, riskSettings.getVwapStAtrPeriod());
             double mult   = Math.max(0.1, riskSettings.getVwapStMultiplier());
-            var st = SuperTrend.at(history, atrPeriod, mult);
+            var st = SuperTrend.at(live, atrPeriod, mult);
             if (st.available()) {
                 stLine = round2(st.line());
                 stIsUp = st.isUp();
@@ -145,7 +155,25 @@ public class ChartController {
         Candle forming = buildFormingBar(symbol, todayBars, tf);
         out.put("history",  todayBars);
         out.put("current",  forming);   // in-progress N-min bar with live-tick close
-        out.put("stSeries", buildStSeries(bars, todayBars));
+        // Append the forming bar so ST re-evaluates on every tick, not just
+        // on bar close — the chart's ST line + last-value chip update live.
+        List<Candle> allBarsWithForming = new ArrayList<>(bars);
+        List<Candle> todayBarsWithForming = new ArrayList<>(todayBars);
+        if (forming != null) {
+            if (!allBarsWithForming.isEmpty()
+                    && allBarsWithForming.get(allBarsWithForming.size() - 1).startMillis() == forming.startMillis()) {
+                allBarsWithForming.set(allBarsWithForming.size() - 1, forming);
+            } else {
+                allBarsWithForming.add(forming);
+            }
+            if (!todayBarsWithForming.isEmpty()
+                    && todayBarsWithForming.get(todayBarsWithForming.size() - 1).startMillis() == forming.startMillis()) {
+                todayBarsWithForming.set(todayBarsWithForming.size() - 1, forming);
+            } else {
+                todayBarsWithForming.add(forming);
+            }
+        }
+        out.put("stSeries", buildStSeries(allBarsWithForming, todayBarsWithForming));
         long latestExchSec = marketDataService.getLatestExchFeedTimeSec();
         out.put("exchangeNowMs", latestExchSec > 0 ? latestExchSec * 1000L : 0L);
         return out;
