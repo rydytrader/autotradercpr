@@ -284,7 +284,7 @@
                     <span class="chart-hdr-metric"><span class="lab">ST</span><span id="ceSt"  class="val">—</span></span>
                 </div>
                 <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
-                    <span class="chart-hdr-metric" title="Time until next 3-min bar close"><span class="lab">Next</span><span id="barCountdown" class="val" style="color:#fbbf24;">—</span></span>
+                    <span class="chart-hdr-metric" title="Time until next 3-min bar close"><span class="lab">Next</span><span id="ceCountdown" class="val" style="color:#fbbf24;">—</span></span>
                     <button class="chart-expand-btn" data-panel="ce" onclick="toggleExpand('ce')" title="Expand chart">⛶</button>
                 </div>
             </div>
@@ -307,6 +307,7 @@
                     <span class="chart-hdr-metric"><span class="lab">ST</span><span id="peSt"  class="val">—</span></span>
                 </div>
                 <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
+                    <span class="chart-hdr-metric" title="Time until next 3-min bar close"><span class="lab">Next</span><span id="peCountdown" class="val" style="color:#fbbf24;">—</span></span>
                     <button class="chart-expand-btn" data-panel="pe" onclick="toggleExpand('pe')" title="Expand chart">⛶</button>
                 </div>
             </div>
@@ -486,50 +487,21 @@
                 }
             },
             series: [
-                {
-                    id: 'candles', name: 'CE', type: 'candlestick', data: [], yAxis: 0,
-                    // Highlight the last price on the y-axis with a chip
-                    // colored by the direction of the last bar (green if
-                    // close ≥ open, red if lower). Also show the crosshair-
-                    // aligned chip on hover for read-off.
-                    lastVisiblePrice: {
-                        enabled: true,
-                        label: {
-                            enabled: true,
-                            backgroundColor: '#1f2937',
-                            borderColor: 'rgba(148,163,184,0.4)',
-                            borderWidth: 1,
-                            style: { color: '#f3f4f6', fontWeight: '700' }
-                        }
-                    }
-                },
+                { id: 'candles', name: 'CE', type: 'candlestick', data: [], yAxis: 0 },
                 {
                     id: 'vwap', name: 'VWAP', type: 'line',
                     color: col.vwap, lineWidth: 2, data: [], yAxis: 0,
-                    enableMouseTracking: true,
-                    // Colored last-value chip on the y-axis at the current VWAP.
-                    lastVisiblePrice: {
-                        enabled: true,
-                        label: { enabled: true, backgroundColor: col.vwap, style: { color: '#000' } }
-                    }
+                    enableMouseTracking: true
                 },
                 {
                     id: 'stUp', name: 'ST', type: 'line',
                     color: col.up, lineWidth: 2, data: [], yAxis: 0,
-                    enableMouseTracking: true, showInLegend: false,
-                    lastVisiblePrice: {
-                        enabled: true,
-                        label: { enabled: true, backgroundColor: col.up, style: { color: '#000' } }
-                    }
+                    enableMouseTracking: true, showInLegend: false
                 },
                 {
                     id: 'stDown', name: 'ST', type: 'line',
                     color: col.down, lineWidth: 2, data: [], yAxis: 0,
-                    enableMouseTracking: true, showInLegend: false,
-                    lastVisiblePrice: {
-                        enabled: true,
-                        label: { enabled: true, backgroundColor: col.down, style: { color: '#fff' } }
-                    }
+                    enableMouseTracking: true, showInLegend: false
                 }
             ]
         });
@@ -604,7 +576,67 @@
         if (stDownSeries)  stDownSeries.setData(stDownData, false);
         chart.redraw(false);
         lastClosePerPanel[panelKey] = lastClose;
+
+        // Colored last-value chips on the y-axis for price / VWAP / ST.
+        var lastVwap = vwapData.length ? vwapData[vwapData.length - 1][1] : null;
+        var lastSt   = null;
+        var stIsUp   = null;
+        for (var i = stUpData.length - 1; i >= 0; i--) {
+            if (stUpData[i][1] != null) { lastSt = stUpData[i][1]; stIsUp = true; break; }
+        }
+        if (lastSt == null) {
+            for (var j = stDownData.length - 1; j >= 0; j--) {
+                if (stDownData[j][1] != null) { lastSt = stDownData[j][1]; stIsUp = false; break; }
+            }
+        }
+        refreshPriceMarkers(panelKey, lastClose, lastVwap, lastSt, stIsUp);
         return { firstClose: null, lastClose: lastClose };
+    }
+
+    // Colored last-value chips on the right-side y-axis. Highcharts'
+    // built-in lastVisiblePrice only works for line series; for candlestick
+    // we draw the price chip ourselves via yAxis.plotLines. Three lines:
+    // last close (dark chip), VWAP (amber), Supertrend (green when up, red
+    // when down).
+    function refreshPriceMarkers(panelKey, lastClose, lastVwap, lastSt, stIsUp) {
+        var chart = charts[panelKey];
+        if (!chart || !chart.yAxis || !chart.yAxis[0]) return;
+        var col = themeColors();
+        var yAxis = chart.yAxis[0];
+        ['pxMarker', 'vwapMarker', 'stMarker'].forEach(function(id) {
+            try { yAxis.removePlotLine(id); } catch (e) {}
+        });
+        function addChip(id, value, fill, textColor) {
+            if (value == null || !isFinite(value)) return;
+            try {
+                yAxis.addPlotLine({
+                    id:    id,
+                    value: value,
+                    color: fill,
+                    width: 1,
+                    zIndex: 5,
+                    label: {
+                        text:  fmtPx(value),
+                        align: 'right',
+                        x:     36,   // push into the y-axis label track (offset:18 + gap)
+                        y:     4,
+                        useHTML: true,
+                        style: {
+                            color: textColor,
+                            background: fill,
+                            padding: '2px 6px',
+                            borderRadius: '3px',
+                            fontFamily: 'Roboto Mono, monospace',
+                            fontSize: '10px',
+                            fontWeight: '700'
+                        }
+                    }
+                });
+            } catch (e) {}
+        }
+        addChip('pxMarker',   lastClose, '#1f2937', '#f3f4f6');
+        addChip('vwapMarker', lastVwap,  col.vwap,  '#111827');
+        addChip('stMarker',   lastSt,    stIsUp ? col.up : col.down, stIsUp ? '#111827' : '#ffffff');
     }
 
     function updatePanel(panelKey, symbol, priceElId, chgElId, emptyElId, priceDecimals) {
@@ -777,12 +809,13 @@
         return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
     }
     function tickCountdown() {
-        // Bar countdown now lives in the header chip (single shared badge for
-        // both panels since both trade on the same 3-min timeframe). Clutter
-        // on the charts removed.
+        // Bar countdown lives in each panel's header chip (both CE and PE).
         var sec = computeBarCountdown();
-        var el = document.getElementById('barCountdown');
-        if (el) el.textContent = '⏱ ' + fmtMmSs(sec);
+        var txt = '⏱ ' + fmtMmSs(sec);
+        ['ceCountdown', 'peCountdown'].forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.textContent = txt;
+        });
     }
 
     function checkConnection() {
