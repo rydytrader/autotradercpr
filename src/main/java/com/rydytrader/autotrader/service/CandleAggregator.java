@@ -156,6 +156,12 @@ public class CandleAggregator {
         log.debug("[CandleAggregator] {} 1-min bar appended — o={} h={} l={} c={} v={} vwap={} startMs={}",
             symbol, out.open(), out.high(), out.low(), out.close(),
             out.volume(), out.vwap(), out.startMillis());
+        // Fire listeners on every 1-min close so downstream strategies with
+        // a non-5-min timeframe (e.g. 3-min VWAP+Supertrend) actually get
+        // evaluated. Previously only the 5-min aggregate emit fired
+        // listeners, so a 3-min strategy only saw ~1 callback per 15 min
+        // (when the 5-min bucket start happened to be on a 3-min boundary).
+        fireListeners(symbol, out);
 
         // 5-min aggregation. Windows anchor on the same UTC boundary as the bar's
         // startMillis (IST 09:15 = UTC 03:45 which is a 5-min boundary in UTC too,
