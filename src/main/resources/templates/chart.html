@@ -472,16 +472,35 @@
                 type: 'datetime',
                 lineColor: col.grid,
                 tickColor: col.grid,
-                labels: { style: { color: col.text, fontSize: '10px' } },
                 ordinal: true,       // treat bars as sequential — no visual half-range padding on the ends
                 minPadding: 0,
                 maxPadding: 0.02,
                 startOnTick: false,
                 endOnTick: false,
-                // Force ticks to land ONLY on actual bar timestamps so the
-                // first label reads 09:15 (the bar's start) instead of a
-                // Highcharts-auto-picked 09:14. Samples the candle series'
-                // xData every N bars for ~8-10 visible ticks.
+                labels: {
+                    style: { color: col.text, fontSize: '10px' },
+                    // Belt-and-braces: whatever tick position Highcharts picks,
+                    // snap it to the closest actual bar timestamp before
+                    // formatting. Kills the 'first tick shows 09:14' issue
+                    // caused by Highcharts placing a tick at the candle's
+                    // LEFT edge (09:15 - halfCandleWidth ≈ 09:13:30 → 09:14).
+                    formatter: function() {
+                        var chart = this.chart;
+                        var s = chart && chart.get && chart.get('candles');
+                        var xd = s && s.xData;
+                        var v = this.value;
+                        if (xd && xd.length) {
+                            var best = xd[0], bestDiff = Math.abs(xd[0] - v);
+                            for (var i = 1; i < xd.length; i++) {
+                                var d = Math.abs(xd[i] - v);
+                                if (d < bestDiff) { bestDiff = d; best = xd[i]; }
+                            }
+                            v = best;
+                        }
+                        return Highcharts.dateFormat('%H:%M', v);
+                    }
+                },
+                // Force ticks to land ONLY on actual bar timestamps.
                 tickPositioner: function() {
                     var chart = this.chart;
                     if (!chart) return undefined;
