@@ -97,8 +97,14 @@
         return (n < 0 ? '−₹' : '+₹') + abs.toLocaleString('en-IN');
     }
 
-    function sumRealizedPnl(state) {
-        if (!state || !Array.isArray(state.todayClosedTrades)) return 0;
+    function liveNetPnl(state) {
+        // Prefer strategy.liveNetPnlToday() — includes closed trades + live
+        // MTM on open positions (recomputed on every LTP tick server-side).
+        // Falls back to summing closed-trade netPnl if the field is missing
+        // (older /state payloads).
+        if (!state) return 0;
+        if (state.liveNetPnl != null && isFinite(Number(state.liveNetPnl))) return Number(state.liveNetPnl);
+        if (!Array.isArray(state.todayClosedTrades)) return 0;
         var sum = 0;
         for (var i = 0; i < state.todayClosedTrades.length; i++) {
             var v = Number(state.todayClosedTrades[i].netPnl || 0);
@@ -155,11 +161,8 @@
             chgText = ' ' + sign + Math.abs(ch).toFixed(2) + ' (' + sign + Math.abs(chp).toFixed(2) + '%)';
         }
 
-        // Strategy state
-        var opbSum = opbSummary(opb);
-
-        // Day P&L (realised)
-        var pnl = sumRealizedPnl(opb);
+        // Day P&L (closed trades + live MTM on open positions)
+        var pnl = liveNetPnl(opb);
         var pnlColor = pnl > 0 ? 'var(--accent-green, #34d399)'
                      : pnl < 0 ? 'var(--accent-red, #f87171)'
                      : 'var(--text-muted)';
@@ -169,8 +172,6 @@
         return leadingRule +
             chip('NIFTY', ltpText + chgText, ltpColor) +
             divider() +
-            chip('STRAT', opbSum.text, opbSum.color) +
-            sep() +
             chip('P&L', fmtInr(pnl), pnlColor);
     }
 
@@ -195,7 +196,9 @@
     function initStrip() {
         renderHeaderStrip();
         if (pollInterval) clearInterval(pollInterval);
-        pollInterval = setInterval(renderHeaderStrip, 3000);
+        // 1-s poll for live P&L feel. Both endpoints are pure in-memory
+        // reads on the server — no DB or WS call — so the load is trivial.
+        pollInterval = setInterval(renderHeaderStrip, 1000);
     }
 
     function initNotifications() {
