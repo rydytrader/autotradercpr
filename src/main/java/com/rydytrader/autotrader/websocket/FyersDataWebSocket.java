@@ -125,9 +125,11 @@ public class FyersDataWebSocket extends WebSocketClient {
                     if (mode == Mode.LITE) {
                         send(HsmBinaryParser.buildLiteModeMessage(channelNum));
                         log.info("[FyersWS] LITE mode enabled (dt=76 frames)");
+                        if (eventLogSink != null) eventLogSink.accept("[INFO] [HsmParser] LITE mode enabled");
                     } else if (mode == Mode.FULL) {
                         send(HsmBinaryParser.buildFullModeMessage(channelNum));
                         log.info("[FyersWS] FULL mode enabled (dt=85 frames with ATP + volume)");
+                        if (eventLogSink != null) eventLogSink.accept("[INFO] [HsmParser] FULL mode enabled (mode byte 70)");
                     }
 
                     callback.onConnected();

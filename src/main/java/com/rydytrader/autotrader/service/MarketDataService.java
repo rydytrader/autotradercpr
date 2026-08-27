@@ -456,6 +456,10 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
     @Override
     public void onAuthResult(boolean success, int ackCount) {
         log.info("[MarketData] WS auth: success={} acks={}", success, ackCount);
+        if (eventService != null) {
+            eventService.log("[WS] Data WS auth " + (success ? "SUCCESS" : "FAILED")
+                + " (acks=" + ackCount + ")");
+        }
     }
 
     // ── SSE ───────────────────────────────────────────────────────────────────
@@ -595,6 +599,9 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         if (!toSubscribe.isEmpty()) {
             wsClient.subscribeSymbols(toSubscribe);
             log.info("[MarketData] Subscribed {} new symbols", toSubscribe.size());
+            if (eventService != null) {
+                eventService.log("[WS] Subscribed " + toSubscribe.size() + " HSM tokens on the wire");
+            }
         }
     }
 
