@@ -1,19 +1,17 @@
 // ── Historical Chart modal ─────────────────────────────────────────────
 // Opens from the calendar page when the operator clicks the chart-icon
 // button in a day cell. Fetches /api/chart/historical?date=YYYY-MM-DD
-// and renders the day's NIFTY current-month futures 5-min bars as a
-// single TradingView Lightweight Chart (candlestick + VWAP overlay,
-// same look as the live /chart page).
-//
-// Phase 3: single-panel — no ATM / CE / PE.
+// and renders the day's chosen CE + PE 3-min bars as two TradingView
+// Lightweight Charts (candlestick + VWAP overlay, same look as the live
+// /chart page).
 //
 // Overlay skeleton mirrors AppConfirm — fixed dark backdrop, centered card,
 // Esc / backdrop / close-button dismissal.
 window.HistoricalChartModal = (function() {
     var overlayEl = null;
-    var charts = {};              // panelKey -> chart
-    var candleSeries = {};
-    var vwapSeries = {};
+    var charts = { ce: null, pe: null };
+    var candleSeries = { ce: null, pe: null };
+    var vwapSeries   = { ce: null, pe: null };
     var IST_OFFSET_S = 5.5 * 3600; // shift epoch so LightweightCharts renders IST wall-clock
 
     function build() {
@@ -41,23 +39,25 @@ window.HistoricalChartModal = (function() {
           +     '<div id="histChartLoading" style="color:var(--text-muted);text-align:center;padding:60px 20px;'
           +       'font-family:var(--font-mono);font-size:0.82rem;">Loading…</div>'
           +     '<div id="histChartPanels" style="display:none;">'
-          +       '<div class="hist-panel" data-key="fut">'
-          +         '<div class="hist-panel-hdr"><span style="color:#7dd3fc;">■</span> NIFTY FUT (5-min) <span id="histFutSym" class="hist-hdr-note"></span></div>'
-          +         '<div class="hist-panel-body"><div id="histChartFut" style="position:absolute;inset:0;"></div></div>'
+          +       '<div class="hist-panel" data-key="ce">'
+          +         '<div class="hist-panel-hdr"><span style="color:#34d399;">■</span> CE (3-min) <span id="histCeSym" class="hist-hdr-note"></span></div>'
+          +         '<div class="hist-panel-body"><div id="histChartCe" style="position:absolute;inset:0;"></div></div>'
+          +       '</div>'
+          +       '<div class="hist-panel" data-key="pe" style="margin-top:14px;">'
+          +         '<div class="hist-panel-hdr"><span style="color:#f87171;">■</span> PE (3-min) <span id="histPeSym" class="hist-hdr-note"></span></div>'
+          +         '<div class="hist-panel-body"><div id="histChartPe" style="position:absolute;inset:0;"></div></div>'
           +       '</div>'
           +     '</div>'
           +   '</div>'
           + '</div>';
         document.body.appendChild(overlayEl);
 
-        // Scoped styles for the panel headers + fixed-height chart boxes.
-        // Taller single-panel layout since Phase 3 shows only NIFTY FUT.
         var style = document.createElement('style');
         style.textContent =
             '.hist-panel-hdr { font-family:var(--font-mono);font-size:0.72rem;font-weight:700;'
           + '  letter-spacing:0.06em;color:var(--text-secondary);padding:6px 4px;text-transform:uppercase; }'
           + '.hist-panel-hdr .hist-hdr-note { color:var(--text-muted);font-weight:400;margin-left:8px;text-transform:none; }'
-          + '.hist-panel-body { position:relative;height:560px;border:1px solid var(--border);border-radius:6px;overflow:hidden; }';
+          + '.hist-panel-body { position:relative;height:340px;border:1px solid var(--border);border-radius:6px;overflow:hidden; }';
         document.head.appendChild(style);
 
         overlayEl.addEventListener('click', function(e) {
@@ -73,9 +73,8 @@ window.HistoricalChartModal = (function() {
     function close() {
         if (!overlayEl) return;
         overlayEl.style.display = 'none';
-        // Tear down charts so the next open starts from a clean slate — LightweightCharts
-        // instances don't survive a hidden container being resized.
-        ['fut'].forEach(function(k) {
+        // Tear down charts so the next open starts from a clean slate.
+        ['ce', 'pe'].forEach(function(k) {
             if (charts[k]) { try { charts[k].remove(); } catch (e) {} }
             charts[k] = null; candleSeries[k] = null; vwapSeries[k] = null;
         });
@@ -93,7 +92,7 @@ window.HistoricalChartModal = (function() {
         };
     }
 
-    function renderPanel(panelKey, containerId, candles, priceDecimals, markers) {
+    function renderPanel(panelKey, containerId, candles, priceDecimals) {
         var container = document.getElementById(containerId);
         if (!container || typeof LightweightCharts === 'undefined') return;
         var col = themeColors();
@@ -132,47 +131,11 @@ window.HistoricalChartModal = (function() {
         });
         cs.setData(bars);
         vs.setData(vwaps);
-        // Entry / exit markers — must be sorted by time ascending or LightweightCharts
-        // rejects the whole set. Duplicates on the same bar (2 entries in the same
-        // candle) are allowed.
-        if (markers && markers.length > 0) {
-            markers.sort(function(a, b) { return a.time - b.time; });
-            cs.setMarkers(markers);
-        }
         try { chart.timeScale().fitContent(); } catch (e) {}
 
         charts[panelKey] = chart;
         candleSeries[panelKey] = cs;
         vwapSeries[panelKey] = vs;
-    }
-
-    /** Build TradingView-style marker objects for entries + exits. Entries anchor
-     *  at the entry-candle START, exits at the exit-candle START. The ↑ / ↓
-     *  shapes + colour code make wins / losses distinguishable at a glance. */
-    function markersFor(trades) {
-        var out = [];
-        (trades || []).forEach(function(t) {
-            var entryMs = Number(t.entryCandleMs || 0);
-            var exitMs  = Number(t.exitCandleMs  || 0);
-            var net     = Number(t.netPnl || 0);
-            var reason  = String(t.closeReason || '').toUpperCase();
-            var colour  = net >= 0 ? '#34d399' : '#f87171';
-            if (entryMs > 0) {
-                out.push({
-                    time: Math.floor(entryMs / 1000) + IST_OFFSET_S,
-                    position: 'aboveBar', color: '#fbbf24', shape: 'arrowDown',
-                    text: 'IN ' + (Number(t.entryPrice) || '').toString()
-                });
-            }
-            if (exitMs > 0) {
-                out.push({
-                    time: Math.floor(exitMs / 1000) + IST_OFFSET_S,
-                    position: 'belowBar', color: colour, shape: 'arrowUp',
-                    text: (reason || 'OUT') + ' ' + (Number(t.exitPrice) || '').toString()
-                });
-            }
-        });
-        return out;
     }
 
     function open(dateStr) {
@@ -182,59 +145,50 @@ window.HistoricalChartModal = (function() {
         document.getElementById('histChartPanels').style.display = 'none';
         document.getElementById('histChartDate').textContent = dateStr;
         document.getElementById('histChartAtm').textContent = '';
-        var futSymEl = document.getElementById('histFutSym');
-        if (futSymEl) futSymEl.textContent = '';
+        var ceSymEl = document.getElementById('histCeSym');
+        var peSymEl = document.getElementById('histPeSym');
+        if (ceSymEl) ceSymEl.textContent = '';
+        if (peSymEl) peSymEl.textContent = '';
 
-        // Tear down previous charts if the modal is being re-opened without a full close.
-        ['fut'].forEach(function(k) {
+        ['ce', 'pe'].forEach(function(k) {
             if (charts[k]) { try { charts[k].remove(); } catch (e) {} charts[k] = null; }
         });
 
-        // Parallel fetch — chart snapshot + trades for the same session. Trades
-        // drive the entry / exit markers on the futures panel.
-        var chartUrl  = '/api/chart/historical?date=' + encodeURIComponent(dateStr);
-        var tradesUrl = '/api/strategies/option-buying/trades?date=' + encodeURIComponent(dateStr);
-        Promise.all([
-            fetch(chartUrl).then(function(r) { return r.status === 404 ? null : r.json(); }),
-            fetch(tradesUrl).then(function(r) { return r.ok ? r.json() : { trades: [] }; })
-                .catch(function() { return { trades: [] }; })
-        ]).then(function(res) {
-            var d       = res[0];
-            var trades  = (res[1] && res[1].trades) || [];
-            var loading = document.getElementById('histChartLoading');
-            var panels  = document.getElementById('histChartPanels');
-            if (!d) {
-                loading.textContent = 'No chart data stored for ' + dateStr
-                    + ' — the bot wasn’t running at 15:45 that day, or it was a market holiday.';
-                return;
-            }
-            loading.style.display = 'none';
-            panels.style.display  = 'block';
-
-            // Phase 3 shape: { symbol, candles }. Older files (multi-symbol
-            // { candlesBySymbol, ceSymbol, peSymbol }) are tolerated — we pull
-            // any first symbol's candles as a fallback so historical data from
-            // before the strip still renders.
-            var futSym = d.symbol || '';
-            var candles = d.candles || null;
-            if ((!candles || candles.length === 0) && d.candlesBySymbol) {
-                var keys = Object.keys(d.candlesBySymbol);
-                if (keys.length > 0) {
-                    futSym  = futSym || keys[0];
-                    candles = d.candlesBySymbol[keys[0]];
+        fetch('/api/chart/historical?date=' + encodeURIComponent(dateStr))
+            .then(function(r) { return r.status === 404 ? null : r.json(); })
+            .then(function(d) {
+                var loading = document.getElementById('histChartLoading');
+                var panels  = document.getElementById('histChartPanels');
+                if (!d) {
+                    loading.textContent = 'No chart data stored for ' + dateStr
+                        + ' — the bot wasn’t running at 15:45 that day, or it was a market holiday.';
+                    return;
                 }
-            }
-            if (futSymEl) futSymEl.textContent = futSym ? '· ' + futSym : '';
+                loading.style.display = 'none';
+                panels.style.display  = 'block';
 
-            var markers = markersFor(trades);
-            // Small setTimeout so LWC sees the container after its display:block flush.
-            setTimeout(function() {
-                renderPanel('fut', 'histChartFut', candles || [], 2, markers);
-            }, 30);
-        }).catch(function(err) {
-            document.getElementById('histChartLoading').textContent =
-                'Failed to load: ' + (err && err.message ? err.message : 'unknown error');
-        });
+                var ceSym = d.ceSymbol || '';
+                var peSym = d.peSymbol || '';
+                var ceBars = d.ceCandles || [];
+                var peBars = d.peCandles || [];
+                // Header — spot open + ATM + both symbols.
+                var hdrBits = [];
+                if (Number(d.spotOpen) > 0) hdrBits.push('spot open ' + Number(d.spotOpen).toFixed(2));
+                if (d.atmStrike > 0)        hdrBits.push('ATM ' + d.atmStrike);
+                document.getElementById('histChartAtm').textContent = hdrBits.join(' · ');
+                if (ceSymEl) ceSymEl.textContent = ceSym ? '· ' + ceSym : '';
+                if (peSymEl) peSymEl.textContent = peSym ? '· ' + peSym : '';
+
+                // Render both panels after a tick so LWC sees the container.
+                setTimeout(function() {
+                    renderPanel('ce', 'histChartCe', ceBars, 1);
+                    renderPanel('pe', 'histChartPe', peBars, 1);
+                }, 30);
+            })
+            .catch(function(err) {
+                document.getElementById('histChartLoading').textContent =
+                    'Failed to load: ' + (err && err.message ? err.message : 'unknown error');
+            });
     }
 
     return { open: open, close: close };

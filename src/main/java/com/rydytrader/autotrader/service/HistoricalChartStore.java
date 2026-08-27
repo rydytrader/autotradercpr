@@ -6,10 +6,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.rydytrader.autotrader.dto.Candle;
+import com.rydytrader.autotrader.service.strategy.VwapSupertrendStrategy;
+import com.rydytrader.autotrader.store.RiskSettingsStore;
 import com.rydytrader.autotrader.util.FileIoUtils;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -24,22 +27,20 @@ import java.util.List;
 import java.util.stream.Stream;
 
 /**
- * Persists per-day OHLC snapshots (NIFTY current-month FUTURES only) to
- * {@code store/data/charts/YYYY-MM-DD.json} for historical review from the calendar page.
+ * Persists per-day CE + PE 3-min OHLC snapshots to
+ * {@code store/data/charts/YYYY-MM-DD.json} for review from the calendar page.
  *
- * <p>Two write triggers:
+ * <p>Save triggers:
  * <ul>
  *   <li><b>Scheduled 15:45 IST daily</b> — 5-min buffer after the extended
- *       15:40 market close (in effect from 2026-08-03). Snapshots whatever's
- *       currently in {@link CandleAggregator}'s history ring for the futures symbol.</li>
- *   <li><b>On-boot catch-up</b> — if the bot boots after 15:45 today and no snapshot
- *       file exists yet, saves immediately. Handles the case where the bot was offline
- *       at 15:45 but is booted later that evening.</li>
+ *       15:40 market close.</li>
+ *   <li><b>On-boot catch-up</b> — if the bot boots after 15:45 today and no
+ *       snapshot file exists yet, saves immediately.</li>
  * </ul>
  *
- * <p>Phase 3 shape: single-symbol payload — no CE / PE / ATM fields. Older
- * multi-symbol snapshot files still on disk continue to deserialize (unknown
- * fields ignored) but no new fields are written.
+ * <p>Snapshot shape captures the chosen pair at squareoff time (the pair the
+ * strategy actually traded that day): CE symbol + its 3-min bars, PE symbol +
+ * its 3-min bars, plus the anchoring spotOpen and atmStrike.
  */
 @Service
 public class HistoricalChartStore {
@@ -47,9 +48,6 @@ public class HistoricalChartStore {
     private static final Logger log = LoggerFactory.getLogger(HistoricalChartStore.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
     private static final String STORAGE_DIR = "../store/data/charts";
-    // Legacy synthetic futures symbol from the GDFL era. Kept as an inline
-    // constant until this service is retargeted to CE + PE snapshot persistence.
-    private static final String FUTURES_SYMBOL = "NSE:NIFTY-I-FUT";
 
     private final ObjectMapper mapper = new ObjectMapper()
         .registerModule(new JavaTimeModule())
@@ -59,26 +57,33 @@ public class HistoricalChartStore {
         .setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
     private final CandleAggregator candleAggregator;
+    private final RiskSettingsStore riskSettings;
+    private final ObjectProvider<VwapSupertrendStrategy> strategyProvider;
 
-    public HistoricalChartStore(CandleAggregator candleAggregator) {
+    public HistoricalChartStore(CandleAggregator candleAggregator,
+                                 RiskSettingsStore riskSettings,
+                                 ObjectProvider<VwapSupertrendStrategy> strategyProvider) {
         this.candleAggregator = candleAggregator;
+        this.riskSettings     = riskSettings;
+        this.strategyProvider = strategyProvider;
     }
 
-    /** DTO written to disk. Single-symbol shape as of Phase 3. */
+    /** DTO written to disk. CE and PE bars are the aggregated N-min bars at
+     *  the strategy's configured timeframe (default 3-min). */
     public static class DailySnapshot {
         public String date;
-        /** The one instrument snapshotted (Fyers-style key). Phase 3 always the
-         *  NIFTY current-month futures. */
-        public String symbol;
-        /** Chronological list of that symbol's bars. */
-        public List<Candle> candles = new ArrayList<>();
+        public double spotOpen;
+        public long   atmStrike;
+        public String ceSymbol;
+        public List<Candle> ceCandles = new ArrayList<>();
+        public String peSymbol;
+        public List<Candle> peCandles = new ArrayList<>();
     }
 
     @PostConstruct
     public void boot() {
         try { ensureStorageDir(); }
         catch (Exception e) { log.warn("[HistoricalChartStore] failed to create dir: {}", e.getMessage()); }
-        // Catch-up: if today > 15:45 AND today's snapshot doesn't exist, save now.
         try {
             String today = LocalDate.now(IST).toString();
             java.time.LocalTime now = java.time.ZonedDateTime.now(IST).toLocalTime();
@@ -92,27 +97,39 @@ public class HistoricalChartStore {
         }
     }
 
-    /** Fires at 15:45 IST every weekday — 5-min buffer after the extended
-     *  15:40 market close (in effect from 2026-08-03). Snapshots today's
-     *  NIFTY futures candles. */
+    /** Fires at 15:45 IST every weekday. */
     @Scheduled(cron = "0 45 15 * * MON-FRI", zone = "Asia/Kolkata")
     public void scheduledSave() {
         saveTodaySnapshot();
     }
 
-    /** Public entry — snapshots today's futures chart to disk. Idempotent (overwrites the
-     *  same file on repeat call). Callable manually via REST if needed. */
+    /** Snapshot the day's chosen CE + PE bars to disk. Idempotent. */
     public synchronized void saveTodaySnapshot() {
-        String today = LocalDate.now(IST).toString();
-        List<Candle> hist = candleAggregator.getHistory(FUTURES_SYMBOL);
-        if (hist == null || hist.isEmpty()) {
-            log.warn("[HistoricalChartStore] skip save — no candles in aggregator for {}", FUTURES_SYMBOL);
+        VwapSupertrendStrategy s = strategyProvider.getIfAvailable();
+        if (s == null) {
+            log.warn("[HistoricalChartStore] skip save — strategy bean not available");
             return;
         }
+        String ceSym = s.getChosenCeSymbol();
+        String peSym = s.getChosenPeSymbol();
+        if ((ceSym == null || ceSym.isBlank()) && (peSym == null || peSym.isBlank())) {
+            log.warn("[HistoricalChartStore] skip save — no chosen CE / PE for today");
+            return;
+        }
+        String today = LocalDate.now(IST).toString();
+        int tf = Math.max(1, riskSettings.getVwapStCandleMinutes());
         DailySnapshot snap = new DailySnapshot();
-        snap.date    = today;
-        snap.symbol  = FUTURES_SYMBOL;
-        snap.candles = hist;
+        snap.date      = today;
+        snap.spotOpen  = s.getSpotOpen();
+        snap.atmStrike = s.getAtmStrike();
+        snap.ceSymbol  = ceSym;
+        snap.peSymbol  = peSym;
+        if (ceSym != null && !ceSym.isBlank()) {
+            snap.ceCandles = candleAggregator.getHistory(ceSym, tf);
+        }
+        if (peSym != null && !peSym.isBlank()) {
+            snap.peCandles = candleAggregator.getHistory(peSym, tf);
+        }
         writeSnapshot(today, snap);
     }
 
@@ -129,7 +146,7 @@ public class HistoricalChartStore {
         }
     }
 
-    /** Lists dates for which a snapshot exists — sorted descending (newest first). */
+    /** Newest-first list of dates for which a snapshot exists. */
     public List<String> listAvailableDates() {
         try {
             Path dir = Path.of(STORAGE_DIR);
@@ -138,7 +155,7 @@ public class HistoricalChartStore {
                 List<String> dates = new ArrayList<>();
                 stream.forEach(f -> {
                     String name = f.getFileName().toString();
-                    if (name.endsWith(".json") && name.length() == 15) {   // YYYY-MM-DD.json
+                    if (name.endsWith(".json") && name.length() == 15) {
                         dates.add(name.substring(0, 10));
                     }
                 });
@@ -151,14 +168,8 @@ public class HistoricalChartStore {
         }
     }
 
-    private boolean snapshotExists(String date) {
-        return Files.exists(pathFor(date));
-    }
-
-    private Path pathFor(String date) {
-        return Path.of(STORAGE_DIR, date + ".json");
-    }
-
+    private boolean snapshotExists(String date) { return Files.exists(pathFor(date)); }
+    private Path pathFor(String date)           { return Path.of(STORAGE_DIR, date + ".json"); }
     private void ensureStorageDir() throws IOException {
         Path dir = Path.of(STORAGE_DIR);
         if (!Files.exists(dir)) Files.createDirectories(dir);
@@ -171,13 +182,13 @@ public class HistoricalChartStore {
             Path tmp = Path.of(dst.toString() + ".tmp");
             Files.writeString(tmp, mapper.writerWithDefaultPrettyPrinter().writeValueAsString(snap));
             FileIoUtils.atomicMoveWithRetry(tmp, dst);
-            log.info("[HistoricalChartStore] saved {} — {} bars for {}",
-                date, snap.candles.size(), snap.symbol);
+            log.info("[HistoricalChartStore] saved {} — CE {} ({} bars), PE {} ({} bars)",
+                date, snap.ceSymbol, snap.ceCandles.size(),
+                snap.peSymbol, snap.peCandles.size());
         } catch (IOException | RuntimeException e) {
             log.warn("[HistoricalChartStore] save {} failed: {}", date, e.getMessage());
         }
     }
 
-    /** Canonical directory used by {@link com.rydytrader.autotrader.controller.ChartController}. */
     public static String storageDir() { return STORAGE_DIR; }
 }
