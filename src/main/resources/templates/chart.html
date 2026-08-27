@@ -394,7 +394,29 @@
                 spacingRight: 8,
                 spacingTop: 8,
                 spacingBottom: 4,
-                marginRight: 100   // wider gap between candles and right-side y-axis labels
+                marginRight: 100,   // wider gap between candles and right-side y-axis labels
+                // TradingView-style navigation:
+                //   • mouse wheel  — zoom in/out on the x-axis
+                //   • click+drag   — pan the visible range
+                //   • pinch (touch)— zoom
+                //   • double-click — reset to full range (Highcharts default via resetZoomButton)
+                zooming: {
+                    mouseWheel: { enabled: true, type: 'x' },
+                    pinchType:  'x'
+                    // no `type` set → click+drag is available for panning below,
+                    // not consumed by a rectangle zoom.
+                },
+                panning: { enabled: true, type: 'x' },
+                resetZoomButton: {
+                    position: { align: 'right', verticalAlign: 'top', x: -110, y: 6 },
+                    theme: {
+                        fill: 'rgba(0,0,0,0.55)',
+                        stroke: 'rgba(128,128,128,0.35)',
+                        style: { color: '#e5e7eb', fontSize: '10px' },
+                        r: 4,
+                        states: { hover: { fill: 'rgba(0,0,0,0.75)', style: { color: '#fff' } } }
+                    }
+                }
             },
             credits: { enabled: false },
             rangeSelector: { enabled: false },
@@ -464,7 +486,23 @@
                 }
             },
             series: [
-                { id: 'candles', name: 'CE', type: 'candlestick', data: [], yAxis: 0 },
+                {
+                    id: 'candles', name: 'CE', type: 'candlestick', data: [], yAxis: 0,
+                    // Highlight the last price on the y-axis with a chip
+                    // colored by the direction of the last bar (green if
+                    // close ≥ open, red if lower). Also show the crosshair-
+                    // aligned chip on hover for read-off.
+                    lastVisiblePrice: {
+                        enabled: true,
+                        label: {
+                            enabled: true,
+                            backgroundColor: '#1f2937',
+                            borderColor: 'rgba(148,163,184,0.4)',
+                            borderWidth: 1,
+                            style: { color: '#f3f4f6', fontWeight: '700' }
+                        }
+                    }
+                },
                 {
                     id: 'vwap', name: 'VWAP', type: 'line',
                     color: col.vwap, lineWidth: 2, data: [], yAxis: 0,
