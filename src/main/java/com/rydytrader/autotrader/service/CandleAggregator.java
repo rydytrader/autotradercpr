@@ -139,7 +139,7 @@ public class CandleAggregator {
         Candle appended = recomputeVwapsAndReturnLast(symbol);
         dirty = true;
         Candle out = appended != null ? appended : stagedBar;
-        log.info("[CandleAggregator] {} 1-min bar appended — o={} h={} l={} c={} v={} vwap={} startMs={}",
+        log.debug("[CandleAggregator] {} 1-min bar appended — o={} h={} l={} c={} v={} vwap={} startMs={}",
             symbol, out.open(), out.high(), out.low(), out.close(),
             out.volume(), out.vwap(), out.startMillis());
 
@@ -151,7 +151,7 @@ public class CandleAggregator {
         if (minuteInBucket == BUCKET_MINUTES - 1) {
             Candle fiveMinAgg = buildFiveMinAggregate(symbol, bucketStartMs, out.vwap());
             if (fiveMinAgg != null) {
-                log.info("[CandleAggregator] {} 5-min aggregate — o={} h={} l={} c={} v={} vwap={} startMs={}",
+                log.debug("[CandleAggregator] {} 5-min aggregate — o={} h={} l={} c={} v={} vwap={} startMs={}",
                     symbol, fiveMinAgg.open(), fiveMinAgg.high(), fiveMinAgg.low(),
                     fiveMinAgg.close(), fiveMinAgg.volume(), fiveMinAgg.vwap(),
                     fiveMinAgg.startMillis());
