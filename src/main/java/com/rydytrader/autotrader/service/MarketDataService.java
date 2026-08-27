@@ -262,6 +262,25 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
+    /** Boot the Data WS if we already have a Fyers access token in TokenStore.
+     *  Otherwise waits for the operator to log in — the /fyers/callback
+     *  endpoint calls start() explicitly after auth. Was missing before, so
+     *  a restart with a valid persisted token never brought the Data WS up
+     *  (only Order WS came online). */
+    @jakarta.annotation.PostConstruct
+    public void bootIfTokenAvailable() {
+        try {
+            if (tokenStore != null && tokenStore.isTokenAvailable()) {
+                if (eventService != null) eventService.log("[INFO] [WS] Boot: access token present — starting Data WS");
+                start();
+            } else {
+                if (eventService != null) eventService.log("[INFO] [WS] Boot: no access token yet — Data WS will start after /fyers/callback login");
+            }
+        } catch (Exception e) {
+            log.warn("[MarketData] PostConstruct boot threw: {}", e.getMessage());
+        }
+    }
+
     public synchronized void start() {
         if (running) stop();
         running = true;
