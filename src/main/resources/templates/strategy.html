@@ -143,7 +143,7 @@
     <div class="page-header fade-in" style="margin-bottom:18px;">
         <div>
             <div class="page-title">Strategy</div>
-            <div class="page-subtitle">OPTIONS BUYING &middot; long an OTM CE/PE on the first 5-min NIFTY futures bar vs VWAP</div>
+            <div class="page-subtitle">VWAP + SUPERTREND &middot; NIFTY weekly options, ATM pair around ₹250 premium, 3-min chart</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -157,15 +157,19 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot"></span> Overview</h2>
         <p class="doc-p">
-            One trade per day on the NIFTY current-month future. At the
-            <strong>09:20 close</strong> of the first 5-minute bar, the bot compares
-            the futures close to session VWAP and buys <strong>one 1 OTM weekly option</strong>
-            — CE if bullish, PE if bearish. No indicators, no scanner, no re-entry.
+            Options-buying strategy on NIFTY weekly CE + PE. On the first NIFTY spot tick after
+            <strong>09:15 IST</strong>, the bot captures the spot open, subscribes ±N strikes,
+            and picks the CE and PE trading closest to the configured
+            <strong>target premium (default ₹250)</strong> as the tracked pair. Both legs are
+            monitored independently on their own 3-min chart; either can be in position at the
+            same time.
         </p>
         <p class="doc-p">
-            Orders are placed as <strong>real Fyers MARKET</strong> intraday orders.
-            The single position is managed to a fixed points target, a bar-close SL,
-            or a hard timed squareoff — whichever fires first.
+            Entries fire on either a <strong>VWAP breakout</strong> (bar straddles VWAP and closes
+            above with Supertrend up) or a <strong>Supertrend flip</strong> (ST goes red→green
+            while price is above VWAP). SL is the entry candle low − buffer, capped at
+            <code>Max SL</code> points. Target is 2× the effective risk. Unlimited re-entries per
+            leg; a hard timed squareoff flattens everything before market close.
         </p>
     </div>
 
@@ -174,90 +178,102 @@
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-amber, #fbbf24);"></span> Session flow</h2>
         <div style="margin-top:4px;">
             <div class="phase-row">
+                <div class="phase-tag">09:10</div>
+                <div class="phase-desc"><strong>Pre-market subscribe.</strong> Bot pulls NIFTY spot's
+                    prev close, computes an anchor ATM, and subscribes ±N strikes for both CE and PE.
+                    LTPs start flowing at 09:15 open with no lag.</div>
+            </div>
+            <div class="phase-row">
                 <div class="phase-tag">09:15</div>
-                <div class="phase-desc"><strong>Market opens.</strong> GDFL futures ticks start flowing on
-                    <code>NIFTY-I</code> (continuous current-month contract, auto-rolls at expiry
-                    server-side). Session VWAP is delivered on every tick as
-                    <code>AveragedTradedPrice</code> — not computed locally.</div>
+                <div class="phase-desc"><strong>Spot open captured.</strong> First NIFTY tick sets
+                    <code>spotOpen</code>. If actual ATM drifts outside the pre-subscribed range
+                    (a gap open), missing strikes are subscribed on the fly.</div>
             </div>
             <div class="phase-row">
-                <div class="phase-tag">09:20</div>
-                <div class="phase-desc"><strong>First 5-min bar closes → trigger evaluated.</strong>
-                    <code>close vs VWAP</code> picks the side, the OTM strike is resolved, the option
-                    is subscribed on demand, and a MARKET BUY is sent to Fyers. Fires exactly once
-                    per day.</div>
+                <div class="phase-tag">09:15 :15</div>
+                <div class="phase-desc"><strong>Pair pick + warmup.</strong> Once LTPs have flowed for
+                    ~15 s, the CE and PE nearest to <code>Target Premium</code> are chosen.
+                    Historical 1-min bars from Fyers are prepended so Supertrend ATR is valid from
+                    bar 1 today.</div>
             </div>
             <div class="phase-row">
-                <div class="phase-tag">09:25 →</div>
-                <div class="phase-desc"><strong>Position management begins.</strong> Every option tick
-                    checks the points target; every 5-min futures close updates the
-                    opposite-side counter for the bar-close SL.</div>
+                <div class="phase-tag">09:18 →</div>
+                <div class="phase-desc"><strong>Bar-by-bar evaluation.</strong> Every 3-min close for
+                    both legs is checked against both entry pathways. LTP ticks continuously
+                    monitor SL and target for any open leg.</div>
             </div>
             <div class="phase-row">
-                <div class="phase-tag">15:15</div>
-                <div class="phase-desc"><strong>Timed squareoff.</strong> Default. If still in position
-                    (or defensively still in <code>PENDING_ENTRY</code>), MARKET sell everything.
-                    Configurable via <code>optionBuyingSquareOffTime</code>.</div>
+                <div class="phase-tag">15:25</div>
+                <div class="phase-desc"><strong>Timed squareoff.</strong> Default. Any open leg is
+                    MARKET sold; state transitions to <code>DONE_FOR_DAY</code>. Configurable via
+                    <code>vwapStSquareOffTime</code>.</div>
             </div>
         </div>
     </div>
 
     <!-- The trigger -->
     <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-green);"></span> The trigger</h2>
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-green);"></span> Entry pathways</h2>
         <p class="doc-p">
-            Evaluated at the <strong>09:20 futures 5-min bar close</strong>. Fires exactly once
-            per day. <code>close == VWAP</code> → no trade, state jumps straight to
-            <code>DONE_FOR_DAY</code>.
+            Two independent entry pathways per leg. Whichever fires first on a given 3-min close
+            opens the position; both cannot fire on the same bar.
         </p>
         <div class="setup-grid">
             <div class="setup-card bull">
-                <div class="setup-tag">Bullish · above VWAP</div>
-                <div class="setup-name">BUY 1 OTM CE</div>
+                <div class="setup-tag">VWAP_BREAKOUT</div>
+                <div class="setup-name">VWAP bounce + ST aligned</div>
                 <div class="setup-body">
-                    Futures <strong>close &gt; VWAP</strong>. Bot buys the call at strike
-                    <code>round(close/50)*50 + 50</code>. Current-week Tuesday expiry (walked
-                    back one day if that Tuesday is an NSE holiday).
+                    Bar's <strong>low &le; VWAP &le; high</strong> (range straddled VWAP) AND
+                    <strong>close &gt; VWAP</strong> AND Supertrend is <strong>up</strong>. The
+                    candle wick tested VWAP as support and the ST trend already confirms the
+                    upside. Bar-body color is irrelevant.
                 </div>
             </div>
-            <div class="setup-card bear">
-                <div class="setup-tag">Bearish · below VWAP</div>
-                <div class="setup-name">BUY 1 OTM PE</div>
+            <div class="setup-card bull">
+                <div class="setup-tag">SUPER_TREND_FLIP</div>
+                <div class="setup-name">Fresh red→green ST flip</div>
                 <div class="setup-body">
-                    Futures <strong>close &lt; VWAP</strong>. Bot buys the put at strike
-                    <code>round(close/50)*50 − 50</code>. Same current-week Tuesday expiry
-                    resolution.
+                    Previous bar's ST was <strong>down</strong> AND this bar's ST is
+                    <strong>up</strong> AND <strong>close &gt; VWAP</strong>. The scenario:
+                    price trading above VWAP, retraces to VWAP for support, then reversal candle
+                    breaks through the red ST band and closes beyond it — flipping ST to green.
+                    Enter at that close.
                 </div>
             </div>
         </div>
+        <p class="doc-p" style="margin-top:10px;">
+            <strong>Skipped entries are logged.</strong> When a VWAP breakout condition is met
+            but ST is still red, an <code>[WARNING] entry SKIPPED — VWAP breakout but Supertrend
+            not aligned</code> event surfaces in the log so you can audit near-misses.
+        </p>
     </div>
 
     <!-- Exit rules -->
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-red, #f87171);"></span> Exit rules</h2>
         <p class="doc-p">
-            Three exit paths; whichever fires first wins. All exits are MARKET sells on the
-            open option leg.
+            LTP-driven: SL and target are evaluated on every option tick, not at bar close.
+            Whichever fires first wins. All exits are MARKET sells.
         </p>
+        <h3 class="doc-h3">Stop loss</h3>
+        <ul class="doc-list">
+            <li>Structural SL = <code>entryCandleLow − SL Buffer</code>.</li>
+            <li>Capped at <code>Max SL</code> points below fill. If the structural SL is further
+                than the cap, SL is clamped to <code>fill − Max SL</code>. A <code>[INFO] SL
+                CAPPED</code> event is logged so you can spot which entries were clipped.</li>
+            <li>Fires when LTP &le; SL price.</li>
+        </ul>
         <h3 class="doc-h3">Target</h3>
         <ul class="doc-list">
-            <li>Fires when option LTP &ge; <code>entryPrice + optionBuyingTargetPoints</code>
-                (default <strong>20 points</strong>).</li>
-            <li>Evaluated on every option tick — not bar-bound.</li>
+            <li>Target = <code>fill + Reward:Risk × (fill − effective SL)</code>. Default RR is
+                2.0 — a 1:2 payoff on the effective (post-cap) risk.</li>
+            <li>Fires when LTP &ge; target price.</li>
         </ul>
-        <h3 class="doc-h3">Stop loss · 2 back-to-back opposite closes</h3>
+        <h3 class="doc-h3">Squareoff</h3>
         <ul class="doc-list">
-            <li>Long CE → two consecutive futures 5-min bars close <strong>&lt; VWAP</strong>.</li>
-            <li>Long PE → two consecutive futures 5-min bars close <strong>&gt; VWAP</strong>.</li>
-            <li>Counter starts from the bar <strong>after</strong> the trigger bar (09:25 onwards)
-                and resets to 0 on any correct-side close.</li>
-            <li>Evaluated only at 5-min futures bar close — not on ticks.</li>
-        </ul>
-        <h3 class="doc-h3">Squareoff · hard flatten</h3>
-        <ul class="doc-list">
-            <li>At <code>optionBuyingSquareOffTime</code> (default <strong>15:15 IST</strong>)
-                the open leg is flattened at market.</li>
-            <li>Also catches a stuck <code>PENDING_ENTRY</code> as a defensive squareoff.</li>
+            <li>At <code>Squareoff Time</code> (default <strong>15:25 IST</strong>) every open leg
+                is flattened at market. Also catches stuck <code>PENDING_ENTRY</code> as a
+                defensive squareoff.</li>
         </ul>
     </div>
 
@@ -265,12 +281,12 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-purple, #a78bfa);"></span> Position sizing</h2>
         <ul class="doc-list">
-            <li><strong>Quantity</strong> = <code>optionBuyingLotsPerLeg × 65</code>. NIFTY lot
-                size is fixed at 65.</li>
-            <li><strong>Order type</strong> — Fyers <code>MARKET</code>, side <code>BUY</code>
-                on entry and <code>SELL</code> on every exit path.</li>
-            <li><strong>Product</strong> — <code>optionBuyingOrderType</code>, default
-                <code>INTRADAY</code>. <code>OVERNIGHT</code> is available for CNC / carry.</li>
+            <li><strong>Quantity per leg</strong> = <code>Lots per Leg × 65</code>. NIFTY lot size
+                is fixed at 65.</li>
+            <li><strong>Order type</strong> — Fyers <code>MARKET</code>, side <code>BUY</code> on
+                entry and <code>SELL</code> on every exit path.</li>
+            <li><strong>Product</strong> — <code>INTRADAY</code>. Both legs (CE + PE) may be open
+                simultaneously; each sized independently.</li>
         </ul>
     </div>
 
@@ -278,20 +294,24 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-cyan);"></span> Data pipeline</h2>
         <ul class="doc-list">
-            <li><strong>Market data — 100% GDFL.</strong> NIFTY futures via the continuous
-                identifier <code>NIFTY-I</code>. GDFL handles the expiry roll server-side; no
-                operator config needed.</li>
-            <li><strong>5-minute bars</strong> — <code>CandleAggregator.BUCKET_MINUTES = 5</code>,
-                bucketed by IST wall clock.</li>
-            <li><strong>Session VWAP</strong> is delivered by GDFL as
-                <code>AveragedTradedPrice</code> on every tick. Not computed locally.</li>
-            <li><strong>Option subscription is on-demand.</strong> Zero option strikes are
-                subscribed before 09:20. The single chosen strike is subscribed at trigger time.</li>
-            <li><strong>Fyers is order-side only</strong> — login + order placement + fill
-                confirmations. No Fyers market data used by this strategy.</li>
-            <li><strong>Persistence</strong> — full FSM state at
-                <code>store/cache/option-buying-state.json</code>. Bot restart mid-day
-                resumes correctly.</li>
+            <li><strong>Market data — 100% Fyers HSM WebSocket.</strong> NIFTY spot + option
+                strikes. Binary FULL mode: LTP + ATP + volume + LTT + EFT + prev-close.</li>
+            <li><strong>1-min bars built locally from ticks</strong>
+                (<code>FyersMinuteBarBuilder</code>). Bucketed by <code>EFT / 60</code>. Volume =
+                sessionVol delta within bucket. First bucket of the day per symbol seeds
+                <code>startSessionVol = 0</code> so the opening auction print is counted.</li>
+            <li><strong>3-min bars</strong> — <code>CandleAggregator.getHistory(sym, 3)</code>
+                aggregates the 1-min ring on demand. Listeners fire on every 1-min close;
+                strategy's own alignment gate picks the right N-min boundary.</li>
+            <li><strong>Session VWAP</strong> — pandas_ta cumulative <code>Σ((H+L+C)/3 × V) / ΣV</code>
+                anchored to IST midnight, computed locally from the 1-min ring.</li>
+            <li><strong>Supertrend(ATR, Multiplier)</strong> — canonical formulation, recomputed on
+                every tick including the forming bar. Warmup pulls prior-session 1-min bars via
+                Fyers <code>/data/history</code> so ATR is valid from 09:15.</li>
+            <li><strong>Persistence</strong> — FSM + per-leg state at
+                <code>store/cache/vwap-supertrend-state.json</code>, candle ring at
+                <code>store/cache/candle-aggregator-state.json</code>. Mid-day restart restores
+                chosen strikes, per-leg fill/SL/target, and re-runs warmup automatically.</li>
         </ul>
     </div>
 
@@ -299,33 +319,39 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-amber, #fbbf24);"></span> Settings</h2>
         <p class="doc-p">
-            Four knobs, all under <strong>Settings → OPTION BUYING</strong>. Everything else
-            (start/end windows, max trades per day) was retired — the FSM caps at 1 trade per
-            day via <code>DONE_FOR_DAY</code>.
+            All knobs live under <strong>Settings → VWAP + Supertrend</strong> and
+            <strong>Settings → Risk</strong>.
         </p>
         <div class="band-grid">
-            <div class="band-row"><span class="left">Strategy enabled</span><span class="right">kill switch</span></div>
-            <div class="band-row"><span class="left">Lots per Trade</span><span class="right">1</span></div>
-            <div class="band-row"><span class="left">Order Type</span><span class="right">INTRADAY</span></div>
-            <div class="band-row"><span class="left">Squareoff Time</span><span class="right">15:15 IST</span></div>
-            <div class="band-row"><span class="left">Target (option points)</span><span class="right">20</span></div>
+            <div class="band-row"><span class="left">Strategy enabled</span><span class="right">kill switch (VWAP + Supertrend tab)</span></div>
+            <div class="band-row"><span class="left">Lots per Leg</span><span class="right">1</span></div>
+            <div class="band-row"><span class="left">Target Premium (₹)</span><span class="right">250</span></div>
+            <div class="band-row"><span class="left">Strikes Range (±)</span><span class="right">20 strikes</span></div>
+            <div class="band-row"><span class="left">Candle Minutes</span><span class="right">3</span></div>
+            <div class="band-row"><span class="left">Supertrend ATR / Multiplier</span><span class="right">10 / 3.0</span></div>
+            <div class="band-row"><span class="left">Start Time / Squareoff Time</span><span class="right">09:15 / 15:25 IST</span></div>
+            <div class="band-row"><span class="left">SL Buffer (₹)</span><span class="right">5.0</span></div>
+            <div class="band-row"><span class="left">Max SL (points)</span><span class="right">20</span></div>
+            <div class="band-row"><span class="left">Reward : Risk Ratio</span><span class="right">2.0 (1:2 RR)</span></div>
         </div>
         <p class="doc-p" style="margin-top:8px;">
             Toggling <strong>Strategy enabled</strong> OFF only blocks new entries — an open
-            position keeps being managed to target / SL / squareoff.
+            position keeps being managed to SL / target / squareoff.
         </p>
     </div>
 
     <!-- What's NOT in this strategy -->
     <div class="doc-section fade-in">
-        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--text-muted);"></span> What's NOT in OPTIONS BUYING</h2>
+        <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--text-muted);"></span> What's NOT in this strategy</h2>
         <ul class="doc-list">
-            <li>No indicators — VWAP is the only reference, and it comes from the feed.</li>
-            <li>No historical bar warm-up — the 09:20 trigger bar builds live from ticks.</li>
-            <li>No ATM pre-warm and no ±N strike subscription — one strike, subscribed on demand.</li>
-            <li>No re-entry after exit — one trade per day, then <code>DONE_FOR_DAY</code>.</li>
-            <li>No scanner, no watchlist filter, no CPR levels, no probability tiers.</li>
-            <li>No trailing SL and no tick-based SL — SL is bar-close only.</li>
+            <li>No GDFL — Fyers HSM WebSocket is the sole market-data source.</li>
+            <li>No trailing SL — SL is fixed at entry (below entry candle low, capped at Max SL).</li>
+            <li>No scanner, watchlist, or NIFTY-100 rotation — only the CE + PE chosen at 09:15
+                are traded.</li>
+            <li>No ST-flip exit — Supertrend flips are only used as entry filters and triggers,
+                never as exit signals. Exits are LTP-driven SL / target / squareoff only.</li>
+            <li>No re-entry cooldown — every fresh signal is eligible; the leg-state gate is the
+                only limiter.</li>
         </ul>
     </div>
 
