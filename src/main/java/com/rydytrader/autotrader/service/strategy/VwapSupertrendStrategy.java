@@ -352,28 +352,6 @@ public class VwapSupertrendStrategy implements Strategy {
             }
         }
 
-        // BOOT-state recovery — retry NIFTY spot subscription on every tick and
-        // fall back to the pre-market anchor if no spot tick has landed by
-        // 09:15:30. Handles two failure modes:
-        //   (1) @PostConstruct subscribeAdditional ran before Fyers WS auth
-        //       completed, so the subscription never actually reached HSM.
-        //   (2) NSE:NIFTY50-INDEX HSM token resolution failed — spot chip
-        //       never ticks, and without a fallback the strategy sits in BOOT
-        //       forever.
-        if (fsm == FsmState.BOOT) {
-            marketDataService.subscribeAdditional(Collections.singletonList(NIFTY_SPOT_SYM));
-            LocalTime nowIst = ZonedDateTime.now(IST).toLocalTime();
-            if (preMarketSubscribedToday
-                    && preMarketAtm > 0
-                    && !nowIst.isBefore(LocalTime.of(9, 15, 30))) {
-                event("[WARNING]", "VwapST",
-                    "No NIFTY spot tick after 09:15:30 — falling back to pre-market anchor "
-                        + preMarketAtm + " as ATM. Check " + NIFTY_SPOT_SYM
-                        + " subscription / HSM token resolution.");
-                captureSpotOpenAndSubscribeStrikes(preMarketAtm);
-            }
-        }
-
         // Retry pair pick on every scheduler tick while STRIKES_SUBSCRIBING —
         // pickPairAndWarmup() bails silently when no LTPs are available yet,
         // succeeds and transitions to ARMED the moment enough LTPs land.
