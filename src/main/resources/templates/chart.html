@@ -838,11 +838,11 @@
         }
     }
 
-    // ── 5-min bar countdown ───────────────────────────────────────────────
-    // Bars are anchored on 09:15 IST → 09:15/09:20/09:25/…/15:30/15:35 boundaries (close 15:40).
+    // ── 3-min bar countdown ───────────────────────────────────────────────
+    // Bars are anchored on 09:15 IST → 09:15/09:18/09:21/…/15:24/15:27 boundaries.
     // Shows mm:ss remaining until the current bar closes. BUCKET_MINUTES below must
-    // match CandleAggregator.BUCKET_MINUTES on the server.
-    var BUCKET_MINUTES = 5;
+    // match the strategy's vwapStCandleMinutes setting (default 3).
+    var BUCKET_MINUTES = 3;
     var exchangeClockOffsetMs = 0;
     function computeBarCountdown() {
         var utcMs = Date.now();
