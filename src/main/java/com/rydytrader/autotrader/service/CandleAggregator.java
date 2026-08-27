@@ -121,14 +121,16 @@ public class CandleAggregator {
         if (symbol == null || symbol.isBlank() || rawBar == null) return;
         if (rawBar.startMillis() <= 0 || rawBar.open() <= 0) return;
 
-        // Drop bars whose IST minute is BEFORE 09:15 or AFTER 15:35. Pre-open
-        // ticks (index calc from ~09:07) and post-close carry-over don't
-        // belong on the strategy's chart. Filter here (single choke-point)
-        // rather than at every downstream reader.
+        // Drop bars whose IST minute is BEFORE 09:15 or AT/AFTER 15:40 (NSE
+        // trades 09:15-15:30 equity + 15:30-15:40 closing session; the
+        // last full N-min bucket opens at 15:39 for 1-min charts). Pre-open
+        // ticks (~09:07 index calc) and post-close carry-over don't belong
+        // on the strategy's chart. Filter here (single choke-point) rather
+        // than at every downstream reader.
         long istMs = rawBar.startMillis() + 19_800_000L;
         long minuteOfDay = (istMs % 86_400_000L) / 60_000L;
-        if (minuteOfDay < (9 * 60 + 15) || minuteOfDay > (15 * 60 + 35)) {
-            log.debug("[CandleAggregator] {} bar dropped — outside 09:15-15:35 IST (minuteOfDay={}, startMs={})",
+        if (minuteOfDay < (9 * 60 + 15) || minuteOfDay >= (15 * 60 + 40)) {
+            log.debug("[CandleAggregator] {} bar dropped — outside 09:15-15:40 IST (minuteOfDay={}, startMs={})",
                 symbol, minuteOfDay, rawBar.startMillis());
             return;
         }
@@ -313,13 +315,13 @@ public class CandleAggregator {
                 if (c == null || c.startMillis() <= 0) continue;
                 if (present.contains(c.startMillis())) continue;
                 if (c.startMillis() >= earliestLive) continue;
-                // Same 09:15-15:35 IST session filter as appendOneMinBar —
+                // Same 09:15-15:40 IST session filter as appendOneMinBar —
                 // Fyers history can include pre-open bars for indices; those
                 // don't belong on the strategy's chart and would push the
                 // first visible bar to 09:07 / 09:14 rather than 09:15.
                 long istMs = c.startMillis() + 19_800_000L;
                 long minuteOfDay = (istMs % 86_400_000L) / 60_000L;
-                if (minuteOfDay < (9 * 60 + 15) || minuteOfDay > (15 * 60 + 35)) continue;
+                if (minuteOfDay < (9 * 60 + 15) || minuteOfDay >= (15 * 60 + 40)) continue;
                 toAdd.add(c);
             }
             if (toAdd.isEmpty()) return;

@@ -97,7 +97,7 @@ public class ChartController {
         int tf = Math.max(1, riskSettings.getVwapStCandleMinutes());
         var history = candleAggregator.getHistory(fyersSymbol, tf);
         // Append the in-progress N-min bar so ST sees the live-tick close.
-        Candle forming = buildFormingBar(fyersSymbol, filterToToday(history), tf);
+        Candle forming = buildFormingBar(fyersSymbol, history, tf);
         List<Candle> live = new ArrayList<>(history);
         if (forming != null) {
             if (!live.isEmpty() && live.get(live.size() - 1).startMillis() == forming.startMillis()) {
@@ -148,17 +148,23 @@ public class ChartController {
             candleAggregator.subscribe(symbol, c -> {});
         }
         List<Candle> bars = candleAggregator.getHistory(symbol, tf);
-        // ST series must include prior-session bars so ATR is valid from
-        // bar 1 today; but the chart itself only shows TODAY'S session, so
-        // the first visible bar is 09:15 IST, not yesterday's close.
-        List<Candle> todayBars = filterToToday(bars);
-        Candle forming = buildFormingBar(symbol, todayBars, tf);
-        out.put("history",  todayBars);
-        out.put("current",  forming);   // in-progress N-min bar with live-tick close
-        // Append the forming bar so ST re-evaluates on every tick, not just
-        // on bar close — the chart's ST line + last-value chip update live.
+        // Chart shows the last 50 prior-session bars + all of today —
+        // enough yesterday context to see recent history without cluttering
+        // the whole ring. Prior-session filter uses IST calendar day.
+        List<Candle> visible = trimToRecentContext(bars, 50);
+        Candle forming = buildFormingBar(symbol, visible, tf);
+        List<Candle> visibleWithForming = new ArrayList<>(visible);
+        if (forming != null) {
+            if (!visibleWithForming.isEmpty()
+                    && visibleWithForming.get(visibleWithForming.size() - 1).startMillis() == forming.startMillis()) {
+                visibleWithForming.set(visibleWithForming.size() - 1, forming);
+            } else {
+                visibleWithForming.add(forming);
+            }
+        }
+        // ST computed on the FULL ring (so ATR warmup is valid) but the
+        // series output is filtered to only visible bars.
         List<Candle> allBarsWithForming = new ArrayList<>(bars);
-        List<Candle> todayBarsWithForming = new ArrayList<>(todayBars);
         if (forming != null) {
             if (!allBarsWithForming.isEmpty()
                     && allBarsWithForming.get(allBarsWithForming.size() - 1).startMillis() == forming.startMillis()) {
@@ -166,14 +172,10 @@ public class ChartController {
             } else {
                 allBarsWithForming.add(forming);
             }
-            if (!todayBarsWithForming.isEmpty()
-                    && todayBarsWithForming.get(todayBarsWithForming.size() - 1).startMillis() == forming.startMillis()) {
-                todayBarsWithForming.set(todayBarsWithForming.size() - 1, forming);
-            } else {
-                todayBarsWithForming.add(forming);
-            }
         }
-        out.put("stSeries", buildStSeries(allBarsWithForming, todayBarsWithForming));
+        out.put("history",  visible);
+        out.put("current",  forming);   // in-progress N-min bar with live-tick close
+        out.put("stSeries", buildStSeries(allBarsWithForming, visibleWithForming));
         long latestExchSec = marketDataService.getLatestExchFeedTimeSec();
         out.put("exchangeNowMs", latestExchSec > 0 ? latestExchSec * 1000L : 0L);
         return out;
@@ -231,19 +233,23 @@ public class ChartController {
         return cumVol > 0 ? cumTypVol / cumVol : 0.0;
     }
 
-    /** Keeps only bars whose IST calendar day equals today. Prior-session
-     *  bars stay in the aggregator (Supertrend ATR warmup needs them) but
-     *  the chart shows only today's session so the first bar reads 09:15. */
-    private List<Candle> filterToToday(List<Candle> bars) {
+    /** Returns today's bars + the last {@code priorContext} prior-session
+     *  bars. Gives the chart a bit of yesterday for scroll-back without
+     *  dumping the entire aggregator ring. */
+    private List<Candle> trimToRecentContext(List<Candle> bars, int priorContext) {
         if (bars == null || bars.isEmpty()) return List.of();
-        long todayStartUtcMs   = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"))
+        long todayStartUtcMs = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"))
             .atStartOfDay(java.time.ZoneId.of("Asia/Kolkata")).toInstant().toEpochMilli();
-        long tomorrowStartUtcMs = todayStartUtcMs + 86_400_000L;
-        List<Candle> out = new ArrayList<>(bars.size());
+        List<Candle> prior = new ArrayList<>();
+        List<Candle> today = new ArrayList<>();
         for (Candle c : bars) {
-            long sm = c.startMillis();
-            if (sm >= todayStartUtcMs && sm < tomorrowStartUtcMs) out.add(c);
+            if (c.startMillis() >= todayStartUtcMs) today.add(c);
+            else prior.add(c);
         }
+        int from = Math.max(0, prior.size() - priorContext);
+        List<Candle> out = new ArrayList<>(priorContext + today.size());
+        out.addAll(prior.subList(from, prior.size()));
+        out.addAll(today);
         return out;
     }
 
