@@ -7,7 +7,9 @@ import com.rydytrader.autotrader.service.LoginService;
 import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.OrderEventService;
 import com.rydytrader.autotrader.service.PollingService;
+import com.rydytrader.autotrader.service.strategy.VwapSupertrendStrategy;
 import com.rydytrader.autotrader.store.TokenStore;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
@@ -32,6 +34,7 @@ public class ViewController {
     private final MarketDataService marketDataService;
     private final AppUserRepository userRepo;
     private final PasswordEncoder   passwordEncoder;
+    private final ObjectProvider<VwapSupertrendStrategy> strategyProvider;
 
     public ViewController(TokenStore tokenStore,
                            PollingService pollingService,
@@ -40,7 +43,8 @@ public class ViewController {
                            OrderEventService orderEventService,
                            MarketDataService marketDataService,
                            AppUserRepository userRepo,
-                           PasswordEncoder passwordEncoder) {
+                           PasswordEncoder passwordEncoder,
+                           ObjectProvider<VwapSupertrendStrategy> strategyProvider) {
         this.tokenStore        = tokenStore;
         this.pollingService    = pollingService;
         this.loginService      = loginService;
@@ -49,6 +53,7 @@ public class ViewController {
         this.marketDataService = marketDataService;
         this.userRepo          = userRepo;
         this.passwordEncoder   = passwordEncoder;
+        this.strategyProvider  = strategyProvider;
     }
 
     // ── ROOT ────────────────────────────────────────────────────────────────
@@ -88,6 +93,13 @@ public class ViewController {
                     // token is present. Missed before — meant every OAuth cycle
                     // left the Data WS silent until the next bot restart.
                     marketDataService.start();
+                    // Re-run the Supertrend history warmup — REST calls were
+                    // failing with code -16 until this token refresh, so the
+                    // aggregator's ring for both chosen legs is missing the
+                    // prior-session bars. Prepending them now makes ST valid
+                    // from 09:15 without a full restart.
+                    VwapSupertrendStrategy strategy = strategyProvider.getIfAvailable();
+                    if (strategy != null) strategy.reWarmupChosenLegs();
                 } catch (Exception e) {
                     log.error("Error starting services after Fyers login: {}", e.getMessage());
                 }

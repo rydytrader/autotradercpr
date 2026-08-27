@@ -823,6 +823,16 @@ public class VwapSupertrendStrategy implements Strategy {
         eventService.log(level + " [" + tag + "] " + msg);
     }
 
+    /** Re-runs the history warmup for both currently-chosen legs. Callable
+     *  from ViewController after a fresh /fyers/callback so ST can populate
+     *  from 09:15 without needing an app restart when the previous warmup
+     *  failed on an expired token. Safe to call at any time — pass-through
+     *  when no leg has a chosen symbol yet. */
+    public synchronized void reWarmupChosenLegs() {
+        if (ceLeg.chosenSymbol != null) warmupHistory(ceLeg.chosenSymbol, "CE");
+        if (peLeg.chosenSymbol != null) warmupHistory(peLeg.chosenSymbol, "PE");
+    }
+
     // ── Persistence ──────────────────────────────────────────────────────────
 
     /** Persisted snapshot — everything needed to resume a mid-day restart
