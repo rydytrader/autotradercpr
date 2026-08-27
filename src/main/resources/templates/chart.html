@@ -658,16 +658,18 @@
         lastClosePerPanel[panelKey] = lastClose;
 
         // Colored last-value chips on the y-axis for price / VWAP / ST.
+        // For ST: walk BOTH stUp/stDown series from the tail simultaneously
+        // and pick the FIRST non-null we find — that's the current-direction
+        // value, not the last up-point before a flip.
         var lastVwap = vwapData.length ? vwapData[vwapData.length - 1][1] : null;
         var lastSt   = null;
         var stIsUp   = null;
-        for (var i = stUpData.length - 1; i >= 0; i--) {
-            if (stUpData[i][1] != null) { lastSt = stUpData[i][1]; stIsUp = true; break; }
-        }
-        if (lastSt == null) {
-            for (var j = stDownData.length - 1; j >= 0; j--) {
-                if (stDownData[j][1] != null) { lastSt = stDownData[j][1]; stIsUp = false; break; }
-            }
+        var stLen = Math.max(stUpData.length, stDownData.length);
+        for (var i = stLen - 1; i >= 0; i--) {
+            var up = i < stUpData.length ? stUpData[i][1] : null;
+            var dn = i < stDownData.length ? stDownData[i][1] : null;
+            if (up != null)      { lastSt = up; stIsUp = true;  break; }
+            else if (dn != null) { lastSt = dn; stIsUp = false; break; }
         }
         refreshPriceMarkers(panelKey, lastClose, lastVwap, lastSt, stIsUp);
         return { firstClose: null, lastClose: lastClose };
