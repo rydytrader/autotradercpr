@@ -495,8 +495,16 @@ public class VwapSupertrendStrategy implements Strategy {
     private void warmupHistory(String sym, String sideLabel) {
         try {
             LocalDate to   = LocalDate.now(IST);
-            LocalDate from = to.minusDays(3);
+            LocalDate from = to.minusDays(7);   // widened from 3 to 7 to survive over-weekend restarts
+            log.info("[VwapSupertrend] warmupHistory START — sym={} side={} from={} to={}",
+                sym, sideLabel, from, to);
             JsonNode resp = fyersClient.getHistory(sym, "1", from.format(ISO_DATE), to.format(ISO_DATE), authHeader());
+            log.info("[VwapSupertrend] warmupHistory RESP — sym={} respPresent={} candlesPresent={} candlesSize={} respPreview={}",
+                sym,
+                resp != null,
+                resp != null && resp.has("candles"),
+                resp != null && resp.has("candles") ? resp.path("candles").size() : -1,
+                resp == null ? "null" : resp.toString().substring(0, Math.min(200, resp.toString().length())));
             JsonNode candles = resp == null ? null : resp.path("candles");
             if (candles == null || !candles.isArray() || candles.size() == 0) {
                 event("[WARNING]", "VwapST",
