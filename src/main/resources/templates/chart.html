@@ -476,70 +476,21 @@
                 type: 'datetime',
                 lineColor: col.grid,
                 tickColor: col.grid,
-                ordinal: false,      // real datetime axis so tick positions are honored exactly
+                ordinal: true,
                 minPadding: 0,
-                maxPadding: 0,
-                startOnTick: true,   // force first tick at the exact `min` value
+                maxPadding: 0.02,
+                startOnTick: false,
                 endOnTick: false,
+                labels: { style: { color: col.text, fontSize: '10px' } },
                 events: {
-                    // Detect user-initiated zoom/pan; suppress the auto
-                    // extreme-pin below once the user has interacted.
                     setExtremes: function(e) {
                         if (e && (e.trigger === 'zoom' || e.trigger === 'pan' || e.trigger === 'mousewheel' || e.trigger === 'navigator')) {
                             userZoomed[panelKey] = true;
                         }
                         if (e && e.min === undefined && e.max === undefined) {
-                            // Explicit reset (resetZoom button) — resume auto pinning.
                             userZoomed[panelKey] = false;
                         }
                     }
-                },
-                labels: {
-                    style: { color: col.text, fontSize: '10px' },
-                    // Snap any tick position Highcharts picks to the closest
-                    // actual bar timestamp AND format IST manually (bypasses
-                    // Highcharts.dateFormat). Also clamp positions before the
-                    // first bar / after the last bar to the boundary, so the
-                    // leftmost label always reads the first bar's time.
-                    formatter: function() {
-                        var chart = this.chart;
-                        var s = chart && chart.get && chart.get('candles');
-                        var xd = s && s.xData;
-                        var v = this.value;
-                        if (xd && xd.length) {
-                            if (v <= xd[0])                  v = xd[0];
-                            else if (v >= xd[xd.length - 1]) v = xd[xd.length - 1];
-                            else {
-                                var best = xd[0], bestDiff = Math.abs(xd[0] - v);
-                                for (var i = 1; i < xd.length; i++) {
-                                    var dd = Math.abs(xd[i] - v);
-                                    if (dd < bestDiff) { bestDiff = dd; best = xd[i]; }
-                                }
-                                v = best;
-                            }
-                        }
-                        // Format the timestamp explicitly in IST (UTC+5:30)
-                        // to avoid any Highcharts/browser timezone drift.
-                        var d = new Date(v + 5.5 * 60 * 60 * 1000);
-                        var h = String(d.getUTCHours()).padStart(2, '0');
-                        var m = String(d.getUTCMinutes()).padStart(2, '0');
-                        return h + ':' + m;
-                    }
-                },
-                // Force ticks to land ONLY on actual bar timestamps.
-                tickPositioner: function() {
-                    var chart = this.chart;
-                    if (!chart) return undefined;
-                    var s = chart.get && chart.get('candles');
-                    var xd = s && s.xData;
-                    if (!xd || xd.length === 0) return undefined;
-                    var target = 10;
-                    var step = Math.max(1, Math.floor(xd.length / target));
-                    var out = [];
-                    for (var i = 0; i < xd.length; i += step) out.push(xd[i]);
-                    var lastVal = xd[xd.length - 1];
-                    if (out[out.length - 1] !== lastVal) out.push(lastVal);
-                    return out;
                 }
             },
             yAxis: [{
