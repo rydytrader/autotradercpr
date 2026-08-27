@@ -509,19 +509,23 @@ public class VwapSupertrendStrategy implements Strategy {
         Candle bar = bars.get(bars.size() - 1);
         SuperTrend.State st = SuperTrend.at(bars, atrPeriod, mult);
 
-        boolean wickBelowVwap = bar.low()  <= bar.vwap();
-        boolean closeAboveVwap = bar.close() > bar.vwap();
-        boolean greenCandle    = bar.close() > bar.open();
+        boolean wickBelowVwap  = bar.low()   <= bar.vwap();
+        boolean closeAboveVwap = bar.close() >  bar.vwap();
         boolean stUp           = st.available() && st.isUp();
 
-        log.info("[VwapSupertrend] {} bar close — o={} h={} l={} c={} vwap={} st_line={} st_up={} wick_below_vwap={} green={} legState={}",
+        log.info("[VwapSupertrend] {} bar close — o={} h={} l={} c={} vwap={} st_line={} st_up={} wick_below_vwap={} close_above_vwap={} legState={}",
             sideLabel, fmt(bar.open()), fmt(bar.high()), fmt(bar.low()), fmt(bar.close()),
-            fmt(bar.vwap()), fmt(st.line()), stUp, wickBelowVwap, greenCandle, leg.state);
+            fmt(bar.vwap()), fmt(st.line()), stUp, wickBelowVwap, closeAboveVwap, leg.state);
 
-        // Entry — VWAP-bounce green bar + ST up + leg is idle.
-        // Exits are handled purely by LTP-driven SL/target in checkSlOrTarget;
+        // Entry — VWAP crossover bar + ST up + leg is idle.
+        //   VWAP crossover = bar's low touched or crossed BELOW vwap AND close
+        //   is ABOVE vwap. Candle body direction (red/green) is IRRELEVANT —
+        //   the crossover is defined by the wick and close position relative
+        //   to VWAP, not by open vs close. A red-bodied bar that dipped below
+        //   VWAP and closed back above still counts.
+        // Exits handled purely by LTP-driven SL/target in checkSlOrTarget;
         // ST-flip is only a filter for entries, not an exit trigger.
-        if (leg.state == LegState.WAITING && wickBelowVwap && closeAboveVwap && greenCandle && stUp) {
+        if (leg.state == LegState.WAITING && wickBelowVwap && closeAboveVwap && stUp) {
             fireEntry(leg, sideLabel, bar);
         }
     }
