@@ -233,32 +233,23 @@ public class ChartController {
         return cumVol > 0 ? cumTypVol / cumVol : 0.0;
     }
 
-    /** Returns today's bars + the FULL prior trading session (from that
-     *  day's 09:15 IST open to close). Prior trading day = the IST calendar
-     *  day of the latest bar before today in the ring — handles weekends /
-     *  holidays without a calendar lookup. */
-    private List<Candle> trimToRecentContext(List<Candle> bars, int priorContextIgnored) {
+    /** Returns today's bars + the last {@code priorContext} prior-session
+     *  bars. Gives the chart a bit of yesterday for scroll-back without
+     *  dumping the entire aggregator ring. */
+    private List<Candle> trimToRecentContext(List<Candle> bars, int priorContext) {
         if (bars == null || bars.isEmpty()) return List.of();
-        java.time.ZoneId ist = java.time.ZoneId.of("Asia/Kolkata");
-        long todayStartUtcMs = java.time.LocalDate.now(ist)
-            .atStartOfDay(ist).toInstant().toEpochMilli();
-        // Find the IST calendar day of the latest bar before today.
-        java.time.LocalDate priorSessionDate = null;
-        for (int i = bars.size() - 1; i >= 0; i--) {
-            long sm = bars.get(i).startMillis();
-            if (sm < todayStartUtcMs) {
-                priorSessionDate = java.time.Instant.ofEpochMilli(sm).atZone(ist).toLocalDate();
-                break;
-            }
-        }
-        long priorSessionStartMs = priorSessionDate == null
-            ? Long.MAX_VALUE
-            : priorSessionDate.atStartOfDay(ist).toInstant().toEpochMilli();
-        List<Candle> out = new ArrayList<>(bars.size());
+        long todayStartUtcMs = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"))
+            .atStartOfDay(java.time.ZoneId.of("Asia/Kolkata")).toInstant().toEpochMilli();
+        List<Candle> prior = new ArrayList<>();
+        List<Candle> today = new ArrayList<>();
         for (Candle c : bars) {
-            long sm = c.startMillis();
-            if (sm >= priorSessionStartMs) out.add(c);
+            if (c.startMillis() >= todayStartUtcMs) today.add(c);
+            else prior.add(c);
         }
+        int from = Math.max(0, prior.size() - priorContext);
+        List<Candle> out = new ArrayList<>(priorContext + today.size());
+        out.addAll(prior.subList(from, prior.size()));
+        out.addAll(today);
         return out;
     }
 
