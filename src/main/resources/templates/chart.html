@@ -376,6 +376,14 @@
         var container = document.getElementById(containerId);
         if (!container || typeof Highcharts === 'undefined') return null;
         var col = themeColors();
+        // Global time — makes Highcharts.dateFormat(...) in the tooltip
+        // formatter render in IST too (chart-local time settings alone don't
+        // apply to the static Highcharts.dateFormat function).
+        try {
+            Highcharts.setOptions({
+                time: { useUTC: false, timezone: 'Asia/Kolkata', timezoneOffset: -330 }
+            });
+        } catch (e) {}
         var chart = Highcharts.stockChart(container, {
             chart: {
                 backgroundColor: 'transparent',
@@ -390,7 +398,10 @@
             rangeSelector: { enabled: false },
             navigator:     { enabled: false },
             scrollbar:     { enabled: false },
-            time: { timezoneOffset: -330 },   // IST = UTC+5:30 → offset is -330 min for tz formatter
+            // IST = UTC+5:30. Highcharts renders in UTC by default; setting
+            // useUTC=false + timezone/timezoneOffset explicitly forces IST for
+            // both the x-axis tick labels and the tooltip time formatter.
+            time: { useUTC: false, timezone: 'Asia/Kolkata', timezoneOffset: -330 },
             plotOptions: {
                 candlestick: {
                     animation: false,
