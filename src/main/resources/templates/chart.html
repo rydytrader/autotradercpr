@@ -575,10 +575,25 @@
         return chart;
     }
 
+    // One-time diagnostic — logs the first 3 bar timestamps (IST) per panel
+    // so we can see whether the 09:14 label is a data issue or a display
+    // issue. Runs once per panel per page load.
+    var _diagLogged = { ce: false, pe: false };
     function applyData(panelKey, history, stArr, current) {
         var chart = charts[panelKey];
         if (!chart) return { firstClose: null, lastClose: null };
         var col = themeColors();
+        if (!_diagLogged[panelKey] && history && history.length) {
+            _diagLogged[panelKey] = true;
+            var first3 = history.slice(0, 3).map(function(c) {
+                var t = Number(c.startMillis);
+                var d = new Date(t + 5.5 * 3600 * 1000);
+                var h = String(d.getUTCHours()).padStart(2,'0');
+                var m = String(d.getUTCMinutes()).padStart(2,'0');
+                return h + ':' + m + ' (' + t + ')';
+            });
+            console.log('[CHART-DIAG] ' + panelKey + ' first-3 bar times (IST):', first3.join(', '));
+        }
 
         // Merge history + in-progress bar keyed by startMillis.
         var byTime = {};
