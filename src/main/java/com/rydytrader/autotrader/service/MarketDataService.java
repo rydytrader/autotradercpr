@@ -436,6 +436,12 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
         lastConnectTime = java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss"));
         log.info("[MarketData] WebSocket connected");
         if (eventService != null) eventService.log("[WS] Data WebSocket connected");
+        // Catch-up: any symbols added via subscribeAdditional() BEFORE the WS
+        // was open (e.g. VwapSupertrendStrategy's @PostConstruct queuing
+        // NSE:NIFTY50-INDEX at boot) sat in adHocSymbols with no HSM
+        // resolution and no wire subscribe. Sync them now that we're open.
+        try { updateSubscriptions(); }
+        catch (Exception e) { log.warn("[MarketData] post-connect updateSubscriptions failed: {}", e.getMessage()); }
     }
 
     @Override
