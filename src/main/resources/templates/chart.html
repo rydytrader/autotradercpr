@@ -393,6 +393,9 @@
     // (firstBar, lastBar) on every poll — otherwise every 1-s refresh would
     // snap the view back and defeat the interaction.
     var userZoomed = { ce: false, pe: false };
+    // Latest leg snapshot per panel — populated by refreshSymbols and read
+    // by refreshTradeLevels to paint entry/SL/target lines when in position.
+    var legByPanel = { ce: null, pe: null };
 
     function themeColors() {
         var t = document.documentElement.getAttribute('data-theme') || 'dark';
@@ -704,6 +707,51 @@
         placeChip(prefix + 'StChip',   lastSt,    stIsUp ? col.up : col.down, stIsUp ? '#111827' : '#ffffff');
     }
 
+    // Draw entry / SL / target as horizontal plotLines on the y-axis when
+    // the panel's leg is IN_POSITION. Cleared once the leg goes back to
+    // WAITING (post-exit). Line colors match the header intent:
+    //   • Entry  — cyan  dashed
+    //   • SL     — red   dashed
+    //   • Target — green dashed
+    function refreshTradeLevels(panelKey) {
+        var chart = charts[panelKey];
+        if (!chart || !chart.yAxis || !chart.yAxis[0]) return;
+        var yAxis = chart.yAxis[0];
+        ['entryLevel', 'slLevel', 'targetLevel'].forEach(function(id) {
+            try { yAxis.removePlotLine(id); } catch (e) {}
+        });
+        var leg = legByPanel[panelKey];
+        if (!leg || leg.legState !== 'IN_POSITION') return;
+        function addLine(id, value, color, label) {
+            if (value == null || !isFinite(Number(value)) || Number(value) <= 0) return;
+            try {
+                yAxis.addPlotLine({
+                    id:        id,
+                    value:     Number(value),
+                    color:     color,
+                    width:     1,
+                    dashStyle: 'ShortDash',
+                    zIndex:    3,
+                    label: {
+                        text:  label + ' ' + fmtPx(value),
+                        align: 'left',
+                        x:     6,
+                        y:    -4,
+                        style: {
+                            color: color,
+                            fontFamily: 'Roboto Mono, monospace',
+                            fontSize: '10px',
+                            fontWeight: '700'
+                        }
+                    }
+                });
+            } catch (e) {}
+        }
+        addLine('entryLevel',  leg.entryPrice,  '#22d3ee', 'ENTRY');
+        addLine('slLevel',     leg.slPrice,     '#f87171', 'SL');
+        addLine('targetLevel', leg.targetPrice, '#34d399', 'TGT');
+    }
+
     function updatePanel(panelKey, symbol, priceElId, chgElId, emptyElId, priceDecimals) {
         if (!symbol) return;
         fetch('/api/chart/candles?symbol=' + encodeURIComponent(symbol)).then(function(r) { return r.json(); }).then(function(d) {
@@ -752,6 +800,10 @@
             setHeaderMetric('ceSt',   ct.stLine, ct.stIsUp);
             setHeaderMetric('peVwap', pt.vwap, null);
             setHeaderMetric('peSt',   pt.stLine, pt.stIsUp);
+            legByPanel.ce = d.ceLeg || null;
+            legByPanel.pe = d.peLeg || null;
+            refreshTradeLevels('ce');
+            refreshTradeLevels('pe');
             // NIFTY spot chip — LTP + change + captured open + ATM anchor.
             var sl = document.getElementById('spotLtp');
             if (sl) sl.textContent = d.spotLtp > 0 ? Number(d.spotLtp).toFixed(2) : '—';

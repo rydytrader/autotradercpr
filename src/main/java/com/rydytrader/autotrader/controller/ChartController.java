@@ -66,6 +66,10 @@ public class ChartController {
         out.put("peSymbol",  peSym);
         out.put("ceTick",    tickBlock(ceSym));
         out.put("peTick",    tickBlock(peSym));
+        // Live per-leg strategy levels — chart draws horizontal lines when
+        // entry/SL/target > 0 (i.e. the leg is IN_POSITION).
+        out.put("ceLeg",     s == null || ceSym == null ? Map.of() : s.getLegSnapshot(ceSym));
+        out.put("peLeg",     s == null || peSym == null ? Map.of() : s.getLegSnapshot(peSym));
         out.put("spotOpen",  s == null ? 0 : round2(s.getSpotOpen()));
         out.put("atmStrike", s == null ? 0 : s.getAtmStrike());
         // Live NIFTY spot LTP + change since prev close — for the header chip.

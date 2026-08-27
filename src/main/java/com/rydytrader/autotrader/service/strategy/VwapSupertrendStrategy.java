@@ -1,6 +1,7 @@
 package com.rydytrader.autotrader.service.strategy;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.dto.Candle;
 import com.rydytrader.autotrader.dto.OrderDTO;
@@ -71,6 +72,12 @@ public class VwapSupertrendStrategy implements Strategy {
     private static final int    LOT_SIZE = 65;
     /** Time-of-day at which the pre-market strike subscription fires. */
     private static final LocalTime PRE_MARKET_SUB_TIME = LocalTime.of(9, 10);
+    /** Persisted state — restored on mid-day restart so the chosen CE/PE
+     *  strikes (picked at 09:15 based on ₹250 target) survive without
+     *  re-picking against the current premium. Guarded by {@code dayKey} —
+     *  a state file from a prior day is discarded on load. */
+    private static final String STATE_FILE = "../store/cache/vwap-supertrend-state.json";
+    private final ObjectMapper mapper = new ObjectMapper();
 
     private final CandleAggregator    candleAggregator;
     private final MarketDataService   marketDataService;
@@ -162,12 +169,31 @@ public class VwapSupertrendStrategy implements Strategy {
     @PostConstruct
     public void boot() {
         todayKey = LocalDate.now(IST).toString();
-        // NIFTY spot tick — needed to detect the market-open price for ATM anchor.
         marketDataService.subscribeAdditional(Collections.singletonList(NIFTY_SPOT_SYM));
         marketDataService.addLtpListener(this::onTick);
         OrderEventService oes = orderEventServiceProvider.getIfAvailable();
         if (oes != null) oes.addFillListener(this::onOrderFill);
-        log.info("[VwapSupertrend] booted — waiting for first {} tick ≥ 09:15 IST", NIFTY_SPOT_SYM);
+
+        // Restore state from disk if today's snapshot exists — mid-day restart
+        // keeps the chosen CE/PE from 09:15 rather than re-picking against the
+        // now-different premium.
+        if (loadStateFromDisk()) {
+            // Re-subscribe every strike we had subscribed pre-restart so the
+            // tick flow to the chart resumes without waiting on the on-tick
+            // catch-up cycle.
+            if (!subscribedStrikes.isEmpty()) {
+                marketDataService.subscribeAdditional(new ArrayList<>(subscribedStrikes));
+            }
+            log.info("[VwapSupertrend] restored state — fsm={} spotOpen={} atm={} CE={} PE={}",
+                fsm, spotOpen, atmStrike, ceLeg.chosenSymbol, peLeg.chosenSymbol);
+            event("[INFO]", "VwapST",
+                "State restored — fsm=" + fsm + " spotOpen=" + fmt(spotOpen)
+                    + " atm=" + atmStrike
+                    + " CE=" + (ceLeg.chosenSymbol == null ? "—" : ceLeg.chosenSymbol)
+                    + " PE=" + (peLeg.chosenSymbol == null ? "—" : peLeg.chosenSymbol));
+        } else {
+            log.info("[VwapSupertrend] booted — waiting for first {} tick ≥ 09:15 IST", NIFTY_SPOT_SYM);
+        }
     }
 
     // ── LTP tick path ───────────────────────────────────────────────────────
@@ -261,6 +287,7 @@ public class VwapSupertrendStrategy implements Strategy {
         // Try pair pick immediately — LTPs may already be flowing from the
         // pre-market subscription. If not, tick() retries every 5 s.
         pickPairAndWarmup();
+        saveStateToDisk();
     }
 
     /** Fires once daily at 09:10 IST via @Scheduled cron, or from tick() as
@@ -428,6 +455,7 @@ public class VwapSupertrendStrategy implements Strategy {
 
         fsm = FsmState.ARMED;
         event("[INFO]", "VwapST", "ARMED — monitoring 3-min bars on chosen CE and PE");
+        saveStateToDisk();
     }
 
     private void pruneSubscriptionsToPair(String keepCe, String keepPe) {
@@ -567,6 +595,7 @@ public class VwapSupertrendStrategy implements Strategy {
                 sideLabel + " ENTRY placed — sym=" + leg.chosenSymbol + " qty=" + qty
                     + " triggerBarStart=" + ZonedDateTime.ofInstant(java.time.Instant.ofEpochMilli(triggerBar.startMillis()), IST).toLocalTime()
                     + " entryCandleLow=" + fmt(leg.entryCandleLow) + " orderId=" + placed.getId());
+            saveStateToDisk();
         } catch (Exception e) {
             event("[ERROR]", "VwapST", sideLabel + " ENTRY threw — " + e.getMessage());
         }
@@ -596,6 +625,7 @@ public class VwapSupertrendStrategy implements Strategy {
             event("[ERROR]", "VwapST", sideLabel + " EXIT threw — " + e.getMessage());
         } finally {
             leg.reset();
+            saveStateToDisk();
         }
     }
 
@@ -629,6 +659,7 @@ public class VwapSupertrendStrategy implements Strategy {
                 + " slPrice=" + fmt(leg.slPrice)
                 + " target=" + fmt(leg.targetPrice)
                 + " RR=1:" + fmt(rr) + " risk=" + fmt(risk));
+        saveStateToDisk();
     }
 
     // ── Rollover ────────────────────────────────────────────────────────────
@@ -750,5 +781,129 @@ public class VwapSupertrendStrategy implements Strategy {
     }
     private void event(String level, String tag, String msg) {
         eventService.log(level + " [" + tag + "] " + msg);
+    }
+
+    // ── Persistence ──────────────────────────────────────────────────────────
+
+    /** Persisted snapshot — everything needed to resume a mid-day restart
+     *  without re-picking strikes or losing live-leg position state. */
+    public static class PersistedState {
+        public String    dayKey = "";
+        public String    fsm = "BOOT";
+        public double    spotOpen;
+        public long      atmStrike;
+        public long      strikesSubscribedAtMs;
+        public boolean   preMarketSubscribedToday;
+        public long      preMarketAtm;
+        public java.util.Set<String> subscribedStrikes = new java.util.HashSet<>();
+        public double    realisedPnlToday;
+        public PersistedLeg ceLeg = new PersistedLeg();
+        public PersistedLeg peLeg = new PersistedLeg();
+    }
+    public static class PersistedLeg {
+        public String chosenSymbol;
+        public String state = "WAITING";
+        public String entryOrderId;
+        public double fillPrice;
+        public double entryCandleLow;
+        public double slPrice;
+        public double targetPrice;
+        public int    qty;
+        public long   entryBarStartMs;
+    }
+
+    /** Reads {@link #STATE_FILE} and, if today's dayKey matches, restores every
+     *  field of the FSM + both legs. Returns true when state was loaded. */
+    private synchronized boolean loadStateFromDisk() {
+        try {
+            java.nio.file.Path p = java.nio.file.Path.of(STATE_FILE);
+            if (!java.nio.file.Files.exists(p)) return false;
+            PersistedState s = mapper.readValue(java.nio.file.Files.readString(p), PersistedState.class);
+            if (s == null) return false;
+            String today = LocalDate.now(IST).toString();
+            if (!today.equals(s.dayKey)) {
+                log.info("[VwapSupertrend] discarding stale state — dayKey={} today={}", s.dayKey, today);
+                return false;
+            }
+            try { fsm = FsmState.valueOf(s.fsm); } catch (Exception e) { fsm = FsmState.BOOT; }
+            spotOpen                 = s.spotOpen;
+            atmStrike                = s.atmStrike;
+            strikesSubscribedAtMs    = s.strikesSubscribedAtMs;
+            preMarketSubscribedToday = s.preMarketSubscribedToday;
+            preMarketAtm             = s.preMarketAtm;
+            if (s.subscribedStrikes != null) subscribedStrikes.addAll(s.subscribedStrikes);
+            realisedPnlToday.set(s.realisedPnlToday);
+            restoreLeg(ceLeg, s.ceLeg);
+            restoreLeg(peLeg, s.peLeg);
+            return true;
+        } catch (Exception e) {
+            log.warn("[VwapSupertrend] failed to load state: {}", e.getMessage());
+            return false;
+        }
+    }
+    private static void restoreLeg(Leg leg, PersistedLeg s) {
+        if (s == null) return;
+        leg.chosenSymbol    = s.chosenSymbol;
+        try { leg.state = LegState.valueOf(s.state); } catch (Exception e) { leg.state = LegState.WAITING; }
+        leg.entryOrderId    = s.entryOrderId;
+        leg.fillPrice       = s.fillPrice;
+        leg.entryCandleLow  = s.entryCandleLow;
+        leg.slPrice         = s.slPrice;
+        leg.targetPrice     = s.targetPrice;
+        leg.qty             = s.qty;
+        leg.entryBarStartMs = s.entryBarStartMs;
+    }
+
+    /** Writes {@link #STATE_FILE} atomically. Called on state-change checkpoints
+     *  (spot open capture, pair pick, entry, fill, exit) and by a 30-s scheduled
+     *  sweep so a crash between checkpoints loses at most 30 s of drift. */
+    private synchronized void saveStateToDisk() {
+        try {
+            PersistedState s = new PersistedState();
+            s.dayKey                   = LocalDate.now(IST).toString();
+            s.fsm                      = fsm.name();
+            s.spotOpen                 = spotOpen;
+            s.atmStrike                = atmStrike;
+            s.strikesSubscribedAtMs    = strikesSubscribedAtMs;
+            s.preMarketSubscribedToday = preMarketSubscribedToday;
+            s.preMarketAtm             = preMarketAtm;
+            s.subscribedStrikes        = new java.util.HashSet<>(subscribedStrikes);
+            s.realisedPnlToday         = realisedPnlToday.get() == null ? 0 : realisedPnlToday.get();
+            s.ceLeg = snapshotLeg(ceLeg);
+            s.peLeg = snapshotLeg(peLeg);
+            java.nio.file.Path dst = java.nio.file.Path.of(STATE_FILE);
+            java.io.File parent = dst.toFile().getParentFile();
+            if (parent != null && !parent.exists()) parent.mkdirs();
+            java.nio.file.Path tmp = java.nio.file.Path.of(STATE_FILE + ".tmp");
+            java.nio.file.Files.writeString(tmp, mapper.writeValueAsString(s));
+            try {
+                java.nio.file.Files.move(tmp, dst,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
+            } catch (Exception atomicFail) {
+                java.nio.file.Files.move(tmp, dst,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (Exception e) {
+            log.warn("[VwapSupertrend] failed to save state: {}", e.getMessage());
+        }
+    }
+    private static PersistedLeg snapshotLeg(Leg leg) {
+        PersistedLeg s = new PersistedLeg();
+        s.chosenSymbol    = leg.chosenSymbol;
+        s.state           = leg.state.name();
+        s.entryOrderId    = leg.entryOrderId;
+        s.fillPrice       = leg.fillPrice;
+        s.entryCandleLow  = leg.entryCandleLow;
+        s.slPrice         = leg.slPrice;
+        s.targetPrice     = leg.targetPrice;
+        s.qty             = leg.qty;
+        s.entryBarStartMs = leg.entryBarStartMs;
+        return s;
+    }
+
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelay = 30_000, initialDelay = 30_000)
+    public void periodicSave() {
+        saveStateToDisk();
     }
 }
