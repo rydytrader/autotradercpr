@@ -4,6 +4,7 @@ import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.entity.AppUser;
 import com.rydytrader.autotrader.repository.AppUserRepository;
 import com.rydytrader.autotrader.service.LoginService;
+import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.OrderEventService;
 import com.rydytrader.autotrader.service.PollingService;
 import com.rydytrader.autotrader.store.TokenStore;
@@ -28,6 +29,7 @@ public class ViewController {
     private final LoginService      loginService;
     private final FyersProperties   fyersProperties;
     private final OrderEventService orderEventService;
+    private final MarketDataService marketDataService;
     private final AppUserRepository userRepo;
     private final PasswordEncoder   passwordEncoder;
 
@@ -36,6 +38,7 @@ public class ViewController {
                            LoginService loginService,
                            FyersProperties fyersProperties,
                            OrderEventService orderEventService,
+                           MarketDataService marketDataService,
                            AppUserRepository userRepo,
                            PasswordEncoder passwordEncoder) {
         this.tokenStore        = tokenStore;
@@ -43,6 +46,7 @@ public class ViewController {
         this.loginService      = loginService;
         this.fyersProperties   = fyersProperties;
         this.orderEventService = orderEventService;
+        this.marketDataService = marketDataService;
         this.userRepo          = userRepo;
         this.passwordEncoder   = passwordEncoder;
     }
@@ -80,6 +84,10 @@ public class ViewController {
                     pollingService.syncPositionOnce();
                     pollingService.startPositionSync();
                     orderEventService.start();
+                    // Kick the Data WS so it can auth + subscribe now that the
+                    // token is present. Missed before — meant every OAuth cycle
+                    // left the Data WS silent until the next bot restart.
+                    marketDataService.start();
                 } catch (Exception e) {
                     log.error("Error starting services after Fyers login: {}", e.getMessage());
                 }
