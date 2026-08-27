@@ -729,9 +729,25 @@ public class VwapSupertrendStrategy implements Strategy {
     private void applyFill(Leg leg, String sideLabel, double fillPrice) {
         double buffer = Math.max(0, riskSettings.getVwapStSlBufferPoints());
         double rr     = Math.max(0.1, riskSettings.getVwapStRewardRiskRatio());
+        double maxSl  = Math.max(0.5, riskSettings.getVwapStMaxSlPoints());
         leg.fillPrice   = fillPrice;
-        leg.slPrice     = Math.max(0, leg.entryCandleLow - buffer);
-        double risk     = Math.max(0, fillPrice - leg.slPrice);
+        // Structural SL: below entry candle low, minus buffer. Hard-capped
+        // to at most maxSlPoints below fill so a wide entry candle can't
+        // put us on a 40-point stop.
+        double structuralSl = Math.max(0, leg.entryCandleLow - buffer);
+        double structuralRisk = Math.max(0, fillPrice - structuralSl);
+        double risk;
+        if (structuralRisk > maxSl) {
+            risk = maxSl;
+            leg.slPrice = Math.max(0, fillPrice - maxSl);
+            event("[INFO]", "VwapST",
+                sideLabel + " SL CAPPED — structural risk " + fmt(structuralRisk)
+                    + " > max " + fmt(maxSl) + " → SL " + fmt(leg.slPrice)
+                    + " (was " + fmt(structuralSl) + ")");
+        } else {
+            risk = structuralRisk;
+            leg.slPrice = structuralSl;
+        }
         leg.targetPrice = fillPrice + rr * risk;
         leg.state       = LegState.IN_POSITION;
         event("[SUCCESS]", "VwapST",

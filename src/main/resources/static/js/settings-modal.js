@@ -36,6 +36,7 @@
                       '<div class="sm-field"><label>Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Kill switch when net day P&L drops below this % of capital. 0 = off.</div></div>' +
                       '<div class="sm-field"><label>Max Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto from Capital × Risk %. Same value shown as \'Risk Budget\' on the positions page.</div></div>' +
                       '<div class="sm-field"><label>SL Buffer (₹)</label><input type="number" id="sm-vwapStSlBufferPoints" step="0.05" min="0"><div class="sm-hint">SL = entry candle low − this many rupees. Wider buffer avoids getting stopped out by a wick that just touches the low. Default 5.0.</div></div>' +
+                      '<div class="sm-field"><label>Max SL (points)</label><input type="number" id="sm-vwapStMaxSlPoints" step="0.5" min="0.5"><div class="sm-hint">Hard cap on SL distance from fill. If (fill − entry-candle-low + buffer) exceeds this, SL is capped at fill − this. Default 20.</div></div>' +
                       '<div class="sm-field"><label>Reward : Risk Ratio</label><input type="number" id="sm-vwapStRewardRiskRatio" step="0.1" min="0.1"><div class="sm-hint">Target = fill + N × (fill − SL). 2.0 = 1:2 RR. Default 2.0.</div></div>' +
                     '</div>' +
                   '</div>' +
@@ -216,6 +217,7 @@
             startingCapital:       parseFloat(g('sm-startingCapital').value) || 0,
             portfolioMaxRiskPct:   parseFloat(g('sm-portfolioMaxRiskPct').value) || 0,
             vwapStSlBufferPoints:  parseFloat(g('sm-vwapStSlBufferPoints').value) || 0,
+            vwapStMaxSlPoints:     parseFloat(g('sm-vwapStMaxSlPoints').value) || 20.0,
             vwapStRewardRiskRatio: parseFloat(g('sm-vwapStRewardRiskRatio').value) || 2.0
         };
         postSettings('/api/settings/risk', body);
@@ -273,6 +275,7 @@
             if (capInput) capInput.value = d.startingCapital != null ? d.startingCapital : 1000000;
             if (pctInput) pctInput.value = d.portfolioMaxRiskPct != null ? d.portfolioMaxRiskPct : 0;
             if (g('sm-vwapStSlBufferPoints'))  g('sm-vwapStSlBufferPoints').value = d.vwapStSlBufferPoints != null ? d.vwapStSlBufferPoints : 5.0;
+            if (g('sm-vwapStMaxSlPoints'))     g('sm-vwapStMaxSlPoints').value    = d.vwapStMaxSlPoints    != null ? d.vwapStMaxSlPoints    : 20.0;
             if (g('sm-vwapStRewardRiskRatio')) g('sm-vwapStRewardRiskRatio').value = d.vwapStRewardRiskRatio != null ? d.vwapStRewardRiskRatio : 2.0;
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {

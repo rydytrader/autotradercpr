@@ -57,6 +57,7 @@ public class RiskSettingsStore {
         volatile double  vwapStMultiplier        = 3.0;     // Supertrend ATR multiplier
         volatile double  vwapStSlBufferPoints    = 5.0;     // SL = entryCandleLow − N points (5 rupee buffer default)
         volatile double  vwapStRewardRiskRatio   = 2.0;     // Target = fill + N × (fill − SL). 1:2 RR default
+        volatile double  vwapStMaxSlPoints       = 20.0;    // Hard cap on SL distance from fill (in points). If (fill − entryCandleLow + buffer) > this, SL = fill − this
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
         /** Initial capital used as the baseline for the Analytics Home page (capital growth %,
@@ -417,6 +418,7 @@ public class RiskSettingsStore {
     public double  getVwapStMultiplier()       { return cfg().vwapStMultiplier; }
     public double  getVwapStSlBufferPoints()   { return cfg().vwapStSlBufferPoints; }
     public double  getVwapStRewardRiskRatio()  { return cfg().vwapStRewardRiskRatio; }
+    public double  getVwapStMaxSlPoints()      { return cfg().vwapStMaxSlPoints; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getStartingCapital()      { return cfg().startingCapital; }
@@ -613,6 +615,7 @@ public class RiskSettingsStore {
     public void setVwapStMultiplier(double v)       { cfg().vwapStMultiplier = Math.max(0.1, v); }
     public void setVwapStSlBufferPoints(double v)   { cfg().vwapStSlBufferPoints = Math.max(0.0, v); }
     public void setVwapStRewardRiskRatio(double v)  { cfg().vwapStRewardRiskRatio = Math.max(0.1, v); }
+    public void setVwapStMaxSlPoints(double v)      { cfg().vwapStMaxSlPoints = Math.max(0.5, v); }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setStartingCapital(double v)      { cfg().startingCapital = Math.max(0, v); }
@@ -780,6 +783,7 @@ public class RiskSettingsStore {
             upsert("vwapStMultiplier",                String.valueOf(c.vwapStMultiplier));
             upsert("vwapStSlBufferPoints",            String.valueOf(c.vwapStSlBufferPoints));
             upsert("vwapStRewardRiskRatio",           String.valueOf(c.vwapStRewardRiskRatio));
+            upsert("vwapStMaxSlPoints",               String.valueOf(c.vwapStMaxSlPoints));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("startingCapital",      String.valueOf(c.startingCapital));
@@ -987,6 +991,7 @@ public class RiskSettingsStore {
                     case "vwapStMultiplier"              -> c.vwapStMultiplier        = Math.max(0.1, Double.parseDouble(v));
                     case "vwapStSlBufferPoints"          -> c.vwapStSlBufferPoints    = Math.max(0.0, Double.parseDouble(v));
                     case "vwapStRewardRiskRatio"         -> c.vwapStRewardRiskRatio   = Math.max(0.1, Double.parseDouble(v));
+                    case "vwapStMaxSlPoints"             -> c.vwapStMaxSlPoints       = Math.max(0.5, Double.parseDouble(v));
                     // OPTION SELLING keys silently consumed for backward compat after strategy removal.
                     case "optionSellingEnabled",
                          "optionSellingLotsPerLeg",
