@@ -57,6 +57,15 @@ public class FyersMinuteBarBuilder {
         int    tickCount;
     }
     private final Map<String, Bucket> byBucket = new HashMap<>();
+    /** IST calendar day of the most recent bucket built for each symbol.
+     *  When {@link #startBucket} sees a bucket whose IST day differs from
+     *  this (or has never seen the symbol before today), it treats the new
+     *  bucket as the day's first and seeds {@code startSessionVol=0} so the
+     *  09:15 opening-auction print is included in the first-minute volume
+     *  and VWAP. Without this, the first-tick's cumulative sessionVol —
+     *  which already contains the auction print — would be counted as
+     *  pre-existing and drop the print from the 09:15 minute. */
+    private final Map<String, java.time.LocalDate> lastBucketDayBySymbol = new HashMap<>();
 
     public FyersMinuteBarBuilder(MarketDataService marketDataService,
                                   CandleAggregator candleAggregator) {
@@ -87,7 +96,7 @@ public class FyersMinuteBarBuilder {
         synchronized (this) {
             Bucket b = byBucket.get(symbol);
             if (b == null || b.minuteEpoch < 0) {
-                b = startBucket(symbol, minuteEpoch, t.ltp(), t.sessionVolume());
+                b = startBucket(symbol, minuteEpoch, t.ltp(), t.sessionVolume(), isFirstBucketOfDay(symbol, minuteEpoch));
                 byBucket.put(symbol, b);
                 return;
             }
@@ -101,7 +110,7 @@ public class FyersMinuteBarBuilder {
             } else if (minuteEpoch > b.minuteEpoch) {
                 // Boundary crossing — close current bucket, start new one.
                 emitted = toCandle(b);
-                Bucket next = startBucket(symbol, minuteEpoch, t.ltp(), t.sessionVolume());
+                Bucket next = startBucket(symbol, minuteEpoch, t.ltp(), t.sessionVolume(), isFirstBucketOfDay(symbol, minuteEpoch));
                 byBucket.put(symbol, next);
             } else {
                 // Stale tick (older minute than current bucket) — drop.
@@ -111,15 +120,31 @@ public class FyersMinuteBarBuilder {
         if (emitted != null) candleAggregator.appendOneMinBar(symbol, emitted);
     }
 
-    private static Bucket startBucket(String symbol, long minuteEpoch, double ltp, long sessionVol) {
+    private static Bucket startBucket(String symbol, long minuteEpoch, double ltp,
+                                       long sessionVol, boolean firstBucketOfDay) {
         Bucket b = new Bucket();
         b.minuteEpoch     = minuteEpoch;
         b.startMs         = minuteEpoch * 60_000L;
         b.open = b.high = b.low = b.close = ltp;
-        b.startSessionVol = Math.max(0, sessionVol);
+        // For the first bucket of the day per symbol: seed startSessionVol=0
+        // so the day's opening auction print (already in the first tick's
+        // cumulative sessionVol) counts as part of the 09:15 minute rather
+        // than being treated as pre-existing volume.
+        b.startSessionVol = firstBucketOfDay ? 0 : Math.max(0, sessionVol);
         b.endSessionVol   = Math.max(0, sessionVol);
         b.tickCount       = 1;
         return b;
+    }
+
+    /** Returns true when this bucket's IST calendar day differs from the
+     *  last bucket we built for the symbol (or the symbol hasn't been seen
+     *  yet). Called under the enclosing monitor. Side effect: updates the
+     *  tracker. */
+    private boolean isFirstBucketOfDay(String symbol, long minuteEpoch) {
+        java.time.LocalDate day = java.time.Instant.ofEpochSecond(minuteEpoch * 60L)
+            .atZone(IST).toLocalDate();
+        java.time.LocalDate prev = lastBucketDayBySymbol.put(symbol, day);
+        return prev == null || !prev.equals(day);
     }
 
     private static Candle toCandle(Bucket b) {
