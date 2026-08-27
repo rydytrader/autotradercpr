@@ -688,6 +688,12 @@
             if (s === 'ManualSL')     return 'MANUAL SL';
             if (s === 'ManualEntry')  return 'MANUAL ENTRY';
             if (s === 'BreakEven')    return 'AUTO SL';
+            // Java's uppercased class-name tags (DIRECT-CONSTRUCTOR-HANDLE-ACCESSOR,
+            // FYERS-ORDER-WEB-SOCKET, etc.) — cap at first 2 hyphen-separated words
+            // so the source column stays legible. Full name still in the raw log.
+            if (typeof s === 'string' && s.indexOf('-') >= 0) {
+                return s.split('-').slice(0, 2).join('-');
+            }
             return s;
         }
         body.innerHTML = events.map(function(e) {
