@@ -389,6 +389,10 @@
     // uptrend / support, red when above = downtrend / resistance). Per-point
     // color natively supported by Highcharts line series.
     var lastClosePerPanel = { ce: null, pe: null };
+    // Once the user zooms or pans, stop auto-pinning the x-range to
+    // (firstBar, lastBar) on every poll — otherwise every 1-s refresh would
+    // snap the view back and defeat the interaction.
+    var userZoomed = { ce: false, pe: false };
 
     function themeColors() {
         var t = document.documentElement.getAttribute('data-theme') || 'dark';
@@ -477,6 +481,19 @@
                 maxPadding: 0.02,
                 startOnTick: false,
                 endOnTick: false,
+                events: {
+                    // Detect user-initiated zoom/pan; suppress the auto
+                    // extreme-pin below once the user has interacted.
+                    setExtremes: function(e) {
+                        if (e && (e.trigger === 'zoom' || e.trigger === 'pan' || e.trigger === 'mousewheel' || e.trigger === 'navigator')) {
+                            userZoomed[panelKey] = true;
+                        }
+                        if (e && e.min === undefined && e.max === undefined) {
+                            // Explicit reset (resetZoom button) — resume auto pinning.
+                            userZoomed[panelKey] = false;
+                        }
+                    }
+                },
                 labels: {
                     style: { color: col.text, fontSize: '10px' },
                     // Belt-and-braces: whatever tick position Highcharts picks,
@@ -642,6 +659,17 @@
         if (vwapSeries)    vwapSeries.setData(vwapData, false);
         if (stUpSeries)    stUpSeries.setData(stUpData, false);
         if (stDownSeries)  stDownSeries.setData(stDownData, false);
+        // Pin the visible x-range to actual bar timestamps so the plot
+        // area's leftmost gridline sits at 09:15 (the first bar), not at
+        // 09:14 (half-a-candle-width earlier). Bar bodies still center on
+        // their timestamps; the leading half is clipped, which is what
+        // the user expects — the axis reads 09:15 at the plot edge.
+        // Skip once the user has zoomed/panned (see userZoomed flag).
+        if (candleData.length && !userZoomed[panelKey]) {
+            var firstT = candleData[0][0];
+            var lastT  = candleData[candleData.length - 1][0];
+            try { chart.xAxis[0].setExtremes(firstT, lastT, false, false); } catch (e) {}
+        }
         chart.redraw(false);
         lastClosePerPanel[panelKey] = lastClose;
 
