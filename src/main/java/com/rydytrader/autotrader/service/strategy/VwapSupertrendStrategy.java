@@ -93,14 +93,18 @@ public class VwapSupertrendStrategy implements Strategy {
         volatile LegState state = LegState.WAITING;
         volatile String   entryOrderId;
         volatile double   fillPrice;
-        volatile double   slPrice;
+        volatile double   entryCandleLow;   // frozen at entry order placement, used to derive slPrice after fill
+        volatile double   slPrice;          // = entryCandleLow − slBuffer; final value set on fill
+        volatile double   targetPrice;      // = fillPrice + rr × (fillPrice − slPrice)
         volatile int      qty;
         volatile long     entryBarStartMs;
         void reset() {
             state = LegState.WAITING;
             entryOrderId = null;
             fillPrice = 0;
+            entryCandleLow = 0;
             slPrice = 0;
+            targetPrice = 0;
             qty = 0;
             entryBarStartMs = 0;
         }
@@ -178,18 +182,25 @@ public class VwapSupertrendStrategy implements Strategy {
 
         // Per-leg LTP-based SL check.
         if (fsm == FsmState.ARMED) {
-            checkSlIfOpen(ceLeg, sym, t.ltp(), "CE");
-            checkSlIfOpen(peLeg, sym, t.ltp(), "PE");
+            checkSlOrTarget(ceLeg, sym, t.ltp(), "CE");
+            checkSlOrTarget(peLeg, sym, t.ltp(), "PE");
         }
     }
 
-    private synchronized void checkSlIfOpen(Leg leg, String sym, double ltp, String sideLabel) {
+    /** LTP-driven exits: SL below entry candle low, target at RR × SL distance
+     *  above fill. Fires whichever the tick hits first. */
+    private synchronized void checkSlOrTarget(Leg leg, String sym, double ltp, String sideLabel) {
         if (leg.state != LegState.IN_POSITION) return;
         if (leg.chosenSymbol == null || !leg.chosenSymbol.equals(sym)) return;
-        if (leg.slPrice <= 0 || ltp <= 0) return;
-        if (ltp <= leg.slPrice) {
-            fireExit(leg, sideLabel, "SL_HIT_CANDLE_LOW",
+        if (ltp <= 0) return;
+        if (leg.slPrice > 0 && ltp <= leg.slPrice) {
+            fireExit(leg, sideLabel, "SL_HIT",
                 "LTP " + fmt(ltp) + " ≤ SL " + fmt(leg.slPrice));
+            return;
+        }
+        if (leg.targetPrice > 0 && ltp >= leg.targetPrice) {
+            fireExit(leg, sideLabel, "TARGET_HIT",
+                "LTP " + fmt(ltp) + " ≥ target " + fmt(leg.targetPrice));
         }
     }
 
@@ -476,14 +487,9 @@ public class VwapSupertrendStrategy implements Strategy {
             sideLabel, fmt(bar.open()), fmt(bar.high()), fmt(bar.low()), fmt(bar.close()),
             fmt(bar.vwap()), fmt(st.line()), stUp, wickBelowVwap, greenCandle, leg.state);
 
-        // Exit trail — ST flipped against position → market exit.
-        if (leg.state == LegState.IN_POSITION && st.available() && !st.isUp()) {
-            fireExit(leg, sideLabel, "ST_FLIP_EXIT",
-                "Supertrend flipped down on " + tf + "-min close (line=" + fmt(st.line()) + ")");
-            return;
-        }
-
         // Entry — VWAP-bounce green bar + ST up + leg is idle.
+        // Exits are handled purely by LTP-driven SL/target in checkSlOrTarget;
+        // ST-flip is only a filter for entries, not an exit trigger.
         if (leg.state == LegState.WAITING && wickBelowVwap && closeAboveVwap && greenCandle && stUp) {
             fireEntry(leg, sideLabel, bar);
         }
@@ -502,14 +508,16 @@ public class VwapSupertrendStrategy implements Strategy {
                 return;
             }
             leg.entryOrderId    = placed.getId();
-            leg.slPrice         = triggerBar.low();
+            leg.entryCandleLow  = triggerBar.low();
+            leg.slPrice         = 0;    // computed on fill (below entry candle low − buffer)
+            leg.targetPrice     = 0;    // computed on fill (fill + rr × slDistance)
             leg.qty             = qty;
             leg.entryBarStartMs = triggerBar.startMillis();
             leg.state           = LegState.PENDING_ENTRY;
             event("[SUCCESS]", "VwapST",
                 sideLabel + " ENTRY placed — sym=" + leg.chosenSymbol + " qty=" + qty
                     + " triggerBarStart=" + ZonedDateTime.ofInstant(java.time.Instant.ofEpochMilli(triggerBar.startMillis()), IST).toLocalTime()
-                    + " slPrice=" + fmt(leg.slPrice) + " orderId=" + placed.getId());
+                    + " entryCandleLow=" + fmt(leg.entryCandleLow) + " orderId=" + placed.getId());
         } catch (Exception e) {
             event("[ERROR]", "VwapST", sideLabel + " ENTRY threw — " + e.getMessage());
         }
@@ -548,17 +556,30 @@ public class VwapSupertrendStrategy implements Strategy {
         if (orderId == null) return;
         synchronized (this) {
             if (orderId.equals(ceLeg.entryOrderId) && ceLeg.state == LegState.PENDING_ENTRY) {
-                ceLeg.fillPrice = fillPrice;
-                ceLeg.state     = LegState.IN_POSITION;
-                event("[SUCCESS]", "VwapST",
-                    "CE FILL — sym=" + ceLeg.chosenSymbol + " @ " + fmt(fillPrice) + " slPrice=" + fmt(ceLeg.slPrice));
+                applyFill(ceLeg, "CE", fillPrice);
             } else if (orderId.equals(peLeg.entryOrderId) && peLeg.state == LegState.PENDING_ENTRY) {
-                peLeg.fillPrice = fillPrice;
-                peLeg.state     = LegState.IN_POSITION;
-                event("[SUCCESS]", "VwapST",
-                    "PE FILL — sym=" + peLeg.chosenSymbol + " @ " + fmt(fillPrice) + " slPrice=" + fmt(peLeg.slPrice));
+                applyFill(peLeg, "PE", fillPrice);
             }
         }
+    }
+
+    /** Captures fill price and derives SL + target from configured buffer and
+     *  reward:risk ratio. Called once per leg per entry, inside the class
+     *  monitor. */
+    private void applyFill(Leg leg, String sideLabel, double fillPrice) {
+        double buffer = Math.max(0, riskSettings.getVwapStSlBufferPoints());
+        double rr     = Math.max(0.1, riskSettings.getVwapStRewardRiskRatio());
+        leg.fillPrice   = fillPrice;
+        leg.slPrice     = Math.max(0, leg.entryCandleLow - buffer);
+        double risk     = Math.max(0, fillPrice - leg.slPrice);
+        leg.targetPrice = fillPrice + rr * risk;
+        leg.state       = LegState.IN_POSITION;
+        event("[SUCCESS]", "VwapST",
+            sideLabel + " FILL — sym=" + leg.chosenSymbol + " @ " + fmt(fillPrice)
+                + " entryCandleLow=" + fmt(leg.entryCandleLow)
+                + " slPrice=" + fmt(leg.slPrice)
+                + " target=" + fmt(leg.targetPrice)
+                + " RR=1:" + fmt(rr) + " risk=" + fmt(risk));
     }
 
     // ── Rollover ────────────────────────────────────────────────────────────
