@@ -580,10 +580,17 @@ public class VwapSupertrendStrategy implements Strategy {
         boolean closeAboveVwap = bar.close() > bar.vwap();
         boolean stUp           = st.available() && st.isUp();
 
-        log.info("[VwapSupertrend] {} {} bar close — o={} h={} l={} c={} vwap={} st_line={} st_up={} wick_below_vwap={} close_above_vwap={} legState={}",
-            sideLabel, leg.chosenSymbol,
-            fmt(bar.open()), fmt(bar.high()), fmt(bar.low()), fmt(bar.close()),
-            fmt(bar.vwap()), fmt(st.line()), stUp, wickBelowVwap, closeAboveVwap, leg.state);
+        // Log only near-signals — when at least one entry condition is TRUE.
+        // Every-condition-false bars (typical: ST red AND bar entirely below
+        // VWAP) tell us nothing useful and would flood the log. When any
+        // condition trips, we can see WHY the entry was skipped or that it
+        // fired.
+        if (wickBelowVwap || closeAboveVwap || stUp) {
+            log.info("[VwapSupertrend] {} {} bar close — o={} h={} l={} c={} vwap={} st_line={} st_up={} wick_below_vwap={} close_above_vwap={} legState={}",
+                sideLabel, leg.chosenSymbol,
+                fmt(bar.open()), fmt(bar.high()), fmt(bar.low()), fmt(bar.close()),
+                fmt(bar.vwap()), fmt(st.line()), stUp, wickBelowVwap, closeAboveVwap, leg.state);
+        }
 
         // Entry — VWAP crossover bar + ST up + leg is idle.
         //   VWAP crossover = bar's low touched or crossed BELOW vwap AND close
