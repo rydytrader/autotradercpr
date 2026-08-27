@@ -125,6 +125,11 @@ public class VwapSupertrendStrategy implements Strategy {
      *  close). Kept so we can detect when the actual 09:15 ATM falls outside
      *  the pre-subscribed range and top up the subscription. */
     private volatile long   preMarketAtm = 0;
+    /** Every option strike subscribed today (pre-market + top-up on 09:15).
+     *  Used to trim the subscription to only the chosen CE + PE after pair
+     *  pick — dropping the 78 unused strikes frees WS bandwidth and cuts
+     *  incoming tick volume by ~95 %. */
+    private final java.util.Set<String> subscribedStrikes = java.util.concurrent.ConcurrentHashMap.newKeySet();
     /** Total closed trades today for liveNetPnlToday accumulation. */
     private final AtomicReference<Double> realisedPnlToday = new AtomicReference<>(0.0);
     private final Map<Long, ClosedTrade> tradesTodayById = new ConcurrentHashMap<>();
@@ -242,7 +247,10 @@ public class VwapSupertrendStrategy implements Strategy {
                 topUp.add(NiftyOptionSymbolBuilder.buildFyersSymbol(expiry, strike, "PE"));
             }
         }
-        if (!topUp.isEmpty()) marketDataService.subscribeAdditional(topUp);
+        if (!topUp.isEmpty()) {
+            marketDataService.subscribeAdditional(topUp);
+            subscribedStrikes.addAll(topUp);
+        }
         strikesSubscribedAtMs = System.currentTimeMillis();
         fsm = FsmState.STRIKES_SUBSCRIBING;
         event("[INFO]", "VwapST",
@@ -289,6 +297,7 @@ public class VwapSupertrendStrategy implements Strategy {
                 allSymbols.add(NiftyOptionSymbolBuilder.buildFyersSymbol(expiry, strike, "PE"));
             }
             marketDataService.subscribeAdditional(allSymbols);
+            subscribedStrikes.addAll(allSymbols);
             preMarketAtm = anchor;
             preMarketSubscribedToday = true;
             event("[INFO]", "VwapST",
@@ -413,8 +422,30 @@ public class VwapSupertrendStrategy implements Strategy {
         warmupHistory(bestCe, "CE");
         warmupHistory(bestPe, "PE");
 
+        // Trim subscription to only the chosen pair — the other ~78 pre-market
+        // strikes are no longer needed. Cuts incoming tick volume by ~95 %.
+        pruneSubscriptionsToPair(bestCe, bestPe);
+
         fsm = FsmState.ARMED;
         event("[INFO]", "VwapST", "ARMED — monitoring 3-min bars on chosen CE and PE");
+    }
+
+    private void pruneSubscriptionsToPair(String keepCe, String keepPe) {
+        try {
+            List<String> toDrop = new ArrayList<>();
+            for (String sym : subscribedStrikes) {
+                if (sym.equals(keepCe) || sym.equals(keepPe)) continue;
+                toDrop.add(sym);
+            }
+            if (toDrop.isEmpty()) return;
+            marketDataService.unsubscribeAdditional(toDrop);
+            subscribedStrikes.removeAll(toDrop);
+            event("[INFO]", "VwapST",
+                "Unsubscribed " + toDrop.size() + " unused strikes — retained only CE + PE");
+        } catch (Exception e) {
+            event("[WARNING]", "VwapST",
+                "Prune subscriptions THREW — " + e.getMessage() + " (continuing anyway)");
+        }
     }
 
     private void warmupHistory(String sym, String sideLabel) {
@@ -591,6 +622,9 @@ public class VwapSupertrendStrategy implements Strategy {
         spotOpen = 0;
         atmStrike = 0;
         strikesSubscribedAtMs = 0;
+        preMarketSubscribedToday = false;
+        preMarketAtm = 0;
+        subscribedStrikes.clear();
         fsm = FsmState.BOOT;
         realisedPnlToday.set(0.0);
         tradesTodayById.clear();
