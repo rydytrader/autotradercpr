@@ -284,6 +284,7 @@
                     <span class="chart-hdr-metric"><span class="lab">ST</span><span id="ceSt"  class="val">—</span></span>
                 </div>
                 <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
+                    <span class="chart-hdr-metric" title="Time until next 3-min bar close"><span class="lab">Next</span><span id="barCountdown" class="val" style="color:#fbbf24;">—</span></span>
                     <button class="chart-expand-btn" data-panel="ce" onclick="toggleExpand('ce')" title="Expand chart">⛶</button>
                 </div>
             </div>
@@ -390,9 +391,10 @@
                 animation: false,
                 style: { fontFamily: 'Roboto Mono, monospace' },
                 spacingLeft: 4,
-                spacingRight: 4,   // no wasted space — labels sit right against the candles
+                spacingRight: 8,
                 spacingTop: 8,
-                spacingBottom: 4
+                spacingBottom: 4,
+                marginRight: 62   // reserve space for right-side y-axis labels + a small gap
             },
             credits: { enabled: false },
             rangeSelector: { enabled: false },
@@ -426,11 +428,11 @@
             },
             yAxis: [{
                 opposite: true,   // y-axis on RIGHT
-                labels: { align: 'left', x: 4, style: { color: col.text, fontSize: '10px' } },
+                labels: { align: 'left', x: 8, style: { color: col.text, fontSize: '10px' } },
                 gridLineColor: col.grid,
                 lineColor: col.grid,
                 crosshair: { color: col.text, dashStyle: 'dot' },
-                offset: 0,   // no gap between plot area and axis line
+                offset: 6,   // small breathing room between plot area and axis line
                 tickWidth: 0
             }],
             tooltip: {
@@ -737,28 +739,12 @@
         return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
     }
     function tickCountdown() {
-        // Highcharts equivalent — draw a horizontal plot line at the last
-        // close on each panel's yAxis, labeled with the mm:ss countdown.
+        // Bar countdown now lives in the header chip (single shared badge for
+        // both panels since both trade on the same 3-min timeframe). Clutter
+        // on the charts removed.
         var sec = computeBarCountdown();
-        var txt = '⏱ ' + fmtMmSs(sec);
-        var bgColor = '#fbbf24';
-        ['ce', 'pe'].forEach(function(panelKey) {
-            var chart = charts[panelKey];
-            if (!chart || !chart.yAxis || !chart.yAxis[0]) return;
-            var last = lastClosePerPanel[panelKey];
-            if (last == null) return;
-            try {
-                chart.yAxis[0].removePlotLine('countdown-' + panelKey);
-                chart.yAxis[0].addPlotLine({
-                    id: 'countdown-' + panelKey,
-                    value: last,
-                    color: bgColor,
-                    width: 1,
-                    dashStyle: 'Dot',
-                    label: { text: txt, align: 'right', style: { color: bgColor, fontSize: '10px' } }
-                });
-            } catch (e) {}
-        });
+        var el = document.getElementById('barCountdown');
+        if (el) el.textContent = '⏱ ' + fmtMmSs(sec);
     }
 
     function checkConnection() {
