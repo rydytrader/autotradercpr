@@ -308,11 +308,25 @@ public class MarketDataService implements FyersDataWebSocket.TickCallback {
                     return;
                 }
                 List<String> fyersSymbols = buildSymbolList();
-                resolveSymbolTokens(fyersSymbols, accessToken);
+                try { resolveSymbolTokens(fyersSymbols, accessToken); }
+                catch (Exception e) {
+                    log.warn("[MarketData] Symbol resolution threw during boot: {} — connecting WS anyway; symbols will retry via updateSubscriptions()", e.getMessage());
+                    if (eventService != null) {
+                        eventService.log("[WARNING] [WS] Symbol resolution threw during boot: " + e.getMessage() + " — will retry after connect");
+                    }
+                }
                 if (fyersToHsmToken.isEmpty()) {
-                    log.info("[MarketData] No HSM tokens resolved");
-                    scheduleReconnect();
-                    return;
+                    // No symbols resolved at boot — most often because the seed
+                    // symbol list was empty (no open positions + strategy hasn't
+                    // added its NIFTY spot yet) or Fyers rejected the specific
+                    // string (e.g. NSE:NIFTY50-INDEX not recognized). Connect
+                    // anyway with an empty subscription; onConnected() → the
+                    // catch-up updateSubscriptions() call will resolve + subscribe
+                    // anything queued in adHocSymbols by that time.
+                    log.info("[MarketData] No HSM tokens resolved at boot — connecting WS with empty subs, symbols will attach post-connect");
+                    if (eventService != null) {
+                        eventService.log("[INFO] [WS] No HSM tokens resolved at boot — connecting with empty subs");
+                    }
                 }
                 List<String> hsmTokens = new ArrayList<>(fyersToHsmToken.values());
                 subscribedHsmTokens.addAll(hsmTokens);
