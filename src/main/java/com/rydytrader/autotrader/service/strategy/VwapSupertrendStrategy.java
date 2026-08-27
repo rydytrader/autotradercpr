@@ -184,6 +184,15 @@ public class VwapSupertrendStrategy implements Strategy {
             if (!subscribedStrikes.isEmpty()) {
                 marketDataService.subscribeAdditional(new ArrayList<>(subscribedStrikes));
             }
+            // Re-register the bar-close callback on the two chosen symbols —
+            // without this the strategy would silently stop firing entry
+            // signals after any restart.
+            if (ceLeg.chosenSymbol != null) {
+                candleAggregator.subscribe(ceLeg.chosenSymbol, c -> onBarClose(ceLeg, "CE", c));
+            }
+            if (peLeg.chosenSymbol != null) {
+                candleAggregator.subscribe(peLeg.chosenSymbol, c -> onBarClose(peLeg, "PE", c));
+            }
             log.info("[VwapSupertrend] restored state — fsm={} spotOpen={} atm={} CE={} PE={}",
                 fsm, spotOpen, atmStrike, ceLeg.chosenSymbol, peLeg.chosenSymbol);
             event("[INFO]", "VwapST",
