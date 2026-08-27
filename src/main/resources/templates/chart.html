@@ -380,7 +380,11 @@
             chart: {
                 backgroundColor: 'transparent',
                 animation: false,
-                style: { fontFamily: 'Roboto Mono, monospace' }
+                style: { fontFamily: 'Roboto Mono, monospace' },
+                spacingRight: 60,   // room for the y-axis price labels so candles don't overlap them
+                spacingLeft: 4,
+                spacingTop: 8,
+                spacingBottom: 4
             },
             credits: { enabled: false },
             rangeSelector: { enabled: false },
@@ -405,7 +409,8 @@
                 labels: { style: { color: col.text, fontSize: '10px' } }
             },
             yAxis: [{
-                labels: { align: 'right', x: -4, style: { color: col.text, fontSize: '10px' } },
+                opposite: true,
+                labels: { align: 'left', x: 6, style: { color: col.text, fontSize: '10px' } },
                 gridLineColor: col.grid,
                 lineColor: col.grid,
                 crosshair: { color: col.text, dashStyle: 'dot' }
@@ -479,25 +484,33 @@
         }
         var vwapData = Object.keys(vwapMap).map(function(k){return [Number(k), vwapMap[Number(k)]];}).sort(function(a,b){return a[0]-b[0];});
 
-        // Supertrend — build a candle-close lookup, split into two series
-        // (stUp / stDown). Where ST value is BELOW the bar's close → point
-        // goes to stUp (green), stDown gets null (gap). Vice versa above.
-        // Both series share the x-axis; nulls prevent overlap. Native
-        // Highcharts line color renders per-series correctly.
+        // Supertrend — split into stUp (green) / stDown (red) based on ST
+        // value vs bar close. At each flip, PATCH the same point into BOTH
+        // series so the green and red lines meet visually (no gap).
         var closeByTime = {};
         candleData.forEach(function(row) { closeByTime[row[0]] = row[4]; });
         var stUpData = [], stDownData = [];
-        (stArr || []).forEach(function(p) {
+        var prevAbove = null;   // was the PREVIOUS ST point above close?
+        (stArr || []).forEach(function(p, i) {
             var t = Number(p.t);
             var y = Number(p.line);
             var close = closeByTime[t];
-            if (close != null && y < close) {
-                stUpData.push([t, y]);
-                stDownData.push([t, null]);
-            } else {
+            var above = (close != null && y > close);   // true = red (down), false = green (up)
+            if (above) {
                 stUpData.push([t, null]);
                 stDownData.push([t, y]);
+            } else {
+                stUpData.push([t, y]);
+                stDownData.push([t, null]);
             }
+            // Flip detected — patch the current point into the OTHER series
+            // as well so the green line's end meets the red line's start.
+            if (prevAbove !== null && prevAbove !== above) {
+                var idx = stUpData.length - 1;
+                if (above) stUpData[idx]   = [t, y];   // flipping to red: extend green up to here
+                else       stDownData[idx] = [t, y];   // flipping to green: extend red into this point
+            }
+            prevAbove = above;
         });
 
         var lastClose = candleData.length ? candleData[candleData.length - 1][4] : null;
