@@ -421,7 +421,8 @@
                     var pts = this.points || [];
                     var candle = pts.find(p => p.series.userOptions.id === 'candles');
                     var vwapP  = pts.find(p => p.series.userOptions.id === 'vwap');
-                    var stP    = pts.find(p => p.series.userOptions.id === 'st');
+                    var stP    = pts.find(p => p.series.userOptions.id === 'stUp' && p.y != null)
+                              || pts.find(p => p.series.userOptions.id === 'stDown' && p.y != null);
                     var t = Highcharts.dateFormat('%H:%M', this.x);
                     var out = '<div style="font-weight:700;color:' + col.text + ';margin-bottom:4px;border-bottom:1px solid rgba(128,128,128,0.25);padding-bottom:4px;">' + t + '</div>';
                     if (candle && candle.point && candle.point.open != null) {
@@ -433,14 +434,18 @@
                              + '<div>C <span style="color:' + cls + '">' + fmtPx(c) + '</span></div>';
                     }
                     if (vwapP) out += '<div>VWAP <span style="color:' + col.vwap + '">' + fmtPx(vwapP.y) + '</span></div>';
-                    if (stP)   out += '<div>ST <span style="color:' + (stP.point.color || col.text) + '">' + fmtPx(stP.y) + '</span></div>';
+                    if (stP)   out += '<div>ST <span style="color:' + stP.series.color + '">' + fmtPx(stP.y) + '</span></div>';
                     return out;
                 }
             },
             series: [
                 { id: 'candles', name: 'CE', type: 'candlestick', data: [], yAxis: 0 },
                 { id: 'vwap',    name: 'VWAP', type: 'line', color: col.vwap, lineWidth: 2, data: [], yAxis: 0, enableMouseTracking: true },
-                { id: 'st',      name: 'ST',   type: 'line', lineWidth: 2, data: [], yAxis: 0, enableMouseTracking: true }
+                // Supertrend split into two same-x-axis series so each colored
+                // segment renders as a native single-color line. `null` in the
+                // opposite series creates a gap so segments don't overlap.
+                { id: 'stUp',   name: 'ST',    type: 'line', color: col.up,   lineWidth: 2, data: [], yAxis: 0, enableMouseTracking: true, showInLegend: false },
+                { id: 'stDown', name: 'ST',    type: 'line', color: col.down, lineWidth: 2, data: [], yAxis: 0, enableMouseTracking: true, showInLegend: false }
             ]
         });
         charts[panelKey] = chart;
@@ -474,27 +479,36 @@
         }
         var vwapData = Object.keys(vwapMap).map(function(k){return [Number(k), vwapMap[Number(k)]];}).sort(function(a,b){return a[0]-b[0];});
 
-        // Supertrend — build a candle-close lookup, then color EACH ST point
-        // green when it sits BELOW that bar's close (uptrend = line acts as
-        // support) or red when ABOVE (downtrend = resistance). Highcharts
-        // per-point `color` sets the incoming line segment's color.
+        // Supertrend — build a candle-close lookup, split into two series
+        // (stUp / stDown). Where ST value is BELOW the bar's close → point
+        // goes to stUp (green), stDown gets null (gap). Vice versa above.
+        // Both series share the x-axis; nulls prevent overlap. Native
+        // Highcharts line color renders per-series correctly.
         var closeByTime = {};
         candleData.forEach(function(row) { closeByTime[row[0]] = row[4]; });
-        var stData = (stArr || []).map(function(p) {
+        var stUpData = [], stDownData = [];
+        (stArr || []).forEach(function(p) {
             var t = Number(p.t);
             var y = Number(p.line);
             var close = closeByTime[t];
-            var color = (close != null && y < close) ? col.up : col.down;
-            return { x: t, y: y, color: color };
+            if (close != null && y < close) {
+                stUpData.push([t, y]);
+                stDownData.push([t, null]);
+            } else {
+                stUpData.push([t, null]);
+                stDownData.push([t, y]);
+            }
         });
 
         var lastClose = candleData.length ? candleData[candleData.length - 1][4] : null;
         var candlesSeries = chart.get('candles');
         var vwapSeries    = chart.get('vwap');
-        var stSeries      = chart.get('st');
+        var stUpSeries    = chart.get('stUp');
+        var stDownSeries  = chart.get('stDown');
         if (candlesSeries) candlesSeries.setData(candleData, false);
         if (vwapSeries)    vwapSeries.setData(vwapData, false);
-        if (stSeries)      stSeries.setData(stData, false);
+        if (stUpSeries)    stUpSeries.setData(stUpData, false);
+        if (stDownSeries)  stDownSeries.setData(stDownData, false);
         chart.redraw(false);
         lastClosePerPanel[panelKey] = lastClose;
         return { firstClose: null, lastClose: lastClose };
