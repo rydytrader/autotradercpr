@@ -134,14 +134,10 @@ public class ChartController {
             candleAggregator.subscribe(symbol, c -> {});
         }
         List<Candle> bars = candleAggregator.getHistory(symbol, tf);
-        // ST series must include prior-session bars so ATR is valid from
-        // bar 1 today; but the chart itself only shows TODAY'S session, so
-        // the first visible bar is 09:15 IST, not yesterday's close.
-        List<Candle> todayBars = filterToToday(bars);
-        Candle forming = buildFormingBar(symbol, todayBars, tf);
-        out.put("history",  todayBars);
+        Candle forming = buildFormingBar(symbol, bars, tf);
+        out.put("history",  bars);
         out.put("current",  forming);   // in-progress N-min bar with live-tick close
-        out.put("stSeries", buildStSeries(bars, todayBars));
+        out.put("stSeries", buildStSeries(bars));
         long latestExchSec = marketDataService.getLatestExchFeedTimeSec();
         out.put("exchangeNowMs", latestExchSec > 0 ? latestExchSec * 1000L : 0L);
         return out;
@@ -199,40 +195,19 @@ public class ChartController {
         return cumVol > 0 ? cumTypVol / cumVol : 0.0;
     }
 
-    /** Keeps only bars whose IST calendar day equals today. Prior-session
-     *  bars stay in the aggregator (Supertrend ATR warmup needs them) but
-     *  the chart shows only today's session so the first bar reads 09:15. */
-    private List<Candle> filterToToday(List<Candle> bars) {
+    /** Per-bar Supertrend points aligned index-for-index with {@code bars}.
+     *  Skips indexes where ST is not yet defined (NaN). */
+    private List<Map<String, Object>> buildStSeries(List<Candle> bars) {
         if (bars == null || bars.isEmpty()) return List.of();
-        long todayStartUtcMs   = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"))
-            .atStartOfDay(java.time.ZoneId.of("Asia/Kolkata")).toInstant().toEpochMilli();
-        long tomorrowStartUtcMs = todayStartUtcMs + 86_400_000L;
-        List<Candle> out = new ArrayList<>(bars.size());
-        for (Candle c : bars) {
-            long sm = c.startMillis();
-            if (sm >= todayStartUtcMs && sm < tomorrowStartUtcMs) out.add(c);
-        }
-        return out;
-    }
-
-    /** Per-bar Supertrend points. Runs on {@code allBars} so ATR warmup uses
-     *  the prior session, then emits only points whose bar timestamp is in
-     *  {@code todayBars} so the ST line aligns with the visible candles. */
-    private List<Map<String, Object>> buildStSeries(List<Candle> allBars, List<Candle> todayBars) {
-        if (allBars == null || allBars.isEmpty()) return List.of();
         int atrPeriod = Math.max(2, riskSettings.getVwapStAtrPeriod());
         double mult   = Math.max(0.1, riskSettings.getVwapStMultiplier());
-        SuperTrend.Series ser = SuperTrend.series(allBars, atrPeriod, mult);
-        java.util.Set<Long> todayStarts = new java.util.HashSet<>();
-        for (Candle c : todayBars) todayStarts.add(c.startMillis());
-        List<Map<String, Object>> out = new ArrayList<>(allBars.size());
-        for (int i = 0; i < allBars.size(); i++) {
+        SuperTrend.Series ser = SuperTrend.series(bars, atrPeriod, mult);
+        List<Map<String, Object>> out = new ArrayList<>(bars.size());
+        for (int i = 0; i < bars.size(); i++) {
             double line = ser.line()[i];
             if (Double.isNaN(line)) continue;
-            long ts = allBars.get(i).startMillis();
-            if (!todayStarts.contains(ts)) continue;
             Map<String, Object> pt = new LinkedHashMap<>();
-            pt.put("t",    ts);
+            pt.put("t",    bars.get(i).startMillis());
             pt.put("line", round2(line));
             pt.put("isUp", ser.isUp()[i]);
             out.add(pt);
