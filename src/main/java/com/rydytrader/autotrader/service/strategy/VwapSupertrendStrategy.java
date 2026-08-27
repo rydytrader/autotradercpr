@@ -505,6 +505,17 @@ public class VwapSupertrendStrategy implements Strategy {
                 resp != null && resp.has("candles"),
                 resp != null && resp.has("candles") ? resp.path("candles").size() : -1,
                 resp == null ? "null" : resp.toString().substring(0, Math.min(200, resp.toString().length())));
+            // Auth-failure detection (Fyers code -16 = expired/invalid token).
+            // Surface it as a prominent event so the user knows to re-login;
+            // otherwise the warning below reads like a data-availability issue
+            // when the real cause is a stale access token.
+            if (resp != null && "error".equals(resp.path("s").asText(""))
+                    && resp.path("code").asInt(0) == -16) {
+                event("[ERROR]", "VwapST",
+                    "Fyers auth expired — cannot warm up Supertrend history. "
+                        + "Re-login at /fyers/login to mint a fresh token.");
+                return;
+            }
             JsonNode candles = resp == null ? null : resp.path("candles");
             if (candles == null || !candles.isArray() || candles.size() == 0) {
                 event("[WARNING]", "VwapST",
