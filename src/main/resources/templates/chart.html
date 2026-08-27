@@ -481,7 +481,7 @@
         return candleSeries[panelKey];
     }
 
-    function applyData(panelKey, history, stArr) {
+    function applyData(panelKey, history, stArr, current) {
         var candles = candleSeries[panelKey];
         var vwap    = vwapSeries[panelKey];
         var stLine  = stSeries[panelKey];
@@ -495,6 +495,11 @@
             if (v > 0) vwapMap[t] = v;
         }
         (history || []).forEach(pushBar);
+        // In-progress N-min bar from the server — overwrites the aggregator's
+        // partial bar at the same startMillis (server merges the in-progress
+        // 1-min bucket's live close into it). Rightmost candle updates on
+        // every tick.
+        if (current) pushBar(current);
 
         var bars = Object.keys(byTime)
             .map(function(k) { return byTime[Number(k)]; })
@@ -536,12 +541,13 @@
             }
             var history = d.history || [];
             var stArr   = d.stSeries || [];
+            var current = d.current || null;
             var empty = document.getElementById(emptyElId);
-            var hasData = history.length > 0;
+            var hasData = history.length > 0 || current;
             if (empty) empty.style.display = hasData ? 'none' : 'flex';
             if (!hasData) return;
             ensureChart(panelKey, 'chart' + panelKey.charAt(0).toUpperCase() + panelKey.slice(1), priceDecimals);
-            applyData(panelKey, history, stArr);
+            applyData(panelKey, history, stArr, current);
         }).catch(function() {});
     }
 
@@ -770,7 +776,7 @@
         pollAll();
         tickCountdown();
         checkConnection();
-        setInterval(pollAll, 2000);
+        setInterval(pollAll, 1000);   // 1-s poll for live per-tick forming-bar feel
         setInterval(tickCountdown, 1000);
         setInterval(checkConnection, 5000);
     });

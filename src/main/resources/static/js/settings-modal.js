@@ -24,7 +24,6 @@
                       '<div class="sm-field"><label>Lots per Leg</label><input type="number" id="sm-vwapStLotsPerLeg" step="1" min="1"><div class="sm-hint">1 lot = 65 NIFTY. Per-leg fixed sizing (CE and PE track independently).</div></div>' +
                       '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-vwapStSquareOffTime" step="60"><div class="sm-hint">Hard market-exit of any open leg. Default 15:25.</div></div>' +
                       '<div class="sm-field"><label>Target Premium (₹)</label><input type="number" id="sm-vwapStTargetPremium" step="1" min="1"><div class="sm-hint">After spot open, pick the CE and PE trading closest to this premium as the tracked pair. Default 250.</div></div>' +
-                      '<div class="sm-field"><label>Strikes Range (±)</label><input type="number" id="sm-vwapStStrikesRange" step="1" min="1"><div class="sm-hint">±N strikes around market-open ATM are subscribed to Fyers for LTP scan. Default 15.</div></div>' +
                       '<div class="sm-field"><label>Candle Minutes</label><input type="number" id="sm-vwapStCandleMinutes" step="1" min="1"><div class="sm-hint">Timeframe for signal candles + Supertrend calc. Default 3.</div></div>' +
                       '<div class="sm-field"><label>Supertrend ATR Period</label><input type="number" id="sm-vwapStAtrPeriod" step="1" min="2"><div class="sm-hint">Bars in the Supertrend ATR window. Default 10.</div></div>' +
                       '<div class="sm-field"><label>Supertrend Multiplier</label><input type="number" id="sm-vwapStMultiplier" step="0.1" min="0.1"><div class="sm-hint">ATR × this = band distance. Default 3.0.</div></div>' +
@@ -188,7 +187,6 @@
             if (g('sm-vwapStLotsPerLeg'))      g('sm-vwapStLotsPerLeg').value = d.vwapStLotsPerLeg != null ? d.vwapStLotsPerLeg : 1;
             if (g('sm-vwapStSquareOffTime'))   g('sm-vwapStSquareOffTime').value = d.vwapStSquareOffTime || '15:25';
             if (g('sm-vwapStTargetPremium'))   g('sm-vwapStTargetPremium').value = d.vwapStTargetPremium != null ? d.vwapStTargetPremium : 250;
-            if (g('sm-vwapStStrikesRange'))    g('sm-vwapStStrikesRange').value = d.vwapStStrikesRange != null ? d.vwapStStrikesRange : 15;
             if (g('sm-vwapStCandleMinutes'))   g('sm-vwapStCandleMinutes').value = d.vwapStCandleMinutes != null ? d.vwapStCandleMinutes : 3;
             if (g('sm-vwapStAtrPeriod'))       g('sm-vwapStAtrPeriod').value = d.vwapStAtrPeriod != null ? d.vwapStAtrPeriod : 10;
             if (g('sm-vwapStMultiplier'))      g('sm-vwapStMultiplier').value = d.vwapStMultiplier != null ? d.vwapStMultiplier : 3.0;
@@ -202,7 +200,6 @@
             vwapStLotsPerLeg:     parseInt(g('sm-vwapStLotsPerLeg').value, 10) || 1,
             vwapStSquareOffTime:  (g('sm-vwapStSquareOffTime').value || '').trim(),
             vwapStTargetPremium:  parseFloat(g('sm-vwapStTargetPremium').value) || 250,
-            vwapStStrikesRange:   parseInt(g('sm-vwapStStrikesRange').value, 10) || 15,
             vwapStCandleMinutes:  parseInt(g('sm-vwapStCandleMinutes').value, 10) || 3,
             vwapStAtrPeriod:      parseInt(g('sm-vwapStAtrPeriod').value, 10) || 10,
             vwapStMultiplier:     parseFloat(g('sm-vwapStMultiplier').value) || 3.0

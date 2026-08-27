@@ -153,6 +153,20 @@ public class FyersMinuteBarBuilder {
         }
     }
 
+    /** Snapshot of the currently-open 1-min bucket for {@code symbol}, or
+     *  {@code null} when the symbol has no bucket yet. Read is non-mutating
+     *  and takes the enclosing monitor briefly. Volume field carries the
+     *  session-volume delta accumulated within the bucket so far. */
+    public Candle getInProgressBar(String symbol) {
+        if (symbol == null || symbol.isBlank()) return null;
+        synchronized (this) {
+            Bucket b = byBucket.get(symbol);
+            if (b == null || b.minuteEpoch <= 0) return null;
+            long vol = Math.max(0, b.endSessionVol - b.startSessionVol);
+            return new Candle(b.open, b.high, b.low, b.close, vol, b.startMs, 0.0);
+        }
+    }
+
     /** Diagnostic — human-readable summary of per-symbol bucket state. */
     public String debugSnapshot() {
         StringBuilder sb = new StringBuilder("FyersMinuteBarBuilder buckets: ");
