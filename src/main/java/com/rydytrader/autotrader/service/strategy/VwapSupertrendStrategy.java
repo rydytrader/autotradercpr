@@ -108,6 +108,13 @@ public class VwapSupertrendStrategy implements Strategy {
         volatile double   targetPrice;      // = fillPrice + rr × (fillPrice − slPrice)
         volatile int      qty;
         volatile long     entryBarStartMs;
+        /** ST direction on the PREVIOUS confirmed bar close — used to detect
+         *  a red→green flip on the current bar (a fresh Supertrend-flip
+         *  entry). null = first evaluation, no previous state yet. */
+        volatile Boolean  previousStUp;
+        /** Which pathway triggered this leg's current entry — 'VWAP_BOUNCE'
+         *  or 'ST_FLIP'. Persisted with the trade row on exit. */
+        volatile String   entryReason;
         void reset() {
             state = LegState.WAITING;
             entryOrderId = null;
@@ -117,6 +124,9 @@ public class VwapSupertrendStrategy implements Strategy {
             targetPrice = 0;
             qty = 0;
             entryBarStartMs = 0;
+            entryReason = null;
+            // previousStUp intentionally NOT reset — it's a running signal
+            // tracker across bars, not a per-position field.
         }
     }
 
@@ -145,7 +155,7 @@ public class VwapSupertrendStrategy implements Strategy {
     private final Map<Long, ClosedTrade> tradesTodayById = new ConcurrentHashMap<>();
 
     private record ClosedTrade(String side, String symbol, double entry, double exit,
-                                int qty, long closedMs, String reason) {}
+                                int qty, long closedMs, String reason, String setup) {}
 
     public VwapSupertrendStrategy(CandleAggregator candleAggregator,
                                    MarketDataService marketDataService,
@@ -584,30 +594,47 @@ public class VwapSupertrendStrategy implements Strategy {
         boolean wickBelowVwap  = bar.low()  <= bar.vwap() && bar.high() >= bar.vwap();
         boolean closeAboveVwap = bar.close() > bar.vwap();
         boolean stUp           = st.available() && st.isUp();
+        // ST-flip detection: red→green on THIS bar close. previousStUp==false
+        // means the PRIOR confirmed bar had ST down; combined with stUp=true
+        // now, that's a fresh flip. The setup is 'candles above VWAP,
+        // retrace to VWAP, take support, ST flips green' — so we also
+        // require closeAboveVwap so the flip happened while price is above
+        // its session anchor.
+        boolean stFlipUp = leg.previousStUp != null && !leg.previousStUp && stUp;
 
-        // Log only bars where the wick actually straddled VWAP — that's the
-        // gating condition for entry, so a bar without a wick can NEVER
-        // produce a trade regardless of ST or close position. This keeps
-        // the log focused on 'the bar touched VWAP — here's whether we
-        // entered or which filter blocked'.
-        if (wickBelowVwap) {
-            log.info("[VwapSupertrend] {} {} bar close — o={} h={} l={} c={} vwap={} st_line={} st_up={} wick_below_vwap={} close_above_vwap={} legState={}",
+        // Log bars that are near-misses or fires — either the wick touched
+        // VWAP OR the ST just flipped. Silent for bars far from any signal.
+        if (wickBelowVwap || stFlipUp) {
+            log.info("[VwapSupertrend] {} {} bar close — o={} h={} l={} c={} vwap={} st_line={} st_up={} st_flip_up={} wick_below_vwap={} close_above_vwap={} legState={}",
                 sideLabel, leg.chosenSymbol,
                 fmt(bar.open()), fmt(bar.high()), fmt(bar.low()), fmt(bar.close()),
-                fmt(bar.vwap()), fmt(st.line()), stUp, wickBelowVwap, closeAboveVwap, leg.state);
+                fmt(bar.vwap()), fmt(st.line()), stUp, stFlipUp, wickBelowVwap, closeAboveVwap, leg.state);
         }
 
-        // Entry — VWAP crossover bar + ST up + leg is idle.
-        //   VWAP crossover = bar's low touched or crossed BELOW vwap AND close
-        //   is ABOVE vwap. Candle body direction (red/green) is IRRELEVANT —
-        //   the crossover is defined by the wick and close position relative
-        //   to VWAP, not by open vs close. A red-bodied bar that dipped below
-        //   VWAP and closed back above still counts.
-        // Exits handled purely by LTP-driven SL/target in checkSlOrTarget;
-        // ST-flip is only a filter for entries, not an exit trigger.
-        if (leg.state == LegState.WAITING && wickBelowVwap && closeAboveVwap && stUp) {
-            fireEntry(leg, sideLabel, bar);
+        // Entry pathways — either fires when leg is WAITING:
+        //   A. VWAP_BOUNCE  — wick straddled VWAP AND close above AND ST up
+        //   B. ST_FLIP      — ST just flipped red→green AND close above VWAP
+        if (leg.state == LegState.WAITING) {
+            if (wickBelowVwap && closeAboveVwap && stUp) {
+                leg.entryReason = "VWAP_BOUNCE";
+                fireEntry(leg, sideLabel, bar);
+            } else if (stFlipUp && closeAboveVwap) {
+                leg.entryReason = "ST_FLIP";
+                fireEntry(leg, sideLabel, bar);
+            } else if (wickBelowVwap && closeAboveVwap && !stUp) {
+                // VWAP-bounce fired but Supertrend is red — surface an event
+                // so the operator sees the skipped trade without hunting the
+                // log file.
+                event("[WARNING]", "VwapST",
+                    sideLabel + " " + leg.chosenSymbol + " entry SKIPPED — VWAP breakout "
+                        + "but Supertrend not aligned (st_up=false, st_line=" + fmt(st.line())
+                        + " close=" + fmt(bar.close()) + " vwap=" + fmt(bar.vwap()) + ")");
+            }
         }
+
+        // Update ST direction tracker for the NEXT bar's flip check.
+        // Must run after entry evaluation so THIS bar's flip fires only once.
+        leg.previousStUp = stUp;
     }
 
     // ── Entry / exit ────────────────────────────────────────────────────────
@@ -671,7 +698,8 @@ public class VwapSupertrendStrategy implements Strategy {
                 double pnl = (exitLtp - entry) * qty;
                 realisedPnlToday.updateAndGet(v -> v + pnl);
                 long id = System.currentTimeMillis();
-                tradesTodayById.put(id, new ClosedTrade(sideLabel, sym, entry, exitLtp, qty, id, reason));
+                String setup = leg.entryReason == null ? "VWAP+ST" : leg.entryReason;
+                tradesTodayById.put(id, new ClosedTrade(sideLabel, sym, entry, exitLtp, qty, id, reason, setup));
                 persistTradeRow(sideLabel, sym, entry, exitLtp, qty, id, reason, leg);
             }
         } catch (Exception e) {
@@ -767,7 +795,7 @@ public class VwapSupertrendStrategy implements Strategy {
         List<Map<String, Object>> out = new ArrayList<>(tradesTodayById.size());
         for (ClosedTrade t : tradesTodayById.values()) {
             Map<String, Object> m = new LinkedHashMap<>();
-            m.put("setup",          "VWAP+ST");
+            m.put("setup",          t.setup);
             m.put("side",           t.side);
             m.put("symbol",         t.symbol);
             m.put("qty",            t.qty);
@@ -852,7 +880,8 @@ public class VwapSupertrendStrategy implements Strategy {
             StrategyTradeEntity e = new StrategyTradeEntity();
             e.setStrategyId("vwap-supertrend");
             e.setSymbol(sym);
-            e.setSetup("VWAP+ST " + side);
+            String pathway = leg.entryReason == null ? "VWAP+ST" : leg.entryReason;
+            e.setSetup(pathway + " " + side);
             e.setInstrument("OPT");
             e.setSessionDate(LocalDate.now(IST).toString());
             e.setClosedAtMillis(closedMs);
