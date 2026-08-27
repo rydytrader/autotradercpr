@@ -612,8 +612,8 @@
                 yAxis.addPlotLine({
                     id:    id,
                     value: value,
-                    color: fill,
-                    width: 1,
+                    color: 'transparent',   // no horizontal line across the chart
+                    width: 0,
                     zIndex: 5,
                     label: {
                         text:  fmtPx(value),
