@@ -904,6 +904,11 @@ public class VwapSupertrendStrategy implements Strategy {
         m.put("slPrice",     leg.slPrice);
         m.put("targetPrice", leg.targetPrice);
         m.put("legState",    leg.state.name());
+        // Full setup label (pathway + side) matching the persisted trade row,
+        // so /positions and /trades show the same '<pathway> CE|PE' string.
+        String pathway = leg.entryReason == null ? "VWAP+ST" : leg.entryReason;
+        m.put("entryReason", leg.entryReason);
+        m.put("setup",       pathway + " " + side);
         return m;
     }
 

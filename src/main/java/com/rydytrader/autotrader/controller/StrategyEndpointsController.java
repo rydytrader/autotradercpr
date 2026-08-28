@@ -111,11 +111,15 @@ public class StrategyEndpointsController {
                         Object entry = leg.get("entryPrice");
                         Object sl    = leg.get("slPrice");
                         Object tgt   = leg.get("targetPrice");
+                        Object setup = leg.get("setup");
                         Object side  = leg.get("side");
                         if (entry instanceof Number && ((Number) entry).doubleValue() > 0) m.put("entryPrice", entry);
                         if (sl    instanceof Number && ((Number) sl).doubleValue()    > 0) m.put("slPrice",     sl);
                         if (tgt   instanceof Number && ((Number) tgt).doubleValue()   > 0) m.put("targetLevel", tgt);
-                        if (side  != null) m.put("setup", side);
+                        // Prefer the full pathway+side setup label (e.g. 'VWAP_BREAKOUT CE');
+                        // fall back to just the side if pathway isn't populated yet.
+                        if (setup != null)      m.put("setup", setup);
+                        else if (side != null)  m.put("setup", side);
                     }
                 }
                 out.add(m);
