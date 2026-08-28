@@ -645,6 +645,11 @@ public class VwapSupertrendStrategy implements Strategy {
         boolean wickBelowVwap  = bar.low()  <= bar.vwap() && bar.high() >= bar.vwap();
         boolean closeAboveVwap = bar.close() > bar.vwap();
         boolean stUp           = st.available() && st.isUp();
+        // Green-candle filter — entry bar must close ABOVE its open. Blocks
+        // entries on doji / red bars even when VWAP + ST conditions align:
+        // a red bar closing above VWAP is a fade of the wick, not a
+        // continuation. Applies to BOTH VWAP_BREAKOUT and SUPER_TREND_FLIP.
+        boolean greenCandle    = bar.close() > bar.open();
         // ST-flip detection: red→green on THIS bar close. previousStUp==false
         // means the PRIOR confirmed bar had ST down; combined with stUp=true
         // now, that's a fresh flip. The setup is 'candles above VWAP,
@@ -656,21 +661,21 @@ public class VwapSupertrendStrategy implements Strategy {
         // Log bars that are near-misses or fires — either the wick touched
         // VWAP OR the ST just flipped. Silent for bars far from any signal.
         if (wickBelowVwap || stFlipUp) {
-            log.info("[VwapSupertrend] {} {} bar close — o={} h={} l={} c={} vwap={} st_line={} st_up={} st_flip_up={} wick_below_vwap={} close_above_vwap={} legState={}",
+            log.info("[VwapSupertrend] {} {} bar close — o={} h={} l={} c={} vwap={} st_line={} st_up={} st_flip_up={} wick_below_vwap={} close_above_vwap={} green_candle={} legState={}",
                 sideLabel, leg.chosenSymbol,
                 fmt(bar.open()), fmt(bar.high()), fmt(bar.low()), fmt(bar.close()),
-                fmt(bar.vwap()), fmt(st.line()), stUp, stFlipUp, wickBelowVwap, closeAboveVwap, leg.state);
+                fmt(bar.vwap()), fmt(st.line()), stUp, stFlipUp, wickBelowVwap, closeAboveVwap, greenCandle, leg.state);
         }
 
         // Entry pathways — either fires when leg is WAITING:
         //   A. VWAP_BOUNCE  — wick straddled VWAP AND close above AND ST up
         //   B. ST_FLIP      — ST just flipped red→green AND close above VWAP
         if (leg.state == LegState.WAITING) {
-            if (wickBelowVwap && closeAboveVwap && stUp) {
+            if (wickBelowVwap && closeAboveVwap && stUp && greenCandle) {
                 leg.entryReason = "VWAP_BREAKOUT";
                 leg.atrAtEntry  = latestAtr;
                 fireEntry(leg, sideLabel, bar);
-            } else if (stFlipUp && closeAboveVwap) {
+            } else if (stFlipUp && closeAboveVwap && greenCandle) {
                 leg.entryReason = "SUPER_TREND_FLIP";
                 leg.atrAtEntry  = latestAtr;
                 fireEntry(leg, sideLabel, bar);
@@ -682,6 +687,19 @@ public class VwapSupertrendStrategy implements Strategy {
                     sideLabel + " " + leg.chosenSymbol + " entry SKIPPED — VWAP breakout "
                         + "but Supertrend not aligned (st_up=false, st_line=" + fmt(st.line())
                         + " close=" + fmt(bar.close()) + " vwap=" + fmt(bar.vwap()) + ")");
+            } else if (wickBelowVwap && closeAboveVwap && stUp && !greenCandle) {
+                // All indicators aligned but the entry bar itself is red /
+                // doji — likely a wick-fade rather than a continuation. Skip
+                // and surface an event so the operator sees why.
+                event("[WARNING]", "VwapST",
+                    sideLabel + " " + leg.chosenSymbol + " entry SKIPPED — VWAP + ST aligned "
+                        + "but entry bar is not green (o=" + fmt(bar.open())
+                        + " c=" + fmt(bar.close()) + ")");
+            } else if (stFlipUp && closeAboveVwap && !greenCandle) {
+                event("[WARNING]", "VwapST",
+                    sideLabel + " " + leg.chosenSymbol + " entry SKIPPED — ST flip up "
+                        + "but entry bar is not green (o=" + fmt(bar.open())
+                        + " c=" + fmt(bar.close()) + ")");
             }
         }
 
