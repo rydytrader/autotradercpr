@@ -330,6 +330,20 @@ public class VwapSupertrendStrategy implements Strategy {
         saveStateToDisk();
     }
 
+    /** 1-second fast-poll while the strategy is actively trying to pick the
+     *  CE + PE pair after spot open. NIFTY ATM ± N option strikes are highly
+     *  liquid — LTPs typically populate within 1-3 s of 09:15. This poll
+     *  fires pickPairAndWarmup every second so the pick succeeds as soon as
+     *  enough LTPs are in the cache instead of waiting on the coarser 5 s
+     *  scheduler cycle. Runs no-op when the FSM is anywhere but
+     *  STRIKES_SUBSCRIBING. */
+    @org.springframework.scheduling.annotation.Scheduled(fixedDelay = 1000, initialDelay = 5000)
+    public void fastPickPoll() {
+        if (fsm == FsmState.STRIKES_SUBSCRIBING) {
+            pickPairAndWarmup();
+        }
+    }
+
     /** Fires once daily at 09:10 IST via @Scheduled cron, or from tick() as
      *  a catch-up when the bot boots inside the 09:10-09:15 window. Fetches
      *  yesterday's NIFTY 50 spot close via Fyers /data/history (D bars),
