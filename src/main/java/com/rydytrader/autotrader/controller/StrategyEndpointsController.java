@@ -111,9 +111,24 @@ public class StrategyEndpointsController {
                 m.put("side",     p.getSide());
                 m.put("avgPrice", p.getAvgPrice());
                 m.put("ltp",      p.getLtp());
+                // Compute MTM using the STRATEGY'S current-cycle fillPrice when
+                // available (from getLegSnapshot). Fyers's netAvg blends across
+                // all buys of the day for the symbol, so on a re-entry after a
+                // full close the netAvg smears both cycles together and MTM
+                // becomes offset from the strategy's own view. Using the
+                // per-leg fillPrice keeps MTM aligned with liveNetPnlToday()
+                // (the header P&L) and with the current-cycle economics.
+                double costBasis = p.getAvgPrice();
+                if (s != null) {
+                    Map<String, Object> leg0 = s.getLegSnapshot(p.getSymbol());
+                    Object legEntry = leg0.get("entryPrice");
+                    if (legEntry instanceof Number && ((Number) legEntry).doubleValue() > 0) {
+                        costBasis = ((Number) legEntry).doubleValue();
+                    }
+                }
                 double pnl = "LONG".equals(p.getSide())
-                    ? (p.getLtp() - p.getAvgPrice()) * p.getQty()
-                    : (p.getAvgPrice() - p.getLtp()) * p.getQty();
+                    ? (p.getLtp() - costBasis) * p.getQty()
+                    : (costBasis - p.getLtp()) * p.getQty();
                 m.put("pnl", pnl);
                 m.put("mtm", pnl);   // trade.html reads either field
                 // Merge strategy-computed levels: entryPrice (fill), slPrice,
