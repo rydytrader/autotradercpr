@@ -737,7 +737,7 @@ public class VwapSupertrendStrategy implements Strategy {
         int lots = Math.max(1, riskSettings.getVwapStLotsPerLeg());
         int qty = lots * LOT_SIZE;
         try {
-            OrderDTO placed = orderService.placeOrder(leg.chosenSymbol, qty, 1, 0.0, "INTRADAY");
+            OrderDTO placed = orderService.placeOrder(leg.chosenSymbol, qty, 1, 0.0, "MARGIN");
             if (placed == null || placed.getId() == null || placed.getId().isBlank()) {
                 event("[ERROR]", "VwapST",
                     sideLabel + " ENTRY placeOrder rejected — response=" + (placed == null ? "null" : placed.getMessage()));
@@ -766,7 +766,7 @@ public class VwapSupertrendStrategy implements Strategy {
         int qty = Math.max(1, leg.qty);
         double entry = leg.fillPrice;
         try {
-            OrderDTO placed = orderService.placeExitOrder(sym, qty, -1, "INTRADAY");
+            OrderDTO placed = orderService.placeExitOrder(sym, qty, -1, "MARGIN");
             String orderId = placed != null ? placed.getId() : "";
             event("[WARNING]", "VwapST",
                 sideLabel + " EXIT placed — reason=" + reason
