@@ -167,6 +167,17 @@ public class VwapSupertrendStrategy implements Strategy {
     private record ClosedTrade(String side, String symbol, double entry, double exit,
                                 int qty, long closedMs, String reason, String setup) {}
 
+    /** Exit orders placed but not yet confirmed by Fyers's fill event. When
+     *  the exit fill lands via {@link OrderEventService}, we look up this map
+     *  by orderId to find the trade record we need to REFINE with the actual
+     *  fill price (fireExit writes the row with LTP-at-placement as a
+     *  best-effort placeholder). */
+    private final Map<String, PendingExit> pendingExitsByOrderId = new ConcurrentHashMap<>();
+
+    private record PendingExit(long tradeMs, String side, String symbol,
+                                int qty, double entry, String reason,
+                                double approxExit, Long dbRowId) {}
+
     public VwapSupertrendStrategy(CandleAggregator candleAggregator,
                                    MarketDataService marketDataService,
                                    OrderService orderService,
@@ -745,7 +756,8 @@ public class VwapSupertrendStrategy implements Strategy {
                 sideLabel + " EXIT placed — reason=" + reason
                     + " qty=" + qty + " orderId=" + orderId
                     + " detail=" + detail);
-            // Approximate P&L using current LTP; refined when the exit fill lands.
+            // Approximate P&L using current LTP; refined when the exit fill
+            // lands via onOrderFill (below) with the actual Fyers fill price.
             double exitLtp = marketDataService.getLtp(sym);
             if (exitLtp > 0 && entry > 0) {
                 double pnl = (exitLtp - entry) * qty;
@@ -753,7 +765,13 @@ public class VwapSupertrendStrategy implements Strategy {
                 long id = System.currentTimeMillis();
                 String setup = leg.entryReason == null ? "VWAP+ST" : leg.entryReason;
                 tradesTodayById.put(id, new ClosedTrade(sideLabel, sym, entry, exitLtp, qty, id, reason, setup));
-                persistTradeRow(sideLabel, sym, entry, exitLtp, qty, id, reason, leg);
+                Long dbRowId = persistTradeRow(sideLabel, sym, entry, exitLtp, qty, id, reason, leg);
+                // Register the pending exit so onOrderFill can refine the
+                // recorded exit price once Fyers confirms the actual trade.
+                if (orderId != null && !orderId.isBlank()) {
+                    pendingExitsByOrderId.put(orderId,
+                        new PendingExit(id, sideLabel, sym, qty, entry, reason, exitLtp, dbRowId));
+                }
             }
         } catch (Exception e) {
             event("[ERROR]", "VwapST", sideLabel + " EXIT threw — " + e.getMessage());
@@ -770,10 +788,63 @@ public class VwapSupertrendStrategy implements Strategy {
         synchronized (this) {
             if (orderId.equals(ceLeg.entryOrderId) && ceLeg.state == LegState.PENDING_ENTRY) {
                 applyFill(ceLeg, "CE", fillPrice);
-            } else if (orderId.equals(peLeg.entryOrderId) && peLeg.state == LegState.PENDING_ENTRY) {
+                return;
+            }
+            if (orderId.equals(peLeg.entryOrderId) && peLeg.state == LegState.PENDING_ENTRY) {
                 applyFill(peLeg, "PE", fillPrice);
+                return;
+            }
+            // Exit-order fill — refine the recorded exit price from the LTP
+            // approximation to the actual Fyers-reported trade price.
+            PendingExit pending = pendingExitsByOrderId.remove(orderId);
+            if (pending != null) {
+                refineExitFill(pending, orderId, fillPrice);
             }
         }
+    }
+
+    /** Runs when Fyers's fill event lands for a previously-placed exit order.
+     *  Corrects the recorded exit price on the in-memory ClosedTrade + the
+     *  DB row + realisedPnlToday (delta between LTP approximation and the
+     *  actual fill). */
+    private void refineExitFill(PendingExit pending, String orderId, double actualFill) {
+        double approx = pending.approxExit();
+        if (actualFill <= 0 || Math.abs(actualFill - approx) < 0.005) {
+            log.debug("[VwapSupertrend] exit fill matches approx — orderId={} price={}", orderId, actualFill);
+            return;
+        }
+        double approxPnl = (approx - pending.entry()) * pending.qty();
+        double actualPnl = (actualFill - pending.entry()) * pending.qty();
+        double delta = actualPnl - approxPnl;
+        realisedPnlToday.updateAndGet(v -> v + delta);
+        // In-memory ClosedTrade row.
+        ClosedTrade old = tradesTodayById.get(pending.tradeMs());
+        if (old != null) {
+            tradesTodayById.put(pending.tradeMs(), new ClosedTrade(
+                old.side(), old.symbol(), old.entry(), actualFill,
+                old.qty(), old.closedMs(), old.reason(), old.setup()));
+        }
+        // DB row.
+        if (pending.dbRowId() != null) {
+            try {
+                tradeRepository.findById(pending.dbRowId()).ifPresent(row -> {
+                    row.setExitPrice(actualFill);
+                    double gross   = (actualFill - pending.entry()) * pending.qty();
+                    double charges = riskSettings.getBrokeragePerOrder() * 2;
+                    row.setGrossPnl(gross);
+                    row.setCharges(charges);
+                    row.setNetPnl(gross - charges);
+                    tradeRepository.save(row);
+                });
+            } catch (Exception e) {
+                log.warn("[VwapSupertrend] refineExitFill DB update failed: {}", e.getMessage());
+            }
+        }
+        event("[INFO]", "VwapST",
+            pending.side() + " EXIT fill refined — approx=" + fmt(approx)
+                + " actual=" + fmt(actualFill)
+                + " P&L delta=" + fmt(delta)
+                + " orderId=" + orderId);
     }
 
     /** Captures fill price and derives SL + target from configured buffer and
@@ -1003,7 +1074,7 @@ public class VwapSupertrendStrategy implements Strategy {
     /** Persists a single-leg closed trade to the strategy_trades table so it
      *  shows up on /trades. Called from fireExit once we have the exit LTP.
      *  Charges = flat brokerage × 2 (buy + sell). */
-    private void persistTradeRow(String side, String sym, double entry, double exit,
+    private Long persistTradeRow(String side, String sym, double entry, double exit,
                                   int qty, long closedMs, String reason, Leg leg) {
         try {
             double gross   = (exit - entry) * qty;
@@ -1027,9 +1098,11 @@ public class VwapSupertrendStrategy implements Strategy {
             e.setCloseReason(reason);
             e.setEntryCandleMs(leg.entryBarStartMs > 0 ? leg.entryBarStartMs : null);
             e.setExitCandleMs(closedMs);
-            tradeRepository.save(e);
+            StrategyTradeEntity saved = tradeRepository.save(e);
+            return saved == null ? null : saved.getId();
         } catch (Exception ex) {
             log.warn("[VwapSupertrend] persistTradeRow failed: {}", ex.getMessage());
+            return null;
         }
     }
 
