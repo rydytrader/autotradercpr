@@ -718,6 +718,22 @@ public class VwapSupertrendStrategy implements Strategy {
                 }
             } catch (Exception ignored) {}
         }
+        // Trading-end gate — no NEW entries after this cutoff. Open positions
+        // continue to be managed to SL / target / squareoff as normal; this
+        // only blocks fresh entries so the strategy tapers off before the
+        // hard squareoff time.
+        String tradingEnd = riskSettings.getVwapStTradingEndTime();
+        if (tradingEnd != null && !tradingEnd.isBlank()) {
+            try {
+                LocalTime end = LocalTime.parse(tradingEnd);
+                if (!ZonedDateTime.now(IST).toLocalTime().isBefore(end)) {
+                    event("[INFO]", "VwapST",
+                        sideLabel + " " + leg.chosenSymbol + " entry SKIPPED — past trading end time "
+                            + tradingEnd + " (new entries blocked; open positions still managed)");
+                    return;
+                }
+            } catch (Exception ignored) {}
+        }
         int lots = Math.max(1, riskSettings.getVwapStLotsPerLeg());
         int qty = lots * LOT_SIZE;
         try {
