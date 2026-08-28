@@ -150,6 +150,11 @@ public class VwapSupertrendStrategy implements Strategy {
      *  pick — dropping the 78 unused strikes frees WS bandwidth and cuts
      *  incoming tick volume by ~95 %. */
     private final java.util.Set<String> subscribedStrikes = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /** IST date the strategy last captured spot open on (real trading session
+     *  date). Empty until spot-open capture fires today. Persisted; used at
+     *  load time to detect state that carried over from a prior trading day
+     *  through a periodic save that happened past IST midnight. */
+    private volatile String sessionDate = "";
     /** Total closed trades today for liveNetPnlToday accumulation. */
     private final AtomicReference<Double> realisedPnlToday = new AtomicReference<>(0.0);
     private final Map<Long, ClosedTrade> tradesTodayById = new ConcurrentHashMap<>();
@@ -272,6 +277,10 @@ public class VwapSupertrendStrategy implements Strategy {
         if (fsm != FsmState.BOOT) return;
         spotOpen  = openTickLtp;
         atmStrike = Math.round(spotOpen / (double) STRIKE_INTERVAL) * STRIKE_INTERVAL;
+        // Stamp the actual trading-session date. Anything the periodic save
+        // writes past midnight IST tomorrow will carry THIS date; next-day
+        // boot then discards the state via the sessionDate check.
+        sessionDate = LocalDate.now(IST).toString();
         int range = Math.max(1, riskSettings.getVwapStStrikesRange());
 
         LocalDate today = LocalDate.now(IST);
@@ -763,6 +772,7 @@ public class VwapSupertrendStrategy implements Strategy {
 
     private synchronized void rolloverIfNewDay(String today) {
         todayKey = today;
+        sessionDate = "";   // cleared until this day's spot-open capture sets it
         ceLeg.reset();
         peLeg.reset();
         spotOpen = 0;
@@ -942,7 +952,17 @@ public class VwapSupertrendStrategy implements Strategy {
     /** Persisted snapshot — everything needed to resume a mid-day restart
      *  without re-picking strikes or losing live-leg position state. */
     public static class PersistedState {
+        /** IST date of the last save (mostly informational). Not used to
+         *  detect stale state — that's what {@link #sessionDate} is for. */
         public String    dayKey = "";
+        /** IST date when the strategy last transitioned into an active FSM
+         *  (STRIKES_SUBSCRIBING / ARMED) — i.e. the actual trading day the
+         *  persisted CE/PE + leg state belongs to. Set only when the bot
+         *  captures a real spot open. Used to distinguish "state written by
+         *  the periodic save 15 min after IST midnight while the FSM was
+         *  DONE_FOR_DAY from yesterday" (stale — sessionDate < today) from
+         *  "state written mid-day today" (valid — sessionDate == today). */
+        public String    sessionDate = "";
         public String    fsm = "BOOT";
         public double    spotOpen;
         public long      atmStrike;
@@ -975,10 +995,17 @@ public class VwapSupertrendStrategy implements Strategy {
             PersistedState s = mapper.readValue(java.nio.file.Files.readString(p), PersistedState.class);
             if (s == null) return false;
             String today = LocalDate.now(IST).toString();
-            if (!today.equals(s.dayKey)) {
-                log.info("[VwapSupertrend] discarding stale state — dayKey={} today={}", s.dayKey, today);
+            // Freshness gate uses sessionDate (the day spot-open was captured),
+            // NOT dayKey (which is rewritten by every periodic save and thus
+            // rolls over silently at IST midnight even when the FSM is stale).
+            // Empty sessionDate = state saved before spot-open ever fired
+            // today; also discard so we don't restore a half-initialised FSM.
+            if (s.sessionDate == null || s.sessionDate.isBlank() || !today.equals(s.sessionDate)) {
+                log.info("[VwapSupertrend] discarding stale state — sessionDate={} today={} dayKey={}",
+                    s.sessionDate, today, s.dayKey);
                 return false;
             }
+            sessionDate = s.sessionDate;
             try { fsm = FsmState.valueOf(s.fsm); } catch (Exception e) { fsm = FsmState.BOOT; }
             spotOpen                 = s.spotOpen;
             atmStrike                = s.atmStrike;
@@ -1015,6 +1042,7 @@ public class VwapSupertrendStrategy implements Strategy {
         try {
             PersistedState s = new PersistedState();
             s.dayKey                   = LocalDate.now(IST).toString();
+            s.sessionDate              = sessionDate;
             s.fsm                      = fsm.name();
             s.spotOpen                 = spotOpen;
             s.atmStrike                = atmStrike;
