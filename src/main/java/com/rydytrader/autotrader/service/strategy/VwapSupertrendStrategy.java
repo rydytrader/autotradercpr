@@ -470,15 +470,26 @@ public class VwapSupertrendStrategy implements Strategy {
             String peSym = NiftyOptionSymbolBuilder.buildFyersSymbol(expiry, strike, "PE");
             double ceLtp = marketDataService.getLtp(ceSym);
             double peLtp = marketDataService.getLtp(peSym);
-            if (ceLtp > 0 && Math.abs(ceLtp - target) < bestCeDiff) {
-                bestCeDiff = Math.abs(ceLtp - target);
-                bestCe = ceSym;
-                bestCeLtp = ceLtp;
+            // Tiebreak: when two strikes have the same |LTP − target| distance,
+            // pick the one with the HIGHER LTP. That's the ITM side of the tie
+            // on both CE and PE (CE LTP decreases with strike, PE increases —
+            // higher LTP is always the ITM/ATM-nearer strike). Higher premium
+            // = more delta = tighter tracking of the underlying.
+            if (ceLtp > 0) {
+                double d = Math.abs(ceLtp - target);
+                if (d < bestCeDiff || (d == bestCeDiff && ceLtp > bestCeLtp)) {
+                    bestCeDiff = d;
+                    bestCe = ceSym;
+                    bestCeLtp = ceLtp;
+                }
             }
-            if (peLtp > 0 && Math.abs(peLtp - target) < bestPeDiff) {
-                bestPeDiff = Math.abs(peLtp - target);
-                bestPe = peSym;
-                bestPeLtp = peLtp;
+            if (peLtp > 0) {
+                double d = Math.abs(peLtp - target);
+                if (d < bestPeDiff || (d == bestPeDiff && peLtp > bestPeLtp)) {
+                    bestPeDiff = d;
+                    bestPe = peSym;
+                    bestPeLtp = peLtp;
+                }
             }
         }
         if (bestCe == null || bestPe == null) {
