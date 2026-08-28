@@ -548,7 +548,10 @@
     function startPollFallback() {
         if (pollTimer) return;
         loadState();
-        pollTimer = setInterval(loadState, 5000);
+        // 1-second polling so LTP + MTM + SL/target distances refresh
+        // near-real-time. State payload is small (< 20 KB typical) and both
+        // the ticker + chart pages already poll on the same cadence.
+        pollTimer = setInterval(loadState, 1000);
     }
     function stopPollFallback() {
         if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
