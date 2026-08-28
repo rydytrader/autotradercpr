@@ -220,6 +220,12 @@ public class VwapSupertrendStrategy implements Strategy {
             // Supertrend and no ST line on the chart after a mid-day restart.
             if (ceLeg.chosenSymbol != null) warmupHistory(ceLeg.chosenSymbol, "CE");
             if (peLeg.chosenSymbol != null) warmupHistory(peLeg.chosenSymbol, "PE");
+            // Rehydrate today's closed trades ring from the DB — persistTradeRow
+            // wrote each exit to strategy_trades, but tradesTodayById is
+            // in-memory and empty on boot, so /positions and P&L totals lose
+            // today's history until the next exit. Rebuild from DB rows whose
+            // sessionDate == today.
+            rehydrateTodayClosedTradesFromDb();
             log.info("[VwapSupertrend] restored state — fsm={} spotOpen={} atm={} CE={} PE={}",
                 fsm, spotOpen, atmStrike, ceLeg.chosenSymbol, peLeg.chosenSymbol);
             event("[INFO]", "VwapST",
@@ -922,6 +928,43 @@ public class VwapSupertrendStrategy implements Strategy {
     }
     private void event(String level, String tag, String msg) {
         eventService.log(level + " [" + tag + "] " + msg);
+    }
+
+    /** Reads today's closed vwap-supertrend rows from strategy_trades and
+     *  re-populates the in-memory tradesTodayById + realisedPnlToday.
+     *  Called on state restore so a mid-day restart doesn't lose today's
+     *  P&L on the positions page (the DB has them; only the in-memory ring
+     *  starts empty). Best-effort — a repo error is logged and swallowed. */
+    private void rehydrateTodayClosedTradesFromDb() {
+        try {
+            String today = LocalDate.now(IST).toString();
+            List<StrategyTradeEntity> rows = tradeRepository
+                .findByStrategyIdAndSessionDateOrderByClosedAtMillisAsc("vwap-supertrend", today);
+            if (rows == null || rows.isEmpty()) return;
+            double sum = 0;
+            for (StrategyTradeEntity e : rows) {
+                if (e == null) continue;
+                double entry = e.getEntryPrice() == null ? 0 : e.getEntryPrice();
+                double exit  = e.getExitPrice()  == null ? 0 : e.getExitPrice();
+                int    qty   = e.getQty();
+                long   ms    = e.getClosedAtMillis();
+                String setup = e.getSetup()       == null ? "VWAP+ST" : e.getSetup();
+                // Extract side ('CE' or 'PE') from '<pathway> CE|PE' — fall back
+                // to blank if we can't parse.
+                String side = "";
+                int sp = setup.lastIndexOf(' ');
+                if (sp >= 0 && sp < setup.length() - 1) side = setup.substring(sp + 1);
+                String reason = e.getCloseReason() == null ? "" : e.getCloseReason();
+                tradesTodayById.put(ms,
+                    new ClosedTrade(side, e.getSymbol(), entry, exit, qty, ms, reason, setup));
+                sum += (exit - entry) * qty;
+            }
+            realisedPnlToday.set(sum);
+            log.info("[VwapSupertrend] rehydrated {} closed trades from DB — realisedPnlToday={}",
+                rows.size(), sum);
+        } catch (Exception e) {
+            log.warn("[VwapSupertrend] rehydrateTodayClosedTradesFromDb failed: {}", e.getMessage());
+        }
     }
 
     /** Persists a single-leg closed trade to the strategy_trades table so it
