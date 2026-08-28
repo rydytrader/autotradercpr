@@ -84,6 +84,20 @@ public class StrategyEndpointsController {
         return Map.of("ok", true, "acted", acted);
     }
 
+    /** Reset the strategy FSM back to ARMED after a portfolio-risk force-close.
+     *  Clears per-leg state and moves fsm out of DONE_FOR_DAY so bar-close
+     *  evaluations resume against the (typically updated) portfolio limit.
+     *  Chosen strikes are preserved. */
+    @PostMapping("/api/option-buying/reset-strategy")
+    public Map<String, Object> resetStrategy(@RequestBody(required = false) Map<String, Object> body) {
+        VwapSupertrendStrategy s = strategyProvider.getIfAvailable();
+        if (s == null) return Map.of("ok", false, "reason", "strategy unavailable");
+        String reason = body != null && body.get("reason") != null
+            ? body.get("reason").toString() : "MANUAL_RESET";
+        s.resetToIdle(reason);
+        return Map.of("ok", true, "state", s.currentState());
+    }
+
     // ── helpers ─────────────────────────────────────────────────────────────
 
     private List<Map<String, Object>> buildOpenPositions() {

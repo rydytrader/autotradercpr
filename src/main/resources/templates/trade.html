@@ -269,6 +269,7 @@
                         <span class="kill-switch-slider"></span>
                     </label>
                 </div>
+                <button class="squareoff-btn" id="resetStrategyBtn" onclick="resetStrategy()" title="Move strategy out of DONE_FOR_DAY back to ARMED. Use after a portfolio-risk force-close if you've raised the limit and want trading to resume today.">↻ Reset Strategy</button>
                 <button class="squareoff-btn" id="squareOffBtn" onclick="executeSquareOff()" disabled>⬛ Square Off</button>
             </div>
         </div>
@@ -394,6 +395,22 @@
                 method: 'POST',
                 headers: csrfHeaders(),
                 body: '{}'
+            }).then(function() { setTimeout(loadState, 500); })
+              .catch(function() {});
+        });
+    }
+    function resetStrategy() {
+        AppConfirm.ask({
+            title:        'Reset Strategy',
+            message:      'Move the strategy out of DONE_FOR_DAY back to ARMED?\n\nUse this after a portfolio-risk force-close if you have raised the loss limit and want trading to resume today. The chosen CE/PE strikes are kept; per-leg state is cleared.',
+            confirmLabel: 'Reset to ARMED',
+            danger:       false
+        }).then(function(ok) {
+            if (!ok) return;
+            fetch('/api/option-buying/reset-strategy', {
+                method: 'POST',
+                headers: csrfHeaders(),
+                body: JSON.stringify({ reason: 'MANUAL_UI_RESET' })
             }).then(function() { setTimeout(loadState, 500); })
               .catch(function() {});
         });
