@@ -1,22 +1,30 @@
 package com.rydytrader.autotrader.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.rydytrader.autotrader.manager.PositionManager;
 import com.rydytrader.autotrader.service.EventService;
+import com.rydytrader.autotrader.service.MarketDataService;
 import com.rydytrader.autotrader.service.PollingService;
 import com.rydytrader.autotrader.service.strategy.VwapSupertrendStrategy;
 import com.rydytrader.autotrader.store.RiskSettingsStore;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * URL-compatible replacement for the retired OptionBuyingController. The
@@ -33,16 +41,91 @@ public class StrategyEndpointsController {
     private final RiskSettingsStore riskSettings;
     private final EventService      eventService;
     private final PollingService    pollingService;
+    private final MarketDataService marketDataService;
     private final ObjectProvider<VwapSupertrendStrategy> strategyProvider;
+
+    private final CopyOnWriteArrayList<SseEmitter> stateEmitters = new CopyOnWriteArrayList<>();
+    private final ObjectMapper jsonMapper = new ObjectMapper();
+    private final AtomicLong lastPushMs = new AtomicLong(0);
+    /** Push cadence guard for tick-driven state emissions — limits max fanout
+     *  to ~10 Hz even during heavy tick storms so /trade doesn't get
+     *  flooded and browsers can keep up rendering. */
+    private static final long MIN_PUSH_INTERVAL_MS = 100;
 
     public StrategyEndpointsController(RiskSettingsStore riskSettings,
                                         EventService eventService,
                                         PollingService pollingService,
+                                        MarketDataService marketDataService,
                                         ObjectProvider<VwapSupertrendStrategy> strategyProvider) {
-        this.riskSettings     = riskSettings;
-        this.eventService     = eventService;
-        this.pollingService   = pollingService;
-        this.strategyProvider = strategyProvider;
+        this.riskSettings      = riskSettings;
+        this.eventService      = eventService;
+        this.pollingService    = pollingService;
+        this.marketDataService = marketDataService;
+        this.strategyProvider  = strategyProvider;
+    }
+
+    @PostConstruct
+    public void wireTickListener() {
+        // Every LTP tick that touches a symbol the strategy tracks fires a
+        // fresh state push to every connected /api/option-buying/stream
+        // subscriber. Throttled to MIN_PUSH_INTERVAL_MS so heavy tick storms
+        // don't flood the frontend.
+        marketDataService.addLtpListener(t -> {
+            if (t == null) return;
+            String sym = t.fyersSymbol();
+            if (sym == null) return;
+            // Only care about ticks that could change the state — the chosen
+            // legs' own symbols, and any tracked position via PositionManager.
+            VwapSupertrendStrategy s = strategyProvider.getIfAvailable();
+            boolean interesting =
+                (s != null && (sym.equals(s.getChosenCeSymbol()) || sym.equals(s.getChosenPeSymbol())))
+                || PositionManager.getAllSymbols().contains(sym);
+            if (!interesting) return;
+            long now = System.currentTimeMillis();
+            long prev = lastPushMs.get();
+            if (now - prev < MIN_PUSH_INTERVAL_MS) return;
+            if (!lastPushMs.compareAndSet(prev, now)) return;
+            pushStateToSubscribers();
+        });
+    }
+
+    private void pushStateToSubscribers() {
+        if (stateEmitters.isEmpty()) return;
+        Map<String, Object> payload;
+        String json;
+        try {
+            payload = state();
+            json = jsonMapper.writeValueAsString(payload);
+        } catch (Exception e) {
+            return;
+        }
+        for (SseEmitter em : stateEmitters) {
+            try {
+                em.send(SseEmitter.event().name("state").data(json, MediaType.APPLICATION_JSON));
+            } catch (Exception ex) {
+                stateEmitters.remove(em);
+                try { em.complete(); } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    /** SSE stream — pushes the same JSON /api/option-buying/state returns on
+     *  every relevant LTP tick (throttled to 10 Hz) so the positions page
+     *  updates tick-by-tick without polling. Initial snapshot sent
+     *  immediately on connect. */
+    @GetMapping(value = "/api/option-buying/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream() {
+        SseEmitter emitter = new SseEmitter(0L);   // no timeout
+        stateEmitters.add(emitter);
+        emitter.onCompletion(() -> stateEmitters.remove(emitter));
+        emitter.onTimeout(()    -> { stateEmitters.remove(emitter); emitter.complete(); });
+        emitter.onError(err     -> stateEmitters.remove(emitter));
+        // Immediate snapshot so the UI populates before the first tick.
+        try {
+            String json = jsonMapper.writeValueAsString(state());
+            emitter.send(SseEmitter.event().name("state").data(json, MediaType.APPLICATION_JSON));
+        } catch (Exception ignored) {}
+        return emitter;
     }
 
     /** Snapshot used by the positions page + navbar ticker. */
