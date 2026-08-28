@@ -302,6 +302,7 @@
                     <span class="chart-hdr-chg" id="ceChg"></span>
                     <span class="chart-hdr-metric"><span class="lab">VWAP</span><span id="ceVwap" class="val val-vwap">—</span></span>
                     <span class="chart-hdr-metric"><span class="lab">ST</span><span id="ceSt"  class="val">—</span></span>
+                    <span class="chart-hdr-metric" title="Average True Range at the configured Supertrend period"><span class="lab">ATR</span><span id="ceAtr" class="val">—</span></span>
                 </div>
                 <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
                     <span class="chart-hdr-metric" title="Time until next 3-min bar close"><span class="lab">Next</span><span id="ceCountdown" class="val" style="color:#fbbf24;">—</span></span>
@@ -330,6 +331,7 @@
                     <span class="chart-hdr-chg" id="peChg"></span>
                     <span class="chart-hdr-metric"><span class="lab">VWAP</span><span id="peVwap" class="val val-vwap">—</span></span>
                     <span class="chart-hdr-metric"><span class="lab">ST</span><span id="peSt"  class="val">—</span></span>
+                    <span class="chart-hdr-metric" title="Average True Range at the configured Supertrend period"><span class="lab">ATR</span><span id="peAtr" class="val">—</span></span>
                 </div>
                 <div style="display:flex; align-items:center; gap:10px; margin-left:auto;">
                     <span class="chart-hdr-metric" title="Time until next 3-min bar close"><span class="lab">Next</span><span id="peCountdown" class="val" style="color:#fbbf24;">—</span></span>
@@ -800,8 +802,10 @@
             setHeaderCells('pePrice', 'peChg', pt.ltp, pt.ch, pt.chp, 1);
             setHeaderMetric('ceVwap', ct.vwap, null);
             setHeaderMetric('ceSt',   ct.stLine, ct.stIsUp);
+            setHeaderMetric('ceAtr',  ct.atr, null);
             setHeaderMetric('peVwap', pt.vwap, null);
             setHeaderMetric('peSt',   pt.stLine, pt.stIsUp);
+            setHeaderMetric('peAtr',  pt.atr, null);
             legByPanel.ce = d.ceLeg || null;
             legByPanel.pe = d.peLeg || null;
             refreshTradeLevels('ce');

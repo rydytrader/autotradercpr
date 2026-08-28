@@ -112,6 +112,11 @@ public class VwapSupertrendStrategy implements Strategy {
          *  a red→green flip on the current bar (a fresh Supertrend-flip
          *  entry). null = first evaluation, no previous state yet. */
         volatile Boolean  previousStUp;
+        /** ATR value at the moment fireEntry was called — captured from the
+         *  entry bar so applyFill can derive an ATR-based SL buffer using
+         *  the SAME ATR the entry decision was made on (not the current
+         *  bar's, which could be different by the time the fill lands). */
+        volatile double   atrAtEntry;
         /** Which pathway triggered this leg's current entry — 'VWAP_BOUNCE'
          *  or 'ST_FLIP'. Persisted with the trade row on exit. */
         volatile String   entryReason;
@@ -626,6 +631,12 @@ public class VwapSupertrendStrategy implements Strategy {
         }
         Candle bar = bars.get(bars.size() - 1);
         SuperTrend.State st = SuperTrend.at(bars, atrPeriod, mult);
+        // Latest ATR — used both for the ATR-mode SL buffer (captured at
+        // entry time so applyFill uses the same value the decision was made
+        // on) and reported in downstream diagnostics. Prior-session bars
+        // prepended by warmupHistory make this valid from bar 1 of today.
+        double[] atrSeries = com.rydytrader.autotrader.indicator.Atr.series(bars, atrPeriod);
+        double latestAtr = atrSeries.length > 0 ? atrSeries[atrSeries.length - 1] : 0;
 
         // Wick-crossover: the bar's price range must STRADDLE VWAP — high
         // reached at/above VWAP AND low dipped at/below VWAP. Prevents the
@@ -657,9 +668,11 @@ public class VwapSupertrendStrategy implements Strategy {
         if (leg.state == LegState.WAITING) {
             if (wickBelowVwap && closeAboveVwap && stUp) {
                 leg.entryReason = "VWAP_BREAKOUT";
+                leg.atrAtEntry  = latestAtr;
                 fireEntry(leg, sideLabel, bar);
             } else if (stFlipUp && closeAboveVwap) {
                 leg.entryReason = "SUPER_TREND_FLIP";
+                leg.atrAtEntry  = latestAtr;
                 fireEntry(leg, sideLabel, bar);
             } else if (wickBelowVwap && closeAboveVwap && !stUp) {
                 // VWAP-bounce fired but Supertrend is red — surface an event
@@ -767,7 +780,21 @@ public class VwapSupertrendStrategy implements Strategy {
      *  reward:risk ratio. Called once per leg per entry, inside the class
      *  monitor. */
     private void applyFill(Leg leg, String sideLabel, double fillPrice) {
-        double buffer = Math.max(0, riskSettings.getVwapStSlBufferPoints());
+        String bufferMode = riskSettings.getVwapStSlBufferMode();
+        double buffer;
+        String bufferSource;
+        if ("ATR".equalsIgnoreCase(bufferMode) && leg.atrAtEntry > 0) {
+            double mult = Math.max(0, riskSettings.getVwapStSlAtrMultiplier());
+            buffer = mult * leg.atrAtEntry;
+            bufferSource = "ATR " + fmt(leg.atrAtEntry) + " × " + fmt(mult) + " = " + fmt(buffer);
+        } else {
+            // Either POINTS mode explicitly, or ATR mode with an unavailable
+            // ATR value at entry time — fall back to the fixed rupee buffer
+            // so we never place an order with SL == entryCandleLow (0-buffer).
+            buffer = Math.max(0, riskSettings.getVwapStSlBufferPoints());
+            bufferSource = "POINTS " + fmt(buffer)
+                + ("ATR".equalsIgnoreCase(bufferMode) ? " (ATR unavailable, fell back)" : "");
+        }
         double rr     = Math.max(0.1, riskSettings.getVwapStRewardRiskRatio());
         double maxSl  = Math.max(0.5, riskSettings.getVwapStMaxSlPoints());
         leg.fillPrice   = fillPrice;
@@ -793,6 +820,7 @@ public class VwapSupertrendStrategy implements Strategy {
         event("[SUCCESS]", "VwapST",
             sideLabel + " FILL — sym=" + leg.chosenSymbol + " @ " + fmt(fillPrice)
                 + " entryCandleLow=" + fmt(leg.entryCandleLow)
+                + " buffer=" + bufferSource
                 + " slPrice=" + fmt(leg.slPrice)
                 + " target=" + fmt(leg.targetPrice)
                 + " RR=1:" + fmt(rr) + " risk=" + fmt(risk));

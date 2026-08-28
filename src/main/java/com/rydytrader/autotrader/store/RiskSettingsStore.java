@@ -55,7 +55,9 @@ public class RiskSettingsStore {
         volatile int     vwapStCandleMinutes     = 3;       // timeframe for signal candles
         volatile int     vwapStAtrPeriod         = 10;      // Supertrend ATR period
         volatile double  vwapStMultiplier        = 3.0;     // Supertrend ATR multiplier
-        volatile double  vwapStSlBufferPoints    = 5.0;     // SL = entryCandleLow − N points (5 rupee buffer default)
+        volatile double  vwapStSlBufferPoints    = 5.0;     // SL = entryCandleLow − N points (5 rupee buffer default); used when vwapStSlBufferMode = POINTS
+        volatile String  vwapStSlBufferMode      = "POINTS"; // 'POINTS' → fixed vwapStSlBufferPoints buffer; 'ATR' → vwapStSlAtrMultiplier × latest ATR
+        volatile double  vwapStSlAtrMultiplier   = 1.0;     // × latest ATR gives the buffer when vwapStSlBufferMode = ATR
         volatile double  vwapStRewardRiskRatio   = 2.0;     // Target = fill + N × (fill − SL). 1:2 RR default
         volatile double  vwapStMaxSlPoints       = 20.0;    // Hard cap on SL distance from fill (in points). If (fill − entryCandleLow + buffer) > this, SL = fill − this
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
@@ -417,6 +419,8 @@ public class RiskSettingsStore {
     public int     getVwapStAtrPeriod()        { return cfg().vwapStAtrPeriod; }
     public double  getVwapStMultiplier()       { return cfg().vwapStMultiplier; }
     public double  getVwapStSlBufferPoints()   { return cfg().vwapStSlBufferPoints; }
+    public String  getVwapStSlBufferMode()     { return cfg().vwapStSlBufferMode; }
+    public double  getVwapStSlAtrMultiplier()  { return cfg().vwapStSlAtrMultiplier; }
     public double  getVwapStRewardRiskRatio()  { return cfg().vwapStRewardRiskRatio; }
     public double  getVwapStMaxSlPoints()      { return cfg().vwapStMaxSlPoints; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
@@ -614,6 +618,8 @@ public class RiskSettingsStore {
     public void setVwapStAtrPeriod(int v)           { cfg().vwapStAtrPeriod = Math.max(2, v); }
     public void setVwapStMultiplier(double v)       { cfg().vwapStMultiplier = Math.max(0.1, v); }
     public void setVwapStSlBufferPoints(double v)   { cfg().vwapStSlBufferPoints = Math.max(0.0, v); }
+    public void setVwapStSlBufferMode(String v)     { cfg().vwapStSlBufferMode = "ATR".equalsIgnoreCase(v) ? "ATR" : "POINTS"; }
+    public void setVwapStSlAtrMultiplier(double v)  { cfg().vwapStSlAtrMultiplier = Math.max(0.0, v); }
     public void setVwapStRewardRiskRatio(double v)  { cfg().vwapStRewardRiskRatio = Math.max(0.1, v); }
     public void setVwapStMaxSlPoints(double v)      { cfg().vwapStMaxSlPoints = Math.max(0.5, v); }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
@@ -782,6 +788,8 @@ public class RiskSettingsStore {
             upsert("vwapStAtrPeriod",                 String.valueOf(c.vwapStAtrPeriod));
             upsert("vwapStMultiplier",                String.valueOf(c.vwapStMultiplier));
             upsert("vwapStSlBufferPoints",            String.valueOf(c.vwapStSlBufferPoints));
+            upsert("vwapStSlBufferMode",              c.vwapStSlBufferMode);
+            upsert("vwapStSlAtrMultiplier",           String.valueOf(c.vwapStSlAtrMultiplier));
             upsert("vwapStRewardRiskRatio",           String.valueOf(c.vwapStRewardRiskRatio));
             upsert("vwapStMaxSlPoints",               String.valueOf(c.vwapStMaxSlPoints));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
@@ -990,6 +998,8 @@ public class RiskSettingsStore {
                     case "vwapStAtrPeriod"               -> c.vwapStAtrPeriod         = Math.max(2, Integer.parseInt(v));
                     case "vwapStMultiplier"              -> c.vwapStMultiplier        = Math.max(0.1, Double.parseDouble(v));
                     case "vwapStSlBufferPoints"          -> c.vwapStSlBufferPoints    = Math.max(0.0, Double.parseDouble(v));
+                    case "vwapStSlBufferMode"            -> c.vwapStSlBufferMode      = "ATR".equalsIgnoreCase(v) ? "ATR" : "POINTS";
+                    case "vwapStSlAtrMultiplier"         -> c.vwapStSlAtrMultiplier   = Math.max(0.0, Double.parseDouble(v));
                     case "vwapStRewardRiskRatio"         -> c.vwapStRewardRiskRatio   = Math.max(0.1, Double.parseDouble(v));
                     case "vwapStMaxSlPoints"             -> c.vwapStMaxSlPoints       = Math.max(0.5, Double.parseDouble(v));
                     // OPTION SELLING keys silently consumed for backward compat after strategy removal.

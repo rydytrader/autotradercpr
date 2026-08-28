@@ -106,6 +106,7 @@ public class ChartController {
                 live.add(forming);
             }
         }
+        Double atrVal = null;
         if (!live.isEmpty()) {
             double lastVwap = live.get(live.size() - 1).vwap();
             if (lastVwap > 0) vwap = lastVwap;
@@ -116,11 +117,14 @@ public class ChartController {
                 stLine = round2(st.line());
                 stIsUp = st.isUp();
             }
+            double atr = com.rydytrader.autotrader.indicator.Atr.at(live, atrPeriod);
+            if (atr > 0 && !Double.isNaN(atr)) atrVal = round2(atr);
         }
         if (vwap == 0.0) vwap = marketDataService.getVwap(fyersSymbol);
         m.put("vwap",   round2(vwap));
         m.put("stLine", stLine);
         m.put("stIsUp", stIsUp);
+        m.put("atr",    atrVal);
         return m;
     }
 
