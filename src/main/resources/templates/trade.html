@@ -262,6 +262,7 @@
                 Live Positions
             </div>
             <div style="display:flex; gap:10px; align-items:center;">
+                <span id="fsmStatePill" class="pill" title="Strategy FSM state" style="font-family:var(--font-mono);font-size:0.7rem;font-weight:700;letter-spacing:0.05em;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);color:var(--text-muted);">STATE —</span>
                 <div class="kill-switch-wrap" id="killSwitchWrap">
                     <span class="kill-switch-label" id="killSwitchLabel">Trading ON</span>
                     <label class="kill-switch">
@@ -441,6 +442,7 @@
         renderPositions(d);
         renderEvents(d);
         renderKillSwitch(d);
+        renderFsmPill(d);
         // v2 header — NIFTY spot LTP + change + %change. No VWAP (index doesn't
         // have a meaningful VWAP; the gate was retired).
         if (d.optionBuying) {
@@ -569,6 +571,37 @@
         if (t.checked !== enabled) t.checked = enabled;
         label.textContent = enabled ? 'Trading ON' : 'Trading OFF';
         wrap.classList.toggle('disabled', !enabled);
+    }
+    /** FSM state pill: reads currentState = 'ARMED (CE=..., PE=...)' etc.
+     *  Extracts the leading FSM token, colors it by meaning, and shows the
+     *  full string as tooltip. */
+    function renderFsmPill(d) {
+        var el = document.getElementById('fsmStatePill');
+        if (!el) return;
+        var raw = String(d.currentState || d.lifecycle || '').trim();
+        if (!raw) { el.textContent = 'STATE —'; el.title = ''; return; }
+        var head = raw.split(' ')[0];   // token before the '(CE=..., PE=...)'
+        el.title = raw;
+        var color = 'var(--text-muted)';
+        var border = 'var(--border)';
+        var bg = 'var(--bg-card)';
+        if (head === 'ARMED') {
+            color = 'var(--accent-green, #34d399)';
+            border = 'rgba(52,211,153,0.35)';
+            bg = 'rgba(52,211,153,0.10)';
+        } else if (head === 'DONE_FOR_DAY') {
+            color = 'var(--accent-red, #f87171)';
+            border = 'rgba(248,113,113,0.35)';
+            bg = 'rgba(248,113,113,0.10)';
+        } else if (head === 'STRIKES_SUBSCRIBING' || head === 'BOOT') {
+            color = 'var(--accent-amber, #fbbf24)';
+            border = 'rgba(251,191,36,0.35)';
+            bg = 'rgba(251,191,36,0.10)';
+        }
+        el.textContent = 'STATE ' + head;
+        el.style.color = color;
+        el.style.borderColor = border;
+        el.style.background = bg;
     }
 
     function renderStats(d) {
