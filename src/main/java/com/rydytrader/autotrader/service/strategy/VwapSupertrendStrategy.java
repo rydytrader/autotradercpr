@@ -869,7 +869,12 @@ public class VwapSupertrendStrategy implements Strategy {
             double ltp = marketDataService.getLtp(peLeg.chosenSymbol);
             if (ltp > 0 && peLeg.fillPrice > 0) open += (ltp - peLeg.fillPrice) * peLeg.qty;
         }
-        return closed + open;
+        // Subtract today's brokerage on closed trades so the header ticker
+        // and the positions-page P&L card agree. Both are now:
+        //   (realised gross) + (open-position gross MTM) − (brokerage on
+        //    closed trades so far). Open positions still contribute gross
+        //   MTM — their charges materialise on exit.
+        return closed + open - liveChargesToday();
     }
     @Override public double liveChargesToday() {
         // Flat brokerage × 2 sides × 2 (buy + sell) per fully closed trade.
