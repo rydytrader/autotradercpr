@@ -436,7 +436,11 @@
 
 
     /** Every registered strategy id — used to fan today / range fetches. */
-    var STRATEGY_IDS = ['option-buying'];
+    // DB queries fan out across every strategy that ever persisted trade rows —
+    // 'option-buying' is the legacy CPR strategy (kept so historical rows still
+    // surface), 'vwap-supertrend' is the current one on this branch. Add new
+    // strategy ids here as they come online.
+    var STRATEGY_IDS = ['vwap-supertrend', 'option-buying'];
 
     /** Tag every row in `list` with the strategy id it came from (server rows
      *  from /trades-range already carry strategyId, but the in-memory

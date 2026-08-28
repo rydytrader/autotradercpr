@@ -398,8 +398,11 @@
             fetch('/api/market-holidays').then(r => r.json()).catch(() => [])
         ]).then(([holidays]) => {
             (holidays || []).forEach(h => NSE_HOLIDAYS[h.date] = h.name || 'Holiday');
-            // OptionBuying branch — singleton strategy. No /api/strategies, no manual terminal.
-            const list = [{ id: 'option-buying' }];
+            // Fetch history for every strategy that ever persisted rows —
+            // 'vwap-supertrend' is the current strategy on this branch,
+            // 'option-buying' is legacy but kept so historical calendar cells
+            // still populate.
+            const list = [{ id: 'vwap-supertrend' }, { id: 'option-buying' }];
             const histPromises = list.map(s =>
                 fetch('/api/strategies/' + encodeURIComponent(s.id) + '/history')
                     .then(r => r.json()).catch(() => ({ sessions: [] }))
@@ -894,20 +897,21 @@
         document.getElementById('calModalBody').innerHTML = heroHtml;
         document.getElementById('calDayModal').style.display = 'flex';
 
-        // Single fetch — option-buying is the primary strategy. Manual-terminal
-        // was retired; its section is no longer rendered. The controller unions
-        // legacy option-scalping DB rows into the option-buying response so old
-        // history dates still resolve.
-        fetch('/api/strategies/option-buying/trades?date=' + encodeURIComponent(dateStr))
-            .then(r => r.ok ? r.json() : { trades: [] })
-            .catch(() => ({ trades: [] }))
-            .then(payload => {
-                const rows = (payload && payload.trades) || [];
-                rows.sort((a, b) => (a.closedAtMillis || 0) - (b.closedAtMillis || 0));
-                renderStrategyTradeSection(
-                    document.getElementById('calDayAlgo'),
-                    rows, 'Symbol', 'Sessions');
-            });
+        // Fan out to every strategy id — 'vwap-supertrend' is the current
+        // primary strategy, 'option-buying' is legacy but kept so historical
+        // cells still resolve. Merge + sort by closedAtMillis before render.
+        const STRATEGY_IDS_CAL = ['vwap-supertrend', 'option-buying'];
+        Promise.all(STRATEGY_IDS_CAL.map(id =>
+            fetch('/api/strategies/' + encodeURIComponent(id) + '/trades?date=' + encodeURIComponent(dateStr))
+                .then(r => r.ok ? r.json() : { trades: [] })
+                .catch(() => ({ trades: [] }))
+        )).then(payloads => {
+            const rows = payloads.flatMap(p => (p && p.trades) || []);
+            rows.sort((a, b) => (a.closedAtMillis || 0) - (b.closedAtMillis || 0));
+            renderStrategyTradeSection(
+                document.getElementById('calDayAlgo'),
+                rows, 'Symbol', 'Sessions');
+        });
     };
 
     // Render one strategy-type section into its container. {@code singularLabel} is the
