@@ -233,12 +233,15 @@
                     <div class="stat-value" id="riskBudgetVal" style="font-size:1.3rem; margin-top:4px;">—</div>
                     <div class="stat-sub" id="riskBudgetSub" style="margin-top:4px; color:var(--text-muted);">Consumed / Total</div>
                 </div>
-                <!-- Open Risk tile — potential loss from currently-open legs if
-                     every SL hits at its current level. Trailing SL past fill
-                     drops this to 0 (locked-in profit territory instead). -->
+                <!-- Open Risk / Locked Profit tile — same tile serves both:
+                     when TSL is below fill, shows potential loss (amber).
+                     Once TSL passes fill, flips to locked-in guaranteed
+                     profit (green) so you can see the min P&L if every SL
+                     hits at its current level. -->
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
-                     title="Sum of (fill − current SL) × qty across open legs. 0 when the trailing SL has moved above fill (locked-in profit).">
-                    <div class="stat-label">Open Risk</div>
+                     id="openRiskWrap"
+                     title="Potential loss if every SL hits at its current level. Flips to Locked Profit once TSL moves above fill.">
+                    <div class="stat-label" id="openRiskLabel">Open Risk</div>
                     <div class="stat-value" id="openRiskVal" style="font-size:1.3rem; margin-top:4px;">—</div>
                     <div class="stat-sub" id="openRiskSub" style="margin-top:4px; color:var(--text-muted);">Fill − SL × Qty</div>
                 </div>
@@ -641,20 +644,39 @@
         var risk = d.risk || { consumedRisk: 0, dailyRiskBudget: 0, openRisk: 0 };
         var consumed = Number(risk.consumedRisk || 0);
         var budget   = Number(risk.dailyRiskBudget || 0);
-        // Open Risk tile — potential loss if every SL hits now.
-        var openRiskEl = document.getElementById('openRiskVal');
-        var openRiskSub = document.getElementById('openRiskSub');
-        var openRisk = Number(risk.openRisk || 0);
-        if (openRiskEl) {
-            openRiskEl.textContent = openRisk > 0 ? fmtRs(openRisk) : '₹0';
-            openRiskEl.style.color = openRisk > 0
-                ? 'var(--accent-amber, #fbbf24)'
-                : 'var(--accent-green, #34d399)';
-        }
-        if (openRiskSub) {
-            openRiskSub.textContent = openRisk > 0
-                ? 'Fill − SL × Qty'
-                : (positions.length > 0 ? 'Locked-in (TSL past fill)' : 'No open positions');
+        // Open Risk / Locked Profit tile.
+        // - openRisk     > 0 → some leg's SL still below fill (potential loss)
+        // - lockedProfit > 0 → some leg's SL past fill (guaranteed if hit)
+        // Both can be simultaneously > 0 (CE risk, PE locked). The tile
+        // prefers Locked Profit label when the net is favourable; otherwise
+        // Open Risk. Numbers are displayed absolute; sign encoded via colour.
+        var openRiskEl    = document.getElementById('openRiskVal');
+        var openRiskSub   = document.getElementById('openRiskSub');
+        var openRiskLabel = document.getElementById('openRiskLabel');
+        var openRisk     = Number(risk.openRisk     || 0);
+        var lockedProfit = Number(risk.lockedProfit || 0);
+        var net = lockedProfit - openRisk;
+        if (openRiskEl && openRiskLabel && openRiskSub) {
+            if (positions.length === 0) {
+                openRiskLabel.textContent = 'Open Risk';
+                openRiskEl.textContent    = '₹0';
+                openRiskEl.style.color    = 'var(--text-muted)';
+                openRiskSub.textContent   = 'No open positions';
+            } else if (net >= 0 && lockedProfit > 0) {
+                openRiskLabel.textContent = 'Locked Profit';
+                openRiskEl.textContent    = fmtRs(net);
+                openRiskEl.style.color    = 'var(--accent-green, #34d399)';
+                openRiskSub.textContent   = openRisk > 0
+                    ? ('SL − Fill × Qty · risk ' + fmtRs(openRisk))
+                    : 'SL − Fill × Qty (guaranteed)';
+            } else {
+                openRiskLabel.textContent = 'Open Risk';
+                openRiskEl.textContent    = fmtRs(openRisk);
+                openRiskEl.style.color    = 'var(--accent-amber, #fbbf24)';
+                openRiskSub.textContent   = lockedProfit > 0
+                    ? ('Fill − SL × Qty · locked ' + fmtRs(lockedProfit))
+                    : 'Fill − SL × Qty';
+            }
         }
         var budgetEl = document.getElementById('riskBudgetVal');
         var budgetSub = document.getElementById('riskBudgetSub');

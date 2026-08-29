@@ -304,8 +304,39 @@ public class StrategyEndpointsController {
         r.put("consumedRisk",    consumed);
         r.put("dailyRiskBudget", budget);
         r.put("realisedPnl",     net);
-        r.put("openRisk",        computeOpenRisk(s));
+        r.put("openRisk",     computeOpenRisk(s));
+        r.put("lockedProfit", computeLockedProfit(s));
         return r;
+    }
+
+    /** Sum of max(0, (currentSL − fillPrice) × qty) across every IN_POSITION
+     *  leg. Represents the guaranteed minimum profit — what we'd bank if
+     *  every trailing SL hit right now. Legs whose SL is still below fill
+     *  contribute 0 (they're in the risk column, not profit). */
+    private double computeLockedProfit(VwapSupertrendStrategy s) {
+        if (s == null) return 0.0;
+        double total = 0.0;
+        for (String sym : new String[] { s.getChosenCeSymbol(), s.getChosenPeSymbol() }) {
+            if (sym == null || sym.isBlank()) continue;
+            Map<String, Object> leg = s.getLegSnapshot(sym);
+            if (leg.isEmpty()) continue;
+            if (!"IN_POSITION".equals(String.valueOf(leg.getOrDefault("legState", "")))) continue;
+            Object entryObj = leg.get("entryPrice");
+            Object slObj    = leg.get("slPrice");
+            if (!(entryObj instanceof Number) || !(slObj instanceof Number)) continue;
+            double entry = ((Number) entryObj).doubleValue();
+            double sl    = ((Number) slObj).doubleValue();
+            if (entry <= 0 || sl <= entry) {
+                // Falls through when sl > entry (locked-in). sl <= entry → 0.
+            }
+            if (sl <= entry) continue;
+            int qty = 1;
+            for (com.rydytrader.autotrader.dto.PositionsDTO p : pollingService.fetchPositions()) {
+                if (sym.equals(p.getSymbol())) { qty = p.getQty(); break; }
+            }
+            total += (sl - entry) * qty;
+        }
+        return total;
     }
 
     /** Sum of max(0, (fillPrice − currentSL) × qty) across every IN_POSITION
