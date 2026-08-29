@@ -266,10 +266,14 @@ public class VwapSupertrendStrategy implements Strategy {
         String sym = t.fyersSymbol();
         if (sym == null) return;
 
-        // Spot-open capture — arms the strategy for today.
+        // Spot-open capture — arms the strategy for today. Skipped on
+        // NSE holidays / weekends — Fyers still delivers stale ticks from
+        // the last live session, which would trigger a phantom pair pick
+        // and warmup on a non-trading day.
         if (fsm == FsmState.BOOT && NIFTY_SPOT_SYM.equals(sym) && t.ltp() > 0) {
             LocalTime nowIst = ZonedDateTime.now(IST).toLocalTime();
             if (nowIst.isBefore(LocalTime.of(9, 15))) return;
+            if (holidays != null && !holidays.isMarketOpen()) return;
             captureSpotOpenAndSubscribeStrikes(t.ltp());
             return;
         }
@@ -366,6 +370,7 @@ public class VwapSupertrendStrategy implements Strategy {
      *  STRIKES_SUBSCRIBING. */
     @org.springframework.scheduling.annotation.Scheduled(fixedDelay = 1000, initialDelay = 5000)
     public void fastPickPoll() {
+        if (holidays != null && !holidays.isMarketOpen()) return;
         if (fsm == FsmState.STRIKES_SUBSCRIBING) {
             pickPairAndWarmup();
         }
@@ -380,6 +385,10 @@ public class VwapSupertrendStrategy implements Strategy {
      *  in ~3 s instead of 15. */
     @org.springframework.scheduling.annotation.Scheduled(cron = "0 10 9 * * MON-FRI", zone = "Asia/Kolkata")
     public void preMarketScheduledFire() {
+        if (holidays != null && !holidays.isMarketOpen()) {
+            log.info("[VwapSupertrend] pre-market subscribe SKIPPED — NSE holiday today");
+            return;
+        }
         preMarketSubscribe();
     }
 
@@ -449,6 +458,11 @@ public class VwapSupertrendStrategy implements Strategy {
         if (!riskSettings.isVwapStEnabled()) return;
         String today = LocalDate.now(IST).toString();
         if (!today.equals(todayKey)) rolloverIfNewDay(today);
+        // NSE closed today — nothing to do until tomorrow. Blocks the catch-up
+        // pre-market subscribe, the pair-pick retry loop, and the squareoff
+        // cutoff evaluation. Persisted state from the last live session (if
+        // any) stays untouched.
+        if (holidays != null && !holidays.isMarketOpen()) return;
 
         // Pre-market subscription — fire once daily between 09:10 and 09:15 IST.
         // Cron @Scheduled fires this at 09:10 exactly; the check here is a catch-up
