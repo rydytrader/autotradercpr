@@ -233,6 +233,15 @@
                     <div class="stat-value" id="riskBudgetVal" style="font-size:1.3rem; margin-top:4px;">—</div>
                     <div class="stat-sub" id="riskBudgetSub" style="margin-top:4px; color:var(--text-muted);">Consumed / Total</div>
                 </div>
+                <!-- Open Risk tile — potential loss from currently-open legs if
+                     every SL hits at its current level. Trailing SL past fill
+                     drops this to 0 (locked-in profit territory instead). -->
+                <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;"
+                     title="Sum of (fill − current SL) × qty across open legs. 0 when the trailing SL has moved above fill (locked-in profit).">
+                    <div class="stat-label">Open Risk</div>
+                    <div class="stat-value" id="openRiskVal" style="font-size:1.3rem; margin-top:4px;">—</div>
+                    <div class="stat-sub" id="openRiskSub" style="margin-top:4px; color:var(--text-muted);">Fill − SL × Qty</div>
+                </div>
                 <!-- Strategy state tile — surfaces the FSM (ARMED, DONE_FOR_DAY,
                      STRIKES_SUBSCRIBING, BOOT). Colored by state; per-leg
                      detail available on tooltip. -->
@@ -629,9 +638,24 @@
         // Only risk metric — realised losses today vs daily budget. Exposed-risk
         // retired (SL fires on futures bar close, not a fixed premium level, so
         // unrealised drawdown against an SL can't be computed).
-        var risk = d.risk || { consumedRisk: 0, dailyRiskBudget: 0 };
+        var risk = d.risk || { consumedRisk: 0, dailyRiskBudget: 0, openRisk: 0 };
         var consumed = Number(risk.consumedRisk || 0);
         var budget   = Number(risk.dailyRiskBudget || 0);
+        // Open Risk tile — potential loss if every SL hits now.
+        var openRiskEl = document.getElementById('openRiskVal');
+        var openRiskSub = document.getElementById('openRiskSub');
+        var openRisk = Number(risk.openRisk || 0);
+        if (openRiskEl) {
+            openRiskEl.textContent = openRisk > 0 ? fmtRs(openRisk) : '₹0';
+            openRiskEl.style.color = openRisk > 0
+                ? 'var(--accent-amber, #fbbf24)'
+                : 'var(--accent-green, #34d399)';
+        }
+        if (openRiskSub) {
+            openRiskSub.textContent = openRisk > 0
+                ? 'Fill − SL × Qty'
+                : (positions.length > 0 ? 'Locked-in (TSL past fill)' : 'No open positions');
+        }
         var budgetEl = document.getElementById('riskBudgetVal');
         var budgetSub = document.getElementById('riskBudgetSub');
         budgetEl.textContent = budget > 0

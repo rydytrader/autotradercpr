@@ -304,6 +304,42 @@ public class StrategyEndpointsController {
         r.put("consumedRisk",    consumed);
         r.put("dailyRiskBudget", budget);
         r.put("realisedPnl",     net);
+        r.put("openRisk",        computeOpenRisk(s));
         return r;
+    }
+
+    /** Sum of max(0, (fillPrice − currentSL) × qty) across every IN_POSITION
+     *  leg. Represents the potential loss from open positions if every SL
+     *  gets hit at exactly its current level. Trailing SL passing above fill
+     *  contributes 0 (locked-in profit, not risk). */
+    private double computeOpenRisk(VwapSupertrendStrategy s) {
+        if (s == null) return 0.0;
+        double total = 0.0;
+        String ce = s.getChosenCeSymbol();
+        String pe = s.getChosenPeSymbol();
+        for (String sym : new String[] { ce, pe }) {
+            if (sym == null || sym.isBlank()) continue;
+            Map<String, Object> leg = s.getLegSnapshot(sym);
+            if (leg.isEmpty()) continue;
+            String state = String.valueOf(leg.getOrDefault("legState", ""));
+            if (!"IN_POSITION".equals(state)) continue;
+            Object entryObj = leg.get("entryPrice");
+            Object slObj    = leg.get("slPrice");
+            if (!(entryObj instanceof Number) || !(slObj instanceof Number)) continue;
+            double entry = ((Number) entryObj).doubleValue();
+            double sl    = ((Number) slObj).doubleValue();
+            if (entry <= 0 || sl <= 0 || sl >= entry) continue;   // TSL past entry → 0
+            int qty = 1;
+            try {
+                if (leg.get("qty") instanceof Number q) qty = ((Number) q).intValue();
+            } catch (Exception ignored) {}
+            // Fyers position row is the authoritative qty; fall back to the
+            // leg's stored qty if the position lookup misses.
+            for (com.rydytrader.autotrader.dto.PositionsDTO p : pollingService.fetchPositions()) {
+                if (sym.equals(p.getSymbol())) { qty = p.getQty(); break; }
+            }
+            total += (entry - sl) * qty;
+        }
+        return total;
     }
 }
