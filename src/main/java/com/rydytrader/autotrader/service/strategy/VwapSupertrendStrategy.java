@@ -117,6 +117,11 @@ public class VwapSupertrendStrategy implements Strategy {
          *  the SAME ATR the entry decision was made on (not the current
          *  bar's, which could be different by the time the fill lands). */
         volatile double   atrAtEntry;
+        /** Latest Supertrend line at the moment fireEntry was called.
+         *  Used when SL Mode = SUPERTREND: applyFill seeds slPrice from
+         *  this value, then onBarClose trails it upward on each 3-min close
+         *  where ST is still up and its line has risen. */
+        volatile double   stLineAtEntry;
         /** Which pathway triggered this leg's current entry — 'VWAP_BOUNCE'
          *  or 'ST_FLIP'. Persisted with the trade row on exit. */
         volatile String   entryReason;
@@ -678,12 +683,14 @@ public class VwapSupertrendStrategy implements Strategy {
         //   B. ST_FLIP      — ST just flipped red→green AND close above VWAP
         if (leg.state == LegState.WAITING) {
             if (wickBelowVwap && closeAboveVwap && stUp) {
-                leg.entryReason = "VWAP_BREAKOUT";
-                leg.atrAtEntry  = latestAtr;
+                leg.entryReason  = "VWAP_BREAKOUT";
+                leg.atrAtEntry   = latestAtr;
+                leg.stLineAtEntry = st.available() ? st.line() : 0;
                 fireEntry(leg, sideLabel, bar);
             } else if (stFlipUp && closeAboveVwap) {
-                leg.entryReason = "SUPER_TREND_FLIP";
-                leg.atrAtEntry  = latestAtr;
+                leg.entryReason  = "SUPER_TREND_FLIP";
+                leg.atrAtEntry   = latestAtr;
+                leg.stLineAtEntry = st.available() ? st.line() : 0;
                 fireEntry(leg, sideLabel, bar);
             } else if (wickBelowVwap && closeAboveVwap && !stUp) {
                 // VWAP-bounce fired but Supertrend is red — surface an event
@@ -699,6 +706,24 @@ public class VwapSupertrendStrategy implements Strategy {
         // Update ST direction tracker for the NEXT bar's flip check.
         // Must run after entry evaluation so THIS bar's flip fires only once.
         leg.previousStUp = stUp;
+
+        // Trailing SL — when SL Mode = SUPERTREND and the leg is
+        // IN_POSITION, ratchet leg.slPrice UP to match the latest ST line
+        // whenever ST is still up and the line has moved up. Never widens
+        // (never move SL down), so any locked-in profit stays locked.
+        if (leg.state == LegState.IN_POSITION
+                && "SUPERTREND".equalsIgnoreCase(riskSettings.getVwapStSlBufferMode())
+                && stUp && st.available()) {
+            double newSl = st.line();
+            if (newSl > leg.slPrice) {
+                double oldSl = leg.slPrice;
+                leg.slPrice = newSl;
+                event("[INFO]", "VwapST",
+                    sideLabel + " " + leg.chosenSymbol + " SL trailed — "
+                        + fmt(oldSl) + " → " + fmt(newSl) + " (ST line)");
+                saveStateToDisk();
+            }
+        }
     }
 
     // ── Entry / exit ────────────────────────────────────────────────────────
@@ -870,18 +895,30 @@ public class VwapSupertrendStrategy implements Strategy {
         String bufferMode = riskSettings.getVwapStSlBufferMode();
         double buffer;
         String bufferSource;
-        if ("ATR".equalsIgnoreCase(bufferMode) && leg.atrAtEntry > 0) {
+        // SUPERTREND — SL is the ST line at entry (trails up on each bar
+        // close where ST rises). Skip the buffer-below-low arithmetic and
+        // set the effective buffer to (entryCandleLow − stLineAtEntry) so
+        // the downstream cap + risk math still work uniformly.
+        if ("SUPERTREND".equalsIgnoreCase(bufferMode) && leg.stLineAtEntry > 0
+                && leg.stLineAtEntry < leg.entryCandleLow) {
+            buffer = leg.entryCandleLow - leg.stLineAtEntry;
+            bufferSource = "SUPERTREND line " + fmt(leg.stLineAtEntry)
+                + " (buffer below low = " + fmt(buffer) + ")";
+        } else if ("ATR".equalsIgnoreCase(bufferMode) && leg.atrAtEntry > 0) {
             double mult = Math.max(0, riskSettings.getVwapStSlAtrMultiplier());
             buffer = mult * leg.atrAtEntry;
             bufferSource = "ATR " + fmt(leg.atrAtEntry) + " × " + fmt(mult) + " = " + fmt(buffer);
         } else {
-            // Either POINTS mode explicitly, or ATR mode with an unavailable
-            // ATR value at entry time — fall back to the fixed rupee buffer
-            // so we never place an order with SL == entryCandleLow (0-buffer).
+            // POINTS mode, or ATR / SUPERTREND with an unavailable input at
+            // entry time — fall back to the fixed rupee buffer so we never
+            // place an order with SL == entryCandleLow (0-buffer).
             buffer = Math.max(0, riskSettings.getVwapStSlBufferPoints());
-            bufferSource = "POINTS " + fmt(buffer)
-                + ("ATR".equalsIgnoreCase(bufferMode) ? " (ATR unavailable, fell back)" : "");
+            bufferSource = "POINTS " + fmt(buffer);
+            if ("ATR".equalsIgnoreCase(bufferMode) || "SUPERTREND".equalsIgnoreCase(bufferMode)) {
+                bufferSource += " (" + bufferMode + " unavailable, fell back)";
+            }
         }
+        boolean supertrendMode = "SUPERTREND".equalsIgnoreCase(bufferMode);
         double rr     = Math.max(0.1, riskSettings.getVwapStRewardRiskRatio());
         double maxSl  = Math.max(0.5, riskSettings.getVwapStMaxSlPoints());
         leg.fillPrice   = fillPrice;
@@ -902,7 +939,10 @@ public class VwapSupertrendStrategy implements Strategy {
             risk = structuralRisk;
             leg.slPrice = structuralSl;
         }
-        leg.targetPrice = fillPrice + rr * risk;
+        // SUPERTREND mode has no fixed target — exits only via the trailing
+        // SL. Setting targetPrice = 0 makes checkSlOrTarget skip the target
+        // check (guarded by `targetPrice > 0`).
+        leg.targetPrice = supertrendMode ? 0 : fillPrice + rr * risk;
         leg.state       = LegState.IN_POSITION;
         event("[SUCCESS]", "VwapST",
             sideLabel + " FILL — sym=" + leg.chosenSymbol + " @ " + fmt(fillPrice)

@@ -55,7 +55,7 @@ public class RiskSettingsStore {
         volatile int     vwapStStrikesRange      = 20;      // ±N strikes around ATM (subscribed pre-market on prev close, refined at spot open)
         volatile int     vwapStCandleMinutes     = 3;       // timeframe for signal candles
         volatile int     vwapStAtrPeriod         = 10;      // Supertrend ATR period
-        volatile double  vwapStMultiplier        = 3.0;     // Supertrend ATR multiplier
+        volatile double  vwapStMultiplier        = 2.0;     // Supertrend ATR multiplier (tighter than the classic 3.0 — flips faster, tracks price closer)
         volatile double  vwapStSlBufferPoints    = 5.0;     // SL = entryCandleLow − N points (5 rupee buffer default); used when vwapStSlBufferMode = POINTS
         volatile String  vwapStSlBufferMode      = "POINTS"; // 'POINTS' → fixed vwapStSlBufferPoints buffer; 'ATR' → vwapStSlAtrMultiplier × latest ATR
         volatile double  vwapStSlAtrMultiplier   = 1.0;     // × latest ATR gives the buffer when vwapStSlBufferMode = ATR
@@ -621,7 +621,15 @@ public class RiskSettingsStore {
     public void setVwapStAtrPeriod(int v)           { cfg().vwapStAtrPeriod = Math.max(2, v); }
     public void setVwapStMultiplier(double v)       { cfg().vwapStMultiplier = Math.max(0.1, v); }
     public void setVwapStSlBufferPoints(double v)   { cfg().vwapStSlBufferPoints = Math.max(0.0, v); }
-    public void setVwapStSlBufferMode(String v)     { cfg().vwapStSlBufferMode = "ATR".equalsIgnoreCase(v) ? "ATR" : "POINTS"; }
+    public void setVwapStSlBufferMode(String v)     {
+        if (v == null) { cfg().vwapStSlBufferMode = "POINTS"; return; }
+        String up = v.trim().toUpperCase();
+        cfg().vwapStSlBufferMode = switch (up) {
+            case "ATR"        -> "ATR";
+            case "SUPERTREND", "SUPER_TREND", "ST" -> "SUPERTREND";
+            default           -> "POINTS";
+        };
+    }
     public void setVwapStSlAtrMultiplier(double v)  { cfg().vwapStSlAtrMultiplier = Math.max(0.0, v); }
     public void setVwapStRewardRiskRatio(double v)  { cfg().vwapStRewardRiskRatio = Math.max(0.1, v); }
     public void setVwapStMaxSlPoints(double v)      { cfg().vwapStMaxSlPoints = Math.max(0.5, v); }

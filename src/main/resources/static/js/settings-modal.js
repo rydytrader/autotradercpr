@@ -28,7 +28,7 @@
                       '<div class="sm-field"><label>Target Premium (₹)</label><input type="number" id="sm-vwapStTargetPremium" step="1" min="1"><div class="sm-hint">After spot open, pick the CE and PE trading closest to this premium as the tracked pair. Default 250.</div></div>' +
                       '<div class="sm-field"><label>Candle Minutes</label><input type="number" id="sm-vwapStCandleMinutes" step="1" min="1"><div class="sm-hint">Timeframe for signal candles + Supertrend calc. Default 3.</div></div>' +
                       '<div class="sm-field"><label>Supertrend ATR Period</label><input type="number" id="sm-vwapStAtrPeriod" step="1" min="2"><div class="sm-hint">Bars in the Supertrend ATR window. Default 10.</div></div>' +
-                      '<div class="sm-field"><label>Supertrend Multiplier</label><input type="number" id="sm-vwapStMultiplier" step="0.1" min="0.1"><div class="sm-hint">ATR × this = band distance. Default 3.0.</div></div>' +
+                      '<div class="sm-field"><label>Supertrend Multiplier</label><input type="number" id="sm-vwapStMultiplier" step="0.1" min="0.1"><div class="sm-hint">ATR × this = band distance. Default 2.0 (tighter than the classic 3.0; flips faster, tracks price closer).</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
@@ -36,9 +36,9 @@
                       '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline for Home analytics. Default ₹10L.</div></div>' +
                       '<div class="sm-field"><label>Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Kill switch when net day P&L drops below this % of capital. 0 = off.</div></div>' +
                       '<div class="sm-field"><label>Max Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto from Capital × Risk %. Same value shown as \'Risk Budget\' on the positions page.</div></div>' +
-                      '<div class="sm-field"><label>SL Buffer Mode</label><select id="sm-vwapStSlBufferMode"><option value="POINTS">POINTS (fixed rupees)</option><option value="ATR">ATR (× multiplier)</option></select><div class="sm-hint">POINTS uses a fixed rupee buffer below the entry candle low. ATR uses the entry bar\'s Supertrend-period ATR × multiplier as a dynamic buffer (wider on volatile bars).</div></div>' +
-                      '<div class="sm-field"><label>SL Buffer — Points (₹)</label><input type="number" id="sm-vwapStSlBufferPoints" step="0.05" min="0"><div class="sm-hint">Applies when Mode = POINTS. SL = entry candle low − this many rupees. Default 5.0.</div></div>' +
-                      '<div class="sm-field"><label>SL Buffer — ATR Multiplier</label><input type="number" id="sm-vwapStSlAtrMultiplier" step="0.05" min="0"><div class="sm-hint">Applies when Mode = ATR. SL = entry candle low − (multiplier × latest ATR). Default 1.0.</div></div>' +
+                      '<div class="sm-field"><label>SL Mode</label><select id="sm-vwapStSlBufferMode"><option value="POINTS">POINTS (fixed rupees)</option><option value="ATR">ATR (× multiplier)</option><option value="SUPERTREND">SUPERTREND (trailing)</option></select><div class="sm-hint">POINTS uses a fixed rupee buffer below the entry candle low. ATR uses the entry bar\'s Supertrend-period ATR × multiplier as a dynamic buffer. SUPERTREND uses the ST line at entry as the SL and trails it upward on every bar close where ST is still up. Max SL cap still applies to all three modes.</div></div>' +
+                      '<div class="sm-field"><label>SL — Points (₹)</label><input type="number" id="sm-vwapStSlBufferPoints" step="0.05" min="0"><div class="sm-hint">Applies when Mode = POINTS. SL = entry candle low − this many rupees. Default 5.0.</div></div>' +
+                      '<div class="sm-field"><label>SL — ATR Multiplier</label><input type="number" id="sm-vwapStSlAtrMultiplier" step="0.05" min="0"><div class="sm-hint">Applies when Mode = ATR. SL = entry candle low − (multiplier × latest ATR). Default 1.0.</div></div>' +
                       '<div class="sm-field"><label>Max SL (points)</label><input type="number" id="sm-vwapStMaxSlPoints" step="0.5" min="0.5"><div class="sm-hint">Hard cap on SL distance from fill. If (fill − entry-candle-low + buffer) exceeds this, SL is capped at fill − this. Default 20.</div></div>' +
                       '<div class="sm-field"><label>Reward : Risk Ratio</label><input type="number" id="sm-vwapStRewardRiskRatio" step="0.1" min="0.1"><div class="sm-hint">Target = fill + N × (fill − SL). 2.0 = 1:2 RR. Default 2.0.</div></div>' +
                     '</div>' +
@@ -196,7 +196,7 @@
             if (g('sm-vwapStTargetPremium'))   g('sm-vwapStTargetPremium').value = d.vwapStTargetPremium != null ? d.vwapStTargetPremium : 250;
             if (g('sm-vwapStCandleMinutes'))   g('sm-vwapStCandleMinutes').value = d.vwapStCandleMinutes != null ? d.vwapStCandleMinutes : 3;
             if (g('sm-vwapStAtrPeriod'))       g('sm-vwapStAtrPeriod').value = d.vwapStAtrPeriod != null ? d.vwapStAtrPeriod : 10;
-            if (g('sm-vwapStMultiplier'))      g('sm-vwapStMultiplier').value = d.vwapStMultiplier != null ? d.vwapStMultiplier : 3.0;
+            if (g('sm-vwapStMultiplier'))      g('sm-vwapStMultiplier').value = d.vwapStMultiplier != null ? d.vwapStMultiplier : 2.0;
         }).catch(function() {});
     }
 
@@ -211,7 +211,7 @@
             vwapStTargetPremium:  parseFloat(g('sm-vwapStTargetPremium').value) || 250,
             vwapStCandleMinutes:  parseInt(g('sm-vwapStCandleMinutes').value, 10) || 3,
             vwapStAtrPeriod:      parseInt(g('sm-vwapStAtrPeriod').value, 10) || 10,
-            vwapStMultiplier:     parseFloat(g('sm-vwapStMultiplier').value) || 3.0
+            vwapStMultiplier:     parseFloat(g('sm-vwapStMultiplier').value) || 2.0
         };
         postSettings('/api/settings/risk', body);
     }
