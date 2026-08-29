@@ -237,9 +237,13 @@ public class ChartController {
         return cumVol > 0 ? cumTypVol / cumVol : 0.0;
     }
 
-    /** Returns today's bars + the last {@code priorContext} prior-session
-     *  bars. Gives the chart a bit of yesterday for scroll-back without
-     *  dumping the entire aggregator ring. */
+    /** Chart window rule: once today has any bars, show TODAY ONLY. Prior
+     *  session's bars are used solely for Supertrend ATR warmup and don't
+     *  belong on the visible chart while a live session is in progress.
+     *  When today has NO bars yet (pre-open, or the strategy hasn't
+     *  captured the spot tick yet), fall back to the last
+     *  {@code priorContext} prior-session bars so the pane still shows
+     *  something meaningful. */
     private List<Candle> trimToRecentContext(List<Candle> bars, int priorContext) {
         if (bars == null || bars.isEmpty()) return List.of();
         long todayStartUtcMs = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"))
@@ -250,11 +254,9 @@ public class ChartController {
             if (c.startMillis() >= todayStartUtcMs) today.add(c);
             else prior.add(c);
         }
+        if (!today.isEmpty()) return today;
         int from = Math.max(0, prior.size() - priorContext);
-        List<Candle> out = new ArrayList<>(priorContext + today.size());
-        out.addAll(prior.subList(from, prior.size()));
-        out.addAll(today);
-        return out;
+        return new ArrayList<>(prior.subList(from, prior.size()));
     }
 
     /** Per-bar Supertrend points. Runs on {@code allBars} so ATR warmup uses
