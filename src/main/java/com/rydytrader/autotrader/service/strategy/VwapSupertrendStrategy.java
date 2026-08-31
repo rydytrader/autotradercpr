@@ -885,7 +885,7 @@ public class VwapSupertrendStrategy implements Strategy {
                 tradeRepository.findById(pending.dbRowId()).ifPresent(row -> {
                     row.setExitPrice(actualFill);
                     double gross   = (actualFill - pending.entry()) * pending.qty();
-                    double charges = riskSettings.getBrokeragePerOrder() * 2;
+                    double charges = computeChargesForTrade(pending.entry(), actualFill, pending.qty());
                     row.setGrossPnl(gross);
                     row.setCharges(charges);
                     row.setNetPnl(gross - charges);
@@ -1033,23 +1033,46 @@ public class VwapSupertrendStrategy implements Strategy {
         return closed + open - liveChargesToday();
     }
     @Override public double liveChargesToday() {
-        // Flat brokerage × 2 sides × 2 (buy + sell) per fully closed trade.
-        double flat = riskSettings.getBrokeragePerOrder();
-        return tradesTodayById.size() * flat * 2;
+        double sum = 0;
+        for (ClosedTrade t : tradesTodayById.values()) {
+            sum += computeChargesForTrade(t.entry(), t.exit(), t.qty());
+        }
+        return sum;
+    }
+
+    /** Fyers-realistic per-cycle charges for NIFTY options intraday.
+     *  Includes brokerage (both sides) + STT (sell only) + exchange
+     *  transaction charge (both sides) + SEBI turnover fee + stamp duty
+     *  (buy only) + GST 18 % on (brokerage + exchange + SEBI). Rates as
+     *  of 2026 for equity options; adjust when SEBI/NSE revise them. */
+    private double computeChargesForTrade(double entry, double exit, int qty) {
+        if (qty <= 0 || entry <= 0 || exit <= 0) return 0;
+        double buyNotional  = entry * qty;
+        double sellNotional = exit  * qty;
+        double turnover     = buyNotional + sellNotional;
+        double brokerage    = riskSettings.getBrokeragePerOrder() * 2;   // buy + sell
+        double stt          = sellNotional * 0.000625;                   // 0.0625 % on sell only
+        double exchTxn      = turnover     * 0.00053;                    // 0.053 % NSE options
+        double sebi         = turnover     * 1e-6;                       // ₹10 per crore
+        double stampDuty    = buyNotional  * 0.00003;                    // 0.003 % on buy only
+        double gst          = 0.18 * (brokerage + exchTxn + sebi);       // 18 % GST
+        return brokerage + stt + exchTxn + sebi + stampDuty + gst;
     }
     @Override public List<Map<String, Object>> todayClosedTrades() {
         List<Map<String, Object>> out = new ArrayList<>(tradesTodayById.size());
         for (ClosedTrade t : tradesTodayById.values()) {
             Map<String, Object> m = new LinkedHashMap<>();
+            double gross   = (t.exit - t.entry) * t.qty;
+            double charges = computeChargesForTrade(t.entry, t.exit, t.qty);
             m.put("setup",          t.setup);
             m.put("side",           t.side);
             m.put("symbol",         t.symbol);
             m.put("qty",            t.qty);
             m.put("entryPrice",     t.entry);
             m.put("exitPrice",      t.exit);
-            m.put("grossPnl",       (t.exit - t.entry) * t.qty);
-            m.put("charges",        riskSettings.getBrokeragePerOrder() * 2);
-            m.put("netPnl",         (t.exit - t.entry) * t.qty - riskSettings.getBrokeragePerOrder() * 2);
+            m.put("grossPnl",       gross);
+            m.put("charges",        charges);
+            m.put("netPnl",         gross - charges);
             m.put("closedAtMillis", t.closedMs);
             m.put("closeReason",    t.reason);
             out.add(m);
@@ -1158,12 +1181,13 @@ public class VwapSupertrendStrategy implements Strategy {
 
     /** Persists a single-leg closed trade to the strategy_trades table so it
      *  shows up on /trades. Called from fireExit once we have the exit LTP.
-     *  Charges = flat brokerage × 2 (buy + sell). */
+     *  Charges include brokerage + STT + exchange + SEBI + stamp duty + GST
+     *  via {@link #computeChargesForTrade}. */
     private Long persistTradeRow(String side, String sym, double entry, double exit,
                                   int qty, long closedMs, String reason, Leg leg) {
         try {
             double gross   = (exit - entry) * qty;
-            double charges = riskSettings.getBrokeragePerOrder() * 2;
+            double charges = computeChargesForTrade(entry, exit, qty);
             double net     = gross - charges;
             StrategyTradeEntity e = new StrategyTradeEntity();
             e.setStrategyId("vwap-supertrend");
