@@ -152,12 +152,10 @@ public class ChartController {
             candleAggregator.subscribe(symbol, c -> {});
         }
         List<Candle> bars = candleAggregator.getHistory(symbol, tf);
-        // Chart shows today + last N prior-session bars (N = configurable
-        // vwapStChartPriorBars, default 20). Keeps a bit of yesterday's
-        // context on the left so trend continuity is visible without
-        // dominating today's view once the session progresses.
-        int priorContext = Math.max(0, riskSettings.getVwapStChartPriorBars());
-        List<Candle> visible = trimToRecentContext(bars, priorContext);
+        // Chart shows today + last 20 prior-session N-min bars (~1 h on a
+        // 3-min chart). Enough prior context to see how yesterday closed
+        // without dominating today's view once the session progresses.
+        List<Candle> visible = trimToRecentContext(bars, 20);
         Candle forming = buildFormingBar(symbol, visible, tf);
         List<Candle> visibleWithForming = new ArrayList<>(visible);
         if (forming != null) {

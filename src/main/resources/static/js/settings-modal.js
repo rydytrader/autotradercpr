@@ -25,7 +25,6 @@
                       '<div class="sm-field"><label>Start Time (HH:mm IST)</label><input type="time" id="sm-vwapStStartTime" step="60"><div class="sm-hint">Earliest time an entry can fire. Prep still runs at 09:15 (spot open + pair pick); entries suppressed until this time. Default 09:15.</div></div>' +
                       '<div class="sm-field"><label>Trading End Time (HH:mm IST)</label><input type="time" id="sm-vwapStTradingEndTime" step="60"><div class="sm-hint">No NEW entries after this time. Existing open positions still get managed to SL / target / Squareoff normally. Default 14:45.</div></div>' +
                       '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-vwapStSquareOffTime" step="60"><div class="sm-hint">Hard market-exit of any open leg. Default 15:25.</div></div>' +
-                      '<div class="sm-field"><label>Chart Prior Bars</label><input type="number" id="sm-vwapStChartPriorBars" step="1" min="0"><div class="sm-hint">How many prior-session N-min bars to keep on the chart alongside today for continuity context. 0 = today only. Default 20 (≈1 hour on a 3-min chart).</div></div>' +
                       '<div class="sm-field"><label>Target Premium (₹)</label><input type="number" id="sm-vwapStTargetPremium" step="1" min="1"><div class="sm-hint">After spot open, pick the CE and PE trading closest to this premium as the tracked pair. Default 250.</div></div>' +
                       '<div class="sm-field"><label>Candle Minutes</label><input type="number" id="sm-vwapStCandleMinutes" step="1" min="1"><div class="sm-hint">Timeframe for signal candles + Supertrend calc. Default 3.</div></div>' +
                       '<div class="sm-field"><label>Supertrend ATR Period</label><input type="number" id="sm-vwapStAtrPeriod" step="1" min="2"><div class="sm-hint">Bars in the Supertrend ATR window. Default 10.</div></div>' +
@@ -194,7 +193,6 @@
             if (g('sm-vwapStStartTime'))       g('sm-vwapStStartTime').value = d.vwapStStartTime || '09:15';
             if (g('sm-vwapStTradingEndTime'))  g('sm-vwapStTradingEndTime').value = d.vwapStTradingEndTime || '14:45';
             if (g('sm-vwapStSquareOffTime'))   g('sm-vwapStSquareOffTime').value = d.vwapStSquareOffTime || '15:25';
-            if (g('sm-vwapStChartPriorBars'))  g('sm-vwapStChartPriorBars').value = d.vwapStChartPriorBars != null ? d.vwapStChartPriorBars : 20;
             if (g('sm-vwapStTargetPremium'))   g('sm-vwapStTargetPremium').value = d.vwapStTargetPremium != null ? d.vwapStTargetPremium : 250;
             if (g('sm-vwapStCandleMinutes'))   g('sm-vwapStCandleMinutes').value = d.vwapStCandleMinutes != null ? d.vwapStCandleMinutes : 3;
             if (g('sm-vwapStAtrPeriod'))       g('sm-vwapStAtrPeriod').value = d.vwapStAtrPeriod != null ? d.vwapStAtrPeriod : 10;
@@ -210,7 +208,6 @@
             vwapStStartTime:      (g('sm-vwapStStartTime').value || '').trim(),
             vwapStTradingEndTime: (g('sm-vwapStTradingEndTime') ? g('sm-vwapStTradingEndTime').value : '' || '').trim(),
             vwapStSquareOffTime:  (g('sm-vwapStSquareOffTime').value || '').trim(),
-            vwapStChartPriorBars: parseInt(g('sm-vwapStChartPriorBars') ? g('sm-vwapStChartPriorBars').value : '20', 10) || 20,
             vwapStTargetPremium:  parseFloat(g('sm-vwapStTargetPremium').value) || 250,
             vwapStCandleMinutes:  parseInt(g('sm-vwapStCandleMinutes').value, 10) || 3,
             vwapStAtrPeriod:      parseInt(g('sm-vwapStAtrPeriod').value, 10) || 10,

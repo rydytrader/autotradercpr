@@ -54,7 +54,6 @@ public class RiskSettingsStore {
         volatile double  vwapStTargetPremium     = 250.0;   // rupee premium to pick nearest CE/PE
         volatile int     vwapStStrikesRange      = 20;      // ±N strikes around ATM (subscribed pre-market on prev close, refined at spot open)
         volatile int     vwapStCandleMinutes     = 3;       // timeframe for signal candles
-        volatile int     vwapStChartPriorBars    = 20;      // how many prior-session N-min bars to keep on the chart alongside today (0 = today only)
         volatile int     vwapStAtrPeriod         = 10;      // Supertrend ATR period
         volatile double  vwapStMultiplier        = 2.0;     // Supertrend ATR multiplier (tighter than the classic 3.0 — flips faster, tracks price closer)
         volatile double  vwapStSlBufferPoints    = 5.0;     // SL = entryCandleLow − N points (5 rupee buffer default); used when vwapStSlBufferMode = POINTS
@@ -420,7 +419,6 @@ public class RiskSettingsStore {
     public int     getVwapStStrikesRange()     { return cfg().vwapStStrikesRange; }
     public int     getVwapStCandleMinutes()    { return cfg().vwapStCandleMinutes; }
     public int     getVwapStAtrPeriod()        { return cfg().vwapStAtrPeriod; }
-    public int     getVwapStChartPriorBars()   { return cfg().vwapStChartPriorBars; }
     public double  getVwapStMultiplier()       { return cfg().vwapStMultiplier; }
     public double  getVwapStSlBufferPoints()   { return cfg().vwapStSlBufferPoints; }
     public String  getVwapStSlBufferMode()     { return cfg().vwapStSlBufferMode; }
@@ -621,7 +619,6 @@ public class RiskSettingsStore {
     public void setVwapStStrikesRange(int v)        { cfg().vwapStStrikesRange = Math.max(1, v); }
     public void setVwapStCandleMinutes(int v)       { cfg().vwapStCandleMinutes = Math.max(1, v); }
     public void setVwapStAtrPeriod(int v)           { cfg().vwapStAtrPeriod = Math.max(2, v); }
-    public void setVwapStChartPriorBars(int v)      { cfg().vwapStChartPriorBars = Math.max(0, v); }
     public void setVwapStMultiplier(double v)       { cfg().vwapStMultiplier = Math.max(0.1, v); }
     public void setVwapStSlBufferPoints(double v)   { cfg().vwapStSlBufferPoints = Math.max(0.0, v); }
     public void setVwapStSlBufferMode(String v)     {
@@ -801,7 +798,6 @@ public class RiskSettingsStore {
             upsert("vwapStStrikesRange",              String.valueOf(c.vwapStStrikesRange));
             upsert("vwapStCandleMinutes",             String.valueOf(c.vwapStCandleMinutes));
             upsert("vwapStAtrPeriod",                 String.valueOf(c.vwapStAtrPeriod));
-            upsert("vwapStChartPriorBars",            String.valueOf(c.vwapStChartPriorBars));
             upsert("vwapStMultiplier",                String.valueOf(c.vwapStMultiplier));
             upsert("vwapStSlBufferPoints",            String.valueOf(c.vwapStSlBufferPoints));
             upsert("vwapStSlBufferMode",              c.vwapStSlBufferMode);
@@ -1013,7 +1009,6 @@ public class RiskSettingsStore {
                     case "vwapStStrikesRange"            -> c.vwapStStrikesRange      = Math.max(1, Integer.parseInt(v));
                     case "vwapStCandleMinutes"           -> c.vwapStCandleMinutes     = Math.max(1, Integer.parseInt(v));
                     case "vwapStAtrPeriod"               -> c.vwapStAtrPeriod         = Math.max(2, Integer.parseInt(v));
-                    case "vwapStChartPriorBars"          -> c.vwapStChartPriorBars    = Math.max(0, Integer.parseInt(v));
                     case "vwapStMultiplier"              -> c.vwapStMultiplier        = Math.max(0.1, Double.parseDouble(v));
                     case "vwapStSlBufferPoints"          -> c.vwapStSlBufferPoints    = Math.max(0.0, Double.parseDouble(v));
                     case "vwapStSlBufferMode"            -> c.vwapStSlBufferMode      = "ATR".equalsIgnoreCase(v) ? "ATR" : "POINTS";

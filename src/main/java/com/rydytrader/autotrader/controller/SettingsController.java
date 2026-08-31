@@ -44,7 +44,6 @@ public class SettingsController {
         result.put("vwapStStartTime",         riskSettings.getVwapStStartTime());
         result.put("vwapStTradingEndTime",    riskSettings.getVwapStTradingEndTime());
         result.put("vwapStSquareOffTime",     riskSettings.getVwapStSquareOffTime());
-        result.put("vwapStChartPriorBars",    riskSettings.getVwapStChartPriorBars());
         result.put("vwapStTargetPremium",     riskSettings.getVwapStTargetPremium());
         result.put("vwapStStrikesRange",      riskSettings.getVwapStStrikesRange());
         result.put("vwapStCandleMinutes",     riskSettings.getVwapStCandleMinutes());
@@ -102,7 +101,6 @@ public class SettingsController {
             if (body.containsKey("vwapStStartTime"))        riskSettings.setVwapStStartTime(body.get("vwapStStartTime").toString());
             if (body.containsKey("vwapStTradingEndTime"))   riskSettings.setVwapStTradingEndTime(body.get("vwapStTradingEndTime").toString());
             if (body.containsKey("vwapStSquareOffTime"))    riskSettings.setVwapStSquareOffTime(body.get("vwapStSquareOffTime").toString());
-            if (body.containsKey("vwapStChartPriorBars"))   riskSettings.setVwapStChartPriorBars(Integer.parseInt(body.get("vwapStChartPriorBars").toString()));
             if (body.containsKey("vwapStTargetPremium"))    riskSettings.setVwapStTargetPremium(Double.parseDouble(body.get("vwapStTargetPremium").toString()));
             if (body.containsKey("vwapStStrikesRange"))     riskSettings.setVwapStStrikesRange(Integer.parseInt(body.get("vwapStStrikesRange").toString()));
             if (body.containsKey("vwapStCandleMinutes"))    riskSettings.setVwapStCandleMinutes(Integer.parseInt(body.get("vwapStCandleMinutes").toString()));
