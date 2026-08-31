@@ -152,10 +152,12 @@ public class ChartController {
             candleAggregator.subscribe(symbol, c -> {});
         }
         List<Candle> bars = candleAggregator.getHistory(symbol, tf);
-        // Chart shows the last 50 prior-session bars + all of today —
-        // enough yesterday context to see recent history without cluttering
-        // the whole ring. Prior-session filter uses IST calendar day.
-        List<Candle> visible = trimToRecentContext(bars, 50);
+        // Chart shows today + last N prior-session bars (N = configurable
+        // vwapStChartPriorBars, default 20). Keeps a bit of yesterday's
+        // context on the left so trend continuity is visible without
+        // dominating today's view once the session progresses.
+        int priorContext = Math.max(0, riskSettings.getVwapStChartPriorBars());
+        List<Candle> visible = trimToRecentContext(bars, priorContext);
         Candle forming = buildFormingBar(symbol, visible, tf);
         List<Candle> visibleWithForming = new ArrayList<>(visible);
         if (forming != null) {
@@ -237,13 +239,12 @@ public class ChartController {
         return cumVol > 0 ? cumTypVol / cumVol : 0.0;
     }
 
-    /** Chart window rule: once today has any bars, show TODAY ONLY. Prior
-     *  session's bars are used solely for Supertrend ATR warmup and don't
-     *  belong on the visible chart while a live session is in progress.
-     *  When today has NO bars yet (pre-open, or the strategy hasn't
-     *  captured the spot tick yet), fall back to the last
-     *  {@code priorContext} prior-session bars so the pane still shows
-     *  something meaningful. */
+    /** Chart window rule: last {@code priorContext} prior-session bars +
+     *  all of today's bars. Prior tail gives visual continuity from
+     *  yesterday's close; today dominates once the session progresses.
+     *  When today has NO bars yet (pre-open, or strategy hasn't captured
+     *  the spot tick) the pane still shows the prior tail so it isn't
+     *  empty. {@code priorContext = 0} → today only. */
     private List<Candle> trimToRecentContext(List<Candle> bars, int priorContext) {
         if (bars == null || bars.isEmpty()) return List.of();
         long todayStartUtcMs = java.time.LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"))
@@ -254,9 +255,11 @@ public class ChartController {
             if (c.startMillis() >= todayStartUtcMs) today.add(c);
             else prior.add(c);
         }
-        if (!today.isEmpty()) return today;
-        int from = Math.max(0, prior.size() - priorContext);
-        return new ArrayList<>(prior.subList(from, prior.size()));
+        int from = Math.max(0, prior.size() - Math.max(0, priorContext));
+        List<Candle> out = new ArrayList<>(prior.size() - from + today.size());
+        out.addAll(prior.subList(from, prior.size()));
+        out.addAll(today);
+        return out;
     }
 
     /** Per-bar Supertrend points. Runs on {@code allBars} so ATR warmup uses
