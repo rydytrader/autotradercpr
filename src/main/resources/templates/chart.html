@@ -81,10 +81,11 @@
             color: var(--accent-cyan); background: rgba(125,211,252,0.12);
         }
         .chart-hdr-sym {
-            font-family: var(--font-mono); font-size: 0.62rem; font-weight: 700;
-            letter-spacing: 0.06em; color: var(--text-muted);
-            background: rgba(125,211,252,0.08); border: 1px solid rgba(125,211,252,0.20);
-            padding: 3px 10px; border-radius: 999px; white-space: nowrap;
+            font-family: var(--font-mono); font-size: 0.85rem; font-weight: 700;
+            letter-spacing: 0.04em; color: var(--text-primary);
+            background: rgba(125,211,252,0.10); border: 1px solid rgba(125,211,252,0.25);
+            padding: 4px 12px; border-radius: 999px; white-space: nowrap;
+            font-variant-numeric: tabular-nums;
         }
         .chart-hdr-price {
             font-family: var(--font-mono); font-size: 1.05rem; font-weight: 700;
@@ -385,6 +386,19 @@
         return n.toFixed(1);
     }
     function pnlClass(v) { return v > 0 ? 'pnl-positive' : (v < 0 ? 'pnl-negative' : ''); }
+    /** Extract the strike + side (e.g. '24500 CE') from a Fyers option
+     *  symbol like 'NSE:NIFTY2690124500CE' — strips exchange, name, and
+     *  weekly-expiry code. Matches exactly 5 digits (NIFTY strike length)
+     *  before CE/PE so the greedy \d+ doesn't swallow the expiry prefix.
+     *  4-digit fallback for older / far OTM strikes. */
+    function shortStrike(fyersSym) {
+        if (!fyersSym) return '—';
+        var s = String(fyersSym);
+        var m = s.match(/(\d{5})(CE|PE)$/i);
+        if (m) return m[1] + ' ' + m[2].toUpperCase();
+        m = s.match(/(\d{4})(CE|PE)$/i);
+        return m ? m[1] + ' ' + m[2].toUpperCase() : s;
+    }
 
     // Highcharts Stock — candlestick + VWAP line + Supertrend line per panel.
     // ST is colored per-point (green when line is below the bar's close =
@@ -793,9 +807,9 @@
             currentSyms.ce = ce;
             currentSyms.pe = pe;
             var ceLbl = document.getElementById('ceSymbolLabel');
-            if (ceLbl) ceLbl.textContent = ce || '—';
+            if (ceLbl) ceLbl.textContent = shortStrike(ce);
             var peLbl = document.getElementById('peSymbolLabel');
-            if (peLbl) peLbl.textContent = pe || '—';
+            if (peLbl) peLbl.textContent = shortStrike(pe);
             var ct = d.ceTick || {};
             var pt = d.peTick || {};
             setHeaderCells('cePrice', 'ceChg', ct.ltp, ct.ch, ct.chp, 1);
