@@ -142,18 +142,31 @@ window.HistoricalChartModal = (function() {
             var v = Number(c.vwap || 0);
             if (v > 0) vwaps.push({ time: t, value: v });
         });
-        // Split ST into up-runs (green) and down-runs (red), patching each
-        // flip point into BOTH so the two colored segments visually meet.
+        // Split ST into two series (green up-runs, red down-runs). Every
+        // time slot pushes a real value to ONE series and a whitespace
+        // marker ({time} without value) to the OTHER — LWC uses whitespace
+        // to break the line at that point, otherwise it interpolates
+        // straight across gaps in a single series and you see two lines
+        // running parallel through the whole day.
         var stUpData = [], stDnData = [], prevUp = null;
         (stArr || []).forEach(function(p) {
             var t = Math.floor(Number(p.t) / 1000) + IST_OFFSET_S;
             var v = Number(p.line);
             if (p.isUp) {
                 stUpData.push({ time: t, value: v });
-                if (prevUp === false) stDnData.push({ time: t, value: v });
+                stDnData.push({ time: t });                 // whitespace on DN
+                if (prevUp === false) {
+                    // Flip up: retro-patch DN's previous slot with this v
+                    // so the red line's last segment reaches the flip point
+                    // and the two colours visually meet.
+                    stDnData[stDnData.length - 1] = { time: t, value: v };
+                }
             } else {
                 stDnData.push({ time: t, value: v });
-                if (prevUp === true) stUpData.push({ time: t, value: v });
+                stUpData.push({ time: t });                 // whitespace on UP
+                if (prevUp === true) {
+                    stUpData[stUpData.length - 1] = { time: t, value: v };
+                }
             }
             prevUp = !!p.isUp;
         });
