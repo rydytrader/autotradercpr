@@ -299,21 +299,6 @@ public class VwapSupertrendStrategy implements Strategy {
         if (leg.targetPrice > 0 && ltp >= leg.targetPrice) {
             fireExit(leg, sideLabel, "TARGET_HIT",
                 "LTP " + fmt(ltp) + " ≥ target " + fmt(leg.targetPrice));
-            return;
-        }
-        // Hard profit cap — book at fill + 2 × MaxSL regardless of SL Mode.
-        // Primarily matters in SUPERTREND mode (no fixed target) where a
-        // runaway can otherwise be given back to a trailing pullback.
-        // In POINTS / ATR modes the RR target usually fires first because
-        // RR × risk < 2 × MaxSL, so this is only a safety net.
-        if (leg.fillPrice > 0) {
-            double hardCap = leg.fillPrice + 2.0 * Math.max(0.5, riskSettings.getVwapStMaxSlPoints());
-            if (ltp >= hardCap) {
-                fireExit(leg, sideLabel, "PROFIT_CAP_HIT",
-                    "LTP " + fmt(ltp) + " ≥ 2×MaxSL cap " + fmt(hardCap)
-                        + " (fill " + fmt(leg.fillPrice)
-                        + " + 2×" + fmt(riskSettings.getVwapStMaxSlPoints()) + ")");
-            }
         }
     }
 
@@ -1031,10 +1016,14 @@ public class VwapSupertrendStrategy implements Strategy {
             risk = structuralRisk;
             leg.slPrice = structuralSl;
         }
-        // SUPERTREND mode has no fixed target — exits only via the trailing
-        // SL. Setting targetPrice = 0 makes checkSlOrTarget skip the target
-        // check (guarded by `targetPrice > 0`).
-        leg.targetPrice = supertrendMode ? 0 : fillPrice + rr * risk;
+        // Target price:
+        //   • POINTS / ATR modes → fill + RR × risk (RR default 2.0).
+        //   • SUPERTREND mode    → fill + 2 × MaxSL as the hard profit cap.
+        //     Trailing SL is the primary exit; the target caps a runaway win
+        //     so we book at +2×MaxSL instead of giving profits back to a
+        //     trailing pullback. Same value the earlier PROFIT_CAP_HIT check
+        //     computed on the fly.
+        leg.targetPrice = supertrendMode ? fillPrice + 2.0 * maxSl : fillPrice + rr * risk;
         leg.state       = LegState.IN_POSITION;
         event("[SUCCESS]", "VwapST",
             sideLabel + " FILL — sym=" + leg.chosenSymbol + " @ " + fmt(fillPrice)
