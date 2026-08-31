@@ -55,6 +55,12 @@ public class FyersMinuteBarBuilder {
         long   startSessionVol;
         long   endSessionVol;
         int    tickCount;
+        /** Last-observed Fyers ATP (Averaged Traded Price) during this minute.
+         *  ATP is the exchange-computed session VWAP delivered on every FULL-
+         *  mode tick — we carry the LAST value seen into the emitted 1-min
+         *  bar's {@code vwap} field so downstream reads see the exchange's
+         *  canonical session VWAP instead of a locally reconstructed one. */
+        double lastAtp;
     }
     private final Map<String, Bucket> byBucket = new HashMap<>();
     /** IST calendar day of the most recent bucket built for each symbol.
@@ -97,6 +103,7 @@ public class FyersMinuteBarBuilder {
             Bucket b = byBucket.get(symbol);
             if (b == null || b.minuteEpoch < 0) {
                 b = startBucket(symbol, minuteEpoch, t.ltp(), t.sessionVolume(), isFirstBucketOfDay(symbol, minuteEpoch));
+                if (t.atp() > 0) b.lastAtp = t.atp();
                 byBucket.put(symbol, b);
                 return;
             }
@@ -106,11 +113,13 @@ public class FyersMinuteBarBuilder {
                 if (t.ltp() < b.low)  b.low  = t.ltp();
                 b.close = t.ltp();
                 if (t.sessionVolume() > 0) b.endSessionVol = t.sessionVolume();
+                if (t.atp() > 0) b.lastAtp = t.atp();
                 b.tickCount++;
             } else if (minuteEpoch > b.minuteEpoch) {
                 // Boundary crossing — close current bucket, start new one.
                 emitted = toCandle(b);
                 Bucket next = startBucket(symbol, minuteEpoch, t.ltp(), t.sessionVolume(), isFirstBucketOfDay(symbol, minuteEpoch));
+                if (t.atp() > 0) next.lastAtp = t.atp();
                 byBucket.put(symbol, next);
             } else {
                 // Stale tick (older minute than current bucket) — drop.
@@ -148,8 +157,13 @@ public class FyersMinuteBarBuilder {
     }
 
     private static Candle toCandle(Bucket b) {
+        // Emit the exchange-computed session VWAP (ATP) as the bar's vwap
+        // field. CandleAggregator preserves this value on append (guarded
+        // ATP > 0 → skip local recompute) so downstream reads see the
+        // exchange's canonical session VWAP instead of a locally
+        // reconstructed one.
         long vol = Math.max(0, b.endSessionVol - b.startSessionVol);
-        return new Candle(b.open, b.high, b.low, b.close, vol, b.startMs, 0.0);
+        return new Candle(b.open, b.high, b.low, b.close, vol, b.startMs, b.lastAtp);
     }
 
     /** Illiquid safety net — every second, sweep buckets whose minute has
@@ -188,7 +202,10 @@ public class FyersMinuteBarBuilder {
             Bucket b = byBucket.get(symbol);
             if (b == null || b.minuteEpoch <= 0) return null;
             long vol = Math.max(0, b.endSessionVol - b.startSessionVol);
-            return new Candle(b.open, b.high, b.low, b.close, vol, b.startMs, 0.0);
+            // Forming bar carries the latest ATP too so the chart's live
+            // VWAP line updates tick-by-tick against exchange-canonical
+            // values (matches Fyers's chart VWAP exactly).
+            return new Candle(b.open, b.high, b.low, b.close, vol, b.startMs, b.lastAtp);
         }
     }
 

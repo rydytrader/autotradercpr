@@ -135,10 +135,16 @@ public class CandleAggregator {
             return;
         }
 
+        // Preserve VWAP from the incoming bar when FyersMinuteBarBuilder set
+        // it from the tick's ATP (exchange-canonical session VWAP). Falls
+        // back to a local pandas_ta recompute when ATP wasn't available
+        // (e.g. warmup-history bars from /data/history which have no ATP).
+        double incomingVwap = rawBar.vwap() > 0 ? round(rawBar.vwap()) : 0.0;
+
         Candle stagedBar = new Candle(
             round(rawBar.open()), round(rawBar.high()),
             round(rawBar.low()),  round(rawBar.close()),
-            rawBar.volume(), rawBar.startMillis(), 0.0);
+            rawBar.volume(), rawBar.startMillis(), incomingVwap);
 
         Deque<Candle> ring = historyBySymbol.computeIfAbsent(symbol, k -> new ConcurrentLinkedDeque<>());
         for (Candle existing : ring) {
@@ -150,7 +156,10 @@ public class CandleAggregator {
         }
         ring.addLast(stagedBar);
         while (ring.size() > HISTORY_CAP) ring.pollFirst();
-        Candle appended = recomputeVwapsAndReturnLast(symbol);
+        // Only re-derive VWAP when the incoming bar didn't already carry an
+        // ATP-sourced value. Skipping the recompute keeps the exchange-
+        // canonical VWAP intact for downstream consumers.
+        Candle appended = incomingVwap > 0 ? stagedBar : recomputeVwapsAndReturnLast(symbol);
         dirty = true;
         Candle out = appended != null ? appended : stagedBar;
         log.debug("[CandleAggregator] {} 1-min bar appended — o={} h={} l={} c={} v={} vwap={} startMs={}",
@@ -219,48 +228,6 @@ public class CandleAggregator {
                 }
             }
         });
-    }
-
-    /** Replace an existing 1-min bar in the ring with a canonical bar from
-     *  Fyers's /data/history REST — used to correct locally-built bars whose
-     *  OHLC or volume drifted from the exchange feed (biggest source of error
-     *  is the 09:15 opening bar, where our tick aggregation misses the
-     *  auction print's exact price and any sub-second continuous trades
-     *  Fyers's WS batched). Matches the existing ring entry by
-     *  {@code startMillis}; a no-op if no bar with that startMillis exists.
-     *  After the swap, session VWAP is recomputed for every bar in the ring
-     *  so downstream reads see the corrected value. */
-    public void replaceBar(String symbol, Candle canonical) {
-        if (symbol == null || symbol.isBlank() || canonical == null) return;
-        Deque<Candle> ring = historyBySymbol.get(symbol);
-        if (ring == null || ring.isEmpty()) return;
-        boolean replaced = false;
-        synchronized (ring) {
-            List<Candle> snapshot = new ArrayList<>(ring);
-            ring.clear();
-            for (Candle b : snapshot) {
-                if (b.startMillis() == canonical.startMillis()) {
-                    ring.addLast(new Candle(
-                        round(canonical.open()), round(canonical.high()),
-                        round(canonical.low()),  round(canonical.close()),
-                        canonical.volume(), canonical.startMillis(), 0.0));
-                    replaced = true;
-                } else {
-                    ring.addLast(b);
-                }
-            }
-        }
-        if (replaced) {
-            recomputeVwapsAndReturnLast(symbol);
-            dirty = true;
-            log.info("[CandleAggregator] {} bar refreshed from canonical — startMs={} o={} h={} l={} c={} v={}",
-                symbol, canonical.startMillis(),
-                canonical.open(), canonical.high(), canonical.low(),
-                canonical.close(), canonical.volume());
-        } else {
-            log.debug("[CandleAggregator] {} replaceBar found no ring entry at startMs={}",
-                symbol, canonical.startMillis());
-        }
     }
 
     /** Rebuild every bar's {@code vwap} field from stored OHLC+volume using the
