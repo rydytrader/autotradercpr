@@ -221,6 +221,48 @@ public class CandleAggregator {
         });
     }
 
+    /** Replace an existing 1-min bar in the ring with a canonical bar from
+     *  Fyers's /data/history REST — used to correct locally-built bars whose
+     *  OHLC or volume drifted from the exchange feed (biggest source of error
+     *  is the 09:15 opening bar, where our tick aggregation misses the
+     *  auction print's exact price and any sub-second continuous trades
+     *  Fyers's WS batched). Matches the existing ring entry by
+     *  {@code startMillis}; a no-op if no bar with that startMillis exists.
+     *  After the swap, session VWAP is recomputed for every bar in the ring
+     *  so downstream reads see the corrected value. */
+    public void replaceBar(String symbol, Candle canonical) {
+        if (symbol == null || symbol.isBlank() || canonical == null) return;
+        Deque<Candle> ring = historyBySymbol.get(symbol);
+        if (ring == null || ring.isEmpty()) return;
+        boolean replaced = false;
+        synchronized (ring) {
+            List<Candle> snapshot = new ArrayList<>(ring);
+            ring.clear();
+            for (Candle b : snapshot) {
+                if (b.startMillis() == canonical.startMillis()) {
+                    ring.addLast(new Candle(
+                        round(canonical.open()), round(canonical.high()),
+                        round(canonical.low()),  round(canonical.close()),
+                        canonical.volume(), canonical.startMillis(), 0.0));
+                    replaced = true;
+                } else {
+                    ring.addLast(b);
+                }
+            }
+        }
+        if (replaced) {
+            recomputeVwapsAndReturnLast(symbol);
+            dirty = true;
+            log.info("[CandleAggregator] {} bar refreshed from canonical — startMs={} o={} h={} l={} c={} v={}",
+                symbol, canonical.startMillis(),
+                canonical.open(), canonical.high(), canonical.low(),
+                canonical.close(), canonical.volume());
+        } else {
+            log.debug("[CandleAggregator] {} replaceBar found no ring entry at startMs={}",
+                symbol, canonical.startMillis());
+        }
+    }
+
     /** Rebuild every bar's {@code vwap} field from stored OHLC+volume using the
      *  pandas_ta session-cumulative formula. Bars are grouped by IST trading day
      *  so the running sums reset at each day boundary. Returns the newly-appended

@@ -376,6 +376,69 @@ public class VwapSupertrendStrategy implements Strategy {
         }
     }
 
+    /** Fires once daily at 09:17:30 IST — 2.5 min after market open, giving
+     *  Fyers /data/history time to publish the 09:15 canonical 1-min bar.
+     *  Fetches today's canonical 1-min bars for each chosen leg and replaces
+     *  the locally-built 09:15 bar in the aggregator via
+     *  {@link CandleAggregator#replaceBar}. Recomputes session VWAP as a
+     *  side effect, so downstream reads (chart, strategy entry evaluation)
+     *  see the corrected value from 09:21 onward.
+     *
+     *  Rationale: tick-aggregation misses the opening auction print's exact
+     *  price and any sub-second continuous trades Fyers's WebSocket batched.
+     *  Effects concentrate in the first minute; refreshing it against the
+     *  exchange-canonical bar closes the biggest VWAP-vs-TV gap. */
+    @org.springframework.scheduling.annotation.Scheduled(cron = "30 17 9 * * MON-FRI", zone = "Asia/Kolkata")
+    public void refreshOpeningBarFromCanonical() {
+        if (holidays != null && !holidays.isMarketOpen()) return;
+        if (ceLeg.chosenSymbol == null && peLeg.chosenSymbol == null) {
+            log.info("[VwapSupertrend] opening-bar refresh SKIPPED — no chosen legs yet");
+            return;
+        }
+        if (ceLeg.chosenSymbol != null) refreshOpeningBarForSymbol(ceLeg.chosenSymbol, "CE");
+        if (peLeg.chosenSymbol != null) refreshOpeningBarForSymbol(peLeg.chosenSymbol, "PE");
+    }
+
+    /** Pulls today's 1-min bars for {@code sym} from Fyers /data/history and
+     *  replaces the 09:15 IST bar in the aggregator with the canonical
+     *  values. No-op on auth failure or empty response. */
+    private void refreshOpeningBarForSymbol(String sym, String sideLabel) {
+        try {
+            LocalDate today = LocalDate.now(IST);
+            JsonNode resp = fyersClient.getHistory(sym, "1",
+                today.format(ISO_DATE), today.format(ISO_DATE), authHeader());
+            JsonNode candles = resp == null ? null : resp.path("candles");
+            if (candles == null || !candles.isArray() || candles.size() == 0) {
+                event("[WARNING]", "VwapST",
+                    sideLabel + " opening-bar refresh SKIPPED — Fyers returned no candles for " + sym);
+                return;
+            }
+            // 09:15 IST bar's UTC epoch seconds. For a candle to match, its
+            // epoch_sec must equal this OR fall within the first minute.
+            long target915Sec = today.atTime(9, 15).atZone(IST).toEpochSecond();
+            for (JsonNode row : candles) {
+                if (!row.isArray() || row.size() < 6) continue;
+                long epochSec = row.get(0).asLong(0);
+                if (epochSec != target915Sec) continue;
+                double o = row.get(1).asDouble(0);
+                double h = row.get(2).asDouble(0);
+                double l = row.get(3).asDouble(0);
+                double c = row.get(4).asDouble(0);
+                long   v = row.get(5).asLong(0);
+                Candle canonical = new Candle(o, h, l, c, v, epochSec * 1000L, 0.0);
+                candleAggregator.replaceBar(sym, canonical);
+                event("[INFO]", "VwapST",
+                    sideLabel + " opening-bar refreshed from Fyers canonical — "
+                        + "o=" + fmt(o) + " h=" + fmt(h) + " l=" + fmt(l) + " c=" + fmt(c) + " v=" + v);
+                return;
+            }
+            event("[WARNING]", "VwapST",
+                sideLabel + " opening-bar refresh — no 09:15 bar in Fyers response for " + sym);
+        } catch (Exception e) {
+            log.warn("[VwapSupertrend] refreshOpeningBarForSymbol {} failed: {}", sym, e.getMessage());
+        }
+    }
+
     /** Fires once daily at 09:10 IST via @Scheduled cron, or from tick() as
      *  a catch-up when the bot boots inside the 09:10-09:15 window. Fetches
      *  yesterday's NIFTY 50 spot close via Fyers /data/history (D bars),
