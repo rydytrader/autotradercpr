@@ -1040,22 +1040,23 @@ public class VwapSupertrendStrategy implements Strategy {
         return sum;
     }
 
-    /** Fyers-realistic per-cycle charges for NIFTY options intraday.
-     *  Includes brokerage (both sides) + STT (sell only) + exchange
-     *  transaction charge (both sides) + SEBI turnover fee + stamp duty
-     *  (buy only) + GST 18 % on (brokerage + exchange + SEBI). Rates as
-     *  of 2026 for equity options; adjust when SEBI/NSE revise them. */
+    /** Per-cycle charges: brokerage (both sides) + STT (sell only) +
+     *  exchange transaction (both sides) + SEBI turnover fee + stamp
+     *  duty (buy only) + GST on (brokerage + exchange + SEBI). Rates
+     *  come from RiskSettingsStore — set them once for your instrument
+     *  in the Risk / Charges tab. Percent-valued fields divide by 100;
+     *  SEBI's ₹-per-crore divides by 1e7. */
     private double computeChargesForTrade(double entry, double exit, int qty) {
         if (qty <= 0 || entry <= 0 || exit <= 0) return 0;
         double buyNotional  = entry * qty;
         double sellNotional = exit  * qty;
         double turnover     = buyNotional + sellNotional;
         double brokerage    = riskSettings.getBrokeragePerOrder() * 2;   // buy + sell
-        double stt          = sellNotional * 0.000625;                   // 0.0625 % on sell only
-        double exchTxn      = turnover     * 0.00053;                    // 0.053 % NSE options
-        double sebi         = turnover     * 1e-6;                       // ₹10 per crore
-        double stampDuty    = buyNotional  * 0.00003;                    // 0.003 % on buy only
-        double gst          = 0.18 * (brokerage + exchTxn + sebi);       // 18 % GST
+        double stt          = sellNotional * riskSettings.getSttRate()       / 100.0;
+        double exchTxn      = turnover     * riskSettings.getExchangeRate()  / 100.0;
+        double sebi         = turnover     * riskSettings.getSebiRate()      / 10_000_000.0;
+        double stampDuty    = buyNotional  * riskSettings.getStampDutyRate() / 100.0;
+        double gst          = (brokerage + exchTxn + sebi) * riskSettings.getGstRate() / 100.0;
         return brokerage + stt + exchTxn + sebi + stampDuty + gst;
     }
     @Override public List<Map<String, Object>> todayClosedTrades() {
