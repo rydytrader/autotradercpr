@@ -285,8 +285,8 @@ public class VwapSupertrendStrategy implements Strategy {
         }
     }
 
-    /** LTP-driven exits: SL below entry candle low, target at RR × SL distance
-     *  above fill. Fires whichever the tick hits first. */
+    /** LTP-driven exits: SL, target, and the hard 2×MaxSL profit cap. Fires
+     *  whichever the tick hits first. */
     private synchronized void checkSlOrTarget(Leg leg, String sym, double ltp, String sideLabel) {
         if (leg.state != LegState.IN_POSITION) return;
         if (leg.chosenSymbol == null || !leg.chosenSymbol.equals(sym)) return;
@@ -299,6 +299,21 @@ public class VwapSupertrendStrategy implements Strategy {
         if (leg.targetPrice > 0 && ltp >= leg.targetPrice) {
             fireExit(leg, sideLabel, "TARGET_HIT",
                 "LTP " + fmt(ltp) + " ≥ target " + fmt(leg.targetPrice));
+            return;
+        }
+        // Hard profit cap — book at fill + 2 × MaxSL regardless of SL Mode.
+        // Primarily matters in SUPERTREND mode (no fixed target) where a
+        // runaway can otherwise be given back to a trailing pullback.
+        // In POINTS / ATR modes the RR target usually fires first because
+        // RR × risk < 2 × MaxSL, so this is only a safety net.
+        if (leg.fillPrice > 0) {
+            double hardCap = leg.fillPrice + 2.0 * Math.max(0.5, riskSettings.getVwapStMaxSlPoints());
+            if (ltp >= hardCap) {
+                fireExit(leg, sideLabel, "PROFIT_CAP_HIT",
+                    "LTP " + fmt(ltp) + " ≥ 2×MaxSL cap " + fmt(hardCap)
+                        + " (fill " + fmt(leg.fillPrice)
+                        + " + 2×" + fmt(riskSettings.getVwapStMaxSlPoints()) + ")");
+            }
         }
     }
 
