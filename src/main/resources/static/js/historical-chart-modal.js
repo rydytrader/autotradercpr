@@ -57,7 +57,8 @@ window.HistoricalChartModal = (function() {
         style.textContent =
             '.hist-panel-hdr { font-family:var(--font-mono);font-size:0.72rem;font-weight:700;'
           + '  letter-spacing:0.06em;color:var(--text-secondary);padding:6px 4px;text-transform:uppercase; }'
-          + '.hist-panel-hdr .hist-hdr-note { color:var(--text-muted);font-weight:400;margin-left:8px;text-transform:none; }'
+          + '.hist-panel-hdr .hist-hdr-note { color:var(--text-primary);font-weight:700;margin-left:10px;'
+          + '  font-size:0.88rem;letter-spacing:0.02em;text-transform:none;font-variant-numeric:tabular-nums; }'
           + '.hist-panel-body { position:relative;height:340px;border:1px solid var(--border);border-radius:6px;overflow:hidden; }';
         document.head.appendChild(style);
 
@@ -80,6 +81,15 @@ window.HistoricalChartModal = (function() {
             charts[k] = null; candleSeries[k] = null; vwapSeries[k] = null;
             stSeries[k] = null;
         });
+    }
+
+    /** Extract the strike + side (e.g. '24500 CE') from a Fyers option
+     *  symbol like 'NSE:NIFTY26901245000CE' or 'NSE:NIFTY26SEP24500PE'.
+     *  Returns '' when the symbol is missing or doesn't match. */
+    function shortStrike(fyersSym) {
+        if (!fyersSym) return '';
+        var m = String(fyersSym).match(/(\d+)(CE|PE)$/i);
+        return m ? m[1] + ' ' + m[2].toUpperCase() : String(fyersSym);
     }
 
     function themeColors() {
@@ -198,8 +208,8 @@ window.HistoricalChartModal = (function() {
                 if (Number(d.spotOpen) > 0) hdrBits.push('spot open ' + Number(d.spotOpen).toFixed(2));
                 if (d.atmStrike > 0)        hdrBits.push('ATM ' + d.atmStrike);
                 document.getElementById('histChartAtm').textContent = hdrBits.join(' · ');
-                if (ceSymEl) ceSymEl.textContent = ceSym ? '· ' + ceSym : '';
-                if (peSymEl) peSymEl.textContent = peSym ? '· ' + peSym : '';
+                if (ceSymEl) ceSymEl.textContent = shortStrike(ceSym);
+                if (peSymEl) peSymEl.textContent = shortStrike(peSym);
 
                 // Render both panels after a tick so LWC sees the container.
                 setTimeout(function() {
