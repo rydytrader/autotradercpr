@@ -208,17 +208,21 @@ public class ChartController {
             low  = latestAgg.low() > 0 ? Math.min(latestAgg.low(), low) : low;
             vol  = latestAgg.volume() + vol;
         }
-        double liveVwap = computeLiveSessionVwap(symbol, live1m);
+        // Prefer the ATP carried in the in-progress bucket (exchange-computed
+        // session VWAP updated every tick). Falls back to a local pandas_ta
+        // recompute only when ATP wasn't available (rare — pre-market ticks
+        // or a symbol whose first FULL-mode tick hasn't landed yet).
+        double liveVwap = live1m.vwap() > 0
+            ? live1m.vwap()
+            : computeLiveSessionVwapFallback(symbol, live1m);
         return new Candle(round2(open), round2(high), round2(low), round2(close),
             vol, windowStartMs, round2(liveVwap));
     }
 
-    /** Session-cumulative pandas_ta VWAP that includes the in-progress 1-min
-     *  bucket's contribution — matches how each closed bar's VWAP is computed
-     *  in {@code CandleAggregator.recomputeVwapsAndReturnLast}. Iterates all
-     *  today's 1-min bars in the ring, sums (H+L+C)/3 × volume, adds the
-     *  in-progress bucket, divides. */
-    private double computeLiveSessionVwap(String symbol, Candle live1m) {
+    /** Local pandas_ta fallback — only used when the forming bar has no
+     *  ATP yet. Session-cumulative Σ(HLC/3 × V) / ΣV across today's 1-min
+     *  ring, plus the in-progress bucket. */
+    private double computeLiveSessionVwapFallback(String symbol, Candle live1m) {
         java.util.List<Candle> bars1m = candleAggregator.getHistory(symbol, 1);
         long istMs = live1m.startMillis() + 19_800_000L;
         long dayEpochMs = (istMs - (istMs % 86_400_000L)) - 19_800_000L;
