@@ -955,12 +955,21 @@ public class VwapSupertrendStrategy implements Strategy {
         }
         // Target price:
         //   • POINTS / ATR modes → fill + RR × risk (RR default 2.0).
-        //   • SUPERTREND mode    → fill + 2 × MaxSL as the hard profit cap.
-        //     Trailing SL is the primary exit; the target caps a runaway win
-        //     so we book at +2×MaxSL instead of giving profits back to a
-        //     trailing pullback. Same value the earlier PROFIT_CAP_HIT check
-        //     computed on the fly.
-        leg.targetPrice = supertrendMode ? fillPrice + 2.0 * maxSl : fillPrice + rr * risk;
+        //   • SUPERTREND mode    → depends on Supertrend Target Mode setting:
+        //       - FIXED_2X_MAX_SL (default) → fill + 2 × MaxSL as the hard
+        //         profit cap. Trailing SL is the primary exit; the target
+        //         caps a runaway win so we book at +2×MaxSL instead of
+        //         giving profits back to a trailing pullback.
+        //       - TRAILING → targetPrice = 0, no fixed target. Exit only
+        //         when the trailing SL is hit (lets profits run).
+        if (supertrendMode) {
+            String stTargetMode = riskSettings.getVwapStSupertrendTargetMode();
+            leg.targetPrice = "TRAILING".equalsIgnoreCase(stTargetMode)
+                ? 0
+                : fillPrice + 2.0 * maxSl;
+        } else {
+            leg.targetPrice = fillPrice + rr * risk;
+        }
         leg.state       = LegState.IN_POSITION;
         event("[SUCCESS]", "VwapST",
             sideLabel + " FILL — sym=" + leg.chosenSymbol + " @ " + fmt(fillPrice)

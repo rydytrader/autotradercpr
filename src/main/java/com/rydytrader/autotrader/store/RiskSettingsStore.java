@@ -61,6 +61,7 @@ public class RiskSettingsStore {
         volatile double  vwapStSlAtrMultiplier   = 1.0;     // × latest ATR gives the buffer when vwapStSlBufferMode = ATR
         volatile double  vwapStRewardRiskRatio   = 2.0;     // Target = fill + N × (fill − SL). 1:2 RR default
         volatile double  vwapStMaxSlPoints       = 20.0;    // Hard cap on SL distance from fill (in points). If (fill − entryCandleLow + buffer) > this, SL = fill − this
+        volatile String  vwapStSupertrendTargetMode = "FIXED_2X_MAX_SL"; // when SL Mode = SUPERTREND: 'FIXED_2X_MAX_SL' (hard cap target) or 'TRAILING' (no fixed target, exit only via trailing SL)
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
         /** Initial capital used as the baseline for the Analytics Home page (capital growth %,
@@ -425,6 +426,7 @@ public class RiskSettingsStore {
     public double  getVwapStSlAtrMultiplier()  { return cfg().vwapStSlAtrMultiplier; }
     public double  getVwapStRewardRiskRatio()  { return cfg().vwapStRewardRiskRatio; }
     public double  getVwapStMaxSlPoints()      { return cfg().vwapStMaxSlPoints; }
+    public String  getVwapStSupertrendTargetMode() { return cfg().vwapStSupertrendTargetMode; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getStartingCapital()      { return cfg().startingCapital; }
@@ -633,6 +635,11 @@ public class RiskSettingsStore {
     public void setVwapStSlAtrMultiplier(double v)  { cfg().vwapStSlAtrMultiplier = Math.max(0.0, v); }
     public void setVwapStRewardRiskRatio(double v)  { cfg().vwapStRewardRiskRatio = Math.max(0.1, v); }
     public void setVwapStMaxSlPoints(double v)      { cfg().vwapStMaxSlPoints = Math.max(0.5, v); }
+    public void setVwapStSupertrendTargetMode(String v) {
+        if (v == null) { cfg().vwapStSupertrendTargetMode = "FIXED_2X_MAX_SL"; return; }
+        String up = v.trim().toUpperCase();
+        cfg().vwapStSupertrendTargetMode = "TRAILING".equals(up) ? "TRAILING" : "FIXED_2X_MAX_SL";
+    }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setStartingCapital(double v)      { cfg().startingCapital = Math.max(0, v); }
@@ -804,6 +811,7 @@ public class RiskSettingsStore {
             upsert("vwapStSlAtrMultiplier",           String.valueOf(c.vwapStSlAtrMultiplier));
             upsert("vwapStRewardRiskRatio",           String.valueOf(c.vwapStRewardRiskRatio));
             upsert("vwapStMaxSlPoints",               String.valueOf(c.vwapStMaxSlPoints));
+            upsert("vwapStSupertrendTargetMode",      c.vwapStSupertrendTargetMode);
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("startingCapital",      String.valueOf(c.startingCapital));
@@ -1015,6 +1023,7 @@ public class RiskSettingsStore {
                     case "vwapStSlAtrMultiplier"         -> c.vwapStSlAtrMultiplier   = Math.max(0.0, Double.parseDouble(v));
                     case "vwapStRewardRiskRatio"         -> c.vwapStRewardRiskRatio   = Math.max(0.1, Double.parseDouble(v));
                     case "vwapStMaxSlPoints"             -> c.vwapStMaxSlPoints       = Math.max(0.5, Double.parseDouble(v));
+                    case "vwapStSupertrendTargetMode"    -> c.vwapStSupertrendTargetMode = "TRAILING".equalsIgnoreCase(v) ? "TRAILING" : "FIXED_2X_MAX_SL";
                     // OPTION SELLING keys silently consumed for backward compat after strategy removal.
                     case "optionSellingEnabled",
                          "optionSellingLotsPerLeg",

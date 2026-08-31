@@ -53,6 +53,7 @@ public class SettingsController {
         result.put("vwapStSlBufferMode",      riskSettings.getVwapStSlBufferMode());
         result.put("vwapStSlAtrMultiplier",   riskSettings.getVwapStSlAtrMultiplier());
         result.put("vwapStMaxSlPoints",       riskSettings.getVwapStMaxSlPoints());
+        result.put("vwapStSupertrendTargetMode", riskSettings.getVwapStSupertrendTargetMode());
         result.put("vwapStRewardRiskRatio",   riskSettings.getVwapStRewardRiskRatio());
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
@@ -110,6 +111,7 @@ public class SettingsController {
             if (body.containsKey("vwapStSlBufferMode"))     riskSettings.setVwapStSlBufferMode(body.get("vwapStSlBufferMode").toString());
             if (body.containsKey("vwapStSlAtrMultiplier"))  riskSettings.setVwapStSlAtrMultiplier(Double.parseDouble(body.get("vwapStSlAtrMultiplier").toString()));
             if (body.containsKey("vwapStMaxSlPoints"))      riskSettings.setVwapStMaxSlPoints(Double.parseDouble(body.get("vwapStMaxSlPoints").toString()));
+            if (body.containsKey("vwapStSupertrendTargetMode")) riskSettings.setVwapStSupertrendTargetMode(body.get("vwapStSupertrendTargetMode").toString());
             if (body.containsKey("vwapStRewardRiskRatio"))  riskSettings.setVwapStRewardRiskRatio(Double.parseDouble(body.get("vwapStRewardRiskRatio").toString()));
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));

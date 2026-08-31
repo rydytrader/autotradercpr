@@ -40,6 +40,7 @@
                       '<div class="sm-field"><label>SL — Points (₹)</label><input type="number" id="sm-vwapStSlBufferPoints" step="0.05" min="0"><div class="sm-hint">Applies when Mode = POINTS. SL = entry candle low − this many rupees. Default 5.0.</div></div>' +
                       '<div class="sm-field"><label>SL — ATR Multiplier</label><input type="number" id="sm-vwapStSlAtrMultiplier" step="0.05" min="0"><div class="sm-hint">Applies when Mode = ATR. SL = entry candle low − (multiplier × latest ATR). Default 1.0.</div></div>' +
                       '<div class="sm-field"><label>Max SL (points)</label><input type="number" id="sm-vwapStMaxSlPoints" step="0.5" min="0.5"><div class="sm-hint">Hard cap on SL distance from fill. If (fill − entry-candle-low + buffer) exceeds this, SL is capped at fill − this. Default 20.</div></div>' +
+                      '<div class="sm-field"><label>Supertrend Target Mode</label><select id="sm-vwapStSupertrendTargetMode"><option value="FIXED_2X_MAX_SL">FIXED (fill + 2 × MaxSL)</option><option value="TRAILING">TRAILING (no target, ride the trail)</option></select><div class="sm-hint">Applies only when SL Mode = SUPERTREND. FIXED books at 2 × MaxSL above fill (guaranteed profit cap). TRAILING has no fixed target — exits only when the trailing SL is hit, letting profits run. Ignored for POINTS / ATR modes.</div></div>' +
                       '<div class="sm-field"><label>Reward : Risk Ratio</label><input type="number" id="sm-vwapStRewardRiskRatio" step="0.1" min="0.1"><div class="sm-hint">Target = fill + N × (fill − SL). 2.0 = 1:2 RR. Default 2.0.</div></div>' +
                     '</div>' +
                   '</div>' +
@@ -225,6 +226,7 @@
             vwapStSlBufferMode:    g('sm-vwapStSlBufferMode') ? g('sm-vwapStSlBufferMode').value : 'POINTS',
             vwapStSlAtrMultiplier: parseFloat(g('sm-vwapStSlAtrMultiplier') ? g('sm-vwapStSlAtrMultiplier').value : '1.0') || 1.0,
             vwapStMaxSlPoints:     parseFloat(g('sm-vwapStMaxSlPoints').value) || 20.0,
+            vwapStSupertrendTargetMode: g('sm-vwapStSupertrendTargetMode') ? g('sm-vwapStSupertrendTargetMode').value : 'FIXED_2X_MAX_SL',
             vwapStRewardRiskRatio: parseFloat(g('sm-vwapStRewardRiskRatio').value) || 2.0
         };
         postSettings('/api/settings/risk', body);
@@ -285,6 +287,7 @@
             if (g('sm-vwapStSlBufferMode'))    g('sm-vwapStSlBufferMode').value   = d.vwapStSlBufferMode || 'POINTS';
             if (g('sm-vwapStSlAtrMultiplier')) g('sm-vwapStSlAtrMultiplier').value = d.vwapStSlAtrMultiplier != null ? d.vwapStSlAtrMultiplier : 1.0;
             if (g('sm-vwapStMaxSlPoints'))     g('sm-vwapStMaxSlPoints').value    = d.vwapStMaxSlPoints    != null ? d.vwapStMaxSlPoints    : 20.0;
+            if (g('sm-vwapStSupertrendTargetMode')) g('sm-vwapStSupertrendTargetMode').value = d.vwapStSupertrendTargetMode || 'FIXED_2X_MAX_SL';
             if (g('sm-vwapStRewardRiskRatio')) g('sm-vwapStRewardRiskRatio').value = d.vwapStRewardRiskRatio != null ? d.vwapStRewardRiskRatio : 2.0;
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {
