@@ -12,8 +12,7 @@ window.HistoricalChartModal = (function() {
     var charts = { ce: null, pe: null };
     var candleSeries = { ce: null, pe: null };
     var vwapSeries   = { ce: null, pe: null };
-    var stUpSeries   = { ce: null, pe: null };
-    var stDnSeries   = { ce: null, pe: null };
+    var stSeries     = { ce: null, pe: null };
     var IST_OFFSET_S = 5.5 * 3600; // shift epoch so LightweightCharts renders IST wall-clock
 
     function build() {
@@ -79,7 +78,7 @@ window.HistoricalChartModal = (function() {
         ['ce', 'pe'].forEach(function(k) {
             if (charts[k]) { try { charts[k].remove(); } catch (e) {} }
             charts[k] = null; candleSeries[k] = null; vwapSeries[k] = null;
-            stUpSeries[k] = null; stDnSeries[k] = null;
+            stSeries[k] = null;
         });
     }
 
@@ -123,13 +122,11 @@ window.HistoricalChartModal = (function() {
             priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false,
             priceFormat: { type: 'price', precision: priceDecimals, minMove: minMove }
         });
-        var stUp = chart.addLineSeries({
+        // Single line series with per-point color — LWC LineData supports
+        // an optional per-point `color` field. Two-series-with-whitespace
+        // approach didn't work because LWC connects across whitespace.
+        var st = chart.addLineSeries({
             color: col.up, lineWidth: 2,
-            priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-            priceFormat: { type: 'price', precision: priceDecimals, minMove: minMove }
-        });
-        var stDn = chart.addLineSeries({
-            color: col.down, lineWidth: 2,
             priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
             priceFormat: { type: 'price', precision: priceDecimals, minMove: minMove }
         });
@@ -142,45 +139,25 @@ window.HistoricalChartModal = (function() {
             var v = Number(c.vwap || 0);
             if (v > 0) vwaps.push({ time: t, value: v });
         });
-        // Split ST into two series (green up-runs, red down-runs). Every
-        // time slot pushes a real value to ONE series and a whitespace
-        // marker ({time} without value) to the OTHER — LWC uses whitespace
-        // to break the line at that point, otherwise it interpolates
-        // straight across gaps in a single series and you see two lines
-        // running parallel through the whole day.
-        var stUpData = [], stDnData = [], prevUp = null;
-        (stArr || []).forEach(function(p) {
+        // Build ST data with per-point color — one entry per bar, colored
+        // green when ST is up and red when down.
+        var stData = (stArr || []).map(function(p) {
             var t = Math.floor(Number(p.t) / 1000) + IST_OFFSET_S;
-            var v = Number(p.line);
-            if (p.isUp) {
-                stUpData.push({ time: t, value: v });
-                stDnData.push({ time: t });                 // whitespace on DN
-                if (prevUp === false) {
-                    // Flip up: retro-patch DN's previous slot with this v
-                    // so the red line's last segment reaches the flip point
-                    // and the two colours visually meet.
-                    stDnData[stDnData.length - 1] = { time: t, value: v };
-                }
-            } else {
-                stDnData.push({ time: t, value: v });
-                stUpData.push({ time: t });                 // whitespace on UP
-                if (prevUp === true) {
-                    stUpData[stUpData.length - 1] = { time: t, value: v };
-                }
-            }
-            prevUp = !!p.isUp;
+            return {
+                time:  t,
+                value: Number(p.line),
+                color: p.isUp ? col.up : col.down
+            };
         });
         cs.setData(bars);
         vs.setData(vwaps);
-        stUp.setData(stUpData);
-        stDn.setData(stDnData);
+        st.setData(stData);
         try { chart.timeScale().fitContent(); } catch (e) {}
 
         charts[panelKey] = chart;
         candleSeries[panelKey] = cs;
         vwapSeries[panelKey] = vs;
-        stUpSeries[panelKey] = stUp;
-        stDnSeries[panelKey] = stDn;
+        stSeries[panelKey] = st;
     }
 
     function open(dateStr) {
