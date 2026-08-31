@@ -630,9 +630,17 @@
         // attachTickerHeaderUpdates. Nothing to compute here.
 
         // ── Net Day P&L card ──
-        var closed = (d.todayClosedTrades || []).reduce(function(a, b) { return a + Number(b.netPnl || 0); }, 0);
-        var openMtm = positions.reduce(function(a, p) { return a + Number(p.mtm || 0); }, 0);
-        var net = closed + openMtm;
+        // Use the server's liveNetPnl directly (same source the header ticker
+        // reads). Previously we re-summed todayClosedTrades[].netPnl +
+        // positions[].mtm client-side — but positions.mtm is derived from
+        // Fyers /positions LTP which lags the tick-cache, so this card
+        // updated visibly slower than the ticker. Reading liveNetPnl keeps
+        // them in lockstep since it's computed on the server from the
+        // fresh in-memory LTP + strategy state each request.
+        var net = d.liveNetPnl != null && isFinite(Number(d.liveNetPnl))
+            ? Number(d.liveNetPnl)
+            : ((d.todayClosedTrades || []).reduce(function(a, b) { return a + Number(b.netPnl || 0); }, 0)
+                + positions.reduce(function(a, p) { return a + Number(p.mtm || 0); }, 0));
         var statPnlEl = document.getElementById('statPnl');
         statPnlEl.textContent = fmtRs(net);
         statPnlEl.className = 'stat-value ' + pnlClass(net);
