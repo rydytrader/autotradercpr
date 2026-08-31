@@ -803,17 +803,27 @@ public class VwapSupertrendStrategy implements Strategy {
         // IN_POSITION, ratchet leg.slPrice UP to match the latest ST line
         // whenever ST is still up and the line has moved up. Never widens
         // (never move SL down), so any locked-in profit stays locked.
-        if (leg.state == LegState.IN_POSITION
-                && "SUPERTREND".equalsIgnoreCase(riskSettings.getVwapStSlBufferMode())
-                && stUp && st.available()) {
-            double newSl = st.line();
-            if (newSl > leg.slPrice) {
-                double oldSl = leg.slPrice;
-                leg.slPrice = newSl;
-                event("[INFO]", "VwapST",
-                    sideLabel + " " + leg.chosenSymbol + " SL trailed — "
-                        + fmt(oldSl) + " → " + fmt(newSl) + " (ST line)");
-                saveStateToDisk();
+        if (leg.state == LegState.IN_POSITION) {
+            String slMode = riskSettings.getVwapStSlBufferMode();
+            boolean isSupertrendMode = "SUPERTREND".equalsIgnoreCase(slMode);
+            double stLine = st.available() ? st.line() : 0;
+            log.info("[VwapSupertrend] {} {} trail-check — slMode={} stUp={} stAvail={} stLine={} currentSL={} fill={} eligible={}",
+                sideLabel, leg.chosenSymbol, slMode, stUp, st.available(),
+                fmt(stLine), fmt(leg.slPrice), fmt(leg.fillPrice),
+                isSupertrendMode && stUp && st.available());
+            if (isSupertrendMode && stUp && st.available()) {
+                double newSl = st.line();
+                if (newSl > leg.slPrice) {
+                    double oldSl = leg.slPrice;
+                    leg.slPrice = newSl;
+                    event("[INFO]", "VwapST",
+                        sideLabel + " " + leg.chosenSymbol + " SL trailed — "
+                            + fmt(oldSl) + " → " + fmt(newSl) + " (ST line)");
+                    saveStateToDisk();
+                } else {
+                    log.info("[VwapSupertrend] {} {} trail-skipped — newSt {} <= currentSL {}",
+                        sideLabel, leg.chosenSymbol, fmt(newSl), fmt(leg.slPrice));
+                }
             }
         }
     }
