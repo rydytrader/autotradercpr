@@ -84,12 +84,19 @@ window.HistoricalChartModal = (function() {
     }
 
     /** Extract the strike + side (e.g. '24500 CE') from a Fyers option
-     *  symbol like 'NSE:NIFTY26901245000CE' or 'NSE:NIFTY26SEP24500PE'.
+     *  symbol like 'NSE:NIFTY2690124500CE' or 'NSE:NIFTY26SEP24500PE'.
+     *  Match only the last 5 digits (NIFTY strike length is always 5)
+     *  — otherwise the greedy \d+ swallows the weekly-code prefix too
+     *  and prints '2690124500 CE'.
      *  Returns '' when the symbol is missing or doesn't match. */
     function shortStrike(fyersSym) {
         if (!fyersSym) return '';
-        var m = String(fyersSym).match(/(\d+)(CE|PE)$/i);
-        return m ? m[1] + ' ' + m[2].toUpperCase() : String(fyersSym);
+        var s = String(fyersSym);
+        var m = s.match(/(\d{5})(CE|PE)$/i);
+        if (m) return m[1] + ' ' + m[2].toUpperCase();
+        // Fallback for 4-digit strikes (older / far OTM ranges).
+        m = s.match(/(\d{4})(CE|PE)$/i);
+        return m ? m[1] + ' ' + m[2].toUpperCase() : s;
     }
 
     function themeColors() {
