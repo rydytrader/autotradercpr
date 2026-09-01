@@ -990,6 +990,14 @@ public class VwapSupertrendStrategy implements Strategy {
         sessionDate = "";   // cleared until this day's spot-open capture sets it
         ceLeg.reset();
         peLeg.reset();
+        // reset() doesn't clear chosenSymbol (it's the leg's identity, not
+        // per-position state). On day rollover we DO want to drop it —
+        // otherwise the chart keeps rendering yesterday's strike using
+        // yesterday's bars until the new 09:15 pair pick fires.
+        ceLeg.chosenSymbol  = null;
+        peLeg.chosenSymbol  = null;
+        ceLeg.previousStUp  = null;
+        peLeg.previousStUp  = null;
         spotOpen = 0;
         atmStrike = 0;
         strikesSubscribedAtMs = 0;

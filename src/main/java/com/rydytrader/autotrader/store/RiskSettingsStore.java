@@ -1019,7 +1019,14 @@ public class RiskSettingsStore {
                     case "vwapStAtrPeriod"               -> c.vwapStAtrPeriod         = Math.max(2, Integer.parseInt(v));
                     case "vwapStMultiplier"              -> c.vwapStMultiplier        = Math.max(0.1, Double.parseDouble(v));
                     case "vwapStSlBufferPoints"          -> c.vwapStSlBufferPoints    = Math.max(0.0, Double.parseDouble(v));
-                    case "vwapStSlBufferMode"            -> c.vwapStSlBufferMode      = "ATR".equalsIgnoreCase(v) ? "ATR" : "POINTS";
+                    case "vwapStSlBufferMode"            -> {
+                        String up = v == null ? "" : v.trim().toUpperCase();
+                        c.vwapStSlBufferMode = switch (up) {
+                            case "ATR"                             -> "ATR";
+                            case "SUPERTREND", "SUPER_TREND", "ST" -> "SUPERTREND";
+                            default                                -> "POINTS";
+                        };
+                    }
                     case "vwapStSlAtrMultiplier"         -> c.vwapStSlAtrMultiplier   = Math.max(0.0, Double.parseDouble(v));
                     case "vwapStRewardRiskRatio"         -> c.vwapStRewardRiskRatio   = Math.max(0.1, Double.parseDouble(v));
                     case "vwapStMaxSlPoints"             -> c.vwapStMaxSlPoints       = Math.max(0.5, Double.parseDouble(v));
