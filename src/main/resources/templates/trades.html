@@ -292,9 +292,10 @@
     function reasonPill(reason) {
         var r = String(reason || '').toUpperCase();
         if (!r) return '<span class="pill pill-reason-manual">—</span>';
-        var cls = r === 'TARGET_HIT' ? 'pill-reason-target'
-                 : r === 'SL_HIT'     ? 'pill-reason-sl'
-                 : r === 'TIMED_EXIT' ? 'pill-reason-timed'
+        var cls = r === 'TARGET_HIT'          ? 'pill-reason-target'
+                 : r === 'SL_HIT'             ? 'pill-reason-sl'
+                 : r === 'TRAILING_SL_HIT'    ? 'pill-reason-sl'
+                 : r === 'TIMED_EXIT'         ? 'pill-reason-timed'
                  : 'pill-reason-manual';
         return '<span class="pill ' + cls + '">' + escapeHtml(r) + '</span>';
     }
@@ -422,9 +423,14 @@
     }
 
     /** Small colored pill for the trade row's Strategy column.
-     *  option-buying → OPTIONS BUY cyan. */
+     *  vwap-supertrend → VWAP+ST amber (current primary strategy).
+     *  option-buying   → OPTIONS BUY cyan (legacy CPR).
+     *  manual          → MANUAL grey. */
     function strategyPill(strategyId) {
         var id = String(strategyId || '').toLowerCase();
+        if (id === 'vwap-supertrend') {
+            return '<span class="pill" style="color:#fbbf24;background:rgba(251,191,36,0.10);border-color:rgba(251,191,36,0.35);">VWAP+ST</span>';
+        }
         if (id === 'option-buying') {
             return '<span class="pill" style="color:#7dd3fc;background:rgba(125,211,252,0.10);border-color:rgba(125,211,252,0.35);">OPTIONS BUY</span>';
         }

@@ -292,7 +292,12 @@ public class VwapSupertrendStrategy implements Strategy {
         if (leg.chosenSymbol == null || !leg.chosenSymbol.equals(sym)) return;
         if (ltp <= 0) return;
         if (leg.slPrice > 0 && ltp <= leg.slPrice) {
-            fireExit(leg, sideLabel, "SL_HIT",
+            // Tag trailing-SL exits distinctly so analytics can separate
+            // 'took a fixed stop' from 'trailing SL caught a pullback'.
+            String reason = "SUPERTREND".equalsIgnoreCase(riskSettings.getVwapStSlBufferMode())
+                ? "TRAILING_SL_HIT"
+                : "SL_HIT";
+            fireExit(leg, sideLabel, reason,
                 "LTP " + fmt(ltp) + " ≤ SL " + fmt(leg.slPrice));
             return;
         }
