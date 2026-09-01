@@ -40,7 +40,7 @@
                       '<div class="sm-field"><label>SL — Points (₹)</label><input type="number" id="sm-vwapStSlBufferPoints" step="0.05" min="0"><div class="sm-hint">POINTS mode. Default 5.0.</div></div>' +
                       '<div class="sm-field"><label>SL — ATR Multiplier</label><input type="number" id="sm-vwapStSlAtrMultiplier" step="0.05" min="0"><div class="sm-hint">ATR mode. Default 1.0.</div></div>' +
                       '<div class="sm-field"><label>Max SL (points)</label><input type="number" id="sm-vwapStMaxSlPoints" step="0.5" min="0.5"><div class="sm-hint">Hard cap on SL distance from fill. Default 20.</div></div>' +
-                      '<div class="sm-field"><label>Supertrend Target Mode</label><select id="sm-vwapStSupertrendTargetMode"><option value="FIXED_2X_MAX_SL">FIXED (1:2 R:R)</option><option value="TRAILING">TRAILING (no target, ride the trail)</option></select><div class="sm-hint">Only for SUPERTREND SL. FIXED = fill + 2 × actual risk (1:2 R:R). TRAILING has no target.</div></div>' +
+                      '<div class="sm-field"><label>Supertrend Target Mode</label><select id="sm-vwapStSupertrendTargetMode"><option value="FIXED_2X_MAX_SL">FIXED (uses RR ratio)</option><option value="TRAILING">TRAILING (no target, ride the trail)</option></select><div class="sm-hint">Only for SUPERTREND SL. FIXED = fill + RR × actual risk (uses R:R setting). TRAILING has no target.</div></div>' +
                       '<div class="sm-field"><label>Reward : Risk Ratio</label><input type="number" id="sm-vwapStRewardRiskRatio" step="0.1" min="0.1"><div class="sm-hint">Target = fill + N × risk. Default 2.0.</div></div>' +
                     '</div>' +
                   '</div>' +

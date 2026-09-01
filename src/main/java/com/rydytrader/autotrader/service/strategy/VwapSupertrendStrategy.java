@@ -953,22 +953,13 @@ public class VwapSupertrendStrategy implements Strategy {
             risk = structuralRisk;
             leg.slPrice = structuralSl;
         }
-        // Target price:
-        //   • POINTS / ATR modes → fill + RR × risk (RR default 2.0).
-        //   • SUPERTREND mode    → depends on Supertrend Target Mode setting:
-        //       - FIXED_2X_MAX_SL (default) → fill + 2 × actual risk (1:2 R:R).
-        //         When actual risk equals MaxSL (SL clamped by the cap),
-        //         target = 2 × MaxSL — same as the previous absolute cap.
-        //         When actual risk is smaller (ST line close to fill),
-        //         target scales down accordingly so R:R stays 1:2 instead
-        //         of turning tight-SL trades into 1:4 lottery tickets.
-        //       - TRAILING → targetPrice = 0, no fixed target. Exit only
-        //         when the trailing SL is hit (lets profits run).
-        if (supertrendMode) {
-            String stTargetMode = riskSettings.getVwapStSupertrendTargetMode();
-            leg.targetPrice = "TRAILING".equalsIgnoreCase(stTargetMode)
-                ? 0
-                : fillPrice + 2.0 * risk;
+        // Target price = fill + RR × actual risk across every mode.
+        // Uses the operator-configured Reward:Risk Ratio setting (default
+        // 2.0 → 1:2 R:R). SUPERTREND mode in TRAILING variant overrides
+        // to 0 (no fixed target; trailing SL is the only exit).
+        if (supertrendMode
+                && "TRAILING".equalsIgnoreCase(riskSettings.getVwapStSupertrendTargetMode())) {
+            leg.targetPrice = 0;
         } else {
             leg.targetPrice = fillPrice + rr * risk;
         }
