@@ -193,7 +193,15 @@ public class StrategyEndpointsController {
                 m.put("qty",      p.getQty());
                 m.put("side",     p.getSide());
                 m.put("avgPrice", p.getAvgPrice());
-                m.put("ltp",      p.getLtp());
+                // Prefer the WS tick cache's LTP (updated on every FULL-mode
+                // tick from Fyers HSM) over the /positions REST snapshot's
+                // stale value. The REST fetch runs every ~5 s and lags the
+                // tick cache by 200-500 ms; using the fresh cache makes the
+                // Live Positions row LTP + MTM update tick-for-tick with
+                // the header P&L card.
+                double freshLtp = marketDataService.getLtp(p.getSymbol());
+                double ltp      = freshLtp > 0 ? freshLtp : p.getLtp();
+                m.put("ltp",      ltp);
                 // Compute MTM using the STRATEGY'S current-cycle fillPrice when
                 // available (from getLegSnapshot). Fyers's netAvg blends across
                 // all buys of the day for the symbol, so on a re-entry after a
@@ -210,8 +218,8 @@ public class StrategyEndpointsController {
                     }
                 }
                 double pnl = "LONG".equals(p.getSide())
-                    ? (p.getLtp() - costBasis) * p.getQty()
-                    : (costBasis - p.getLtp()) * p.getQty();
+                    ? (ltp - costBasis) * p.getQty()
+                    : (costBasis - ltp) * p.getQty();
                 m.put("pnl", pnl);
                 m.put("mtm", pnl);   // trade.html reads either field
                 // Merge strategy-computed levels: entryPrice (fill), slPrice,
