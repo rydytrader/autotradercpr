@@ -55,11 +55,6 @@ public class RiskSettingsStore {
         volatile int     vwapStCandleMinutes     = 3;       // timeframe for signal candles
         volatile int     vwapStAtrPeriod         = 10;      // Supertrend ATR period
         volatile double  vwapStMultiplier        = 3.0;     // Supertrend ATR multiplier — classic 3.0 (wider bands, smoother, fewer whipsaw flips)
-        // Partial exit — book part of the position at a configurable RR while
-        // the remainder continues to trail on ST. Opt-in.
-        volatile boolean vwapStPartialExitEnabled = false;
-        volatile double  vwapStPartialExitRr      = 1.0;   // book partial when LTP ≥ fill + RR × risk
-        volatile double  vwapStPartialExitPct     = 50.0;  // % of qty to book (rounded to lot boundary)
         // Daily bias filter — when enabled, skip CE entries in bearish bias
         // (NIFTY < daily pivot) and PE entries in bullish bias (NIFTY > pivot).
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
@@ -420,9 +415,6 @@ public class RiskSettingsStore {
     public int     getVwapStCandleMinutes()    { return cfg().vwapStCandleMinutes; }
     public int     getVwapStAtrPeriod()        { return cfg().vwapStAtrPeriod; }
     public double  getVwapStMultiplier()       { return cfg().vwapStMultiplier; }
-    public boolean isVwapStPartialExitEnabled()    { return cfg().vwapStPartialExitEnabled; }
-    public double  getVwapStPartialExitRr()        { return cfg().vwapStPartialExitRr; }
-    public double  getVwapStPartialExitPct()       { return cfg().vwapStPartialExitPct; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getStartingCapital()      { return cfg().startingCapital; }
@@ -617,9 +609,6 @@ public class RiskSettingsStore {
     public void setVwapStCandleMinutes(int v)       { cfg().vwapStCandleMinutes = Math.max(1, v); }
     public void setVwapStAtrPeriod(int v)           { cfg().vwapStAtrPeriod = Math.max(2, v); }
     public void setVwapStMultiplier(double v)       { cfg().vwapStMultiplier = Math.max(0.1, v); }
-    public void setVwapStPartialExitEnabled(boolean v) { cfg().vwapStPartialExitEnabled = v; }
-    public void setVwapStPartialExitRr(double v)       { cfg().vwapStPartialExitRr  = Math.max(0.1, v); }
-    public void setVwapStPartialExitPct(double v)      { cfg().vwapStPartialExitPct = Math.min(99.0, Math.max(1.0, v)); }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setStartingCapital(double v)      { cfg().startingCapital = Math.max(0, v); }
@@ -785,9 +774,6 @@ public class RiskSettingsStore {
             upsert("vwapStCandleMinutes",             String.valueOf(c.vwapStCandleMinutes));
             upsert("vwapStAtrPeriod",                 String.valueOf(c.vwapStAtrPeriod));
             upsert("vwapStMultiplier",                String.valueOf(c.vwapStMultiplier));
-            upsert("vwapStPartialExitEnabled",        String.valueOf(c.vwapStPartialExitEnabled));
-            upsert("vwapStPartialExitRr",             String.valueOf(c.vwapStPartialExitRr));
-            upsert("vwapStPartialExitPct",            String.valueOf(c.vwapStPartialExitPct));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("startingCapital",      String.valueOf(c.startingCapital));
@@ -997,9 +983,10 @@ public class RiskSettingsStore {
                     // Retired target-mode / RR keys — silently consume old rows.
                     case "vwapStRewardRiskRatio",
                          "vwapStSupertrendTargetMode"    -> { /* retired */ }
-                    case "vwapStPartialExitEnabled"      -> c.vwapStPartialExitEnabled = Boolean.parseBoolean(v);
-                    case "vwapStPartialExitRr"           -> c.vwapStPartialExitRr      = Math.max(0.1, Double.parseDouble(v));
-                    case "vwapStPartialExitPct"          -> c.vwapStPartialExitPct     = Math.min(99.0, Math.max(1.0, Double.parseDouble(v)));
+                    // Retired partial-exit keys — silently consume legacy rows.
+                    case "vwapStPartialExitEnabled",
+                         "vwapStPartialExitRr",
+                         "vwapStPartialExitPct"          -> { /* retired */ }
                     case "vwapStBiasFilterEnabled"       -> { /* retired */ }
                     // Retired wide-candle filter keys — silently consume old rows.
                     case "vwapStWideCandleFilterEnabled",

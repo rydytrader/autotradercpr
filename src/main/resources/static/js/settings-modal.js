@@ -35,9 +35,6 @@
                       '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline for analytics.</div></div>' +
                       '<div class="sm-field"><label>Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Kill switch at this % daily loss. 0 = off.</div></div>' +
                       '<div class="sm-field"><label>Max Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto = Capital × Risk %.</div></div>' +
-                      '<div class="sm-field sm-full"><label><input type="checkbox" id="sm-vwapStPartialExitEnabled" style="margin-right:6px;vertical-align:middle;">Partial Exit enabled</label><div class="sm-hint">Book part of the position at Partial Exit RR while the remainder trails on ST. Needs ≥ 2 lots.</div></div>' +
-                      '<div class="sm-field"><label>Partial Exit RR</label><input type="number" id="sm-vwapStPartialExitRr" step="0.1" min="0.1"><div class="sm-hint">Book partial when LTP hits fill + RR × risk. Default 1.0.</div></div>' +
-                      '<div class="sm-field"><label>Partial Exit %</label><input type="number" id="sm-vwapStPartialExitPct" step="1" min="1" max="99"><div class="sm-hint">% of qty to book. Rounded down to nearest lot. Default 50.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
@@ -216,9 +213,6 @@
         var body = {
             startingCapital:       parseFloat(g('sm-startingCapital').value) || 0,
             portfolioMaxRiskPct:   parseFloat(g('sm-portfolioMaxRiskPct').value) || 0,
-            vwapStPartialExitEnabled: !!(g('sm-vwapStPartialExitEnabled') && g('sm-vwapStPartialExitEnabled').checked),
-            vwapStPartialExitRr:  parseFloat(g('sm-vwapStPartialExitRr').value) || 1.0,
-            vwapStPartialExitPct: parseFloat(g('sm-vwapStPartialExitPct').value) || 50
         };
         postSettings('/api/settings/risk', body);
     }
@@ -274,9 +268,6 @@
             var pctInput = g('sm-portfolioMaxRiskPct');
             if (capInput) capInput.value = d.startingCapital != null ? d.startingCapital : 1000000;
             if (pctInput) pctInput.value = d.portfolioMaxRiskPct != null ? d.portfolioMaxRiskPct : 0;
-            if (g('sm-vwapStPartialExitEnabled')) g('sm-vwapStPartialExitEnabled').checked = !!d.vwapStPartialExitEnabled;
-            if (g('sm-vwapStPartialExitRr'))  g('sm-vwapStPartialExitRr').value  = d.vwapStPartialExitRr  != null ? d.vwapStPartialExitRr  : 1.0;
-            if (g('sm-vwapStPartialExitPct')) g('sm-vwapStPartialExitPct').value = d.vwapStPartialExitPct != null ? d.vwapStPartialExitPct : 50;
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {
                 updatePortfolioRiskHint(parseFloat(capInput.value) || 0, parseFloat(pctInput && pctInput.value) || 0);

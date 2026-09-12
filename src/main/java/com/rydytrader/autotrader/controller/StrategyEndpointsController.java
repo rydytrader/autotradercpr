@@ -238,16 +238,10 @@ public class StrategyEndpointsController {
                         Object setup     = leg.get("setup");
                         Object side      = leg.get("side");
                         Object slTrailed = leg.get("slTrailed");
-                        Object partial   = leg.get("partialBooked");
-                        Object origQty   = leg.get("originalQty");
-                        Object partTgt   = leg.get("partialTargetPrice");
                         if (entry instanceof Number && ((Number) entry).doubleValue() > 0) m.put("entryPrice", entry);
                         if (sl    instanceof Number && ((Number) sl).doubleValue()    > 0) m.put("slPrice",     sl);
                         if (tgt   instanceof Number && ((Number) tgt).doubleValue()   > 0) m.put("targetLevel", tgt);
                         if (slTrailed instanceof Boolean) m.put("slTrailed", slTrailed);
-                        if (partial   instanceof Boolean) m.put("partialBooked", partial);
-                        if (origQty   instanceof Number && ((Number) origQty).intValue() > 0) m.put("originalQty", origQty);
-                        if (partTgt   instanceof Number && ((Number) partTgt).doubleValue() > 0) m.put("partialTargetPrice", partTgt);
                         // Prefer the full pathway+side setup label (e.g. 'VWAP_BREAKOUT CE');
                         // fall back to just the side if pathway isn't populated yet.
                         if (setup != null)      m.put("setup", setup);
@@ -333,6 +327,9 @@ public class StrategyEndpointsController {
      *  leg. Represents the guaranteed minimum profit — what we'd bank if
      *  every trailing SL hit right now. Legs whose SL is still below fill
      *  contribute 0 (they're in the risk column, not profit). */
+    /** For short positions: locked profit = premium already dropped past
+     *  fill. slPrice starts ABOVE fill; when trail moves it below fill,
+     *  that's guaranteed profit if the SL hits. */
     private double computeLockedProfit(VwapSupertrendStrategy s) {
         if (s == null) return 0.0;
         double total = 0.0;
@@ -346,23 +343,20 @@ public class StrategyEndpointsController {
             if (!(entryObj instanceof Number) || !(slObj instanceof Number)) continue;
             double entry = ((Number) entryObj).doubleValue();
             double sl    = ((Number) slObj).doubleValue();
-            if (entry <= 0 || sl <= entry) {
-                // Falls through when sl > entry (locked-in). sl <= entry → 0.
-            }
-            if (sl <= entry) continue;
+            // For shorts, locked = sl below fill (premium has dropped past entry).
+            if (entry <= 0 || sl <= 0 || sl >= entry) continue;
             int qty = 1;
             for (com.rydytrader.autotrader.dto.PositionsDTO p : pollingService.fetchPositions()) {
                 if (sym.equals(p.getSymbol())) { qty = p.getQty(); break; }
             }
-            total += (sl - entry) * qty;
+            total += (entry - sl) * qty;
         }
         return total;
     }
 
-    /** Sum of max(0, (fillPrice − currentSL) × qty) across every IN_POSITION
-     *  leg. Represents the potential loss from open positions if every SL
-     *  gets hit at exactly its current level. Trailing SL passing above fill
-     *  contributes 0 (locked-in profit, not risk). */
+    /** Open risk for shorts = potential loss if SL hits at current level.
+     *  slPrice is ABOVE fill for shorts; risk = (sl − fill) × qty. Once trail
+     *  moves sl BELOW fill (locked profit territory), risk contributes 0. */
     private double computeOpenRisk(VwapSupertrendStrategy s) {
         if (s == null) return 0.0;
         double total = 0.0;
@@ -379,17 +373,16 @@ public class StrategyEndpointsController {
             if (!(entryObj instanceof Number) || !(slObj instanceof Number)) continue;
             double entry = ((Number) entryObj).doubleValue();
             double sl    = ((Number) slObj).doubleValue();
-            if (entry <= 0 || sl <= 0 || sl >= entry) continue;   // TSL past entry → 0
+            // For shorts, risk applies when sl > fill (trail hasn't reached breakeven).
+            if (entry <= 0 || sl <= 0 || sl <= entry) continue;
             int qty = 1;
             try {
                 if (leg.get("qty") instanceof Number q) qty = ((Number) q).intValue();
             } catch (Exception ignored) {}
-            // Fyers position row is the authoritative qty; fall back to the
-            // leg's stored qty if the position lookup misses.
             for (com.rydytrader.autotrader.dto.PositionsDTO p : pollingService.fetchPositions()) {
                 if (sym.equals(p.getSymbol())) { qty = p.getQty(); break; }
             }
-            total += (entry - sl) * qty;
+            total += (sl - entry) * qty;
         }
         return total;
     }

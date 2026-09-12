@@ -48,9 +48,6 @@ public class SettingsController {
         result.put("vwapStCandleMinutes",     riskSettings.getVwapStCandleMinutes());
         result.put("vwapStAtrPeriod",         riskSettings.getVwapStAtrPeriod());
         result.put("vwapStMultiplier",        riskSettings.getVwapStMultiplier());
-        result.put("vwapStPartialExitEnabled",   riskSettings.isVwapStPartialExitEnabled());
-        result.put("vwapStPartialExitRr",        riskSettings.getVwapStPartialExitRr());
-        result.put("vwapStPartialExitPct",       riskSettings.getVwapStPartialExitPct());
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
         result.put("maxRiskPerDayPct",    riskSettings.getMaxRiskPerDayPct(effectiveMode));
@@ -102,9 +99,6 @@ public class SettingsController {
             if (body.containsKey("vwapStCandleMinutes"))    riskSettings.setVwapStCandleMinutes(Integer.parseInt(body.get("vwapStCandleMinutes").toString()));
             if (body.containsKey("vwapStAtrPeriod"))        riskSettings.setVwapStAtrPeriod(Integer.parseInt(body.get("vwapStAtrPeriod").toString()));
             if (body.containsKey("vwapStMultiplier"))       riskSettings.setVwapStMultiplier(Double.parseDouble(body.get("vwapStMultiplier").toString()));
-            if (body.containsKey("vwapStPartialExitEnabled")) riskSettings.setVwapStPartialExitEnabled(Boolean.parseBoolean(body.get("vwapStPartialExitEnabled").toString()));
-            if (body.containsKey("vwapStPartialExitRr"))      riskSettings.setVwapStPartialExitRr(Double.parseDouble(body.get("vwapStPartialExitRr").toString()));
-            if (body.containsKey("vwapStPartialExitPct"))     riskSettings.setVwapStPartialExitPct(Double.parseDouble(body.get("vwapStPartialExitPct").toString()));
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
             if (body.containsKey("maxRiskPerDayPct"))  riskSettings.setMaxRiskPerDayPct(effectiveMode, Double.parseDouble(body.get("maxRiskPerDayPct").toString()));
