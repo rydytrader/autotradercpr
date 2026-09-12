@@ -159,6 +159,7 @@ public class StrategyHistoryController {
             m.put("setup",          backfill.lookup(backfill.setups, t.getSetup(),  t.getClosedAtMillis()));
             m.put("sessionDate",    t.getSessionDate());
             m.put("closedAtMillis", t.getClosedAtMillis());
+            m.put("openedAtMillis", t.getOpenedAtMillis());
             m.put("qty",            t.getQty());
             m.put("entryPrice",     t.getEntryPrice() != null ? round(t.getEntryPrice()) : 0.0);
             m.put("exitPrice",      t.getExitPrice()  != null ? round(t.getExitPrice())  : 0.0);
@@ -204,6 +205,7 @@ public class StrategyHistoryController {
             m.put("setup",          backfill.lookup(backfill.setups, t.getSetup(),  t.getClosedAtMillis()));
             m.put("sessionDate",    t.getSessionDate());
             m.put("closedAtMillis", t.getClosedAtMillis());
+            m.put("openedAtMillis", t.getOpenedAtMillis());
             m.put("qty",            t.getQty());
             m.put("entryPrice",     t.getEntryPrice() != null ? round(t.getEntryPrice()) : 0.0);
             m.put("exitPrice",      t.getExitPrice()  != null ? round(t.getExitPrice())  : 0.0);

@@ -51,17 +51,17 @@ public class RiskSettingsStore {
         volatile String  vwapStStartTime         = "09:15";   // no entries before this time (prep still runs at 09:15)
         volatile String  vwapStTradingEndTime    = "14:45";   // no NEW entries after this time (open positions still managed to SL / target / squareoff)
         volatile String  vwapStSquareOffTime     = "15:25";
-        volatile double  vwapStTargetPremium     = 250.0;   // rupee premium to pick nearest CE/PE
         volatile int     vwapStStrikesRange      = 20;      // ±N strikes around ATM (subscribed pre-market on prev close, refined at spot open)
         volatile int     vwapStCandleMinutes     = 3;       // timeframe for signal candles
         volatile int     vwapStAtrPeriod         = 10;      // Supertrend ATR period
-        volatile double  vwapStMultiplier        = 2.0;     // Supertrend ATR multiplier (tighter than the classic 3.0 — flips faster, tracks price closer)
-        volatile double  vwapStSlBufferPoints    = 5.0;     // SL = entryCandleLow − N points (5 rupee buffer default); used when vwapStSlBufferMode = POINTS
-        volatile String  vwapStSlBufferMode      = "POINTS"; // 'POINTS' → fixed vwapStSlBufferPoints buffer; 'ATR' → vwapStSlAtrMultiplier × latest ATR
-        volatile double  vwapStSlAtrMultiplier   = 1.0;     // × latest ATR gives the buffer when vwapStSlBufferMode = ATR
-        volatile double  vwapStRewardRiskRatio   = 2.0;     // Target = fill + N × (fill − SL). 1:2 RR default
-        volatile double  vwapStMaxSlPoints       = 20.0;    // Hard cap on SL distance from fill (in points). If (fill − entryCandleLow + buffer) > this, SL = fill − this
-        volatile String  vwapStSupertrendTargetMode = "FIXED_2X_MAX_SL"; // when SL Mode = SUPERTREND: 'FIXED_2X_MAX_SL' (hard cap target) or 'TRAILING' (no fixed target, exit only via trailing SL)
+        volatile double  vwapStMultiplier        = 3.0;     // Supertrend ATR multiplier — classic 3.0 (wider bands, smoother, fewer whipsaw flips)
+        // Partial exit — book part of the position at a configurable RR while
+        // the remainder continues to trail on ST. Opt-in.
+        volatile boolean vwapStPartialExitEnabled = false;
+        volatile double  vwapStPartialExitRr      = 1.0;   // book partial when LTP ≥ fill + RR × risk
+        volatile double  vwapStPartialExitPct     = 50.0;  // % of qty to book (rounded to lot boundary)
+        // Daily bias filter — when enabled, skip CE entries in bearish bias
+        // (NIFTY < daily pivot) and PE entries in bullish bias (NIFTY > pivot).
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
         /** Initial capital used as the baseline for the Analytics Home page (capital growth %,
@@ -416,17 +416,13 @@ public class RiskSettingsStore {
     public String  getVwapStStartTime()        { return cfg().vwapStStartTime; }
     public String  getVwapStTradingEndTime()   { return cfg().vwapStTradingEndTime; }
     public String  getVwapStSquareOffTime()    { return cfg().vwapStSquareOffTime; }
-    public double  getVwapStTargetPremium()    { return cfg().vwapStTargetPremium; }
     public int     getVwapStStrikesRange()     { return cfg().vwapStStrikesRange; }
     public int     getVwapStCandleMinutes()    { return cfg().vwapStCandleMinutes; }
     public int     getVwapStAtrPeriod()        { return cfg().vwapStAtrPeriod; }
     public double  getVwapStMultiplier()       { return cfg().vwapStMultiplier; }
-    public double  getVwapStSlBufferPoints()   { return cfg().vwapStSlBufferPoints; }
-    public String  getVwapStSlBufferMode()     { return cfg().vwapStSlBufferMode; }
-    public double  getVwapStSlAtrMultiplier()  { return cfg().vwapStSlAtrMultiplier; }
-    public double  getVwapStRewardRiskRatio()  { return cfg().vwapStRewardRiskRatio; }
-    public double  getVwapStMaxSlPoints()      { return cfg().vwapStMaxSlPoints; }
-    public String  getVwapStSupertrendTargetMode() { return cfg().vwapStSupertrendTargetMode; }
+    public boolean isVwapStPartialExitEnabled()    { return cfg().vwapStPartialExitEnabled; }
+    public double  getVwapStPartialExitRr()        { return cfg().vwapStPartialExitRr; }
+    public double  getVwapStPartialExitPct()       { return cfg().vwapStPartialExitPct; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getStartingCapital()      { return cfg().startingCapital; }
@@ -617,29 +613,13 @@ public class RiskSettingsStore {
     public void setVwapStStartTime(String v)        { cfg().vwapStStartTime = v == null ? "" : v.trim(); }
     public void setVwapStTradingEndTime(String v)   { cfg().vwapStTradingEndTime = v == null ? "" : v.trim(); }
     public void setVwapStSquareOffTime(String v)    { cfg().vwapStSquareOffTime = v == null ? "" : v.trim(); }
-    public void setVwapStTargetPremium(double v)    { cfg().vwapStTargetPremium = Math.max(1.0, v); }
     public void setVwapStStrikesRange(int v)        { cfg().vwapStStrikesRange = Math.max(1, v); }
     public void setVwapStCandleMinutes(int v)       { cfg().vwapStCandleMinutes = Math.max(1, v); }
     public void setVwapStAtrPeriod(int v)           { cfg().vwapStAtrPeriod = Math.max(2, v); }
     public void setVwapStMultiplier(double v)       { cfg().vwapStMultiplier = Math.max(0.1, v); }
-    public void setVwapStSlBufferPoints(double v)   { cfg().vwapStSlBufferPoints = Math.max(0.0, v); }
-    public void setVwapStSlBufferMode(String v)     {
-        if (v == null) { cfg().vwapStSlBufferMode = "POINTS"; return; }
-        String up = v.trim().toUpperCase();
-        cfg().vwapStSlBufferMode = switch (up) {
-            case "ATR"        -> "ATR";
-            case "SUPERTREND", "SUPER_TREND", "ST" -> "SUPERTREND";
-            default           -> "POINTS";
-        };
-    }
-    public void setVwapStSlAtrMultiplier(double v)  { cfg().vwapStSlAtrMultiplier = Math.max(0.0, v); }
-    public void setVwapStRewardRiskRatio(double v)  { cfg().vwapStRewardRiskRatio = Math.max(0.1, v); }
-    public void setVwapStMaxSlPoints(double v)      { cfg().vwapStMaxSlPoints = Math.max(0.5, v); }
-    public void setVwapStSupertrendTargetMode(String v) {
-        if (v == null) { cfg().vwapStSupertrendTargetMode = "FIXED_2X_MAX_SL"; return; }
-        String up = v.trim().toUpperCase();
-        cfg().vwapStSupertrendTargetMode = "TRAILING".equals(up) ? "TRAILING" : "FIXED_2X_MAX_SL";
-    }
+    public void setVwapStPartialExitEnabled(boolean v) { cfg().vwapStPartialExitEnabled = v; }
+    public void setVwapStPartialExitRr(double v)       { cfg().vwapStPartialExitRr  = Math.max(0.1, v); }
+    public void setVwapStPartialExitPct(double v)      { cfg().vwapStPartialExitPct = Math.min(99.0, Math.max(1.0, v)); }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setStartingCapital(double v)      { cfg().startingCapital = Math.max(0, v); }
@@ -801,17 +781,13 @@ public class RiskSettingsStore {
             upsert("vwapStStartTime",                 c.vwapStStartTime);
             upsert("vwapStTradingEndTime",            c.vwapStTradingEndTime);
             upsert("vwapStSquareOffTime",             c.vwapStSquareOffTime);
-            upsert("vwapStTargetPremium",             String.valueOf(c.vwapStTargetPremium));
             upsert("vwapStStrikesRange",              String.valueOf(c.vwapStStrikesRange));
             upsert("vwapStCandleMinutes",             String.valueOf(c.vwapStCandleMinutes));
             upsert("vwapStAtrPeriod",                 String.valueOf(c.vwapStAtrPeriod));
             upsert("vwapStMultiplier",                String.valueOf(c.vwapStMultiplier));
-            upsert("vwapStSlBufferPoints",            String.valueOf(c.vwapStSlBufferPoints));
-            upsert("vwapStSlBufferMode",              c.vwapStSlBufferMode);
-            upsert("vwapStSlAtrMultiplier",           String.valueOf(c.vwapStSlAtrMultiplier));
-            upsert("vwapStRewardRiskRatio",           String.valueOf(c.vwapStRewardRiskRatio));
-            upsert("vwapStMaxSlPoints",               String.valueOf(c.vwapStMaxSlPoints));
-            upsert("vwapStSupertrendTargetMode",      c.vwapStSupertrendTargetMode);
+            upsert("vwapStPartialExitEnabled",        String.valueOf(c.vwapStPartialExitEnabled));
+            upsert("vwapStPartialExitRr",             String.valueOf(c.vwapStPartialExitRr));
+            upsert("vwapStPartialExitPct",            String.valueOf(c.vwapStPartialExitPct));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("startingCapital",      String.valueOf(c.startingCapital));
@@ -1013,24 +989,35 @@ public class RiskSettingsStore {
                     case "vwapStStartTime"               -> c.vwapStStartTime         = v;
                     case "vwapStTradingEndTime"          -> c.vwapStTradingEndTime    = v;
                     case "vwapStSquareOffTime"           -> c.vwapStSquareOffTime     = v;
-                    case "vwapStTargetPremium"           -> c.vwapStTargetPremium     = Math.max(1.0, Double.parseDouble(v));
+                    case "vwapStTargetPremium"           -> { /* retired — always ATM */ }
                     case "vwapStStrikesRange"            -> c.vwapStStrikesRange      = Math.max(1, Integer.parseInt(v));
                     case "vwapStCandleMinutes"           -> c.vwapStCandleMinutes     = Math.max(1, Integer.parseInt(v));
                     case "vwapStAtrPeriod"               -> c.vwapStAtrPeriod         = Math.max(2, Integer.parseInt(v));
                     case "vwapStMultiplier"              -> c.vwapStMultiplier        = Math.max(0.1, Double.parseDouble(v));
-                    case "vwapStSlBufferPoints"          -> c.vwapStSlBufferPoints    = Math.max(0.0, Double.parseDouble(v));
-                    case "vwapStSlBufferMode"            -> {
-                        String up = v == null ? "" : v.trim().toUpperCase();
-                        c.vwapStSlBufferMode = switch (up) {
-                            case "ATR"                             -> "ATR";
-                            case "SUPERTREND", "SUPER_TREND", "ST" -> "SUPERTREND";
-                            default                                -> "POINTS";
-                        };
-                    }
-                    case "vwapStSlAtrMultiplier"         -> c.vwapStSlAtrMultiplier   = Math.max(0.0, Double.parseDouble(v));
-                    case "vwapStRewardRiskRatio"         -> c.vwapStRewardRiskRatio   = Math.max(0.1, Double.parseDouble(v));
-                    case "vwapStMaxSlPoints"             -> c.vwapStMaxSlPoints       = Math.max(0.5, Double.parseDouble(v));
-                    case "vwapStSupertrendTargetMode"    -> c.vwapStSupertrendTargetMode = "TRAILING".equalsIgnoreCase(v) ? "TRAILING" : "FIXED_2X_MAX_SL";
+                    // Retired target-mode / RR keys — silently consume old rows.
+                    case "vwapStRewardRiskRatio",
+                         "vwapStSupertrendTargetMode"    -> { /* retired */ }
+                    case "vwapStPartialExitEnabled"      -> c.vwapStPartialExitEnabled = Boolean.parseBoolean(v);
+                    case "vwapStPartialExitRr"           -> c.vwapStPartialExitRr      = Math.max(0.1, Double.parseDouble(v));
+                    case "vwapStPartialExitPct"          -> c.vwapStPartialExitPct     = Math.min(99.0, Math.max(1.0, Double.parseDouble(v)));
+                    case "vwapStBiasFilterEnabled"       -> { /* retired */ }
+                    // Retired wide-candle filter keys — silently consume old rows.
+                    case "vwapStWideCandleFilterEnabled",
+                         "vwapStMaxCandleAtrMultiplier"   -> { /* retired */ }
+                    // Retired SL-mode keys (POINTS/ATR modes + max-SL cap) — silently
+                    // consume so old rows don't error the load.
+                    case "vwapStSlBufferPoints",
+                         "vwapStSlBufferMode",
+                         "vwapStSlAtrMultiplier",
+                         "vwapStMaxSlPoints"              -> { /* retired — silently consume */ }
+                    // 50 STRANGLE keys silently consumed for backward compat after strategy removal.
+                    case "strangleEnabled",
+                         "strangleLotsPerLeg",
+                         "strangleStartTime",
+                         "strangleCloseTime",
+                         "strangleTargetPremium",
+                         "strangleSlPct",
+                         "strangleStrikesRange"           -> { /* retired — silently consume legacy rows */ }
                     // OPTION SELLING keys silently consumed for backward compat after strategy removal.
                     case "optionSellingEnabled",
                          "optionSellingLotsPerLeg",

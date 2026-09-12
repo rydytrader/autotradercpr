@@ -252,7 +252,21 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
 
     @Override
     public void onPositionEvent(JsonNode position) {
-        // PollingService syncs every 10s; this is informational only.
+        // Live cache update — bypass the 10 s syncPosition() poll so the Live
+        // Positions row disappears the instant Fyers reports the fill (or
+        // shrinks on a partial exit). Fields: symbol + net_qty + optional avg.
+        try {
+            if (position == null || pollingService == null) return;
+            String symbol = position.has("symbol") ? position.get("symbol").asText("") : "";
+            if (symbol.isBlank()) return;
+            int netQty = position.has("net_qty") ? position.get("net_qty").asInt(0) : 0;
+            double avg = position.has("avg_price") ? position.get("avg_price").asDouble(0)
+                       : position.has("netAvg")   ? position.get("netAvg").asDouble(0)
+                       : 0;
+            pollingService.applyPositionEvent(symbol, netQty, avg);
+        } catch (Exception e) {
+            log.warn("[OrderEventSvc] applyPositionEvent failed: {}", e.getMessage());
+        }
     }
 
     @Override

@@ -39,23 +39,14 @@ import java.util.function.Consumer;
  *
  * <p>Ticks continue flowing to {@code MarketDataService} for LTP display and
  * position P&amp;L, but bar OHLC is NOT built from ticks.
- *
- * <p>{@link #BUCKET_MINUTES} stays public so downstream loggers can print bar
- * duration without hardcoding it.
  */
 @Service
 public class CandleAggregator {
 
     private static final Logger log = LoggerFactory.getLogger(CandleAggregator.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    /** Strategy trigger interval — every 5 min a synthetic aggregate bar fires
-     *  to registered listeners. Kept public for downstream loggers that print
-     *  "5-min bar closed" text. */
-    public static final int BUCKET_MINUTES = 5;
-    /** Chart bar duration — history ring stores 1-min bars from GDFL
-     *  {@code SubscribeSnapshot MINUTE 1}. Chart renders these directly (livelier
-     *  visualization) and every 5th 1-min bar triggers a 5-min aggregate for the
-     *  strategy. */
+    /** Chart bar duration — history ring stores 1-min bars; strategies read
+     *  their own timeframe via {@link #getHistory(String, int)}. */
     private static final int BAR_MINUTES = 1;
 
     /** Closed 1-min bar ring — bounded FIFO. Cap = 500 bars ≈ 8 h 20 min,
@@ -171,49 +162,6 @@ public class CandleAggregator {
         // listeners, so a 3-min strategy only saw ~1 callback per 15 min
         // (when the 5-min bucket start happened to be on a 3-min boundary).
         fireListeners(symbol, out);
-
-        // 5-min aggregation. Windows anchor on the same UTC boundary as the bar's
-        // startMillis (IST 09:15 = UTC 03:45 which is a 5-min boundary in UTC too,
-        // so `startMillis % 300_000L` aligns correctly).
-        long bucketStartMs   = out.startMillis() - (out.startMillis() % (BUCKET_MINUTES * 60_000L));
-        int  minuteInBucket  = (int) ((out.startMillis() - bucketStartMs) / (BAR_MINUTES * 60_000L));
-        if (minuteInBucket == BUCKET_MINUTES - 1) {
-            Candle fiveMinAgg = buildFiveMinAggregate(symbol, bucketStartMs, out.vwap());
-            if (fiveMinAgg != null) {
-                log.debug("[CandleAggregator] {} 5-min aggregate — o={} h={} l={} c={} v={} vwap={} startMs={}",
-                    symbol, fiveMinAgg.open(), fiveMinAgg.high(), fiveMinAgg.low(),
-                    fiveMinAgg.close(), fiveMinAgg.volume(), fiveMinAgg.vwap(),
-                    fiveMinAgg.startMillis());
-                fireListeners(symbol, fiveMinAgg);
-            }
-        }
-    }
-
-    /** Build a 5-min aggregate bar from every 1-min bar in
-     *  {@code [bucketStartMs, bucketStartMs + 5min)}. Returns {@code null} if no
-     *  1-min bars fall in that window (shouldn't happen — we only call this on
-     *  the 5th minute's append). {@code vwap} is passed through from the latest
-     *  1-min bar so both chart and strategy read the same session-cumulative
-     *  value at this moment. */
-    private Candle buildFiveMinAggregate(String symbol, long bucketStartMs, double vwap) {
-        Deque<Candle> ring = historyBySymbol.get(symbol);
-        if (ring == null) return null;
-        long bucketEndMs = bucketStartMs + BUCKET_MINUTES * 60_000L;
-        Candle first = null, last = null;
-        double hi = Double.NEGATIVE_INFINITY, lo = Double.POSITIVE_INFINITY;
-        long vol = 0;
-        for (Candle b : ring) {
-            long sm = b.startMillis();
-            if (sm < bucketStartMs || sm >= bucketEndMs) continue;
-            if (first == null || sm < first.startMillis()) first = b;
-            if (last  == null || sm > last.startMillis())  last  = b;
-            if (b.high() > hi) hi = b.high();
-            if (b.low()  < lo) lo = b.low();
-            vol += b.volume();
-        }
-        if (first == null) return null;
-        return new Candle(first.open(), round(hi), round(lo), last.close(),
-            vol, bucketStartMs, round(vwap));
     }
 
     private void fireListeners(String symbol, Candle bar) {

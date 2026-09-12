@@ -312,7 +312,7 @@
 </div>
 
 <script src="/js/common.js?v=41"></script>
-<script src="/js/ticker.js?v=38"></script>
+<script src="/js/ticker.js?v=40"></script>
 <script src="/js/settings-modal.js?v=78"></script>
 <script src="/js/historical-chart-modal.js?v=1"></script>
 <script>
@@ -568,11 +568,10 @@
             const cap  = d.capital     || {};
             const pf = perf.profitFactor || 0;
             const rr = perf.riskReward   || 0;
-            // Per-straddle Hero counts — true wins/losses/total across straddles, not days.
+            // Sessions tile shows trading DAYS in scope. Wins/losses stay per-trade.
             const hasPerf = (perf.wins != null) || (perf.losses != null) || (perf.straddles != null);
-            const straddleCount = perf.straddles != null ? Number(perf.straddles)
-                                                         : (d.straddleCount != null ? Number(d.straddleCount) : null);
-            document.getElementById('heroSessions').textContent = straddleCount != null ? String(straddleCount) : '—';
+            const sessionsN = d.sessionCount != null ? Number(d.sessionCount) : null;
+            document.getElementById('heroSessions').textContent = sessionsN != null ? String(sessionsN) : '—';
             document.getElementById('heroWins').textContent     = hasPerf ? String(perf.wins   || 0) : '—';
             document.getElementById('heroLosses').textContent   = hasPerf ? String(perf.losses || 0) : '—';
             document.getElementById('heroWinRate').textContent  = hasPerf && (perf.winRate != null)

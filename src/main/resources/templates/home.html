@@ -169,7 +169,6 @@
                 <div class="pill-row" id="strategyPills">
                     <button class="scope-pill active" data-strategy="all"              title="All trades.">All</button>
                     <button class="scope-pill"        data-strategy="vwap-supertrend" title="VWAP + SUPERTREND — NIFTY weekly CE + PE ATM pair, 3-min VWAP bounce / Supertrend flip entries.">VWAP+ST</button>
-                    <button class="scope-pill"        data-strategy="option-buying"   title="OPTION BUYING (legacy) — historical rows from the retired CPR strategy.">OPTIONS BUY</button>
                 </div>
             </div>
             <div style="display:flex; align-items:center; gap:10px;">
@@ -237,6 +236,11 @@
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
                     <div class="stat-label">Avg Monthly %</div>
                     <div class="stat-value" id="ahAvgMonthlyPct" style="font-size:1.1rem; margin-top:4px;">—</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label">Total Return %</div>
+                    <div class="stat-value" id="ahTotalReturnPct" style="font-size:1.1rem; margin-top:4px;"
+                         title="Total P&L over the selected range as a % of starting capital.">—</div>
                 </div>
             </div>
         </div>
@@ -350,6 +354,17 @@
         </div>
     </div>
 
+    <!-- PER-TRADE P&L BAR CHART -->
+    <div class="section-card fade-in" style="margin-bottom:20px;">
+        <div class="section-header">
+            <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Per-Trade P&L</div>
+            <span class="section-badge" style="font-size:0.6rem; margin-left:auto;">Each bar = one closed trade · green = win · red = loss</span>
+        </div>
+        <div style="padding:20px 28px; height:280px;">
+            <canvas id="perTradeChart"></canvas>
+        </div>
+    </div>
+
 
     <footer class="page-footer">
         <div class="footer-copy">&copy; <span id="footerYear"></span> TraderEdge. All rights reserved.</div>
@@ -362,7 +377,7 @@
 </div><!-- /flex wrapper -->
 
 <script src="/js/common.js?v=41"></script>
-<script src="/js/ticker.js?v=38"></script>
+<script src="/js/ticker.js?v=40"></script>
 <script src="/js/settings-modal.js?v=78"></script>
 
 <script>
@@ -627,6 +642,56 @@
         });
     }
 
+    // ── Per-trade P&L bar chart ─────────────────────────────────────────────
+    var perTradeChart = null;
+    function renderPerTradeChart(pnls) {
+        var canvas = document.getElementById('perTradeChart');
+        if (!canvas) return;
+        var ctx = canvas.getContext('2d');
+        if (perTradeChart) { perTradeChart.destroy(); perTradeChart = null; }
+        var styles   = getComputedStyle(document.documentElement);
+        var gridCol  = styles.getPropertyValue('--border').trim()       || 'rgba(255,255,255,0.06)';
+        var textCol  = styles.getPropertyValue('--text-muted').trim()   || '#888';
+        var greenCol = styles.getPropertyValue('--accent-green').trim() || '#34d399';
+        var redCol   = styles.getPropertyValue('--accent-red').trim()   || '#f87171';
+        var labels = pnls.map(function(_, i) { return (i + 1).toString(); });
+        var colors = pnls.map(function(v) { return v >= 0 ? greenCol : redCol; });
+        perTradeChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Net P&L',
+                    data: pnls,
+                    backgroundColor: colors,
+                    borderColor: colors,
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            title: function(items) { return 'Trade #' + items[0].label; },
+                            label: function(item) { return fmtRs(item.parsed.y); }
+                        }
+                    }
+                },
+                scales: {
+                    x: { ticks: { color: textCol, autoSkip: true, maxTicksLimit: 30 },
+                         grid: { color: 'transparent' },
+                         title: { display: true, text: 'Trade #', color: textCol } },
+                    y: { ticks: { color: textCol, callback: function(v) { return fmtRs(v); } },
+                         grid: { color: gridCol },
+                         beginAtZero: true }
+                }
+            }
+        });
+    }
+
     // ── Load + render the analytics payload ──────────────────────────────────
     // forceEquity=true → re-render the equity curve immediately (selector changes, initial
     // load). false → skip the curve if the hourly cadence hasn't elapsed (the 5s live poll).
@@ -646,12 +711,10 @@
             var edge = d.edge     || {};
             var eq  = d.equityCurve || { labels: [], values: [] };
 
-            // Header session-count badge — total trading days in scope. Each
-            // day is one session regardless of how many cycles ran; the sign
-            // of the day's net P&L decides win vs loss.
+            // Header session-count badge — total trading days in scope.
             var scEl = document.getElementById('ahSessionCount');
             if (scEl) {
-                var n = d.straddleCount || 0;
+                var n = d.sessionCount || 0;
                 scEl.textContent = n + ' session' + (n === 1 ? '' : 's');
             }
 
@@ -660,11 +723,11 @@
             var subEl = document.getElementById('ahCapitalSub');
             if (subEl) {
                 var sign = (cap.totalReturn || 0) >= 0 ? '+' : '';
-                var cyclesN = d.straddleCount || 0;
+                var sessionsN = d.sessionCount || 0;
                 subEl.textContent = 'Started ' + fmtRs(cap.startingCapital)
                     + ' • ' + sign + fmtRs(cap.totalReturn)
                     + ' (' + fmtPct(cap.totalReturnPct) + ')'
-                    + ' • ' + cyclesN + ' session' + (cyclesN === 1 ? '' : 's');
+                    + ' • ' + sessionsN + ' session' + (sessionsN === 1 ? '' : 's');
             }
             setVal('ahTotalReturn',  fmtRs(cap.totalReturn), cap.totalReturn);
             setVal('ahWinRate',      (perf.winRate != null ? perf.winRate.toFixed(1) : '0') + '%',
@@ -676,6 +739,7 @@
             setVal('ahMaxDrawdown',  fmtRs(ext.maxDrawdown), ext.maxDrawdown);
             setVal('ahMaxDrawdownDays', String(ext.maxDrawdownDays || 0), -(ext.maxDrawdownDays || 0));
             setVal('ahAvgMonthlyPct', fmtPct(cap.avgMonthlyPct), cap.avgMonthlyPct);
+            setVal('ahTotalReturnPct', fmtPct(cap.totalReturnPct), cap.totalReturnPct);
 
             // ── DETAIL CARDS — only metrics that aren't already in the hero ─
             // Straddle Performance card
@@ -690,9 +754,9 @@
             // Edge Metrics card removed — operator considered low-signal at current scale.
             // Costs card
             var charges = Number(st.totalCharges || 0);
-            // Backend emits perf.straddles as the count of trading SESSIONS in scope
-            // (one per day, regardless of how many cycles that day ran). Use it as the
-            // divisor for per-session averages (avg charges, expectancy, etc.).
+            // Backend emits perf.straddles as the count of individual closed TRADES
+            // in scope (one per cycle, multiple per day possible). Divisor for
+            // per-trade averages (avg charges, expectancy, etc.).
             var numStraddles = Number(perf.straddles || 0);
             var grossSum = (Number(ext.avgProfit || 0) * (perf.wins || 0))
                          + (Number(ext.avgLoss   || 0) * (perf.losses || 0));
@@ -732,6 +796,7 @@
             var nowMs = Date.now();
             if (forceEquity || lastEquityRenderMs === 0 || (nowMs - lastEquityRenderMs >= EQUITY_REFRESH_MS)) {
                 renderEquityChart(eq.labels || [], eq.values || [], cap.startingCapital, eq.kinds || []);
+                renderPerTradeChart(Array.isArray(d.perTradePnl) ? d.perTradePnl : []);
                 lastEquityRenderMs = nowMs;
             }
 

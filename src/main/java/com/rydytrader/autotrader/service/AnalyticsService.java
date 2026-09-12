@@ -76,12 +76,12 @@ public class AnalyticsService {
         List<Trade> trades = loadTrades(period, strategyId, from, to);
         List<Trade> closed = new ArrayList<>();
         for (Trade t : trades) if (isClosedStraddle(t)) closed.add(t);
-        // Session-level analytics: each trading day is one "trade". Every cycle
-        // closed that day is summed into a single synthetic Trade — positive net
-        // = winning session, negative = losing session. All performance /
-        // extremes / streaks / edge / breakdowns run off this list so the win
-        // rate, expectancy, drawdown, Sharpe etc. describe daily P&L outcomes
-        // rather than per-cycle churn.
+        // Per-trade analytics: every closed cycle is its own "trade" — win rate,
+        // profit factor, extremes, streaks, expectancy, Sharpe all run off the
+        // individual closed rows so metrics reflect trade-level outcomes rather
+        // than day-aggregated ones. byDate / byMonth still aggregate for the
+        // calendar and month cards. equityCurve stays day-aggregated for chart
+        // readability (per-trade jitter is noisy on a session-long curve).
         List<Trade> dailyClosed = aggregateByDay(closed);
         double startingCapital = riskSettings.getStartingCapital();
 
@@ -96,18 +96,29 @@ public class AnalyticsService {
         out.put("strategyId",    strategyId);
         out.put("from",          from);
         out.put("to",            to);
-        out.put("straddleCount", dailyClosed.size());
+        out.put("straddleCount", closed.size());
         out.put("sessionCount",  dailyClosed.size());
         out.put("includeAdjustments", false);
 
         out.put("capital",     capital(trades, startingCapital, allTimeNet));
-        out.put("performance", performance(dailyClosed));
-        out.put("extremes",    extremes(dailyClosed));
-        out.put("streaks",     streaks(dailyClosed));
-        out.put("edge",        edge(dailyClosed, startingCapital));
+        out.put("performance", performance(closed));
+        out.put("extremes",    extremes(closed));
+        out.put("streaks",     streaks(closed));
+        out.put("edge",        edge(closed, startingCapital));
         out.put("equityCurve", equityCurve(trades, startingCapital));
+        out.put("perTradePnl", perTradePnlSeries(closed));
         out.put("byMonth",     byMonth(trades, dailyClosed));
         out.put("byDate",      byDate(trades, dailyClosed));
+        return out;
+    }
+
+    /** Ordered per-trade net P&L, oldest first. Drives the home dashboard's
+     *  per-trade bar chart — one bar per closed trade in the selected range. */
+    private List<Double> perTradePnlSeries(List<Trade> closed) {
+        List<Trade> sorted = new ArrayList<>(closed);
+        sorted.sort(Comparator.comparingLong(Trade::closedAtMillis));
+        List<Double> out = new ArrayList<>(sorted.size());
+        for (Trade t : sorted) out.add(round2(t.netPnl()));
         return out;
     }
 
@@ -552,27 +563,21 @@ public class AnalyticsService {
             if (pnl > 0)      { wins++;   sumWin  += pnl; }
             else if (pnl < 0) { losses++; sumLoss += pnl; }
         }
-        // Drawdown over the cumulative DAY-AGGREGATED equity curve — same
-        // bucketing the chart uses, so the badge matches what the operator
-        // sees in the equity curve. Per-trade walking previously produced a
-        // larger drawdown number than the chart could explain because intraday
-        // swings on multi-cycle days were counted as separate peaks/troughs.
-        // Now: sum each trading day's net P&L, walk those daily totals in
-        // chronological order, track running peak vs current cum, capture the
-        // deepest peak-to-trough as the max drawdown.
-        java.util.NavigableMap<String, Double> netByDate = new java.util.TreeMap<>();
-        for (Trade t : closed) {
-            String d = t.sessionDate();
-            if (d == null || d.isBlank()) continue;
-            netByDate.merge(d, t.netPnl(), Double::sum);
-        }
+        // Drawdown over the cumulative per-TRADE equity curve — walk closed
+        // trades in chronological order (by closedAtMillis), track running
+        // peak vs current cum, capture the deepest peak-to-trough. Intraday
+        // multi-cycle swings show up as separate peaks/troughs (which is what
+        // the operator wants when analyzing per-trade behaviour).
+        List<Trade> sortedClosed = new ArrayList<>(closed);
+        sortedClosed.sort(Comparator.comparingLong(Trade::closedAtMillis));
         double peak = 0, cum = 0, maxDd = 0;
         String peakDateStr = "", troughDateStr = "", curPeakDateStr = "";
-        for (Map.Entry<String, Double> e : netByDate.entrySet()) {
-            cum += e.getValue();
-            if (cum > peak) { peak = cum; curPeakDateStr = e.getKey(); }
+        for (Trade t : sortedClosed) {
+            cum += t.netPnl();
+            String d = t.sessionDate() == null ? "" : t.sessionDate();
+            if (cum > peak) { peak = cum; curPeakDateStr = d; }
             double dd = cum - peak;
-            if (dd < maxDd) { maxDd = dd; peakDateStr = curPeakDateStr; troughDateStr = e.getKey(); }
+            if (dd < maxDd) { maxDd = dd; peakDateStr = curPeakDateStr; troughDateStr = d; }
         }
         int maxDrawdownDays = 0;
         if (maxDd < 0 && !peakDateStr.isEmpty() && !troughDateStr.isEmpty()) {

@@ -44,17 +44,13 @@ public class SettingsController {
         result.put("vwapStStartTime",         riskSettings.getVwapStStartTime());
         result.put("vwapStTradingEndTime",    riskSettings.getVwapStTradingEndTime());
         result.put("vwapStSquareOffTime",     riskSettings.getVwapStSquareOffTime());
-        result.put("vwapStTargetPremium",     riskSettings.getVwapStTargetPremium());
         result.put("vwapStStrikesRange",      riskSettings.getVwapStStrikesRange());
         result.put("vwapStCandleMinutes",     riskSettings.getVwapStCandleMinutes());
         result.put("vwapStAtrPeriod",         riskSettings.getVwapStAtrPeriod());
         result.put("vwapStMultiplier",        riskSettings.getVwapStMultiplier());
-        result.put("vwapStSlBufferPoints",    riskSettings.getVwapStSlBufferPoints());
-        result.put("vwapStSlBufferMode",      riskSettings.getVwapStSlBufferMode());
-        result.put("vwapStSlAtrMultiplier",   riskSettings.getVwapStSlAtrMultiplier());
-        result.put("vwapStMaxSlPoints",       riskSettings.getVwapStMaxSlPoints());
-        result.put("vwapStSupertrendTargetMode", riskSettings.getVwapStSupertrendTargetMode());
-        result.put("vwapStRewardRiskRatio",   riskSettings.getVwapStRewardRiskRatio());
+        result.put("vwapStPartialExitEnabled",   riskSettings.isVwapStPartialExitEnabled());
+        result.put("vwapStPartialExitRr",        riskSettings.getVwapStPartialExitRr());
+        result.put("vwapStPartialExitPct",       riskSettings.getVwapStPartialExitPct());
         // Money / Risk
         result.put("totalCapital",        riskSettings.getTotalCapital(effectiveMode));
         result.put("maxRiskPerDayPct",    riskSettings.getMaxRiskPerDayPct(effectiveMode));
@@ -102,17 +98,13 @@ public class SettingsController {
             if (body.containsKey("vwapStStartTime"))        riskSettings.setVwapStStartTime(body.get("vwapStStartTime").toString());
             if (body.containsKey("vwapStTradingEndTime"))   riskSettings.setVwapStTradingEndTime(body.get("vwapStTradingEndTime").toString());
             if (body.containsKey("vwapStSquareOffTime"))    riskSettings.setVwapStSquareOffTime(body.get("vwapStSquareOffTime").toString());
-            if (body.containsKey("vwapStTargetPremium"))    riskSettings.setVwapStTargetPremium(Double.parseDouble(body.get("vwapStTargetPremium").toString()));
             if (body.containsKey("vwapStStrikesRange"))     riskSettings.setVwapStStrikesRange(Integer.parseInt(body.get("vwapStStrikesRange").toString()));
             if (body.containsKey("vwapStCandleMinutes"))    riskSettings.setVwapStCandleMinutes(Integer.parseInt(body.get("vwapStCandleMinutes").toString()));
             if (body.containsKey("vwapStAtrPeriod"))        riskSettings.setVwapStAtrPeriod(Integer.parseInt(body.get("vwapStAtrPeriod").toString()));
             if (body.containsKey("vwapStMultiplier"))       riskSettings.setVwapStMultiplier(Double.parseDouble(body.get("vwapStMultiplier").toString()));
-            if (body.containsKey("vwapStSlBufferPoints"))   riskSettings.setVwapStSlBufferPoints(Double.parseDouble(body.get("vwapStSlBufferPoints").toString()));
-            if (body.containsKey("vwapStSlBufferMode"))     riskSettings.setVwapStSlBufferMode(body.get("vwapStSlBufferMode").toString());
-            if (body.containsKey("vwapStSlAtrMultiplier"))  riskSettings.setVwapStSlAtrMultiplier(Double.parseDouble(body.get("vwapStSlAtrMultiplier").toString()));
-            if (body.containsKey("vwapStMaxSlPoints"))      riskSettings.setVwapStMaxSlPoints(Double.parseDouble(body.get("vwapStMaxSlPoints").toString()));
-            if (body.containsKey("vwapStSupertrendTargetMode")) riskSettings.setVwapStSupertrendTargetMode(body.get("vwapStSupertrendTargetMode").toString());
-            if (body.containsKey("vwapStRewardRiskRatio"))  riskSettings.setVwapStRewardRiskRatio(Double.parseDouble(body.get("vwapStRewardRiskRatio").toString()));
+            if (body.containsKey("vwapStPartialExitEnabled")) riskSettings.setVwapStPartialExitEnabled(Boolean.parseBoolean(body.get("vwapStPartialExitEnabled").toString()));
+            if (body.containsKey("vwapStPartialExitRr"))      riskSettings.setVwapStPartialExitRr(Double.parseDouble(body.get("vwapStPartialExitRr").toString()));
+            if (body.containsKey("vwapStPartialExitPct"))     riskSettings.setVwapStPartialExitPct(Double.parseDouble(body.get("vwapStPartialExitPct").toString()));
             // Money / Risk
             if (body.containsKey("totalCapital"))      riskSettings.setTotalCapital(effectiveMode, Double.parseDouble(body.get("totalCapital").toString()));
             if (body.containsKey("maxRiskPerDayPct"))  riskSettings.setMaxRiskPerDayPct(effectiveMode, Double.parseDouble(body.get("maxRiskPerDayPct").toString()));

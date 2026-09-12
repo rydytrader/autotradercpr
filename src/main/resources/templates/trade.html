@@ -718,15 +718,45 @@
                 var entryPx = Number(p.entryPrice || 0);
                 var slPx    = Number(p.slPrice || 0);
                 var targetPx = Number(p.targetLevel || 0);
+                var t1Px    = Number(p.partialTargetPrice || 0);
+                // Target column composition:
+                //   T1 pending + T2 fixed  → "T1: 260 · T2: 290"
+                //   T1 pending + T2 trail  → "T1: 260 · T2: Trail"
+                //   T1 done   + T2 fixed  → "T2: 290"   (partial already booked)
+                //   T1 done   + T2 trail  → "T2: Trail"
+                //   no partial + fixed    → "290"       (legacy display)
+                //   no partial + trail    → "Trail"
+                var t2Str    = targetPx > 0 ? fmtRs(targetPx) : 'Trail';
+                var partialActive = t1Px > 0 && !p.partialBooked;
+                var targetCell;
+                if (partialActive) {
+                    targetCell = '<span style="font-size:0.72em;color:var(--text-muted);">T1</span> ' + fmtRs(t1Px)
+                               + ' <span style="color:var(--text-muted);">·</span> '
+                               + '<span style="font-size:0.72em;color:var(--text-muted);">T2</span> ' + t2Str;
+                } else if (p.partialBooked) {
+                    targetCell = '<span style="font-size:0.72em;color:var(--text-muted);">T2</span> ' + t2Str;
+                } else {
+                    targetCell = t2Str;
+                }
+                // Yellow ▲ marker when the SL has trailed above its initial
+                // (fill-time) value — visual cue that the trail is in effect.
+                var trailMark = p.slTrailed
+                    ? ' <span title="SL trailed above initial (ST rise)" style="color:#fbbf24;font-size:0.7em;">▲</span>'
+                    : '';
+                // ½ badge next to qty when partial exit has fired — remaining
+                // qty is trailing on ST, original qty shown in tooltip.
+                var partialBadge = p.partialBooked
+                    ? ' <span title="Partial booked. Original qty ' + (p.originalQty || '?') + '" style="color:#c084fc;font-size:0.7em;font-weight:700;">½</span>'
+                    : '';
                 return '<tr>'
                     + '<td>' + (i + 1) + '</td>'
                     + '<td class="text-center">' + strategyPill(strategyId) + '</td>'
                     + '<td>' + escapeHtml(p.symbol) + '</td>'
-                    + '<td class="text-right">' + escapeHtml(String(p.qty)) + '</td>'
+                    + '<td class="text-right">' + escapeHtml(String(p.qty)) + partialBadge + '</td>'
                     + '<td class="text-center">' + escapeHtml(p.setup || p.side || '') + '</td>'
                     + '<td class="text-right">' + (entryPx  > 0 ? fmtRs(entryPx)  : '—') + '</td>'
-                    + '<td class="text-right" style="color:var(--accent-red, #f87171);">' + (slPx > 0 ? fmtRs(slPx) : '—') + '</td>'
-                    + '<td class="text-right" style="color:var(--accent-green, #34d399);">' + (targetPx > 0 ? fmtRs(targetPx) : '—') + '</td>'
+                    + '<td class="text-right" style="color:var(--accent-red, #f87171);">' + (slPx > 0 ? fmtRs(slPx) + trailMark : '—') + '</td>'
+                    + '<td class="text-right" style="color:var(--accent-green, #34d399);">' + targetCell + '</td>'
                     + '<td class="text-right">' + fmtRs(p.ltp) + '</td>'
                     + '<td class="text-right ' + pnlClass(pnl) + '" style="font-weight:700;">' + fmtRs(pnl) + '</td>'
                     + '<td class="text-center"><button class="squareoff-btn" style="padding:4px 10px;font-size:0.65rem;" onclick="squareOffRow(\'' + escapeHtml(p.symbol).replace(/'/g, "&#39;") + '\',\'' + strategyId + '\')">×</button></td>'
@@ -1132,7 +1162,7 @@
 
 
 <script src="/js/common.js?v=41"></script>
-<script src="/js/ticker.js?v=38"></script>
+<script src="/js/ticker.js?v=40"></script>
 <script src="/js/settings-modal.js?v=78"></script>
 </body>
 </html>

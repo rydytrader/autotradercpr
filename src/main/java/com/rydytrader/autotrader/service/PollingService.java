@@ -219,6 +219,30 @@ public class PollingService {
         updateLastSyncTime();
     }
 
+    /** Apply a live Fyers position WS event to the local cache immediately —
+     *  netQty==0 removes the row (closed position); non-zero updates qty +
+     *  side on the existing DTO. Bypasses the 10 s syncPosition() poll so the
+     *  UI reflects fills and partial exits instantly. */
+    public void applyPositionEvent(String symbol, int netQty, double avgPrice) {
+        if (symbol == null || symbol.isBlank()) return;
+        if (netQty == 0) {
+            cachedPositions.remove(symbol);
+            PositionManager.setPosition(symbol, "NONE");
+        } else {
+            String side = netQty > 0 ? "LONG" : "SHORT";
+            int    qty  = Math.abs(netQty);
+            PositionsDTO existing = cachedPositions.get(symbol);
+            double avg  = avgPrice > 0 ? avgPrice : (existing != null ? existing.getAvgPrice() : 0);
+            double ltp  = existing != null ? existing.getLtp() : 0;
+            String setup = existing != null && existing.getSetup() != null ? existing.getSetup() : "";
+            String et    = existing != null && existing.getEntryTime() != null ? existing.getEntryTime() : "";
+            cachedPositions.put(symbol,
+                new PositionsDTO(symbol, qty, side, avg, ltp, 0, setup, et));
+            PositionManager.setPosition(symbol, side);
+        }
+        updateLastSyncTime();
+    }
+
     /** True when the Fyers symbol is an option (CE/PE on any underlying), false for equity,
      *  index, futures, mutual funds, etc. Done by exclusion of the well-known non-option
      *  segment suffixes. Accepts both option-symbol formats Fyers has used:

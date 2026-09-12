@@ -142,6 +142,10 @@ public class StrategyEndpointsController {
         out.put("risk",          buildRisk(s));
         out.put("liveNetPnl",    s == null ? 0.0 : s.liveNetPnlToday());
         out.put("liveCharges",   s == null ? 0.0 : s.liveChargesToday());
+        // NIFTY daily bias — for the header chip; independent of whether the
+        // filter is enabled (always shown so the operator sees the state).
+        out.put("bias",          s == null ? "NEUTRAL" : s.getBias());
+        out.put("niftyPivot",    s == null ? 0.0      : s.getNiftyPivot());
         return out;
     }
 
@@ -228,14 +232,22 @@ public class StrategyEndpointsController {
                 if (s != null) {
                     Map<String, Object> leg = s.getLegSnapshot(p.getSymbol());
                     if (!leg.isEmpty()) {
-                        Object entry = leg.get("entryPrice");
-                        Object sl    = leg.get("slPrice");
-                        Object tgt   = leg.get("targetPrice");
-                        Object setup = leg.get("setup");
-                        Object side  = leg.get("side");
+                        Object entry     = leg.get("entryPrice");
+                        Object sl        = leg.get("slPrice");
+                        Object tgt       = leg.get("targetPrice");
+                        Object setup     = leg.get("setup");
+                        Object side      = leg.get("side");
+                        Object slTrailed = leg.get("slTrailed");
+                        Object partial   = leg.get("partialBooked");
+                        Object origQty   = leg.get("originalQty");
+                        Object partTgt   = leg.get("partialTargetPrice");
                         if (entry instanceof Number && ((Number) entry).doubleValue() > 0) m.put("entryPrice", entry);
                         if (sl    instanceof Number && ((Number) sl).doubleValue()    > 0) m.put("slPrice",     sl);
                         if (tgt   instanceof Number && ((Number) tgt).doubleValue()   > 0) m.put("targetLevel", tgt);
+                        if (slTrailed instanceof Boolean) m.put("slTrailed", slTrailed);
+                        if (partial   instanceof Boolean) m.put("partialBooked", partial);
+                        if (origQty   instanceof Number && ((Number) origQty).intValue() > 0) m.put("originalQty", origQty);
+                        if (partTgt   instanceof Number && ((Number) partTgt).doubleValue() > 0) m.put("partialTargetPrice", partTgt);
                         // Prefer the full pathway+side setup label (e.g. 'VWAP_BREAKOUT CE');
                         // fall back to just the side if pathway isn't populated yet.
                         if (setup != null)      m.put("setup", setup);

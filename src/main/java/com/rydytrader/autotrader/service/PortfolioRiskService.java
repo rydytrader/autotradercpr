@@ -13,14 +13,15 @@ import java.util.Map;
 
 /**
  * Portfolio-wide kill switch — fires when the combined live net day P&L across
- * all enabled strategies drops below the configured {@code portfolioMaxDailyLoss}
- * threshold.
+ * all enabled strategies drops to or below {@code -portfolioMaxDailyLoss}.
+ * Loss-only: profits are allowed to run indefinitely.
  *
  * <p>Multi-strategy aware: iterates every {@link Strategy} bean via Spring's
  * bean-id-keyed {@code Map<String, Strategy>} injection. Only enabled strategies
  * contribute to the aggregate; when the aggregate breaches, every enabled
  * strategy is force-closed independently so no side keeps running past the
- * portfolio cap.
+ * portfolio cap. {@link Strategy#forceClose(String)} implementations transition
+ * their FSM to DONE_FOR_DAY, so no re-entries after the kill fires.
  *
  * <p>Disabled when {@code portfolioMaxDailyLoss} is 0. Fires once per day; the
  * fire-once flag rolls over on a new IST date.
@@ -74,11 +75,14 @@ public class PortfolioRiskService {
             }
         }
         if (!anyEnabled) return;
-        if (aggregate >= -maxLoss) return;
+        // Loss-only kill switch — profits are allowed to run indefinitely.
+        // Only the loss side flattens and marks done-for-day.
+        if (aggregate > -maxLoss) return;
 
+        String reason = "PORTFOLIO_MAX_LOSS_HIT";
         double riskPct = riskSettings.getPortfolioMaxRiskPct();
         String msg = String.format(
-            "PORTFOLIO MAX LOSS HIT — net %.2f < -%.2f (%.2f%% of ₹%.0f starting capital). Flattening every enabled strategy.",
+            "PORTFOLIO MAX LOSS HIT — net %.2f < -%.2f (%.2f%% of ₹%.0f starting capital). Flattening every enabled strategy and marking done for day.",
             aggregate, maxLoss, riskPct, riskSettings.getStartingCapital());
         log.warn("[PortfolioRisk] {}", msg);
         eventService.log("[WARNING] [portfolio-risk] " + msg);
@@ -88,7 +92,7 @@ public class PortfolioRiskService {
         for (Strategy s : strategies.values()) {
             if (s == null || !s.isEnabled()) continue;
             try {
-                s.forceClose("PORTFOLIO_MAX_LOSS_HIT");
+                s.forceClose(reason);
                 log.info("[PortfolioRisk] flattened {}", s.id());
             } catch (Exception e) {
                 log.error("[PortfolioRisk] forceClose({}) failed: {}", s.id(), e.getMessage());

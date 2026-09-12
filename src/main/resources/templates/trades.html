@@ -227,7 +227,8 @@
                     <tr>
                         <th>#</th>
                         <th class="text-center">Strategy</th>
-                        <th>Time</th>
+                        <th>Entry Time</th>
+                        <th>Exit Time</th>
                         <th>Symbol</th>
                         <th class="text-center">Setup</th>
                         <th class="text-right">Qty</th>
@@ -241,7 +242,7 @@
                 </thead>
                 <tbody id="tradesTableBody">
                     <tr>
-                        <td colspan="12">
+                        <td colspan="13">
                             <div class="empty-state">
                                 <div class="empty-icon">◎</div>
                                 No trades completed today
@@ -293,6 +294,7 @@
         var r = String(reason || '').toUpperCase();
         if (!r) return '<span class="pill pill-reason-manual">—</span>';
         var cls = r === 'TARGET_HIT'          ? 'pill-reason-target'
+                 : r === 'PARTIAL_EXIT'       ? 'pill-reason-target'
                  : r === 'SL_HIT'             ? 'pill-reason-sl'
                  : r === 'TRAILING_SL_HIT'    ? 'pill-reason-sl'
                  : r === 'TIMED_EXIT'         ? 'pill-reason-timed'
@@ -394,21 +396,28 @@
 
         var tbody = document.getElementById('tradesTableBody');
         if (trades.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="14"><div class="empty-state"><div class="empty-icon">◎</div>No trades in this range</div></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="13"><div class="empty-state"><div class="empty-icon">◎</div>No trades in this range</div></td></tr>';
             return;
         }
         var showDate = currentRange !== 'today';
         tbody.innerHTML = trades.map(function(t, i) {
-            var ts = t.closedAtMillis;
-            var timeCell = showDate && t.sessionDate
-                ? escapeHtml(t.sessionDate) + '<br><span style="color:var(--text-muted);font-size:0.72rem;">' + fmtTime(ts) + '</span>'
-                : fmtTime(ts);
+            var closeTs = t.closedAtMillis;
+            var openTs  = Number(t.openedAtMillis || 0);
+            function cell(ts) {
+                if (!ts) return '—';
+                return showDate && t.sessionDate
+                    ? escapeHtml(t.sessionDate) + '<br><span style="color:var(--text-muted);font-size:0.72rem;">' + fmtTime(ts) + '</span>'
+                    : fmtTime(ts);
+            }
+            var entryTimeCell = openTs > 0 ? cell(openTs) : '—';
+            var exitTimeCell  = cell(closeTs);
             var entryCell = Number(t.entryPrice || 0) > 0 ? fmtRs(t.entryPrice) : '—';
             var exitCell  = Number(t.exitPrice  || 0) > 0 ? fmtRs(t.exitPrice)  : '—';
             return '<tr>'
                 + '<td>' + (i + 1) + '</td>'
                 + '<td class="text-center">' + strategyPill(t.strategyId) + '</td>'
-                + '<td>' + timeCell + '</td>'
+                + '<td>' + entryTimeCell + '</td>'
+                + '<td>' + exitTimeCell + '</td>'
                 + '<td>' + escapeHtml(t.symbol || '—') + '</td>'
                 + '<td class="text-center">' + setupPill(t.setup) + '</td>'
                 + '<td class="text-right">' + escapeHtml(String(t.qty || 0)) + '</td>'
@@ -473,15 +482,18 @@
     }
 
     function loadTodayFromState() {
-        Promise.all(STRATEGY_IDS.map(function(id) {
-            return fetch('/api/' + id + '/state')
-                .then(function(r) { return r.ok ? r.json() : null; })
-                .then(function(d) { return tagStrategy((d && d.todayClosedTrades) || [], id); })
-                .catch(function() { return []; });
-        })).then(function(arrays) {
-            if (currentRange !== 'today') return;
-            renderTrades(mergeSortDesc(arrays));
-        });
+        // The live state endpoint kept its legacy /api/option-buying/state
+        // URL from before the strategy replacement — but it now returns
+        // VwapSupertrendStrategy's state. Tag rows with 'vwap-supertrend'
+        // so the pill renders VWAP+ST, not the legacy OPTIONS BUY.
+        fetch('/api/option-buying/state')
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(d) {
+                if (currentRange !== 'today') return;
+                var rows = tagStrategy((d && d.todayClosedTrades) || [], 'vwap-supertrend');
+                renderTrades(mergeSortDesc([rows]));
+            })
+            .catch(function() {});
     }
 
     /** Called by the today SSE — one strategy's state pushed in. Refetch the
@@ -624,7 +636,7 @@
     });
 </script>
 <script src="/js/common.js?v=41"></script>
-<script src="/js/ticker.js?v=38"></script>
+<script src="/js/ticker.js?v=40"></script>
 <script src="/js/settings-modal.js?v=78"></script>
 </body>
 </html>

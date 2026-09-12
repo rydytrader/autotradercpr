@@ -167,9 +167,12 @@
         <p class="doc-p">
             Entries fire on either a <strong>VWAP breakout</strong> (bar straddles VWAP and closes
             above with Supertrend up) or a <strong>Supertrend flip</strong> (ST goes red→green
-            while price is above VWAP). SL is the entry candle low − buffer, capped at
-            <code>Max SL</code> points. Target is 2× the effective risk. Unlimited re-entries per
-            leg; a hard timed squareoff flattens everything before market close.
+            while price is above VWAP). <strong>SL is the Supertrend line</strong> — trailed up on
+            every 3-min close where ST rises, exit fires only when a 3-min bar closes below ST
+            (ST flip down). Wicks below the line are ignored. Target is
+            <code>fill + RR × risk</code> using the initial SL, or RIDE (no fixed target, exit
+            only on ST flip). Unlimited re-entries per leg; a hard timed squareoff flattens
+            everything before market close.
         </p>
     </div>
 
@@ -199,8 +202,9 @@
             <div class="phase-row">
                 <div class="phase-tag">09:18 →</div>
                 <div class="phase-desc"><strong>Bar-by-bar evaluation.</strong> Every 3-min close for
-                    both legs is checked against both entry pathways. LTP ticks continuously
-                    monitor SL and target for any open leg.</div>
+                    both legs is checked against both entry pathways. SL (ST flip down) is also
+                    evaluated on 3-min close. LTP ticks only fire the target exit if FIXED RR
+                    target mode is set.</div>
             </div>
             <div class="phase-row">
                 <div class="phase-tag">15:25</div>
@@ -252,28 +256,36 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-red, #f87171);"></span> Exit rules</h2>
         <p class="doc-p">
-            LTP-driven: SL and target are evaluated on every option tick, not at bar close.
-            Whichever fires first wins. All exits are MARKET sells.
+            Bar-close-driven SL, tick-driven target (FIXED RR only). All exits are MARKET sells.
         </p>
-        <h3 class="doc-h3">Stop loss</h3>
+        <h3 class="doc-h3">Stop loss — Supertrend trail</h3>
         <ul class="doc-list">
-            <li>Structural SL = <code>entryCandleLow − SL Buffer</code>.</li>
-            <li>Capped at <code>Max SL</code> points below fill. If the structural SL is further
-                than the cap, SL is clamped to <code>fill − Max SL</code>. A <code>[INFO] SL
-                CAPPED</code> event is logged so you can spot which entries were clipped.</li>
-            <li>Fires when LTP &le; SL price.</li>
+            <li>Initial SL = <strong>Supertrend line at entry</strong>. No fixed rupee buffer,
+                no max-SL cap.</li>
+            <li>On every 3-min close where ST is still up and the line has risen, SL ratchets up
+                to the new line (never widens). One <code>[INFO] SL trailed</code> event per
+                update.</li>
+            <li>Exit fires when a <strong>3-min bar closes below the ST line</strong> (ST flips
+                down). Wicks below the line during bar formation are ignored — only the close
+                matters. Reason tag: <code>TRAILING_SL_HIT</code> if the trail had moved SL
+                above initial, else <code>SL_HIT</code>.</li>
         </ul>
         <h3 class="doc-h3">Target</h3>
         <ul class="doc-list">
-            <li>Target = <code>fill + Reward:Risk × (fill − effective SL)</code>. Default RR is
-                2.0 — a 1:2 payoff on the effective (post-cap) risk.</li>
-            <li>Fires when LTP &ge; target price.</li>
+            <li><strong>FIXED RR</strong> — target = <code>fill + RR × (fill − initialSl)</code>.
+                Anchored to initial risk; doesn't move even as the SL trails up. Fires on tick
+                (LTP &ge; target).</li>
+            <li><strong>RIDE</strong> — no fixed target. The only exit is the ST flip down on a
+                3-min close.</li>
         </ul>
         <h3 class="doc-h3">Squareoff</h3>
         <ul class="doc-list">
             <li>At <code>Squareoff Time</code> (default <strong>15:25 IST</strong>) every open leg
                 is flattened at market. Also catches stuck <code>PENDING_ENTRY</code> as a
                 defensive squareoff.</li>
+            <li><strong>Portfolio risk budget</strong> — when combined live net P&amp;L across
+                enabled strategies breaches ±<code>Max Daily Risk</code>, everything flattens and
+                FSM transitions to <code>DONE_FOR_DAY</code>.</li>
         </ul>
     </div>
 
@@ -330,9 +342,9 @@
             <div class="band-row"><span class="left">Candle Minutes</span><span class="right">3</span></div>
             <div class="band-row"><span class="left">Supertrend ATR / Multiplier</span><span class="right">10 / 3.0</span></div>
             <div class="band-row"><span class="left">Start Time / Squareoff Time</span><span class="right">09:15 / 15:25 IST</span></div>
-            <div class="band-row"><span class="left">SL Buffer (₹)</span><span class="right">5.0</span></div>
-            <div class="band-row"><span class="left">Max SL (points)</span><span class="right">20</span></div>
+            <div class="band-row"><span class="left">Target Mode</span><span class="right">FIXED RR (default) or RIDE</span></div>
             <div class="band-row"><span class="left">Reward : Risk Ratio</span><span class="right">2.0 (1:2 RR)</span></div>
+            <div class="band-row"><span class="left">Max Daily Risk (%)</span><span class="right">portfolio budget, symmetric loss/profit cap</span></div>
         </div>
         <p class="doc-p" style="margin-top:8px;">
             Toggling <strong>Strategy enabled</strong> OFF only blocks new entries — an open
@@ -345,11 +357,12 @@
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--text-muted);"></span> What's NOT in this strategy</h2>
         <ul class="doc-list">
             <li>No GDFL — Fyers HSM WebSocket is the sole market-data source.</li>
-            <li>No trailing SL — SL is fixed at entry (below entry candle low, capped at Max SL).</li>
+            <li>No POINTS / ATR SL modes — SL is always the Supertrend line.</li>
+            <li>No max-SL cap — actual loss on exit = <code>fill − (close of ST-flip-down bar)</code>,
+                which can exceed the initial displayed risk.</li>
+            <li>No tick-level SL — wicks below ST are ignored, only 3-min bar close matters.</li>
             <li>No scanner, watchlist, or NIFTY-100 rotation — only the CE + PE chosen at 09:15
                 are traded.</li>
-            <li>No ST-flip exit — Supertrend flips are only used as entry filters and triggers,
-                never as exit signals. Exits are LTP-driven SL / target / squareoff only.</li>
             <li>No re-entry cooldown — every fresh signal is eligible; the leg-state gate is the
                 only limiter.</li>
         </ul>
@@ -369,17 +382,19 @@
 </div><!-- /flex wrapper -->
 
 <script src="/js/common.js?v=41"></script>
-<script src="/js/ticker.js?v=38"></script>
+<script src="/js/ticker.js?v=40"></script>
 <script src="/js/settings-modal.js?v=78"></script>
 <script>
     // Footer year
     document.getElementById('footerYear').textContent = new Date().getFullYear();
 
-    // Welcome banner: pull user name + Fyers id from /api/welcome
-    fetch('/api/welcome').then(function(r) { return r.ok ? r.json() : null; }).then(function(d) {
-        if (!d) return;
-        if (d.userName)   document.getElementById('userName').textContent   = d.userName;
-        if (d.fyersIdLine) document.getElementById('fyersIdLine').textContent = d.fyersIdLine;
+    // Welcome banner: pull user name + email from /api/user/me (same as home)
+    fetch('/api/user/me').then(function(r) { return r.ok ? r.json() : null; }).then(function(u) {
+        if (!u || !u.email) return;
+        var nm = document.getElementById('userName');
+        var id = document.getElementById('fyersIdLine');
+        if (nm) nm.textContent = (u.firstName || u.email).trim();
+        if (id) id.textContent = u.email;
     }).catch(function() {});
 
     // Connection-status dot mirrors home / calendar / chart — reads /status,

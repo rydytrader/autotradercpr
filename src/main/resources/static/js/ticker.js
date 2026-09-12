@@ -161,6 +161,22 @@
             chgText = ' ' + sign + Math.abs(ch).toFixed(2) + ' (' + sign + Math.abs(chp).toFixed(2) + '%)';
         }
 
+        // Daily bias — driven by strategy: NIFTY LTP vs floor pivot (H+L+C)/3.
+        var bias = String((opb && opb.bias) || 'NEUTRAL').toUpperCase();
+        var pivot = Number((opb && opb.niftyPivot) || 0);
+        var biasArrow = bias === 'BULLISH' ? '▲'
+                      : bias === 'BEARISH' ? '▼'
+                      : '·';
+        var biasColor = bias === 'BULLISH' ? 'var(--accent-green, #34d399)'
+                      : bias === 'BEARISH' ? 'var(--accent-red, #f87171)'
+                      : 'var(--text-muted)';
+        var biasText  = biasArrow + ' ' + bias;
+        // Explicit "NIFTY pivot X" so the tooltip reads clean on hover.
+        // esc() to be safe though pivot is numeric.
+        var biasTitle = pivot > 0
+            ? 'NIFTY daily pivot: ' + pivot.toFixed(2) + '  (H+L+C)/3'
+            : 'NIFTY daily pivot unavailable';
+
         // Day P&L (closed trades + live MTM on open positions)
         var pnl = liveNetPnl(opb);
         var pnlColor = pnl > 0 ? 'var(--accent-green, #34d399)'
@@ -171,6 +187,8 @@
 
         return leadingRule +
             chip('NIFTY', ltpText + chgText, ltpColor) +
+            divider() +
+            '<span style="cursor:help;" title="' + esc(biasTitle) + '">' + chip('BIAS', biasText, biasColor) + '</span>' +
             divider() +
             chip('P&L', fmtInr(pnl), pnlColor);
     }

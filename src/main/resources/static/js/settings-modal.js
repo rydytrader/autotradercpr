@@ -25,7 +25,6 @@
                       '<div class="sm-field"><label>Start Time (HH:mm IST)</label><input type="time" id="sm-vwapStStartTime" step="60"><div class="sm-hint">Earliest entry time. Default 09:15.</div></div>' +
                       '<div class="sm-field"><label>Trading End Time (HH:mm IST)</label><input type="time" id="sm-vwapStTradingEndTime" step="60"><div class="sm-hint">No new entries after. Default 14:45.</div></div>' +
                       '<div class="sm-field"><label>Squareoff Time (HH:mm IST)</label><input type="time" id="sm-vwapStSquareOffTime" step="60"><div class="sm-hint">Hard exit time. Default 15:25.</div></div>' +
-                      '<div class="sm-field"><label>Target Premium (₹)</label><input type="number" id="sm-vwapStTargetPremium" step="1" min="1"><div class="sm-hint">Pick CE + PE closest to this. Default 250.</div></div>' +
                       '<div class="sm-field"><label>Candle Minutes</label><input type="number" id="sm-vwapStCandleMinutes" step="1" min="1"><div class="sm-hint">Signal timeframe. Default 3.</div></div>' +
                       '<div class="sm-field"><label>Supertrend ATR Period</label><input type="number" id="sm-vwapStAtrPeriod" step="1" min="2"><div class="sm-hint">Default 10.</div></div>' +
                       '<div class="sm-field"><label>Supertrend Multiplier</label><input type="number" id="sm-vwapStMultiplier" step="0.1" min="0.1"><div class="sm-hint">ATR × this = band distance. Default 2.0.</div></div>' +
@@ -36,12 +35,9 @@
                       '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline for analytics.</div></div>' +
                       '<div class="sm-field"><label>Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Kill switch at this % daily loss. 0 = off.</div></div>' +
                       '<div class="sm-field"><label>Max Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto = Capital × Risk %.</div></div>' +
-                      '<div class="sm-field"><label>SL Mode</label><select id="sm-vwapStSlBufferMode"><option value="POINTS">POINTS (fixed rupees)</option><option value="ATR">ATR (× multiplier)</option><option value="SUPERTREND">SUPERTREND (trailing)</option></select><div class="sm-hint">POINTS = fixed rupee buffer. ATR = ATR × multiplier. SUPERTREND = ST line, trails up.</div></div>' +
-                      '<div class="sm-field"><label>SL — Points (₹)</label><input type="number" id="sm-vwapStSlBufferPoints" step="0.05" min="0"><div class="sm-hint">POINTS mode. Default 5.0.</div></div>' +
-                      '<div class="sm-field"><label>SL — ATR Multiplier</label><input type="number" id="sm-vwapStSlAtrMultiplier" step="0.05" min="0"><div class="sm-hint">ATR mode. Default 1.0.</div></div>' +
-                      '<div class="sm-field"><label>Max SL (points)</label><input type="number" id="sm-vwapStMaxSlPoints" step="0.5" min="0.5"><div class="sm-hint">Hard cap on SL distance from fill. Default 20.</div></div>' +
-                      '<div class="sm-field"><label>Supertrend Target Mode</label><select id="sm-vwapStSupertrendTargetMode"><option value="FIXED_2X_MAX_SL">FIXED (uses RR ratio)</option><option value="TRAILING">TRAILING (no target, ride the trail)</option></select><div class="sm-hint">Only for SUPERTREND SL. FIXED = fill + RR × actual risk (uses R:R setting). TRAILING has no target.</div></div>' +
-                      '<div class="sm-field"><label>Reward : Risk Ratio</label><input type="number" id="sm-vwapStRewardRiskRatio" step="0.1" min="0.1"><div class="sm-hint">Target = fill + N × risk. Default 2.0.</div></div>' +
+                      '<div class="sm-field sm-full"><label><input type="checkbox" id="sm-vwapStPartialExitEnabled" style="margin-right:6px;vertical-align:middle;">Partial Exit enabled</label><div class="sm-hint">Book part of the position at Partial Exit RR while the remainder trails on ST. Needs ≥ 2 lots.</div></div>' +
+                      '<div class="sm-field"><label>Partial Exit RR</label><input type="number" id="sm-vwapStPartialExitRr" step="0.1" min="0.1"><div class="sm-hint">Book partial when LTP hits fill + RR × risk. Default 1.0.</div></div>' +
+                      '<div class="sm-field"><label>Partial Exit %</label><input type="number" id="sm-vwapStPartialExitPct" step="1" min="1" max="99"><div class="sm-hint">% of qty to book. Rounded down to nearest lot. Default 50.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
@@ -194,7 +190,6 @@
             if (g('sm-vwapStStartTime'))       g('sm-vwapStStartTime').value = d.vwapStStartTime || '09:15';
             if (g('sm-vwapStTradingEndTime'))  g('sm-vwapStTradingEndTime').value = d.vwapStTradingEndTime || '14:45';
             if (g('sm-vwapStSquareOffTime'))   g('sm-vwapStSquareOffTime').value = d.vwapStSquareOffTime || '15:25';
-            if (g('sm-vwapStTargetPremium'))   g('sm-vwapStTargetPremium').value = d.vwapStTargetPremium != null ? d.vwapStTargetPremium : 250;
             if (g('sm-vwapStCandleMinutes'))   g('sm-vwapStCandleMinutes').value = d.vwapStCandleMinutes != null ? d.vwapStCandleMinutes : 3;
             if (g('sm-vwapStAtrPeriod'))       g('sm-vwapStAtrPeriod').value = d.vwapStAtrPeriod != null ? d.vwapStAtrPeriod : 10;
             if (g('sm-vwapStMultiplier'))      g('sm-vwapStMultiplier').value = d.vwapStMultiplier != null ? d.vwapStMultiplier : 2.0;
@@ -209,7 +204,6 @@
             vwapStStartTime:      (g('sm-vwapStStartTime').value || '').trim(),
             vwapStTradingEndTime: (g('sm-vwapStTradingEndTime') ? g('sm-vwapStTradingEndTime').value : '' || '').trim(),
             vwapStSquareOffTime:  (g('sm-vwapStSquareOffTime').value || '').trim(),
-            vwapStTargetPremium:  parseFloat(g('sm-vwapStTargetPremium').value) || 250,
             vwapStCandleMinutes:  parseInt(g('sm-vwapStCandleMinutes').value, 10) || 3,
             vwapStAtrPeriod:      parseInt(g('sm-vwapStAtrPeriod').value, 10) || 10,
             vwapStMultiplier:     parseFloat(g('sm-vwapStMultiplier').value) || 2.0
@@ -222,12 +216,9 @@
         var body = {
             startingCapital:       parseFloat(g('sm-startingCapital').value) || 0,
             portfolioMaxRiskPct:   parseFloat(g('sm-portfolioMaxRiskPct').value) || 0,
-            vwapStSlBufferPoints:  parseFloat(g('sm-vwapStSlBufferPoints').value) || 0,
-            vwapStSlBufferMode:    g('sm-vwapStSlBufferMode') ? g('sm-vwapStSlBufferMode').value : 'POINTS',
-            vwapStSlAtrMultiplier: parseFloat(g('sm-vwapStSlAtrMultiplier') ? g('sm-vwapStSlAtrMultiplier').value : '1.0') || 1.0,
-            vwapStMaxSlPoints:     parseFloat(g('sm-vwapStMaxSlPoints').value) || 20.0,
-            vwapStSupertrendTargetMode: g('sm-vwapStSupertrendTargetMode') ? g('sm-vwapStSupertrendTargetMode').value : 'FIXED_2X_MAX_SL',
-            vwapStRewardRiskRatio: parseFloat(g('sm-vwapStRewardRiskRatio').value) || 2.0
+            vwapStPartialExitEnabled: !!(g('sm-vwapStPartialExitEnabled') && g('sm-vwapStPartialExitEnabled').checked),
+            vwapStPartialExitRr:  parseFloat(g('sm-vwapStPartialExitRr').value) || 1.0,
+            vwapStPartialExitPct: parseFloat(g('sm-vwapStPartialExitPct').value) || 50
         };
         postSettings('/api/settings/risk', body);
     }
@@ -283,12 +274,9 @@
             var pctInput = g('sm-portfolioMaxRiskPct');
             if (capInput) capInput.value = d.startingCapital != null ? d.startingCapital : 1000000;
             if (pctInput) pctInput.value = d.portfolioMaxRiskPct != null ? d.portfolioMaxRiskPct : 0;
-            if (g('sm-vwapStSlBufferPoints'))  g('sm-vwapStSlBufferPoints').value = d.vwapStSlBufferPoints != null ? d.vwapStSlBufferPoints : 5.0;
-            if (g('sm-vwapStSlBufferMode'))    g('sm-vwapStSlBufferMode').value   = d.vwapStSlBufferMode || 'POINTS';
-            if (g('sm-vwapStSlAtrMultiplier')) g('sm-vwapStSlAtrMultiplier').value = d.vwapStSlAtrMultiplier != null ? d.vwapStSlAtrMultiplier : 1.0;
-            if (g('sm-vwapStMaxSlPoints'))     g('sm-vwapStMaxSlPoints').value    = d.vwapStMaxSlPoints    != null ? d.vwapStMaxSlPoints    : 20.0;
-            if (g('sm-vwapStSupertrendTargetMode')) g('sm-vwapStSupertrendTargetMode').value = d.vwapStSupertrendTargetMode || 'FIXED_2X_MAX_SL';
-            if (g('sm-vwapStRewardRiskRatio')) g('sm-vwapStRewardRiskRatio').value = d.vwapStRewardRiskRatio != null ? d.vwapStRewardRiskRatio : 2.0;
+            if (g('sm-vwapStPartialExitEnabled')) g('sm-vwapStPartialExitEnabled').checked = !!d.vwapStPartialExitEnabled;
+            if (g('sm-vwapStPartialExitRr'))  g('sm-vwapStPartialExitRr').value  = d.vwapStPartialExitRr  != null ? d.vwapStPartialExitRr  : 1.0;
+            if (g('sm-vwapStPartialExitPct')) g('sm-vwapStPartialExitPct').value = d.vwapStPartialExitPct != null ? d.vwapStPartialExitPct : 50;
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {
                 updatePortfolioRiskHint(parseFloat(capInput.value) || 0, parseFloat(pctInput && pctInput.value) || 0);
