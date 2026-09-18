@@ -55,6 +55,16 @@ public class RiskSettingsStore {
         volatile int     vwapStCandleMinutes     = 3;       // timeframe for signal candles
         volatile int     vwapStAtrPeriod         = 10;      // Supertrend ATR period
         volatile double  vwapStMultiplier        = 3.0;     // Supertrend ATR multiplier — classic 3.0 (wider bands, smoother, fewer whipsaw flips)
+        /** When true, gate CE/PE sells on NIFTY near-month futures ST(10,3)
+         *  direction — skip CE when futures bullish, PE when futures bearish.
+         *  Fail-closed: if the futures ST reading is unavailable, block all
+         *  entries rather than trade blind. Off by default. */
+        volatile boolean vwapStFuturesBiasFilterEnabled = false;
+        /** Reward-to-risk ratio for the fixed target. 0.0 disables the target
+         *  entirely — trade rides the trailing SL to the end. 2.0 = classic
+         *  1:2 RR (target = fill − 2 × initial risk). Fires on 3-min bar close
+         *  ≤ target; whichever hits first (target or trail) wins. */
+        volatile double  vwapStRewardRiskRatio = 0.0;
         // Daily bias filter — when enabled, skip CE entries in bearish bias
         // (NIFTY < daily pivot) and PE entries in bullish bias (NIFTY > pivot).
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
@@ -415,6 +425,8 @@ public class RiskSettingsStore {
     public int     getVwapStCandleMinutes()    { return cfg().vwapStCandleMinutes; }
     public int     getVwapStAtrPeriod()        { return cfg().vwapStAtrPeriod; }
     public double  getVwapStMultiplier()       { return cfg().vwapStMultiplier; }
+    public boolean isVwapStFuturesBiasFilterEnabled() { return cfg().vwapStFuturesBiasFilterEnabled; }
+    public double  getVwapStRewardRiskRatio()  { return cfg().vwapStRewardRiskRatio; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getStartingCapital()      { return cfg().startingCapital; }
@@ -609,6 +621,8 @@ public class RiskSettingsStore {
     public void setVwapStCandleMinutes(int v)       { cfg().vwapStCandleMinutes = Math.max(1, v); }
     public void setVwapStAtrPeriod(int v)           { cfg().vwapStAtrPeriod = Math.max(2, v); }
     public void setVwapStMultiplier(double v)       { cfg().vwapStMultiplier = Math.max(0.1, v); }
+    public void setVwapStFuturesBiasFilterEnabled(boolean v) { cfg().vwapStFuturesBiasFilterEnabled = v; }
+    public void setVwapStRewardRiskRatio(double v)  { cfg().vwapStRewardRiskRatio = Math.max(0.0, v); }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setStartingCapital(double v)      { cfg().startingCapital = Math.max(0, v); }
@@ -774,6 +788,8 @@ public class RiskSettingsStore {
             upsert("vwapStCandleMinutes",             String.valueOf(c.vwapStCandleMinutes));
             upsert("vwapStAtrPeriod",                 String.valueOf(c.vwapStAtrPeriod));
             upsert("vwapStMultiplier",                String.valueOf(c.vwapStMultiplier));
+            upsert("vwapStFuturesBiasFilterEnabled",  String.valueOf(c.vwapStFuturesBiasFilterEnabled));
+            upsert("vwapStRewardRiskRatio",           String.valueOf(c.vwapStRewardRiskRatio));
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("startingCapital",      String.valueOf(c.startingCapital));
@@ -980,9 +996,11 @@ public class RiskSettingsStore {
                     case "vwapStCandleMinutes"           -> c.vwapStCandleMinutes     = Math.max(1, Integer.parseInt(v));
                     case "vwapStAtrPeriod"               -> c.vwapStAtrPeriod         = Math.max(2, Integer.parseInt(v));
                     case "vwapStMultiplier"              -> c.vwapStMultiplier        = Math.max(0.1, Double.parseDouble(v));
-                    // Retired target-mode / RR keys — silently consume old rows.
-                    case "vwapStRewardRiskRatio",
-                         "vwapStSupertrendTargetMode"    -> { /* retired */ }
+                    case "vwapStFuturesBiasFilterEnabled" -> c.vwapStFuturesBiasFilterEnabled = Boolean.parseBoolean(v);
+                    case "vwapStExitOnVwapCloseEnabled"   -> { /* retired — SL now uses min(VWAP, ST_line) natively */ }
+                    case "vwapStRewardRiskRatio"          -> c.vwapStRewardRiskRatio   = Math.max(0.0, Double.parseDouble(v));
+                    case "vwapStMinSlPoints"              -> { /* retired — replaced by unconditional VWAP-close exit */ }
+                    case "vwapStSupertrendTargetMode"     -> { /* retired */ }
                     // Retired partial-exit keys — silently consume legacy rows.
                     case "vwapStPartialExitEnabled",
                          "vwapStPartialExitRr",

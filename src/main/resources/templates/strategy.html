@@ -143,7 +143,7 @@
     <div class="page-header fade-in" style="margin-bottom:18px;">
         <div>
             <div class="page-title">Strategy</div>
-            <div class="page-subtitle">VWAP + SUPERTREND &middot; NIFTY weekly options, ATM pair around ₹250 premium, 3-min chart</div>
+            <div class="page-subtitle">VWAP + SUPERTREND &middot; Options SELLING · NIFTY weekly ATM pair · 3-min chart</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -157,22 +157,24 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot"></span> Overview</h2>
         <p class="doc-p">
-            Options-buying strategy on NIFTY weekly CE + PE. On the first NIFTY spot tick after
-            <strong>09:15 IST</strong>, the bot captures the spot open, subscribes ±N strikes,
-            and picks the CE and PE trading closest to the configured
-            <strong>target premium (default ₹250)</strong> as the tracked pair. Both legs are
-            monitored independently on their own 3-min chart; either can be in position at the
-            same time.
+            Options-<strong>selling</strong> strategy on NIFTY weekly CE + PE. On the first NIFTY
+            spot tick after <strong>09:15 IST</strong>, the bot captures the spot open, computes
+            <code>atmStrike = round(spot / 50) × 50</code>, and picks the <strong>ATM CE and ATM
+            PE</strong> as the tracked pair — no LTP scan, no premium proximity. Both legs are
+            monitored independently on their own 3-min chart; either can be short at the same
+            time (short straddle if both fire).
         </p>
         <p class="doc-p">
-            Entries fire on either a <strong>VWAP breakout</strong> (bar straddles VWAP and closes
-            above with Supertrend up) or a <strong>Supertrend flip</strong> (ST goes red→green
-            while price is above VWAP). <strong>SL is the Supertrend line</strong> — trailed up on
-            every 3-min close where ST rises, exit fires only when a 3-min bar closes below ST
-            (ST flip down). Wicks below the line are ignored. Target is
-            <code>fill + RR × risk</code> using the initial SL, or RIDE (no fixed target, exit
-            only on ST flip). Unlimited re-entries per leg; a hard timed squareoff flattens
-            everything before market close.
+            Entries fire on either a <strong>VWAP breakdown</strong> (bar straddles VWAP and
+            closes below with Supertrend down) or a <strong>Supertrend flip down</strong> (ST
+            goes green→red while price is below VWAP). Order side is <strong>SELL to open</strong>
+            (MARGIN product). <strong>SL = Supertrend line at entry</strong> (finalUpper —
+            above fill) — trailed <em>down</em> on every 3-min close where ST descends. Exit
+            fires only when a 3-min bar <strong>closes above the current SL</strong>. Wicks
+            are ignored (bar-close driven). No fixed target unless RR is set. Unlimited
+            re-entries per leg (a stopped trade re-arms via VWAP_BREAKDOWN or ST-flip on any
+            subsequent qualifying bar); hard timed squareoff flattens everything before
+            market close.
         </p>
     </div>
 
@@ -181,36 +183,32 @@
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-amber, #fbbf24);"></span> Session flow</h2>
         <div style="margin-top:4px;">
             <div class="phase-row">
-                <div class="phase-tag">09:10</div>
-                <div class="phase-desc"><strong>Pre-market subscribe.</strong> Bot pulls NIFTY spot's
-                    prev close, computes an anchor ATM, and subscribes ±N strikes for both CE and PE.
-                    LTPs start flowing at 09:15 open with no lag.</div>
+                <div class="phase-tag">09:13</div>
+                <div class="phase-desc"><strong>Pre-market subscribe.</strong> Bot fetches NIFTY spot's
+                    previous daily bar via Fyers <code>/data/history</code> to derive the anchor ATM
+                    from prev close, and subscribes ±N strikes for both CE and PE. In parallel, the
+                    near-month NIFTY futures contract is subscribed and its Supertrend(10, 3) on 3-min
+                    bars drives the header BIAS chip. Fires right after NSE's 09:12 pre-open window closes.</div>
             </div>
             <div class="phase-row">
                 <div class="phase-tag">09:15</div>
-                <div class="phase-desc"><strong>Spot open captured.</strong> First NIFTY tick sets
-                    <code>spotOpen</code>. If actual ATM drifts outside the pre-subscribed range
-                    (a gap open), missing strikes are subscribed on the fly.</div>
-            </div>
-            <div class="phase-row">
-                <div class="phase-tag">09:15 :15</div>
-                <div class="phase-desc"><strong>Pair pick + warmup.</strong> Once LTPs have flowed for
-                    ~15 s, the CE and PE nearest to <code>Target Premium</code> are chosen.
-                    Historical 1-min bars from Fyers are prepended so Supertrend ATR is valid from
-                    bar 1 today.</div>
+                <div class="phase-desc"><strong>Spot open + ATM pair pick.</strong> First NIFTY
+                    tick sets <code>spotOpen</code> and <code>atmStrike = round(spot / 50) × 50</code>.
+                    ATM CE and ATM PE are chosen immediately — no LTP scan, no wait. Historical
+                    1-min bars from Fyers are prepended so Supertrend ATR is valid from bar 1 today.
+                    FSM → <code>ARMED</code>.</div>
             </div>
             <div class="phase-row">
                 <div class="phase-tag">09:18 →</div>
                 <div class="phase-desc"><strong>Bar-by-bar evaluation.</strong> Every 3-min close for
-                    both legs is checked against both entry pathways. SL (ST flip down) is also
-                    evaluated on 3-min close. LTP ticks only fire the target exit if FIXED RR
-                    target mode is set.</div>
+                    both legs is checked against both entry pathways. SL is also evaluated on the
+                    same 3-min close (bar close > slPrice → exit). No tick-level exits.</div>
             </div>
             <div class="phase-row">
                 <div class="phase-tag">15:25</div>
-                <div class="phase-desc"><strong>Timed squareoff.</strong> Default. Any open leg is
-                    MARKET sold; state transitions to <code>DONE_FOR_DAY</code>. Configurable via
-                    <code>vwapStSquareOffTime</code>.</div>
+                <div class="phase-desc"><strong>Timed squareoff.</strong> Default. Any open short
+                    leg is bought back at market; state transitions to <code>DONE_FOR_DAY</code>.
+                    Configurable via <code>vwapStSquareOffTime</code>.</div>
             </div>
         </div>
     </div>
@@ -223,32 +221,32 @@
             opens the position; both cannot fire on the same bar.
         </p>
         <div class="setup-grid">
-            <div class="setup-card bull">
-                <div class="setup-tag">VWAP_BREAKOUT</div>
-                <div class="setup-name">VWAP bounce + ST aligned</div>
+            <div class="setup-card bear">
+                <div class="setup-tag">VWAP_BREAKDOWN</div>
+                <div class="setup-name">VWAP breakdown + ST aligned</div>
                 <div class="setup-body">
                     Bar's <strong>low &le; VWAP &le; high</strong> (range straddled VWAP) AND
-                    <strong>close &gt; VWAP</strong> AND Supertrend is <strong>up</strong>. The
-                    candle wick tested VWAP as support and the ST trend already confirms the
-                    upside. Bar-body color is irrelevant.
+                    <strong>close &lt; VWAP</strong> AND Supertrend is <strong>down</strong>.
+                    Premium wicked VWAP as resistance and rolled over. ST already confirms the
+                    downside. Sell that option.
                 </div>
             </div>
-            <div class="setup-card bull">
-                <div class="setup-tag">SUPER_TREND_FLIP</div>
-                <div class="setup-name">Fresh red→green ST flip</div>
+            <div class="setup-card bear">
+                <div class="setup-tag">SUPER_TREND_FLIP_DOWN</div>
+                <div class="setup-name">Fresh green→red ST flip</div>
                 <div class="setup-body">
-                    Previous bar's ST was <strong>down</strong> AND this bar's ST is
-                    <strong>up</strong> AND <strong>close &gt; VWAP</strong>. The scenario:
-                    price trading above VWAP, retraces to VWAP for support, then reversal candle
-                    breaks through the red ST band and closes beyond it — flipping ST to green.
-                    Enter at that close.
+                    Previous bar's ST was <strong>up</strong> AND this bar's ST is
+                    <strong>down</strong> AND <strong>close &lt; VWAP</strong>. Premium had
+                    been in an uptrend, retested VWAP as support, then broke through and
+                    closed below — ST flips green→red. Sell at that close.
                 </div>
             </div>
         </div>
         <p class="doc-p" style="margin-top:10px;">
-            <strong>Skipped entries are logged.</strong> When a VWAP breakout condition is met
-            but ST is still red, an <code>[WARNING] entry SKIPPED — VWAP breakout but Supertrend
-            not aligned</code> event surfaces in the log so you can audit near-misses.
+            <strong>Skipped entries are logged.</strong> When a VWAP breakdown condition is met
+            but ST is still green, an <code>[WARNING] entry SKIPPED — VWAP breakdown but
+            Supertrend not aligned</code> event surfaces in the log so you can audit
+            near-misses.
         </p>
     </div>
 
@@ -256,36 +254,39 @@
     <div class="doc-section fade-in">
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--accent-red, #f87171);"></span> Exit rules</h2>
         <p class="doc-p">
-            Bar-close-driven SL, tick-driven target (FIXED RR only). All exits are MARKET sells.
+            Bar-close-driven SL only. No tick-level exits. No fixed target — every exit path is
+            a market buy-back to close the short.
         </p>
-        <h3 class="doc-h3">Stop loss — Supertrend trail</h3>
+        <h3 class="doc-h3">Stop loss — Supertrend, trailed down</h3>
         <ul class="doc-list">
-            <li>Initial SL = <strong>Supertrend line at entry</strong>. No fixed rupee buffer,
-                no max-SL cap.</li>
-            <li>On every 3-min close where ST is still up and the line has risen, SL ratchets up
-                to the new line (never widens). One <code>[INFO] SL trailed</code> event per
-                update.</li>
-            <li>Exit fires when a <strong>3-min bar closes below the ST line</strong> (ST flips
-                down). Wicks below the line during bar formation are ignored — only the close
-                matters. Reason tag: <code>TRAILING_SL_HIT</code> if the trail had moved SL
-                above initial, else <code>SL_HIT</code>.</li>
+            <li>Initial SL = <strong>Supertrend line at entry</strong> (finalUpper — ABOVE
+                fill for shorts). No fixed rupee buffer, no max-SL cap.</li>
+            <li>On every 3-min close where ST is still down and the line has fallen, SL
+                ratchets DOWN to the new line (never widens). One <code>[INFO] SL trailed</code>
+                event per update. Trail can descend BELOW fill on a winning trade — that
+                just locks in more profit.</li>
+            <li>Exit fires when a <strong>3-min bar closes above the current SL</strong>.
+                Wicks are ignored (bar-close driven). Reason tag: <code>TRAILING_SL_HIT</code>
+                if the trail had moved SL below initial (locked profit), else
+                <code>SL_HIT</code>.</li>
+            <li><strong>Self-healing re-entry</strong> — a stopped trade re-arms via the
+                <code>VWAP_BREAKDOWN</code> or <code>SUPER_TREND_FLIP_DOWN</code> pathway on
+                the next qualifying bar.</li>
         </ul>
         <h3 class="doc-h3">Target</h3>
         <ul class="doc-list">
-            <li><strong>FIXED RR</strong> — target = <code>fill + RR × (fill − initialSl)</code>.
-                Anchored to initial risk; doesn't move even as the SL trails up. Fires on tick
-                (LTP &ge; target).</li>
-            <li><strong>RIDE</strong> — no fixed target. The only exit is the ST flip down on a
-                3-min close.</li>
+            <li>No fixed target — the position RIDES the trailing SL. Theta decay + directional
+                move against the sold leg is where the profit comes from.</li>
         </ul>
         <h3 class="doc-h3">Squareoff</h3>
         <ul class="doc-list">
             <li>At <code>Squareoff Time</code> (default <strong>15:25 IST</strong>) every open leg
-                is flattened at market. Also catches stuck <code>PENDING_ENTRY</code> as a
+                is bought back at market. Also catches stuck <code>PENDING_ENTRY</code> as a
                 defensive squareoff.</li>
-            <li><strong>Portfolio risk budget</strong> — when combined live net P&amp;L across
-                enabled strategies breaches ±<code>Max Daily Risk</code>, everything flattens and
-                FSM transitions to <code>DONE_FOR_DAY</code>.</li>
+            <li><strong>Portfolio loss kill switch</strong> — when combined live net P&amp;L
+                across enabled strategies drops below <code>−Max Daily Risk</code>, everything
+                flattens and FSM transitions to <code>DONE_FOR_DAY</code>. Loss side only —
+                profits ride freely.</li>
         </ul>
     </div>
 
@@ -295,10 +296,11 @@
         <ul class="doc-list">
             <li><strong>Quantity per leg</strong> = <code>Lots per Leg × 65</code>. NIFTY lot size
                 is fixed at 65.</li>
-            <li><strong>Order type</strong> — Fyers <code>MARKET</code>, side <code>BUY</code> on
-                entry and <code>SELL</code> on every exit path.</li>
-            <li><strong>Product</strong> — <code>INTRADAY</code>. Both legs (CE + PE) may be open
-                simultaneously; each sized independently.</li>
+            <li><strong>Order type</strong> — Fyers <code>MARKET</code>, side <code>SELL</code>
+                (−1) on entry and <code>BUY</code> (+1) on every exit path (buy back to close).</li>
+            <li><strong>Product</strong> — <code>MARGIN</code>. Options SELLING requires SPAN +
+                Exposure margin (~₹1-1.5 L per lot for ATM NIFTY weekly). Both legs (CE + PE)
+                may be short simultaneously = short straddle; sized independently.</li>
         </ul>
     </div>
 
@@ -337,18 +339,15 @@
         <div class="band-grid">
             <div class="band-row"><span class="left">Strategy enabled</span><span class="right">kill switch (VWAP + Supertrend tab)</span></div>
             <div class="band-row"><span class="left">Lots per Leg</span><span class="right">1</span></div>
-            <div class="band-row"><span class="left">Target Premium (₹)</span><span class="right">250</span></div>
-            <div class="band-row"><span class="left">Strikes Range (±)</span><span class="right">20 strikes</span></div>
+            <div class="band-row"><span class="left">Strikes Range (±)</span><span class="right">20 strikes (pre-market subscription)</span></div>
             <div class="band-row"><span class="left">Candle Minutes</span><span class="right">3</span></div>
             <div class="band-row"><span class="left">Supertrend ATR / Multiplier</span><span class="right">10 / 3.0</span></div>
             <div class="band-row"><span class="left">Start Time / Squareoff Time</span><span class="right">09:15 / 15:25 IST</span></div>
-            <div class="band-row"><span class="left">Target Mode</span><span class="right">FIXED RR (default) or RIDE</span></div>
-            <div class="band-row"><span class="left">Reward : Risk Ratio</span><span class="right">2.0 (1:2 RR)</span></div>
-            <div class="band-row"><span class="left">Max Daily Risk (%)</span><span class="right">portfolio budget, symmetric loss/profit cap</span></div>
+            <div class="band-row"><span class="left">Max Daily Risk (%)</span><span class="right">portfolio loss kill switch</span></div>
         </div>
         <p class="doc-p" style="margin-top:8px;">
             Toggling <strong>Strategy enabled</strong> OFF only blocks new entries — an open
-            position keeps being managed to SL / target / squareoff.
+            short position keeps being managed to SL / squareoff.
         </p>
     </div>
 
@@ -357,14 +356,21 @@
         <h2 class="doc-h2"><span class="doc-h2-dot" style="background:var(--text-muted);"></span> What's NOT in this strategy</h2>
         <ul class="doc-list">
             <li>No GDFL — Fyers HSM WebSocket is the sole market-data source.</li>
-            <li>No POINTS / ATR SL modes — SL is always the Supertrend line.</li>
-            <li>No max-SL cap — actual loss on exit = <code>fill − (close of ST-flip-down bar)</code>,
-                which can exceed the initial displayed risk.</li>
-            <li>No tick-level SL — wicks below ST are ignored, only 3-min bar close matters.</li>
-            <li>No scanner, watchlist, or NIFTY-100 rotation — only the CE + PE chosen at 09:15
-                are traded.</li>
-            <li>No re-entry cooldown — every fresh signal is eligible; the leg-state gate is the
-                only limiter.</li>
+            <li>No fixed target — every winner rides the trailing SL until it hits.</li>
+            <li>No POINTS / ATR / max-SL cap modes — SL is always the Supertrend line.</li>
+            <li>No max-SL cap — actual loss on exit = <code>(close of exit bar) − fill</code>,
+                which can exceed the initial displayed risk on wide bars.</li>
+            <li>No tick-level SL — wicks above the SL line are ignored, only 3-min bar close
+                matters.</li>
+            <li>No partial exit — one-shot ride until SL or squareoff.</li>
+            <li>No premium-based strike selection — always ATM at 09:15 spot open.</li>
+            <li>Directional bias filter is <em>opt-in</em> — when enabled in settings, CE sells
+                are skipped while NIFTY near-month futures Supertrend(10, 3) is bullish and PE sells
+                are skipped while it's bearish. Fail-closed: if futures data is unavailable, all
+                entries are blocked rather than firing blind. When disabled, trades fire regardless
+                and the BIAS chip is informational only.</li>
+            <li>No portfolio profit cap — only the loss side kills the day.</li>
+            <li>No re-entry cooldown — every fresh signal on a WAITING leg is eligible.</li>
         </ul>
     </div>
 

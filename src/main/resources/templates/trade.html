@@ -717,11 +717,35 @@
                 var strategyId = 'vwap-supertrend';
                 var entryPx = Number(p.entryPrice || 0);
                 var slPx    = Number(p.slPrice || 0);
+                var tgtPx   = Number(p.targetLevel || 0);
+                var qty     = Number(p.qty || 0);
                 // Yellow ▲ marker when the SL has trailed (moved from initial
                 // in the position's favor).
                 var trailMark = p.slTrailed
                     ? ' <span title="SL trailed from initial" style="color:#fbbf24;font-size:0.7em;">▲</span>'
                     : '';
+                // Tooltips: potential loss on SL cell, potential profit on
+                // target cell. For SHORTS: loss = (SL − entry) × qty (SL is
+                // above entry), profit = (entry − target) × qty (target is
+                // below entry). If SL has trailed BELOW entry, the "loss"
+                // becomes a locked-in profit — surface that too.
+                var slTooltip;
+                if (slPx > 0 && entryPx > 0 && qty > 0) {
+                    var slDelta = (slPx - entryPx) * qty;   // >0 = still a loss; <0 = locked profit
+                    var slSign  = slDelta >= 0 ? 'Potential loss' : 'Locked profit';
+                    slTooltip = slSign + ': ' + fmtRs(Math.abs(slDelta))
+                        + '   (' + fmtRs(slPx) + ' − ' + fmtRs(entryPx) + ') × ' + qty;
+                } else {
+                    slTooltip = 'SL not set';
+                }
+                var tgtTooltip;
+                if (tgtPx > 0 && entryPx > 0 && qty > 0) {
+                    var tgtGain = (entryPx - tgtPx) * qty;
+                    tgtTooltip = 'Potential profit: ' + fmtRs(tgtGain)
+                        + '   (' + fmtRs(entryPx) + ' − ' + fmtRs(tgtPx) + ') × ' + qty;
+                } else {
+                    tgtTooltip = 'No fixed target — riding the trail';
+                }
                 return '<tr>'
                     + '<td>' + (i + 1) + '</td>'
                     + '<td class="text-center">' + strategyPill(strategyId) + '</td>'
@@ -729,8 +753,8 @@
                     + '<td class="text-right">' + escapeHtml(String(p.qty)) + '</td>'
                     + '<td class="text-center">' + escapeHtml(p.setup || p.side || '') + '</td>'
                     + '<td class="text-right">' + (entryPx  > 0 ? fmtRs(entryPx)  : '—') + '</td>'
-                    + '<td class="text-right" style="color:var(--accent-red, #f87171);">' + (slPx > 0 ? fmtRs(slPx) + trailMark : '—') + '</td>'
-                    + '<td class="text-right" style="color:var(--accent-green, #34d399);">Trail</td>'
+                    + '<td class="text-right" title="' + escapeHtml(slTooltip) + '" style="cursor:help;color:var(--accent-red, #f87171);">' + (slPx > 0 ? fmtRs(slPx) + trailMark : '—') + '</td>'
+                    + '<td class="text-right" title="' + escapeHtml(tgtTooltip) + '" style="cursor:help;color:var(--accent-green, #34d399);">' + (tgtPx > 0 ? fmtRs(tgtPx) : 'Trail') + '</td>'
                     + '<td class="text-right">' + fmtRs(p.ltp) + '</td>'
                     + '<td class="text-right ' + pnlClass(pnl) + '" style="font-weight:700;">' + fmtRs(pnl) + '</td>'
                     + '<td class="text-center"><button class="squareoff-btn" style="padding:4px 10px;font-size:0.65rem;" onclick="squareOffRow(\'' + escapeHtml(p.symbol).replace(/'/g, "&#39;") + '\',\'' + strategyId + '\')">×</button></td>'

@@ -46,4 +46,34 @@ public final class NiftyExpiryResolver {
         }
         return tue;
     }
+
+    /** NIFTY monthly futures expire on the LAST Tuesday of the calendar month
+     *  (under NSE's new derivatives calendar). Rules:
+     *  <ol>
+     *    <li>Find the current month's last Tuesday.</li>
+     *    <li>If it's a holiday, walk backward to the prior trading day.</li>
+     *    <li>If {@code today} is strictly after the resolved last Tuesday,
+     *        the near-month contract has already expired — roll to next
+     *        month's last Tuesday (same rules).</li>
+     *  </ol>
+     */
+    public static LocalDate currentMonthlyFuturesExpiry(LocalDate today, MarketHolidayService holidays) {
+        if (today == null) throw new IllegalArgumentException("today is null");
+        LocalDate expiry = lastTuesdayOfMonth(today.getYear(), today.getMonthValue(), holidays);
+        if (today.isAfter(expiry)) {
+            LocalDate nextMonth = today.plusMonths(1);
+            expiry = lastTuesdayOfMonth(nextMonth.getYear(), nextMonth.getMonthValue(), holidays);
+        }
+        return expiry;
+    }
+
+    private static LocalDate lastTuesdayOfMonth(int year, int month, MarketHolidayService holidays) {
+        LocalDate d = LocalDate.of(year, month, 1).plusMonths(1).minusDays(1);
+        while (d.getDayOfWeek() != DayOfWeek.TUESDAY) d = d.minusDays(1);
+        if (holidays != null) {
+            int guard = 10;
+            while (guard-- > 0 && holidays.isHoliday(d)) d = d.minusDays(1);
+        }
+        return d;
+    }
 }

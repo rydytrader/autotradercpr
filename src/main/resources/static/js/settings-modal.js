@@ -28,6 +28,8 @@
                       '<div class="sm-field"><label>Candle Minutes</label><input type="number" id="sm-vwapStCandleMinutes" step="1" min="1"><div class="sm-hint">Signal timeframe. Default 3.</div></div>' +
                       '<div class="sm-field"><label>Supertrend ATR Period</label><input type="number" id="sm-vwapStAtrPeriod" step="1" min="2"><div class="sm-hint">Default 10.</div></div>' +
                       '<div class="sm-field"><label>Supertrend Multiplier</label><input type="number" id="sm-vwapStMultiplier" step="0.1" min="0.1"><div class="sm-hint">ATR × this = band distance. Default 2.0.</div></div>' +
+                      '<div class="sm-field"><label>Reward:Risk Target</label><input type="number" id="sm-vwapStRewardRiskRatio" step="0.1" min="0" placeholder="0 = disabled"><div class="sm-hint">Fixed target = fill − RR × initial risk. E.g. 2.0 = classic 1:2 RR. 0 = disabled (ride the trail).</div></div>' +
+                      '<div class="sm-field sm-full"><label><input type="checkbox" id="sm-vwapStFuturesBiasFilterEnabled" style="margin-right:6px;vertical-align:middle;">NIFTY Futures Bias Filter enabled</label><div class="sm-hint">Skip CE sells when NIFTY futures Supertrend is bullish; skip PE when bearish. Uses ST(10, 3) on 3-min bars of the near-month futures. Fail-closed if futures data unavailable.</div></div>' +
                     '</div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
@@ -190,6 +192,8 @@
             if (g('sm-vwapStCandleMinutes'))   g('sm-vwapStCandleMinutes').value = d.vwapStCandleMinutes != null ? d.vwapStCandleMinutes : 3;
             if (g('sm-vwapStAtrPeriod'))       g('sm-vwapStAtrPeriod').value = d.vwapStAtrPeriod != null ? d.vwapStAtrPeriod : 10;
             if (g('sm-vwapStMultiplier'))      g('sm-vwapStMultiplier').value = d.vwapStMultiplier != null ? d.vwapStMultiplier : 2.0;
+            if (g('sm-vwapStRewardRiskRatio')) g('sm-vwapStRewardRiskRatio').value = d.vwapStRewardRiskRatio != null ? d.vwapStRewardRiskRatio : 0;
+            if (g('sm-vwapStFuturesBiasFilterEnabled')) g('sm-vwapStFuturesBiasFilterEnabled').checked = !!d.vwapStFuturesBiasFilterEnabled;
         }).catch(function() {});
     }
 
@@ -203,7 +207,9 @@
             vwapStSquareOffTime:  (g('sm-vwapStSquareOffTime').value || '').trim(),
             vwapStCandleMinutes:  parseInt(g('sm-vwapStCandleMinutes').value, 10) || 3,
             vwapStAtrPeriod:      parseInt(g('sm-vwapStAtrPeriod').value, 10) || 10,
-            vwapStMultiplier:     parseFloat(g('sm-vwapStMultiplier').value) || 2.0
+            vwapStMultiplier:     parseFloat(g('sm-vwapStMultiplier').value) || 2.0,
+            vwapStRewardRiskRatio: parseFloat(g('sm-vwapStRewardRiskRatio').value) || 0,
+            vwapStFuturesBiasFilterEnabled: !!(g('sm-vwapStFuturesBiasFilterEnabled') && g('sm-vwapStFuturesBiasFilterEnabled').checked)
         };
         postSettings('/api/settings/risk', body);
     }
@@ -212,7 +218,7 @@
         var g = id => document.getElementById(id);
         var body = {
             startingCapital:       parseFloat(g('sm-startingCapital').value) || 0,
-            portfolioMaxRiskPct:   parseFloat(g('sm-portfolioMaxRiskPct').value) || 0,
+            portfolioMaxRiskPct:   parseFloat(g('sm-portfolioMaxRiskPct').value) || 0
         };
         postSettings('/api/settings/risk', body);
     }

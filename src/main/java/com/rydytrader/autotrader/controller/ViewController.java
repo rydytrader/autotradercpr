@@ -5,6 +5,7 @@ import com.rydytrader.autotrader.entity.AppUser;
 import com.rydytrader.autotrader.repository.AppUserRepository;
 import com.rydytrader.autotrader.service.LoginService;
 import com.rydytrader.autotrader.service.MarketDataService;
+import com.rydytrader.autotrader.service.NiftyFuturesBiasService;
 import com.rydytrader.autotrader.service.OrderEventService;
 import com.rydytrader.autotrader.service.PollingService;
 import com.rydytrader.autotrader.service.strategy.VwapSupertrendStrategy;
@@ -35,6 +36,7 @@ public class ViewController {
     private final AppUserRepository userRepo;
     private final PasswordEncoder   passwordEncoder;
     private final ObjectProvider<VwapSupertrendStrategy> strategyProvider;
+    private final ObjectProvider<NiftyFuturesBiasService> futuresBiasProvider;
 
     public ViewController(TokenStore tokenStore,
                            PollingService pollingService,
@@ -44,7 +46,8 @@ public class ViewController {
                            MarketDataService marketDataService,
                            AppUserRepository userRepo,
                            PasswordEncoder passwordEncoder,
-                           ObjectProvider<VwapSupertrendStrategy> strategyProvider) {
+                           ObjectProvider<VwapSupertrendStrategy> strategyProvider,
+                           ObjectProvider<NiftyFuturesBiasService> futuresBiasProvider) {
         this.tokenStore        = tokenStore;
         this.pollingService    = pollingService;
         this.loginService      = loginService;
@@ -54,6 +57,7 @@ public class ViewController {
         this.userRepo          = userRepo;
         this.passwordEncoder   = passwordEncoder;
         this.strategyProvider  = strategyProvider;
+        this.futuresBiasProvider = futuresBiasProvider;
     }
 
     // ── ROOT ────────────────────────────────────────────────────────────────
@@ -100,6 +104,13 @@ public class ViewController {
                     // from 09:15 without a full restart.
                     VwapSupertrendStrategy strategy = strategyProvider.getIfAvailable();
                     if (strategy != null) strategy.reWarmupChosenLegs();
+                    // Re-warm the NIFTY futures bias service the same way. If
+                    // /data/history was failing with code -16 pre-login, the
+                    // service is stuck at "warming up"; the fresh token lets
+                    // it fetch bars and arm ST without waiting on the periodic
+                    // retry.
+                    NiftyFuturesBiasService biasService = futuresBiasProvider.getIfAvailable();
+                    if (biasService != null) biasService.reWarmupAfterTokenRefresh();
                 } catch (Exception e) {
                     log.error("Error starting services after Fyers login: {}", e.getMessage());
                 }

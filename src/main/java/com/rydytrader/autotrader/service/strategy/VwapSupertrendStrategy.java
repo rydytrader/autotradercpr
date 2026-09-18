@@ -97,6 +97,14 @@ public class VwapSupertrendStrategy implements Strategy {
     private final ObjectProvider<OrderEventService> orderEventServiceProvider;
     private final StrategyTradeRepository tradeRepository;
 
+    /** NIFTY near-month futures Supertrend tracker — drives the directional
+     *  bias filter that blocks CE sells in a bullish market and PE sells in a
+     *  bearish one. Injected lazily so its @PostConstruct boot doesn't force
+     *  a startup-order cycle with the strategy's own boot(). */
+    @org.springframework.beans.factory.annotation.Autowired
+    @org.springframework.context.annotation.Lazy
+    private com.rydytrader.autotrader.service.NiftyFuturesBiasService futuresBiasService;
+
     enum FsmState { BOOT, STRIKES_SUBSCRIBING, ARMED, DONE_FOR_DAY }
     enum LegState { WAITING, PENDING_ENTRY, IN_POSITION }
 
@@ -130,6 +138,9 @@ public class VwapSupertrendStrategy implements Strategy {
          *  this value, then onBarClose trails it upward on each 3-min close
          *  where ST is still up and its line has risen. */
         volatile double   stLineAtEntry;
+        /** Bar VWAP at the moment fireEntry was called — kept for diagnostics
+         *  and event-log context. Not used in the SL calc (SL is pure ST). */
+        volatile double   vwapAtEntry;
         /** Which pathway triggered this leg's current entry — 'VWAP_BOUNCE'
          *  or 'ST_FLIP'. Persisted with the trade row on exit. */
         volatile String   entryReason;
@@ -144,6 +155,8 @@ public class VwapSupertrendStrategy implements Strategy {
             qty = 0;
             entryBarStartMs = 0;
             entryReason = null;
+            vwapAtEntry = 0;
+            stLineAtEntry = 0;
             // previousStUp intentionally NOT reset — it's a running signal
             // tracker across bars, not a per-position field.
         }
@@ -174,11 +187,6 @@ public class VwapSupertrendStrategy implements Strategy {
      *  load time to detect state that carried over from a prior trading day
      *  through a periodic save that happened past IST midnight. */
     private volatile String sessionDate = "";
-    /** NIFTY daily floor pivot P = (prevH + prevL + prevC) / 3, computed once
-     *  at pre-market subscribe. 0 until fetched. Drives the daily-bias filter:
-     *  spot > pivot → BULLISH (allow CE, skip PE); spot < pivot → BEARISH
-     *  (allow PE, skip CE). Only enforced when vwapStBiasFilterEnabled. */
-    private volatile double niftyPivot = 0;
     /** Total closed trades today for liveNetPnlToday accumulation. */
     private final AtomicReference<Double> realisedPnlToday = new AtomicReference<>(0.0);
     private final Map<Long, ClosedTrade> tradesTodayById = new ConcurrentHashMap<>();
@@ -256,6 +264,14 @@ public class VwapSupertrendStrategy implements Strategy {
             // Supertrend and no ST line on the chart after a mid-day restart.
             if (ceLeg.chosenSymbol != null) warmupHistory(ceLeg.chosenSymbol, "CE");
             if (peLeg.chosenSymbol != null) warmupHistory(peLeg.chosenSymbol, "PE");
+            // Seed each leg's previousStUp from the LAST closed 3-min bar's ST
+            // direction. Without this seed, the first bar close after any
+            // restart cannot detect a ST flip — stFlipDown needs
+            // previousStUp=true AND stUp=false, but previousStUp starts null.
+            // Result: a green→red flip that happens on the first bar after
+            // restart never fires an entry.
+            if (ceLeg.chosenSymbol != null) seedPreviousStUp(ceLeg, "CE");
+            if (peLeg.chosenSymbol != null) seedPreviousStUp(peLeg, "PE");
             // Rehydrate today's closed trades ring from the DB — persistTradeRow
             // wrote each exit to strategy_trades, but tradesTodayById is
             // in-memory and empty on boot, so /positions and P&L totals lose
@@ -271,44 +287,6 @@ public class VwapSupertrendStrategy implements Strategy {
                     + " PE=" + (peLeg.chosenSymbol == null ? "—" : peLeg.chosenSymbol));
         } else {
             log.info("[VwapSupertrend] booted — waiting for first {} tick ≥ 09:15 IST", NIFTY_SPOT_SYM);
-        }
-        // Fallback pivot fetch — a mid-day restart that discards stale state
-        // has niftyPivot=0. Compute it directly from Fyers /data/history so
-        // the bias filter and header chip stay accurate without waiting for
-        // tomorrow's 09:13 pre-market cron. Non-fatal — the tick() poll
-        // retries every 5s while pivot stays 0.
-        computePivotIfMissing("boot");
-    }
-
-    /** Computes {@link #niftyPivot} from Fyers /data/history when it's still 0.
-     *  No-op when pivot already set or when today isn't a trading day. Logs
-     *  every attempt (success + failure) so the operator can trace why the
-     *  bias chip reads NEUTRAL. {@code source} tags the log line — "boot",
-     *  "tick-retry", etc. */
-    private synchronized void computePivotIfMissing(String source) {
-        if (niftyPivot > 0) return;
-        if (holidays != null && !holidays.isTradingDay()) return;
-        try {
-            double[] ohlc = fetchNiftySpotPrevOhlc();
-            if (ohlc == null) {
-                event("[WARNING]", "VwapST",
-                    "Pivot fetch (" + source + ") returned no data — Fyers /data/history empty response");
-                return;
-            }
-            if (ohlc[3] <= 0) {
-                event("[WARNING]", "VwapST",
-                    "Pivot fetch (" + source + ") returned zero close — H=" + fmt(ohlc[1])
-                        + " L=" + fmt(ohlc[2]) + " C=" + fmt(ohlc[3]));
-                return;
-            }
-            niftyPivot = (ohlc[1] + ohlc[2] + ohlc[3]) / 3.0;
-            event("[INFO]", "VwapST",
-                "NIFTY daily pivot (" + source + ") = " + fmt(niftyPivot)
-                    + " (prev H=" + fmt(ohlc[1]) + " L=" + fmt(ohlc[2]) + " C=" + fmt(ohlc[3]) + ")");
-        } catch (Exception e) {
-            event("[ERROR]", "VwapST",
-                "Pivot fetch (" + source + ") threw — " + e.getClass().getSimpleName()
-                    + ": " + e.getMessage());
         }
     }
 
@@ -433,19 +411,12 @@ public class VwapSupertrendStrategy implements Strategy {
         if (preMarketSubscribedToday) return;
         if (!riskSettings.isVwapStEnabled()) return;
         try {
-            double[] ohlc = fetchNiftySpotPrevOhlc();
-            if (ohlc == null || ohlc[3] <= 0) {
+            double prevClose = fetchNiftySpotPrevClose();
+            if (prevClose <= 0) {
                 event("[WARNING]", "VwapST",
-                    "Pre-market subscribe SKIPPED — could not resolve NIFTY spot prev OHLC");
+                    "Pre-market subscribe SKIPPED — could not resolve NIFTY spot prev close");
                 return;
             }
-            double prevClose = ohlc[3];
-            // Daily floor pivot P = (H + L + C) / 3 — drives the bias filter.
-            niftyPivot = (ohlc[1] + ohlc[2] + ohlc[3]) / 3.0;
-            event("[INFO]", "VwapST",
-                "NIFTY daily pivot = " + fmt(niftyPivot)
-                    + " (prev O=" + fmt(ohlc[0]) + " H=" + fmt(ohlc[1])
-                    + " L=" + fmt(ohlc[2]) + " C=" + fmt(ohlc[3]) + ")");
             long anchor = Math.round(prevClose / (double) STRIKE_INTERVAL) * STRIKE_INTERVAL;
             int range = Math.max(1, riskSettings.getVwapStStrikesRange());
             LocalDate today = LocalDate.now(IST);
@@ -473,34 +444,26 @@ public class VwapSupertrendStrategy implements Strategy {
     /** NIFTY 50 spot's most recent daily close from Fyers /data/history.
      *  Returns 0 if the call fails or returns no bars — caller logs and skips. */
     private double fetchNiftySpotPrevClose() {
-        double[] ohlc = fetchNiftySpotPrevOhlc();
-        return ohlc == null ? 0 : ohlc[3];  // close
-    }
-
-    /** NIFTY 50 spot's most recent completed daily bar as {open, high, low, close}
-     *  from Fyers /data/history. Returns null if the call fails or returns no bars.
-     *  Logs at WARN level on failure so silent auth/network errors surface. */
-    private double[] fetchNiftySpotPrevOhlc() {
         try {
             LocalDate today = LocalDate.now(IST);
             String from = today.minusDays(7).format(ISO_DATE);
             String to   = today.format(ISO_DATE);
             JsonNode resp = fyersClient.getHistory("NSE:NIFTY50-INDEX", "D", from, to, authHeader());
             if (resp == null) {
-                log.warn("[VwapSupertrend] fetchNiftySpotPrevOhlc: null response from Fyers /data/history");
-                return null;
+                log.warn("[VwapSupertrend] fetchNiftySpotPrevClose: null response from Fyers /data/history");
+                return 0;
             }
             if ("error".equals(resp.path("s").asText(""))) {
-                log.warn("[VwapSupertrend] fetchNiftySpotPrevOhlc: Fyers error s={} code={} message={}",
+                log.warn("[VwapSupertrend] fetchNiftySpotPrevClose: Fyers error s={} code={} message={}",
                     resp.path("s").asText(""),
                     resp.path("code").asInt(0),
                     resp.path("message").asText(""));
-                return null;
+                return 0;
             }
             JsonNode candles = resp.path("candles");
             if (candles == null || !candles.isArray() || candles.size() == 0) {
-                log.warn("[VwapSupertrend] fetchNiftySpotPrevOhlc: empty candles array (from={} to={})", from, to);
-                return null;
+                log.warn("[VwapSupertrend] fetchNiftySpotPrevClose: empty candles array (from={} to={})", from, to);
+                return 0;
             }
             // Last row's fields (0=time, 1 open, 2 high, 3 low, 4 close, 5 vol).
             // Skip today's bar if the D endpoint includes it.
@@ -510,16 +473,11 @@ public class VwapSupertrendStrategy implements Strategy {
             if (barDate.equals(today) && candles.size() >= 2) {
                 last = candles.get(candles.size() - 2);
             }
-            return new double[] {
-                last.get(1).asDouble(0),
-                last.get(2).asDouble(0),
-                last.get(3).asDouble(0),
-                last.get(4).asDouble(0)
-            };
+            return last.get(4).asDouble(0);
         } catch (Exception e) {
-            log.warn("[VwapSupertrend] fetchNiftySpotPrevOhlc threw: {} — {}",
+            log.warn("[VwapSupertrend] fetchNiftySpotPrevClose threw: {} — {}",
                 e.getClass().getSimpleName(), e.getMessage());
-            return null;
+            return 0;
         }
     }
 
@@ -539,10 +497,6 @@ public class VwapSupertrendStrategy implements Strategy {
         // catch-up pre-market subscribe path below can still run on normal
         // trading days.
         if (holidays != null && !holidays.isTradingDay()) return;
-
-        // Retry pivot fetch if boot fallback failed (e.g. Fyers auth expired
-        // at boot then refreshed). No-op when pivot is already set.
-        if (niftyPivot <= 0) computePivotIfMissing("tick-retry");
 
         // Pre-market subscription — fire once daily between 09:13 and 09:15 IST.
         // Cron @Scheduled fires this at 09:13 exactly; the check here is a catch-up
@@ -602,6 +556,11 @@ public class VwapSupertrendStrategy implements Strategy {
         // valid from BAR 1 of today's session. Failure on a leg logs and continues.
         warmupHistory(bestCe, "CE");
         warmupHistory(bestPe, "PE");
+        // Seed previousStUp from historical bars so the FIRST 3-min bar close
+        // today can already detect a ST flip (needs both current stUp and
+        // previousStUp, and previousStUp starts null without this seed).
+        seedPreviousStUp(ceLeg, "CE");
+        seedPreviousStUp(peLeg, "PE");
 
         // Trim subscription to only the chosen pair — the other ~78 pre-market
         // strikes are no longer needed. Cuts incoming tick volume by ~95 %.
@@ -682,6 +641,31 @@ public class VwapSupertrendStrategy implements Strategy {
         }
     }
 
+    /** Compute ST on the current 3-min history and seed the leg's
+     *  {@code previousStUp} so the next bar close can detect a red↔green flip
+     *  vs the actual last known direction rather than a null placeholder.
+     *  Called after {@link #warmupHistory} on state restore. */
+    private void seedPreviousStUp(Leg leg, String sideLabel) {
+        try {
+            int tf = Math.max(1, riskSettings.getVwapStCandleMinutes());
+            int atrPeriod = Math.max(2, riskSettings.getVwapStAtrPeriod());
+            double mult   = Math.max(0.1, riskSettings.getVwapStMultiplier());
+            List<Candle> bars = candleAggregator.getHistory(leg.chosenSymbol, tf);
+            if (bars == null || bars.size() < atrPeriod + 1) {
+                log.info("[VwapSupertrend] {} seedPreviousStUp — insufficient bars ({}), leaving previousStUp={}",
+                    sideLabel, bars == null ? 0 : bars.size(), leg.previousStUp);
+                return;
+            }
+            SuperTrend.State st = SuperTrend.at(bars, atrPeriod, mult);
+            if (!st.available()) return;
+            leg.previousStUp = st.isUp();
+            log.info("[VwapSupertrend] {} seedPreviousStUp — set to {} from {} 3-min bars (line={})",
+                sideLabel, leg.previousStUp, bars.size(), fmt(st.line()));
+        } catch (Exception e) {
+            log.warn("[VwapSupertrend] {} seedPreviousStUp threw: {}", sideLabel, e.getMessage());
+        }
+    }
+
     // ── Bar close signal handler ────────────────────────────────────────────
 
     /** Fires whenever a new 1-min bar appends via CandleAggregator for the
@@ -743,11 +727,13 @@ public class VwapSupertrendStrategy implements Strategy {
                 leg.entryReason  = "VWAP_BREAKDOWN";
                 leg.atrAtEntry   = latestAtr;
                 leg.stLineAtEntry = st.available() ? st.line() : 0;
+                leg.vwapAtEntry  = bar.vwap();
                 fireEntry(leg, sideLabel, bar);
             } else if (stFlipDown && closeBelowVwap) {
                 leg.entryReason  = "SUPER_TREND_FLIP_DOWN";
                 leg.atrAtEntry   = latestAtr;
                 leg.stLineAtEntry = st.available() ? st.line() : 0;
+                leg.vwapAtEntry  = bar.vwap();
                 fireEntry(leg, sideLabel, bar);
             } else if (wickAtVwap && closeBelowVwap && stUp) {
                 // VWAP-breakdown fired but Supertrend still green — surface a
@@ -763,11 +749,23 @@ public class VwapSupertrendStrategy implements Strategy {
         // Must run after entry evaluation so THIS bar's flip fires only once.
         leg.previousStUp = stUp;
 
-        // SL exit — 3-min bar CLOSE above the current slPrice (mirror of the
-        // buy case). slPrice starts at ST line at entry (finalUpper, ABOVE
-        // fill) and trails DOWN on ST descent. Trigger is bar close, not tick.
-        // TRAILING_SL_HIT when the trail moved SL below initial (profit locked);
-        // plain SL_HIT when the initial SL was still in force (loss).
+        // Target exit — 3-min bar CLOSE at or below the fixed target. Target
+        // is set at fill time from RR × initial risk. Fires BEFORE the SL
+        // check so a bar that satisfies BOTH (close ≤ target AND close > SL,
+        // which is impossible here since target < fill < SL, but defensive)
+        // is labelled TARGET_HIT. Skipped when target = 0 (RR disabled).
+        if (leg.state == LegState.IN_POSITION && leg.targetPrice > 0
+                && bar.close() <= leg.targetPrice) {
+            fireExit(leg, sideLabel, "TARGET_HIT",
+                "3-min close " + fmt(bar.close()) + " ≤ target " + fmt(leg.targetPrice));
+            return;
+        }
+
+        // SL exit — 3-min bar CLOSE above the current slPrice. slPrice = ST
+        // line at entry (above fill), trailed DOWN on each bar close as ST
+        // descends. Trigger is bar close, not tick. TRAILING_SL_HIT when the
+        // trail moved SL below initial (profit locked); plain SL_HIT when
+        // the initial SL was still in force (loss).
         if (leg.state == LegState.IN_POSITION && leg.slPrice > 0
                 && bar.close() > leg.slPrice) {
             boolean trailed = leg.initialSlPrice > 0 && leg.slPrice < leg.initialSlPrice;
@@ -777,18 +775,20 @@ public class VwapSupertrendStrategy implements Strategy {
             return;
         }
 
-        // Trailing SL — ratchet leg.slPrice DOWN to match the latest ST line
-        // whenever ST is still down and the line has moved BELOW current slPrice.
-        // Never widens — locked-in profit stays locked.
-        if (leg.state == LegState.IN_POSITION && !stUp && st.available()) {
-            double newSl = st.line();
-            if (newSl < leg.slPrice) {
+        // Trailing SL — pure Supertrend line, ratcheted DOWN only on each
+        // 3-min close. Bar-close exit already filters wicks, so no VWAP is
+        // needed in the trail. Once a trade is profitable ST can descend
+        // BELOW fill; letting the trail follow it locks in more profit. A
+        // below-fill trail exit is a locked profit (labelled TRAILING_SL_HIT).
+        if (leg.state == LegState.IN_POSITION && st.available()) {
+            double stLine = st.line();
+            if (stLine > 0 && stLine < leg.slPrice) {
                 double oldSl = leg.slPrice;
-                leg.slPrice = newSl;
-                if (round1(newSl) < round1(oldSl)) {
+                leg.slPrice = stLine;
+                if (round1(stLine) < round1(oldSl)) {
                     event("[INFO]", "VwapST",
                         sideLabel + " " + leg.chosenSymbol + " SL trailed — "
-                            + fmt(oldSl) + " → " + fmt(newSl) + " (ST line)");
+                            + fmt(oldSl) + " → " + fmt(stLine) + " (ST line)");
                 }
                 saveStateToDisk();
             }
@@ -829,6 +829,30 @@ public class VwapSupertrendStrategy implements Strategy {
                     return;
                 }
             } catch (Exception ignored) {}
+        }
+        // NIFTY futures composite bias filter — three states derived from BOTH
+        // ST direction AND close-vs-VWAP on the 3-min bar:
+        //   BULLISH (ST green AND close > VWAP)  → block CE sells (CE premium expected to rise)
+        //   BEARISH (ST red   AND close < VWAP)  → block PE sells (PE premium expected to rise)
+        //   NEUTRAL (mixed signals OR data unavailable) → block BOTH sides
+        if (riskSettings.isVwapStFuturesBiasFilterEnabled()) {
+            com.rydytrader.autotrader.service.NiftyFuturesBiasService.Bias b = futuresBiasService.getBiasEnum();
+            if (b == com.rydytrader.autotrader.service.NiftyFuturesBiasService.Bias.NEUTRAL) {
+                event("[INFO]", "VwapST",
+                    sideLabel + " " + leg.chosenSymbol
+                        + " entry SKIPPED — NIFTY futures bias NEUTRAL (" + futuresBiasService.getStatus() + ")");
+                return;
+            }
+            if (b == com.rydytrader.autotrader.service.NiftyFuturesBiasService.Bias.BULLISH && "CE".equals(sideLabel)) {
+                event("[INFO]", "VwapST",
+                    "CE " + leg.chosenSymbol + " entry SKIPPED — NIFTY futures bias BULLISH");
+                return;
+            }
+            if (b == com.rydytrader.autotrader.service.NiftyFuturesBiasService.Bias.BEARISH && "PE".equals(sideLabel)) {
+                event("[INFO]", "VwapST",
+                    "PE " + leg.chosenSymbol + " entry SKIPPED — NIFTY futures bias BEARISH");
+                return;
+            }
         }
         int lots = Math.max(1, riskSettings.getVwapStLotsPerLeg());
         int qty = lots * LOT_SIZE;
@@ -966,29 +990,47 @@ public class VwapSupertrendStrategy implements Strategy {
     /** Captures fill price and derives SL. Called once per leg per entry,
      *  inside the class monitor.
      *
-     *  <p>Initial SL = ST line at entry. Trail on subsequent 3-min closes
-     *  ratchets slPrice up to match the rising ST line. Exit fires when a
-     *  3-min bar closes below the current slPrice ({@link #onBarClose}).
+     *  <p>Initial SL = Supertrend line at entry (finalUpper — ABOVE fill for
+     *  shorts). Trailed DOWN on every 3-min close where ST descends. Bar-close
+     *  exit naturally filters wicks, so no extra VWAP-based tightness is needed.
      *
-     *  <p>No fixed target — trade rides on the trailing SL. */
+     *  <p>Exit fires when a 3-min bar closes ABOVE the current slPrice
+     *  ({@link #onBarClose}). No fixed target unless RR > 0. */
     private void applyFill(Leg leg, String sideLabel, double fillPrice) {
         leg.fillPrice = fillPrice;
-        // Initial SL = ST line at entry (finalUpper — ABOVE fill for shorts).
-        // If ST wasn't available (shouldn't happen — entry requires !stUp),
-        // fall back to a small buffer above the entry candle high so we
-        // never place an SL == fill.
-        double sl = leg.stLineAtEntry > 0 && leg.stLineAtEntry > fillPrice
-            ? leg.stLineAtEntry
-            : leg.entryCandleLow + 1;  // entryCandleLow field carries entry candle HIGH for shorts
+        double sl;
+        String slSource;
+        double stLine = leg.stLineAtEntry;
+        if (stLine > 0 && stLine > fillPrice) {
+            sl = stLine;
+            slSource = "ST line";
+        } else {
+            // ST unavailable / at-or-below fill — fall back to a small buffer
+            // above entry candle high so we never place SL == fill.
+            sl = leg.entryCandleLow + 1;   // entryCandleLow carries entry candle HIGH for shorts
+            slSource = "entry candle high +1 (fallback)";
+        }
         leg.slPrice = sl;
         leg.initialSlPrice = sl;
         double risk = Math.max(0, sl - fillPrice);
-        leg.targetPrice = 0;   // RIDE — no fixed target, exit via ST flip.
+        // Fixed target — computed once from initial risk. RR=0 disables.
+        // For a short: target = fill − RR × risk (premium falls by RR × risk).
+        // Guard: only set target when the derived price is > 0 (would be
+        // negative if risk × RR > fill, which shouldn't happen but be safe).
+        double rr = Math.max(0.0, riskSettings.getVwapStRewardRiskRatio());
+        double tgt = 0;
+        if (rr > 0 && risk > 0) {
+            double candidate = fillPrice - rr * risk;
+            if (candidate > 0) tgt = candidate;
+        }
+        leg.targetPrice = tgt;
         leg.state = LegState.IN_POSITION;
+        String targetDesc = tgt > 0 ? (fmt(tgt) + " (RR=" + rr + ")") : "RIDE (RR=0)";
         event("[SUCCESS]", "VwapST",
             sideLabel + " SELL FILL — sym=" + leg.chosenSymbol + " @ " + fmt(fillPrice)
-                + " slPrice=" + fmt(leg.slPrice) + " (ST line, above fill)"
-                + " target=RIDE risk=" + fmt(risk));
+                + " slPrice=" + fmt(leg.slPrice) + " (" + slSource + ")"
+                + " stLine=" + fmt(stLine)
+                + " target=" + targetDesc + " risk=" + fmt(risk));
         saveStateToDisk();
     }
 
@@ -1012,8 +1054,10 @@ public class VwapSupertrendStrategy implements Strategy {
         strikesSubscribedAtMs = 0;
         preMarketSubscribedToday = false;
         preMarketAtm = 0;
-        niftyPivot = 0;
         subscribedStrikes.clear();
+        // Nudge the futures bias service to re-resolve the near-month contract —
+        // handles calendar rollover on the last-Tuesday expiry.
+        try { futuresBiasService.resolveSymbolAndSubscribe(); } catch (Exception e) { /* fatal on rollover isn't fatal for the strategy */ }
         fsm = FsmState.BOOT;
         realisedPnlToday.set(0.0);
         tradesTodayById.clear();
@@ -1025,7 +1069,7 @@ public class VwapSupertrendStrategy implements Strategy {
     @Override public String id()           { return "vwap-supertrend"; }
     @Override public String displayName()  { return "VWAP + Supertrend"; }
     @Override public String description()  {
-        return "Sell ATM CE/PE on NIFTY weekly. Entry: VWAP breakdown or ST flip DOWN on option's chart. SL = ST line (above fill), trails DOWN on 3-min close. Exit = bar close > SL.";
+        return "Sell ATM CE/PE on NIFTY weekly. Entry: VWAP breakdown or ST flip DOWN. SL = Supertrend line, trails DOWN on 3-min close. Exit = bar close > SL.";
     }
     @Override public String currentState() {
         return fsm.name() + " (CE=" + ceLeg.state.name() + ", PE=" + peLeg.state.name() + ")";
@@ -1057,19 +1101,18 @@ public class VwapSupertrendStrategy implements Strategy {
         }
         return sum;
     }
-    /** Current NIFTY daily floor pivot (0 until fetched at pre-market). */
-    public double getNiftyPivot() { return niftyPivot; }
-    /** Daily-bias tag derived from live NIFTY LTP vs pivot. Returns
-     *  BULLISH / BEARISH / NEUTRAL (pivot or LTP unavailable). Independent
-     *  of the bias-filter setting — always computed for UI display. */
-    public String getBias() {
-        if (niftyPivot <= 0) return "NEUTRAL";
-        double niftyLtp = marketDataService.getLtp(NIFTY_SPOT_SYM);
-        if (niftyLtp <= 0) return "NEUTRAL";
-        if (niftyLtp > niftyPivot) return "BULLISH";
-        if (niftyLtp < niftyPivot) return "BEARISH";
-        return "NEUTRAL";
-    }
+    /** Daily-bias tag from NIFTY near-month futures Supertrend(10, 3) on the
+     *  3-min chart. Returns BULLISH / BEARISH / NEUTRAL (futures data unavailable).
+     *  Independent of the bias-filter setting — always computed for UI display. */
+    public String getBias() { return futuresBiasService.getBias(); }
+    /** Currently tracked NIFTY futures symbol (or null before boot). */
+    public String getFuturesSymbol()    { return futuresBiasService.getFuturesSymbol(); }
+    public double getFuturesStLine()    { return futuresBiasService.getStLine(); }
+    public double getFuturesLastClose() { return futuresBiasService.getLastBarClose(); }
+    public double getFuturesLastVwap()  { return futuresBiasService.getLastBarVwap(); }
+    public String getFuturesBiasStatus(){ return futuresBiasService.getStatus(); }
+    public double getFuturesChoppinessIndex()  { return futuresBiasService.getChoppinessIndex(); }
+    public String getFuturesChoppinessRegime() { return futuresBiasService.getChoppinessRegime().name(); }
 
     /** Per-cycle charges: brokerage (both sides) + STT (sell only) +
      *  exchange transaction (both sides) + SEBI turnover fee + stamp
@@ -1207,7 +1250,10 @@ public class VwapSupertrendStrategy implements Strategy {
                 long openedMs = e.getOpenedAtMillis() == null ? 0 : e.getOpenedAtMillis();
                 tradesTodayById.put(ms,
                     new ClosedTrade(side, e.getSymbol(), entry, exit, qty, ms, reason, setup, openedMs));
-                sum += (exit - entry) * qty;
+                // Short P&L: (entry - exit) × qty — premium dropped = profit.
+                // Must match the sign used in fireExit's live accumulator, or a
+                // mid-day restart inverts the day's realised P&L.
+                sum += (entry - exit) * qty;
             }
             realisedPnlToday.set(sum);
             log.info("[VwapSupertrend] rehydrated {} closed trades from DB — realisedPnlToday={}",
@@ -1295,7 +1341,6 @@ public class VwapSupertrendStrategy implements Strategy {
         public long      strikesSubscribedAtMs;
         public boolean   preMarketSubscribedToday;
         public long      preMarketAtm;
-        public double    niftyPivot;
         public java.util.Set<String> subscribedStrikes = new java.util.HashSet<>();
         public double    realisedPnlToday;
         public PersistedLeg ceLeg = new PersistedLeg();
@@ -1312,6 +1357,12 @@ public class VwapSupertrendStrategy implements Strategy {
         public double targetPrice;
         public int    qty;
         public long   entryBarStartMs;
+        /** ST line at entry — preserved across restart so applyFill can derive
+         *  the SL even if the fill lands after a restart between order
+         *  placement and Fyers-fill-event. {@code vwapAtEntry} kept for
+         *  diagnostics (no longer feeds the SL calc since VWAP was removed). */
+        public double vwapAtEntry;
+        public double stLineAtEntry;
     }
 
     /** Reads {@link #STATE_FILE} and, if today's dayKey matches, restores every
@@ -1340,7 +1391,6 @@ public class VwapSupertrendStrategy implements Strategy {
             strikesSubscribedAtMs    = s.strikesSubscribedAtMs;
             preMarketSubscribedToday = s.preMarketSubscribedToday;
             preMarketAtm             = s.preMarketAtm;
-            niftyPivot               = s.niftyPivot;
             if (s.subscribedStrikes != null) subscribedStrikes.addAll(s.subscribedStrikes);
             realisedPnlToday.set(s.realisedPnlToday);
             restoreLeg(ceLeg, s.ceLeg);
@@ -1365,6 +1415,8 @@ public class VwapSupertrendStrategy implements Strategy {
         leg.targetPrice     = s.targetPrice;
         leg.qty             = s.qty;
         leg.entryBarStartMs = s.entryBarStartMs;
+        leg.vwapAtEntry     = s.vwapAtEntry;
+        leg.stLineAtEntry   = s.stLineAtEntry;
     }
 
     /** Writes {@link #STATE_FILE} atomically. Called on state-change checkpoints
@@ -1381,7 +1433,6 @@ public class VwapSupertrendStrategy implements Strategy {
             s.strikesSubscribedAtMs    = strikesSubscribedAtMs;
             s.preMarketSubscribedToday = preMarketSubscribedToday;
             s.preMarketAtm             = preMarketAtm;
-            s.niftyPivot               = niftyPivot;
             s.subscribedStrikes        = new java.util.HashSet<>(subscribedStrikes);
             s.realisedPnlToday         = realisedPnlToday.get() == null ? 0 : realisedPnlToday.get();
             s.ceLeg = snapshotLeg(ceLeg);
@@ -1415,6 +1466,8 @@ public class VwapSupertrendStrategy implements Strategy {
         s.targetPrice     = leg.targetPrice;
         s.qty             = leg.qty;
         s.entryBarStartMs = leg.entryBarStartMs;
+        s.vwapAtEntry     = leg.vwapAtEntry;
+        s.stLineAtEntry   = leg.stLineAtEntry;
         return s;
     }
 

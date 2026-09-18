@@ -161,9 +161,15 @@
             chgText = ' ' + sign + Math.abs(ch).toFixed(2) + ' (' + sign + Math.abs(chp).toFixed(2) + '%)';
         }
 
-        // Daily bias — driven by strategy: NIFTY LTP vs floor pivot (H+L+C)/3.
+        // NIFTY near-month futures Supertrend(10, 3) on 3-min bars — the
+        // options-selling directional bias filter.
         var bias = String((opb && opb.bias) || 'NEUTRAL').toUpperCase();
-        var pivot = Number((opb && opb.niftyPivot) || 0);
+        var futuresSym = (opb && opb.futuresSymbol) || '';
+        var stLine     = Number((opb && opb.futuresStLine) || 0);
+        var lastClose  = Number((opb && opb.futuresLastClose) || 0);
+        var lastVwap   = Number((opb && opb.futuresLastVwap) || 0);
+        var filterOn   = !!(opb && opb.futuresBiasFilterEnabled);
+        var biasStatus = (opb && opb.futuresBiasStatus) || '';
         var biasArrow = bias === 'BULLISH' ? '▲'
                       : bias === 'BEARISH' ? '▼'
                       : '·';
@@ -171,11 +177,41 @@
                       : bias === 'BEARISH' ? 'var(--accent-red, #f87171)'
                       : 'var(--text-muted)';
         var biasText  = biasArrow + ' ' + bias;
-        // Explicit "NIFTY pivot X" so the tooltip reads clean on hover.
-        // esc() to be safe though pivot is numeric.
-        var biasTitle = pivot > 0
-            ? 'NIFTY daily pivot: ' + pivot.toFixed(2) + '  (H+L+C)/3'
-            : 'NIFTY daily pivot unavailable';
+        var biasTitle;
+        if (!futuresSym) {
+            biasTitle = 'NIFTY Futures ST (10, 3) — service not initialized'
+                + (biasStatus ? '  [' + biasStatus + ']' : '');
+        } else if (stLine <= 0 && lastClose <= 0) {
+            biasTitle = 'NIFTY Futures ST (10, 3) — ' + futuresSym
+                + (biasStatus ? '  [' + biasStatus + ']' : '  (warming up)');
+        } else {
+            biasTitle = 'NIFTY Futures — ' + futuresSym
+                + '  close=' + lastClose.toFixed(2)
+                + '  VWAP=' + (lastVwap > 0 ? lastVwap.toFixed(2) : '—')
+                + '  ST=' + stLine.toFixed(2)
+                + '  filter=' + (filterOn ? 'ON' : 'OFF')
+                + (biasStatus ? '  [' + biasStatus + ']' : '');
+        }
+
+        // Choppiness Index — 14-bar CI on NIFTY futures 3-min bars.
+        // > 61.8 CHOPPY (red), < 38.2 TRENDING (green), between MIXED (muted).
+        var ciRaw    = (opb == null) ? null : opb.futuresChoppinessIndex;
+        var ciRegime = String((opb && opb.futuresChoppinessRegime) || 'UNAVAILABLE').toUpperCase();
+        var ciText, ciColor, ciTitle;
+        if (ciRaw == null || !isFinite(Number(ciRaw))) {
+            ciText   = '—';
+            ciColor  = 'var(--text-muted)';
+            ciTitle  = 'Choppiness Index — warming up (need 15 3-min bars)';
+        } else {
+            var ci = Number(ciRaw);
+            ciText  = ci.toFixed(1) + ' ' + ciRegime;
+            ciColor = ciRegime === 'CHOPPY'   ? 'var(--accent-red, #f87171)'
+                    : ciRegime === 'TRENDING' ? 'var(--accent-green, #34d399)'
+                    : 'var(--text-secondary)';
+            ciTitle = 'Choppiness Index (14) — ' + ci.toFixed(2)
+                + '  ' + ciRegime
+                + '   > 61.8 CHOPPY  ·  < 38.2 TRENDING  ·  38.2–61.8 MIXED';
+        }
 
         // Day P&L (closed trades + live MTM on open positions)
         var pnl = liveNetPnl(opb);
@@ -189,6 +225,8 @@
             chip('NIFTY', ltpText + chgText, ltpColor) +
             divider() +
             '<span style="cursor:help;" title="' + esc(biasTitle) + '">' + chip('BIAS', biasText, biasColor) + '</span>' +
+            divider() +
+            '<span style="cursor:help;" title="' + esc(ciTitle) + '">' + chip('CHOP', ciText, ciColor) + '</span>' +
             divider() +
             chip('P&L', fmtInr(pnl), pnlColor);
     }

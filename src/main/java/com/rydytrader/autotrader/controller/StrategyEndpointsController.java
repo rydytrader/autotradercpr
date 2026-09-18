@@ -142,10 +142,20 @@ public class StrategyEndpointsController {
         out.put("risk",          buildRisk(s));
         out.put("liveNetPnl",    s == null ? 0.0 : s.liveNetPnlToday());
         out.put("liveCharges",   s == null ? 0.0 : s.liveChargesToday());
-        // NIFTY daily bias — for the header chip; independent of whether the
+        // NIFTY futures bias — for the header chip; independent of whether the
         // filter is enabled (always shown so the operator sees the state).
-        out.put("bias",          s == null ? "NEUTRAL" : s.getBias());
-        out.put("niftyPivot",    s == null ? 0.0      : s.getNiftyPivot());
+        out.put("bias",              s == null ? "NEUTRAL" : s.getBias());
+        out.put("futuresSymbol",     s == null ? null      : s.getFuturesSymbol());
+        out.put("futuresStLine",     s == null ? 0.0       : s.getFuturesStLine());
+        out.put("futuresLastClose",  s == null ? 0.0       : s.getFuturesLastClose());
+        out.put("futuresLastVwap",   s == null ? 0.0       : s.getFuturesLastVwap());
+        out.put("futuresBiasStatus", s == null ? ""        : s.getFuturesBiasStatus());
+        // CI is NaN until 15 3-min bars have accumulated; send null in that case
+        // so the frontend can render "—" rather than a misleading 0.
+        double ci = s == null ? Double.NaN : s.getFuturesChoppinessIndex();
+        out.put("futuresChoppinessIndex",  Double.isNaN(ci) ? null : ci);
+        out.put("futuresChoppinessRegime", s == null ? "UNAVAILABLE" : s.getFuturesChoppinessRegime());
+        out.put("futuresBiasFilterEnabled", riskSettings.isVwapStFuturesBiasFilterEnabled());
         return out;
     }
 

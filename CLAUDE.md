@@ -201,6 +201,7 @@ store/
 | Candle Minutes       | 3         | Signal timeframe                                          |
 | Supertrend ATR       | 10        | ATR period                                                |
 | Supertrend Multiplier| 3.0       | ATR × this = band distance                                |
+| Futures Bias Filter  | false     | Skip CE sells when NIFTY futures ST bullish; PE when bearish |
 
 ## Conventions
 - Event log prefixes: `[SUCCESS]`, `[WARNING]`, `[ERROR]`, `[INFO]`, `[WS]`
