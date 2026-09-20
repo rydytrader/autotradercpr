@@ -40,8 +40,11 @@
         .cal-day.today { border-color:var(--accent-blue); border-width:2px; }
         .cal-day.profit { border-color:var(--accent-green); border-width:2px; }
         .cal-day.loss   { border-color:var(--accent-red, #f87171); border-width:2px; }
+        .cal-day-header { display:flex; align-items:center; justify-content:space-between; }
         .cal-day-num { font-family:var(--font-mono); font-size:0.78rem; color:var(--text-secondary); font-weight:700; }
         .cal-day.profit .cal-day-num, .cal-day.loss .cal-day-num, .cal-day.today .cal-day-num { color:var(--text-primary); }
+        .cal-day-chart-hint { font-family:var(--font-mono); font-size:0.72rem; color:var(--text-muted); opacity:0.55; cursor:help; }
+        .cal-day:hover .cal-day-chart-hint { opacity:1; color:var(--accent-cyan); }
         .cal-day-pnl { font-family:var(--font-mono); font-size:1rem; font-weight:700; line-height:1; }
         .cal-day.profit .cal-day-pnl { color:var(--accent-green); }
         .cal-day.loss   .cal-day-pnl { color:var(--accent-red, #f87171); }
@@ -167,12 +170,6 @@
             <button class="cal-nav-btn" onclick="navToday()" title="Current period" style="margin-left:8px; width:auto; padding:0 12px; font-size:0.72rem;">TODAY</button>
         </div>
         <div class="cal-view-toggle">
-            <label style="display:flex; align-items:center; gap:6px; margin-right:14px; cursor:pointer; font-family:var(--font-mono); font-size:0.72rem; color:var(--text-secondary);"
-                   title="When ticked, manual-terminal closed trades are folded into each day's cell color and shown in the day-detail modal.">
-                <input type="checkbox" id="calIncludeAdjustments" checked
-                       style="accent-color: var(--accent-cyan, #22d3ee); width:14px; height:14px;">
-                Include adjustments in P&amp;L
-            </label>
             <button class="cal-view-btn active" id="btnMonthView" onclick="setView('month')">MONTH</button>
             <button class="cal-view-btn" id="btnYearView" onclick="setView('year')">YEAR</button>
         </div>
@@ -295,10 +292,12 @@
 </div>
 
 <script src="/js/common.js?v=2"></script>
-<script src="/js/ticker.js?v=4"></script>
-<script src="/js/settings-modal.js?v=9"></script>
+<script src="/js/ticker.js?v=5"></script>
+<script src="/js/settings-modal.js?v=10"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
-<script src="/js/manual-terminal-modal.js?v=19"></script>
+<!-- TradingView Lightweight Charts — MIT, standalone JS library. Same open-source
+     chart engine used by TradingView's own free chart pages. -->
+<script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
 <script>
 (function(){
     const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -313,17 +312,10 @@
         ? new Date().getFullYear()
         : new Date().getFullYear() - 1;
     let allSessions = []; // [{date, entries, rolls, finalState, grossPnl, charges, netPnl}, ...]
-    let allAdjustments = []; // [{symbol, side, qty, openPrice, closePrice, pnl, closeMillis}, ...]
-    let adjustmentByDate = {}; // { 'yyyy-mm-dd': { count, netPnl } } — pre-aggregated for fast cell colouring
     // Per-straddle aggregation indexed by yyyy-MM-dd — drives day cells so the day-level
     // P&L matches the home page exactly. Populated by renderAnalyticsTiles from
     // `/api/analytics/summary?... → byDate`. Day cells use this instead of session.netPnl.
     let analyticsByDate = {};
-    let includeAdjustments = (function() {
-        let stored = null;
-        try { stored = window.localStorage.getItem('calIncludeAdjustments'); } catch (e) {}
-        return stored === null ? true : stored === 'true';
-    })();
     let NSE_HOLIDAYS = {}; // {date: name}
 
     function fmtMoney(n) {
@@ -386,23 +378,8 @@
                 fetch('/api/strategies/' + encodeURIComponent(s.id) + '/dashboard')
                     .then(r => r.json()).catch(() => null)
             );
-            // Adjustments are global (not per-instance); fetched once.
-            const adjPromise = fetch('/api/manual/dashboard')
-                .then(r => r.json()).catch(() => ({ recentTrades: [] }));
-            return Promise.all([Promise.all(histPromises), Promise.all(dashPromises), adjPromise])
-                .then(([histories, dashboards, adjPayload]) => {
-                    allAdjustments = (adjPayload && adjPayload.recentTrades) || [];
-                    // Pre-aggregate adjustments by yyyy-mm-dd so day-cell colouring is O(1).
-                    adjustmentByDate = {};
-                    allAdjustments.forEach(t => {
-                        if (!t.closeMillis) return;
-                        const d = new Date(Number(t.closeMillis));
-                        const key = d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
-                        let agg = adjustmentByDate[key] || { count: 0, netPnl: 0 };
-                        agg.count++;
-                        agg.netPnl += Number(t.pnl) || 0;
-                        adjustmentByDate[key] = agg;
-                    });
+            return Promise.all([Promise.all(histPromises), Promise.all(dashPromises)])
+                .then(([histories, dashboards]) => {
                     // Merge persisted sessions per date.
                     const byDate = {};
                     histories.forEach(h => {
@@ -522,11 +499,8 @@
         const clearIds = ['heroProfitFactor','heroRiskReward','heroMaxDrawdown','heroMaxDrawdownDays',
                           'heroZeroSlDays','heroOneSlDays','heroTwoSlDays'];
         clearIds.forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '—'; });
-        // Pass calendar's includeAdjustments flag so Net P&L + Charges + Return match
-        // exactly what the home page shows for the same period.
         const url = '/api/analytics/summary?from=' + encodeURIComponent(fromIso)
-                  + '&to=' + encodeURIComponent(toIso)
-                  + '&includeAdjustments=' + (includeAdjustments ? 'true' : 'false');
+                  + '&to=' + encodeURIComponent(toIso);
         fetch(url).then(r => r.json()).then(d => {
             if (!d) return;
             const perf = d.performance || {};
@@ -647,18 +621,13 @@
             const dow = ((firstDow - 1 + d - 1) % 7) + 1;
             const weekend = (dow === 6 || dow === 7);
             const isToday = dateStr === todayStr;
-            const adj = adjustmentByDate[dateStr];
-            const hasAdj = !!adj && adj.count > 0;
             // Prefer the per-straddle byDate aggregation from the analytics summary so
             // the day cell matches the home page exactly. Fall back to the session row
             // (sync only — analyticsByDate populates after the analytics fetch returns).
             const byDateRow = analyticsByDate[dateStr];
-            const hasStraddle = !!byDateRow || !!session;
-            const hasPnl = hasStraddle || (includeAdjustments && hasAdj);
-            const straddleNet = byDateRow ? (byDateRow.netPnl || 0)
-                              : session   ? (session.netPnl   || 0) : 0;
-            const adjNet = (includeAdjustments && hasAdj) ? adj.netPnl : 0;
-            const net = straddleNet + adjNet;
+            const hasPnl = !!byDateRow || !!session;
+            const net = byDateRow ? (byDateRow.netPnl || 0)
+                      : session   ? (session.netPnl   || 0) : 0;
 
             const cls = [
                 'cal-day',
@@ -668,23 +637,35 @@
                 hasPnl ? (net > 0 ? 'profit' : (net < 0 ? 'loss' : '')) : ''
             ].filter(Boolean).join(' ');
 
+            // Trading day (weekday + not a holiday) is clickable regardless of P&L
+            // — even on no-trade days the NIFTY chart is worth checking.
+            const isTradingDay = !weekend && !holiday;
+            const dateInPastOrToday = dateStr <= todayStr;
+            const clickable = isTradingDay && dateInPastOrToday;
+            // Small ▤ chart glyph in the corner of every clickable cell so the
+            // "click to see NIFTY chart + trades" affordance is discoverable.
+            const chartHint = clickable
+                ? '<span class="cal-day-chart-hint" title="Open day view (NIFTY 5-min chart + trade breakdown)">▤</span>'
+                : '';
+
             let body;
             if (hasPnl) {
-                // Small ▲ glyph after the number if the day had manual adjustments — quick
-                // visual cue that this cell isn't pure straddle P&L.
-                const adjMark = hasAdj ? ' <span style="color:var(--accent-amber, #fbbf24);font-size:0.7em;" title="' + adj.count + ' adjustment(s) on this day">▲</span>' : '';
-                body = '<div><div class="cal-day-pnl">' + fmtMoney(net) + adjMark + '</div></div>';
+                body = '<div><div class="cal-day-pnl">' + fmtMoney(net) + '</div></div>';
             } else if (holiday) {
                 body = '<div class="cal-holiday-tag" title="' + holiday + '">' + holiday + '</div>';
             } else if (weekend) {
                 body = '<div class="cal-day-meta">' + (dow === 6 ? 'SAT' : 'SUN') + '</div>';
+            } else if (clickable) {
+                // A trading day with no trades — placeholder still says "no
+                // trades" but the cell opens the chart alone.
+                body = '<div class="cal-day-meta">no trades</div>';
             } else {
                 body = '<div class="cal-day-meta">—</div>';
             }
 
-            const click = hasPnl ? 'onclick="openDayModal(\'' + dateStr + '\')"' : '';
+            const click = clickable ? 'onclick="openDayModal(\'' + dateStr + '\')"' : '';
             html += '<div class="' + cls + '" ' + click + '>' +
-                '<div class="cal-day-num">' + d + '</div>' + body +
+                '<div class="cal-day-header"><div class="cal-day-num">' + d + '</div>' + chartHint + '</div>' + body +
             '</div>';
         }
         document.getElementById('calDayGrid').innerHTML = html;
@@ -788,103 +769,131 @@
         setView('month');
     };
 
+    // Held so a fresh openDayModal call can dispose the previous chart before
+    // building a new one — Lightweight Charts doesn't auto-clean when its
+    // container's innerHTML is overwritten.
+    let niftyDayChart = null;
+
+    function renderNiftyDayChart(dateStr) {
+        const statusEl    = document.getElementById('calDayNiftyChartStatus');
+        const containerEl = document.getElementById('calDayNiftyChart');
+        if (!containerEl) return;
+        if (typeof LightweightCharts === 'undefined') {
+            if (statusEl) statusEl.textContent = 'chart library failed to load';
+            return;
+        }
+        // Dispose the previous chart if any — otherwise the old candle series
+        // stays layered under the new container and prices bleed through.
+        if (niftyDayChart) {
+            try { niftyDayChart.remove(); } catch (e) {}
+            niftyDayChart = null;
+        }
+        containerEl.innerHTML = '';
+        if (statusEl) statusEl.textContent = 'Loading…';
+
+        fetch('/api/nifty-chart?date=' + encodeURIComponent(dateStr) + '&resolution=5')
+            .then(r => r.json())
+            .then(payload => {
+                const candles = (payload && payload.candles) || [];
+                if (candles.length === 0) {
+                    const msg = payload && payload.error ? payload.error : 'no bars for this date';
+                    if (statusEl) statusEl.textContent = msg;
+                    return;
+                }
+                const styles = getComputedStyle(document.documentElement);
+                const gridCol = styles.getPropertyValue('--border').trim()      || 'rgba(255,255,255,0.06)';
+                const textCol = styles.getPropertyValue('--text-muted').trim()  || '#888';
+                const bgCol   = styles.getPropertyValue('--bg-primary').trim() || '#0d1117';
+                niftyDayChart = LightweightCharts.createChart(containerEl, {
+                    width: containerEl.clientWidth,
+                    height: 320,
+                    layout:    { background: { type: 'solid', color: bgCol }, textColor: textCol },
+                    grid:      { vertLines: { color: gridCol }, horzLines: { color: gridCol } },
+                    rightPriceScale: { borderColor: gridCol },
+                    timeScale: { borderColor: gridCol, timeVisible: true, secondsVisible: false },
+                    crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
+                });
+                const series = niftyDayChart.addCandlestickSeries({
+                    upColor:       '#34d399', downColor:      '#f87171',
+                    borderUpColor: '#34d399', borderDownColor:'#f87171',
+                    wickUpColor:   '#34d399', wickDownColor:  '#f87171'
+                });
+                // Lightweight-charts renders times in UTC. Fyers gives true
+                // epoch seconds so 09:15 IST comes back as 03:45 UTC on the axis.
+                // Shift each bar's timestamp by +5:30 (19800 s) — the library
+                // now labels 09:15 as expected. The stored ISO date is still
+                // the true date; only the axis label is affected.
+                const IST_OFFSET_SEC = 5.5 * 3600;
+                series.setData(candles.map(c => ({
+                    time:  Number(c.time) + IST_OFFSET_SEC,
+                    open:  Number(c.open),
+                    high:  Number(c.high),
+                    low:   Number(c.low),
+                    close: Number(c.close)
+                })));
+                niftyDayChart.timeScale().fitContent();
+                if (statusEl) statusEl.textContent = candles.length + ' bars';
+            })
+            .catch(err => {
+                if (statusEl) statusEl.textContent = 'load failed';
+            });
+    }
+
     window.openDayModal = function(dateStr) {
         const session   = allSessions.find(s => s.date === dateStr);
-        const adj       = adjustmentByDate[dateStr];
         // Per-straddle aggregation for the day — matches the home page hero exactly. Falls
         // back to the per-day session row when the analytics fetch hasn't returned yet.
         const byDateRow = analyticsByDate[dateStr];
-        // Allow opening when only adjustments exist on that day (no straddle row).
-        if (!byDateRow && !session && !(adj && adj.count > 0)) return;
-        const straddleNet     = byDateRow ? (byDateRow.netPnl   || 0) : (session ? (session.netPnl   || 0) : 0);
-        const straddleCharges = byDateRow ? (byDateRow.charges  || 0) : (session ? (session.charges  || 0) : 0);
+        // Day can be opened even without trades — the NIFTY chart alone is
+        // still useful. hasPnl toggles whether the P&L hero renders.
+        const hasPnl  = !!byDateRow || !!session;
+        const net     = byDateRow ? (byDateRow.netPnl   || 0) : (session ? (session.netPnl   || 0) : 0);
+        const charges = byDateRow ? (byDateRow.charges  || 0) : (session ? (session.charges  || 0) : 0);
         // Gross P&L isn't on byDate (analytics only stores net + charges) — derive from
-        // net + charges so it stays internally consistent. Adjustments fold into both.
-        const straddleGross   = straddleNet + straddleCharges;
-        const adjNet  = (includeAdjustments && adj) ? adj.netPnl : 0;
-        const net     = straddleNet + adjNet;
-        const gross   = straddleGross + adjNet;
+        // net + charges so it stays internally consistent.
+        const gross   = net + charges;
         const netCls  = net > 0 ? 'pnl-positive' : (net < 0 ? 'pnl-negative' : '');
 
-        // Hero block — aggregated day totals on one row.
-        const heroHtml = '<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:14px 28px;">' +
-            '<div><div class="stat-label">Net P&L</div><div class="' + netCls + '" style="font-family:var(--font-mono);font-size:1.1rem;font-weight:700;">' + fmtMoneyFull(net) + '</div></div>' +
-            '<div><div class="stat-label">Gross P&L</div><div>' + fmtMoneyFull(gross) + '</div></div>' +
-            '<div><div class="stat-label">Charges</div><div style="color:var(--text-muted);">' + fmtMoneyFull(straddleCharges) + '</div></div>' +
-        '</div>' +
-        '<div id="calDayStraddles" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">' +
-            '<div class="stat-label" style="margin-bottom:8px;">Straddles</div>' +
-            '<div style="color:var(--text-muted);">Loading…</div>' +
-        '</div>' +
-        '<div id="calDayStrangles" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">' +
-            '<div class="stat-label" style="margin-bottom:8px;">Strangles</div>' +
-            '<div style="color:var(--text-muted);">Loading…</div>' +
-        '</div>' +
-        '<div id="calDayAdjustments" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">' +
-            '<div class="stat-label" style="margin-bottom:8px;">Adjustments</div>' +
-            '<div style="color:var(--text-muted);">Loading…</div>' +
-        '</div>';
+        // Assemble modal body: P&L hero (if trades on this day) + NIFTY chart
+        // (always) + per-strategy trade breakdowns (if trades). No-trade days
+        // still open the modal so the operator can see the day's price action.
+        const pnlHero = hasPnl
+            ? '<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:14px 28px;">' +
+                '<div><div class="stat-label">Net P&L</div><div class="' + netCls + '" style="font-family:var(--font-mono);font-size:1.1rem;font-weight:700;">' + fmtMoneyFull(net) + '</div></div>' +
+                '<div><div class="stat-label">Gross P&L</div><div>' + fmtMoneyFull(gross) + '</div></div>' +
+                '<div><div class="stat-label">Charges</div><div style="color:var(--text-muted);">' + fmtMoneyFull(charges) + '</div></div>' +
+              '</div>'
+            : '';
+        const chartSection =
+            '<div id="calDayNiftyChartSection" style="margin-top:' + (hasPnl ? '18px' : '0') + ';' +
+                (hasPnl ? 'border-top:1px solid var(--border);padding-top:14px;' : '') + '">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+                    '<div class="stat-label" style="margin:0;">NIFTY 50 · 5-min</div>' +
+                    '<div id="calDayNiftyChartStatus" style="color:var(--text-muted);font-size:0.7rem;">Loading…</div>' +
+                '</div>' +
+                '<div id="calDayNiftyChart" style="width:100%;height:320px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;"></div>' +
+            '</div>';
+        const tradesSections = hasPnl
+            ? '<div id="calDayStraddles" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">' +
+                '<div class="stat-label" style="margin-bottom:8px;">Straddles</div>' +
+                '<div style="color:var(--text-muted);">Loading…</div>' +
+              '</div>' +
+              '<div id="calDayStrangles" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">' +
+                '<div class="stat-label" style="margin-bottom:8px;">Strangles</div>' +
+                '<div style="color:var(--text-muted);">Loading…</div>' +
+              '</div>'
+            : '';
+        const heroHtml = pnlHero + chartSection + tradesSections;
 
         document.getElementById('calModalTitle').textContent = 'Session — ' + dateStr;
         document.getElementById('calModalBody').innerHTML = heroHtml;
         document.getElementById('calDayModal').style.display = 'flex';
 
-        // Fetch the per-date manual adjustments and render them in their own sub-table.
-        fetch('/api/manual/trades?date=' + encodeURIComponent(dateStr))
-            .then(r => r.json()).then(payload => {
-                const rows = (payload && payload.trades) || [];
-                const wrap = document.getElementById('calDayAdjustments');
-                if (!wrap) return;
-                if (rows.length === 0) {
-                    wrap.innerHTML =
-                        '<div class="stat-label" style="margin-bottom:8px;">Adjustments</div>' +
-                        '<div style="color:var(--text-muted);">No manual trades on this date.</div>';
-                    return;
-                }
-                const fmtTime = ms => {
-                    if (!ms) return '—';
-                    const d = new Date(Number(ms));
-                    return d.toTimeString().slice(0, 5);
-                };
-                let body = '';
-                rows.forEach((t, i) => {
-                    const n = Number(t.pnl || 0);
-                    const cls = n > 0 ? 'pnl-positive' : (n < 0 ? 'pnl-negative' : '');
-                    const sideCol = t.side === 'BUY' ? 'var(--accent-green, #34d399)' : 'var(--accent-red, #f87171)';
-                    body +=
-                        '<tr style="border-top:1px solid rgba(128,128,128,0.10);">' +
-                            '<td style="padding:8px 10px;color:var(--text-muted);">#' + (i + 1) + '</td>' +
-                            '<td style="padding:8px 10px;color:var(--text-primary);">' + t.symbol + '</td>' +
-                            '<td style="padding:8px 10px;text-align:center;color:' + sideCol + ';font-weight:700;">' + t.side + '</td>' +
-                            '<td style="padding:8px 10px;">' + fmtTime(t.closeMillis) + '</td>' +
-                            '<td style="padding:8px 10px;text-align:right;color:var(--text-muted);">' + (t.qty || 0) + '</td>' +
-                            '<td style="padding:8px 10px;text-align:right;">' + fmtMoneyFull(t.openPrice) + '</td>' +
-                            '<td style="padding:8px 10px;text-align:right;">' + fmtMoneyFull(t.closePrice) + '</td>' +
-                            '<td style="padding:8px 10px;text-align:right;" class="' + cls + '">' + fmtMoneyFull(t.pnl) + '</td>' +
-                        '</tr>';
-                });
-                wrap.innerHTML =
-                    '<div class="stat-label" style="margin-bottom:8px;">Adjustments · ' + rows.length + ' trade' + (rows.length === 1 ? '' : 's') + '</div>' +
-                    '<div style="overflow-x:auto;max-width:100%;">' +
-                    '<table style="width:100%;min-width:680px;border-collapse:collapse;font-family:var(--font-mono);font-size:0.74rem;table-layout:auto;white-space:nowrap;">' +
-                        '<thead><tr style="color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;">' +
-                            '<th style="padding:6px 10px;text-align:left;">#</th>' +
-                            '<th style="padding:6px 10px;text-align:left;">SYMBOL</th>' +
-                            '<th style="padding:6px 10px;text-align:center;">SIDE</th>' +
-                            '<th style="padding:6px 10px;text-align:left;">CLOSED</th>' +
-                            '<th style="padding:6px 10px;text-align:right;">QTY</th>' +
-                            '<th style="padding:6px 10px;text-align:right;">OPEN</th>' +
-                            '<th style="padding:6px 10px;text-align:right;">CLOSE</th>' +
-                            '<th style="padding:6px 10px;text-align:right;">P&L</th>' +
-                        '</tr></thead><tbody>' + body + '</tbody>' +
-                    '</table>' +
-                    '</div>';
-            }).catch(() => {
-                const wrap = document.getElementById('calDayAdjustments');
-                if (wrap) wrap.innerHTML =
-                    '<div class="stat-label" style="margin-bottom:8px;">Adjustments</div>' +
-                    '<div style="color:var(--accent-red, #f87171);">Failed to load adjustment list.</div>';
-            });
+        // Load + render the day's NIFTY 5-min chart. Non-blocking — the modal is
+        // already visible; the chart fills in when the fetch returns.
+        renderNiftyDayChart(dateStr);
+        // Skip the per-instance trade fetches on no-trade days — nothing to render.
+        if (!hasPnl) return;
 
         // Fan out per-instance trade fetches for this date — every cycle ends up here so a
         // multi-restart day shows one row per cycle. Order by closedAtMillis after merge.
@@ -975,6 +984,12 @@
     }
     window.closeDayModal = function() {
         document.getElementById('calDayModal').style.display = 'none';
+        // Free the NIFTY chart's WebGL / DOM handles so opening a different day
+        // doesn't leak a stack of charts behind the new one.
+        if (niftyDayChart) {
+            try { niftyDayChart.remove(); } catch (e) {}
+            niftyDayChart = null;
+        }
     };
     // Close modal on backdrop click
     document.getElementById('calDayModal').addEventListener('click', function(e) {
@@ -990,16 +1005,6 @@
                 if (icons[i].getAttribute('data-nav-key') === sid) icons[i].classList.add('active');
             }
         } catch (e) {}
-        // Wire the include-adjustments checkbox.
-        var adjCb = document.getElementById('calIncludeAdjustments');
-        if (adjCb) {
-            adjCb.checked = includeAdjustments;
-            adjCb.addEventListener('change', function() {
-                includeAdjustments = adjCb.checked;
-                try { window.localStorage.setItem('calIncludeAdjustments', includeAdjustments ? 'true' : 'false'); } catch (e) {}
-                render();
-            });
-        }
         loadAll();
         // Populate Welcome header from /api/user/me. Same pattern as home / short-straddle.
         fetch('/api/user/me').then(function(r){ return r.json(); }).then(function(u){

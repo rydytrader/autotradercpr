@@ -40,4 +40,9 @@ public interface FyersClient {
 
     /** PUT /api/v3/orders/sync — modify an existing order */
     JsonNode modifyOrder(String orderJson, String authHeader) throws Exception;
+
+    /** GET /data/history — OHLC bars for a symbol at the requested resolution
+     *  ("1", "5", "D", ...) between {@code fromDate} and {@code toDate} (yyyy-MM-dd). */
+    JsonNode getHistory(String symbol, String resolution, String fromDate, String toDate,
+                        String authHeader) throws Exception;
 }

@@ -65,7 +65,11 @@ public interface Strategy {
 
     /** Manual recovery — flip in-memory state back to IDLE so the next scheduler tick can
      *  re-evaluate entry conditions. Does not touch broker positions. */
-    void resetToIdle(String reason);
+    /** Force in-memory state → ARMED so the scheduler re-evaluates. Returns
+     *  {@code true} when the reset was applied, {@code false} when refused
+     *  (typically because legs are still open at the broker — resetting would
+     *  orphan them). The refusal reason surfaces through the calling controller. */
+    boolean resetToIdle(String reason);
 
     /** Schema for the settings modal. Each entry describes one configurable field that this
      *  strategy reads. The UI renders the form dynamically and POSTs back via the generic

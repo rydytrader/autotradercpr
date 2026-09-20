@@ -32,6 +32,22 @@ public class StrategyController {
         this.registry = registry;
     }
 
+    /** Aggregate day P&L + charges across every enabled strategy. Drives the
+     *  header-strip P&L chip on all pages; polled every 2 s by ticker.js. */
+    @GetMapping("/api/portfolio-pnl-today")
+    public Map<String, Object> portfolioPnlToday() {
+        double dayPnl = 0;
+        double charges = 0;
+        for (Strategy s : registry.all()) {
+            try { dayPnl  += s.liveNetPnlToday(); } catch (Exception ignored) {}
+            try { charges += s.liveChargesToday(); } catch (Exception ignored) {}
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("dayPnl",  Math.round(dayPnl * 100.0) / 100.0);
+        out.put("charges", Math.round(charges * 100.0) / 100.0);
+        return out;
+    }
+
     /** List of all registered strategies — used by the left sidebar to render nav icons. */
     @GetMapping("/api/strategies")
     public List<Map<String, Object>> list() {
@@ -95,10 +111,12 @@ public class StrategyController {
     public ResponseEntity<Map<String, Object>> reset(@PathVariable String id) {
         Strategy s = registry.get(id);
         if (s == null) return ResponseEntity.notFound().build();
-        s.resetToIdle("manual");
+        boolean ok = s.resetToIdle("manual");
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("success", true);
-        out.put("message", "Strategy " + id + " state reset to IDLE. Next scheduler tick will evaluate entry time.");
+        out.put("success", ok);
+        out.put("message", ok
+            ? "Strategy " + id + " state reset to ARMED. Next scheduler tick will evaluate entry time."
+            : "Reset refused — legs are still open. Squareoff first.");
         return ResponseEntity.ok(out);
     }
 

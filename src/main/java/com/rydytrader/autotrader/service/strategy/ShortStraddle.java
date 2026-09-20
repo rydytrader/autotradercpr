@@ -52,13 +52,20 @@ public class ShortStraddle implements Strategy {
     private static final int    STRIKE_STEP    = 50;
 
     /** Charge constants (NIFTY weekly options, FY 2025-26). */
-    private static final double STT_SELL_PCT   = 0.000625;
-    private static final double EXCH_TXN_PCT   = 0.0003503;
+    /** Fallback STT rate (0.15% on sell-side premium, post 2026 hike) used
+     *  when the operator zero'd out the CHARGES setting. Live value comes
+     *  from {@link RiskSettingsStore#getSttRate()} (percent → /100 to apply). */
+    private static final double STT_SELL_PCT_FALLBACK = 0.0015;
+    /** Fallback exchange transaction rate (0.03553%) — same fallback pattern
+     *  as STT. Live value from {@link RiskSettingsStore#getExchangeRate()}. */
+    private static final double EXCH_TXN_PCT_FALLBACK = 0.0003553;
+    /** Fallback stamp duty rate (0.003% on buy side) — same pattern.
+     *  Live value from {@link RiskSettingsStore#getStampDutyRate()}. */
+    private static final double STAMP_BUY_PCT_FALLBACK = 0.00003;
     private static final double GST_PCT        = 0.18;
     private static final double SEBI_PER_CRORE = 10.0;
-    private static final double STAMP_BUY_PCT  = 0.00003;
 
-    public enum LifecycleState { IDLE, OPEN_BOTH, OPEN_PE_ONLY, OPEN_CE_ONLY, DONE_FOR_DAY }
+    public enum LifecycleState { ARMED, OPEN_BOTH, OPEN_PE_ONLY, OPEN_CE_ONLY, DONE_FOR_DAY }
 
     // ── Instance identity (mutable via syncFromEntity()) ──────────────────────
     private final String instanceId;            // "inst-<entityId>" — never changes after construction
@@ -83,7 +90,7 @@ public class ShortStraddle implements Strategy {
     private final BalancedAtmSelector atmSelector;
 
     // ── In-memory state ───────────────────────────────────────────────────────
-    private volatile LifecycleState state = LifecycleState.IDLE;
+    private volatile LifecycleState state = LifecycleState.ARMED;
     private volatile String dayKey   = "";
     private volatile String ceSymbol = "";
     private volatile String peSymbol = "";
@@ -142,7 +149,7 @@ public class ShortStraddle implements Strategy {
     private volatile boolean peSlMovedToCost = false;
 
     /** True once at least one tick has run today with the scheduler observing the pre-entry
-     *  window (state==IDLE, now<entryTime). Reset on every day rollover. Used to detect a
+     *  window (state==ARMED, now<entryTime). Reset on every day rollover. Used to detect a
      *  late start: when tick() first runs already past entry time without ever having seen
      *  the pre-entry window, the bot won't auto-fire — the operator must explicitly hit
      *  + NEW STRADDLE. Same gate also catches the case where the operator paused before
@@ -161,7 +168,13 @@ public class ShortStraddle implements Strategy {
      *  filled-status event. Equity-bot pattern: register the orderId + context, do the
      *  bookkeeping when the callback arrives. */
     private enum PendingType { ENTRY_CE, ENTRY_PE, CLOSE_CE, CLOSE_PE }
-    private static record PendingFill(PendingType type, int qty, double entryRef) {}
+    /** {@code provisionalPnl} and {@code provisionalBuyTurnover} are the values
+     *  booked synchronously against realisedPnlToday / buyPremiumTurnoverToday
+     *  at close-order-placement time (LTP-based). The WS fill callback later
+     *  applies the delta between actual and provisional so the dashboard is
+     *  honest even if the WS push never arrives. Zero for entries. */
+    private static record PendingFill(PendingType type, int qty, double entryRef,
+                                       double provisionalPnl, double provisionalBuyTurnover) {}
     private final java.util.concurrent.ConcurrentMap<String, PendingFill> pendingFills =
         new java.util.concurrent.ConcurrentHashMap<>();
     /** True once {@link #bootstrap()} has wired the FillListener. */
@@ -250,24 +263,34 @@ public class ShortStraddle implements Strategy {
                 eventService.log("[INFO] [short-straddle] PE entry filled @ " + String.format("%.2f", price));
             }
             case CLOSE_CE -> {
-                double pnl = (p.entryRef() - price) * p.qty();
-                ceLegPnl = pnl;
+                double actualPnl  = (p.entryRef() - price) * p.qty();
+                double actualBuyT = price * p.qty();
+                // Delta refinement over the LTP-based provisional booked at
+                // close-order placement — see closeRemainingLegs / closeLeg.
+                realisedPnlToday        += (actualPnl  - p.provisionalPnl());
+                consumedRiskToday       += (actualPnl  - p.provisionalPnl());
+                buyPremiumTurnoverToday += (actualBuyT - p.provisionalBuyTurnover());
+                ceLegPnl = actualPnl;
                 ceClosePremium = price;
-                realisedPnlToday += pnl;
-                consumedRiskToday += pnl;
-                buyPremiumTurnoverToday += price * p.qty();
-                log.info("[short-straddle] CE close filled @ {} pnl={}", String.format("%.2f", price), String.format("%.2f", pnl));
-                eventService.log("[INFO] [short-straddle] CE close filled @ " + String.format("%.2f", price) + " pnl=" + String.format("%.2f", pnl));
+                log.info("[short-straddle] CE close filled @ {} pnl={} (delta {})",
+                    String.format("%.2f", price),
+                    String.format("%.2f", actualPnl),
+                    String.format("%+.2f", actualPnl - p.provisionalPnl()));
+                eventService.log("[INFO] [short-straddle] CE close filled @ " + String.format("%.2f", price) + " pnl=" + String.format("%.2f", actualPnl));
             }
             case CLOSE_PE -> {
-                double pnl = (p.entryRef() - price) * p.qty();
-                peLegPnl = pnl;
+                double actualPnl  = (p.entryRef() - price) * p.qty();
+                double actualBuyT = price * p.qty();
+                realisedPnlToday        += (actualPnl  - p.provisionalPnl());
+                consumedRiskToday       += (actualPnl  - p.provisionalPnl());
+                buyPremiumTurnoverToday += (actualBuyT - p.provisionalBuyTurnover());
+                peLegPnl = actualPnl;
                 peClosePremium = price;
-                realisedPnlToday += pnl;
-                consumedRiskToday += pnl;
-                buyPremiumTurnoverToday += price * p.qty();
-                log.info("[short-straddle] PE close filled @ {} pnl={}", String.format("%.2f", price), String.format("%.2f", pnl));
-                eventService.log("[INFO] [short-straddle] PE close filled @ " + String.format("%.2f", price) + " pnl=" + String.format("%.2f", pnl));
+                log.info("[short-straddle] PE close filled @ {} pnl={} (delta {})",
+                    String.format("%.2f", price),
+                    String.format("%.2f", actualPnl),
+                    String.format("%+.2f", actualPnl - p.provisionalPnl()));
+                eventService.log("[INFO] [short-straddle] PE close filled @ " + String.format("%.2f", price) + " pnl=" + String.format("%.2f", actualPnl));
             }
         }
         persist();
@@ -276,11 +299,18 @@ public class ShortStraddle implements Strategy {
     /** Register an orderId for fill-callback notification. Race protection: if the WS push
      *  already cached the fill before this call (rare — Fyers WS sometimes beats the REST
      *  response on liquid options), apply it immediately. */
-    private void registerPendingFill(String orderId, PendingType type, int qty, double entryRef) {
+    private void registerPendingFill(String orderId, PendingType type, int qty, double entryRef,
+                                      double provisionalPnl, double provisionalBuyTurnover) {
         if (orderId == null || orderId.isEmpty()) return;
-        pendingFills.put(orderId, new PendingFill(type, qty, entryRef));
+        pendingFills.put(orderId, new PendingFill(type, qty, entryRef,
+            provisionalPnl, provisionalBuyTurnover));
         Double already = orderEventService.getFillPrice(orderId);
         if (already != null && already > 0) onActualFill(orderId, already);
+    }
+    /** Entry orders never book provisional P&L — the WS fill supplies the entry
+     *  premium the strategy has no LTP-based estimate for. */
+    private void registerPendingFill(String orderId, PendingType type, int qty, double entryRef) {
+        registerPendingFill(orderId, type, qty, entryRef, 0, 0);
     }
 
     /** Refresh display fields when the operator renames the instance via the Straddles tab. */
@@ -318,7 +348,7 @@ public class ShortStraddle implements Strategy {
     }
 
     /** Public entry point for the dashboard's {@code + NEW STRADDLE} button. Validates every
-     *  scheduler precondition except the {@code state == IDLE} gate (which is the whole
+     *  scheduler precondition except the {@code state == ARMED} gate (which is the whole
      *  point of this path), then funnels through the same {@link #performEntryNow} that the
      *  scheduler's initial entry uses. The frontend mirrors these gates client-side for the
      *  button's enable / disable state but the server is authoritative — a 409 from this
@@ -620,7 +650,7 @@ public class ShortStraddle implements Strategy {
         ShortStraddleStateStore.State p = stateStore.get(instanceId);
         if (p != null && p.state != null) {
             try { this.state = LifecycleState.valueOf(p.state); }
-            catch (IllegalArgumentException ex) { this.state = LifecycleState.IDLE; }
+            catch (IllegalArgumentException ex) { this.state = LifecycleState.ARMED; }
             this.dayKey         = p.dayKey != null ? p.dayKey : "";
             this.ceSymbol       = p.ceSymbol != null ? p.ceSymbol : "";
             this.peSymbol       = p.peSymbol != null ? p.peSymbol : "";
@@ -734,7 +764,7 @@ public class ShortStraddle implements Strategy {
         }
 
         switch (state) {
-            case IDLE -> {
+            case ARMED -> {
                 // Record that we saw the scheduler running BEFORE entry time today. Used by
                 // the auto-entry gate below to distinguish "natural 9:20 fire" from "started
                 // late / unpaused late". When paused we still observe the window — pause is
@@ -773,7 +803,7 @@ public class ShortStraddle implements Strategy {
     }
 
     // ── Initial entry ──────────────────────────────────────────────────────────
-    /** Scheduler entry path — gates already checked by caller (state IDLE, entry time
+    /** Scheduler entry path — gates already checked by caller (state ARMED, entry time
      *  reached, day enabled). Delegates to {@link #performEntryNow} which does the actual
      *  placement and is also reused by the manual {@code + NEW STRADDLE} restart path. */
     private void doInitialEntry() {
@@ -988,11 +1018,11 @@ public class ShortStraddle implements Strategy {
         // MAX_LOSS_HIT close the leg too but don't count as an SL day for analytics.
         if ("CE_SL_HIT".equals(reason) || "PE_SL_HIT".equals(reason)) slHitsToday++;
 
-        // Seed display values from LTP so the leg card shows a reasonable Exit price during
-        // the ~100-200 ms gap before the WS push lands. The WS callback (onActualFill)
-        // overwrites ceClosePremium / peClosePremium with the broker-confirmed fill and does
-        // ALL P&L / turnover bookkeeping — closeLeg does NOT touch realisedPnlToday or
-        // buyPremiumTurnoverToday.
+        // Seed display values from LTP for the ~100-200 ms gap before the WS push lands.
+        // We ALSO book the LTP-based P&L provisionally against realisedPnlToday +
+        // buyPremiumTurnoverToday so the dashboard is honest even if the WS fill event
+        // never arrives. The WS callback (onActualFill) later applies the actual-vs-
+        // provisional delta so numbers converge to broker-confirmed values.
         double quotedLtp = marketDataService.getLtp(symbol);
         double niftyAtClose = marketDataService.getLtp(NIFTY_SYMBOL);
         String closedCe = isCe ? symbol : "";
@@ -1000,11 +1030,17 @@ public class ShortStraddle implements Strategy {
 
         String closeOrderId = placeCloseRetry(symbol, qty, which, reason);
 
-        double pnl = (entry > 0 && quotedLtp > 0) ? (entry - quotedLtp) * qty : 0;
+        double pnl  = (entry > 0 && quotedLtp > 0) ? (entry - quotedLtp) * qty : 0;
+        double buyT = quotedLtp > 0 ? quotedLtp * qty : 0;
         if (isCe) { ceLegPnl = pnl; ceClosePremium = quotedLtp; }
         else      { peLegPnl = pnl; peClosePremium = quotedLtp; }
+        if (closeOrderId != null && !closeOrderId.isEmpty()) {
+            realisedPnlToday        += pnl;
+            consumedRiskToday       += pnl;
+            buyPremiumTurnoverToday += buyT;
+        }
         registerPendingFill(closeOrderId, isCe ? PendingType.CLOSE_CE : PendingType.CLOSE_PE,
-            qty, entry);
+            qty, entry, pnl, buyT);
 
         // Unsubscribe — the other leg keeps its WS sub.
         try { marketDataService.unsubscribeAdditional(java.util.Collections.singletonList(symbol)); }
@@ -1042,12 +1078,21 @@ public class ShortStraddle implements Strategy {
         boolean countAsSl = reason != null && reason.contains("MAX_LOSS");
         if (isCeOpen() && !ceSymbol.isEmpty() && ceQty > 0) {
             double ltp = marketDataService.getLtp(ceSymbol);
-            double pnl = (ceEntryPremium > 0 && ltp > 0) ? (ceEntryPremium - ltp) * ceQty : 0;
+            double pnl  = (ceEntryPremium > 0 && ltp > 0) ? (ceEntryPremium - ltp) * ceQty : 0;
+            double buyT = ltp > 0 ? ltp * ceQty : 0;
             ceLegPnl = pnl;
             ceClosePremium = ltp;
             totalPnl += pnl;
             String ceCloseId = placeCloseRetry(ceSymbol, ceQty, "CE", reason);
-            registerPendingFill(ceCloseId, PendingType.CLOSE_CE, ceQty, ceEntryPremium);
+            // Provisional book — only when the close order was accepted. Keeps
+            // the display honest if the WS fill push never lands. onActualFill
+            // later applies the actual-vs-provisional delta.
+            if (ceCloseId != null && !ceCloseId.isEmpty()) {
+                realisedPnlToday        += pnl;
+                consumedRiskToday       += pnl;
+                buyPremiumTurnoverToday += buyT;
+            }
+            registerPendingFill(ceCloseId, PendingType.CLOSE_CE, ceQty, ceEntryPremium, pnl, buyT);
             unsubAfter.add(ceSymbol);
             this.ceClosedAtMillis = System.currentTimeMillis();
             this.ceQty = 0;
@@ -1056,12 +1101,18 @@ public class ShortStraddle implements Strategy {
         }
         if (isPeOpen() && !peSymbol.isEmpty() && peQty > 0) {
             double ltp = marketDataService.getLtp(peSymbol);
-            double pnl = (peEntryPremium > 0 && ltp > 0) ? (peEntryPremium - ltp) * peQty : 0;
+            double pnl  = (peEntryPremium > 0 && ltp > 0) ? (peEntryPremium - ltp) * peQty : 0;
+            double buyT = ltp > 0 ? ltp * peQty : 0;
             peLegPnl = pnl;
             peClosePremium = ltp;
             totalPnl += pnl;
             String peCloseId = placeCloseRetry(peSymbol, peQty, "PE", reason);
-            registerPendingFill(peCloseId, PendingType.CLOSE_PE, peQty, peEntryPremium);
+            if (peCloseId != null && !peCloseId.isEmpty()) {
+                realisedPnlToday        += pnl;
+                consumedRiskToday       += pnl;
+                buyPremiumTurnoverToday += buyT;
+            }
+            registerPendingFill(peCloseId, PendingType.CLOSE_PE, peQty, peEntryPremium, pnl, buyT);
             unsubAfter.add(peSymbol);
             this.peClosedAtMillis = System.currentTimeMillis();
             this.peQty = 0;
@@ -1127,10 +1178,17 @@ public class ShortStraddle implements Strategy {
         double sellT = sellPremiumTurnoverToday;
         double buyT  = projectedBuyT;
         double totalT = sellT + buyT;
-        double stt        = sellT * STT_SELL_PCT;
-        double exchange   = totalT * EXCH_TXN_PCT;
+        // All rate settings are stored as percent (e.g. 0.15 for 0.15%) —
+        // divide by 100 to apply as a multiplier. Zero'd-out settings fall
+        // back to the compile-time constants so charges never silently drop
+        // to zero on a misconfiguration.
+        double exchRateFrac  = riskSettings.getExchangeRate()  > 0 ? riskSettings.getExchangeRate()  / 100.0 : EXCH_TXN_PCT_FALLBACK;
+        double sttRateFrac   = riskSettings.getSttRate()       > 0 ? riskSettings.getSttRate()       / 100.0 : STT_SELL_PCT_FALLBACK;
+        double stampRateFrac = riskSettings.getStampDutyRate() > 0 ? riskSettings.getStampDutyRate() / 100.0 : STAMP_BUY_PCT_FALLBACK;
+        double stt        = sellT * sttRateFrac;
+        double exchange   = totalT * exchRateFrac;
         double sebi       = (totalT / 10_000_000.0) * SEBI_PER_CRORE;
-        double stamp      = buyT * STAMP_BUY_PCT;
+        double stamp      = buyT * stampRateFrac;
         double gst        = (brokerage + exchange + sebi) * GST_PCT;
         double total      = brokerage + stt + exchange + sebi + stamp + gst;
         java.util.Map<String, Double> b = new java.util.LinkedHashMap<>();
@@ -1214,7 +1272,7 @@ public class ShortStraddle implements Strategy {
         // we compute live (cached 30 s); post-entry we surface the selection captured at the
         // time of the actual entry placement so the UI reflects what was actually traded.
         BalancedAtmSelector.AtmSelection atmInfo;
-        boolean preEntry = (state == LifecycleState.IDLE) || (state == LifecycleState.DONE_FOR_DAY);
+        boolean preEntry = (state == LifecycleState.ARMED) || (state == LifecycleState.DONE_FOR_DAY);
         if (preEntry && niftyLtp > 0) {
             atmInfo = getAtmPreview();
         } else {
@@ -1361,6 +1419,24 @@ public class ShortStraddle implements Strategy {
     public java.util.Map<String, Object> getStatus() {
         java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
         m.put("state",         state.name());
+        // displayState — UI-facing label. When ARMED on a weekend / NSE holiday
+        // the strategy isn't going to fire, so surface IDLE (with the reason
+        // exposed separately for a tooltip). Internal state stays ARMED — this
+        // is display-only.
+        boolean tradingDay = marketHolidayService == null || marketHolidayService.isTradingDay();
+        String displayState = (state == LifecycleState.ARMED && !tradingDay) ? "IDLE" : state.name();
+        m.put("displayState", displayState);
+        if ("IDLE".equals(displayState)) {
+            LocalDate today = LocalDate.now(IST);
+            String reason;
+            java.time.DayOfWeek dow = today.getDayOfWeek();
+            if (dow == java.time.DayOfWeek.SATURDAY || dow == java.time.DayOfWeek.SUNDAY) {
+                reason = "Market closed — weekend (" + dow.getDisplayName(java.time.format.TextStyle.FULL, java.util.Locale.ENGLISH) + "). Strategy is armed for the next trading day.";
+            } else {
+                reason = "Market closed — NSE holiday. Strategy is armed for the next trading day.";
+            }
+            m.put("displayStateReason", reason);
+        }
         m.put("dayKey",        dayKey);
         m.put("lastEntryNifty", lastEntryNifty);
         m.put("ceSymbol",      ceSymbol);
@@ -1389,7 +1465,7 @@ public class ShortStraddle implements Strategy {
         m.put("lotSize",       NIFTY_LOT_SIZE);
         m.put("enabled",       riskSettings.getStrategyBool(instanceId, "enabled", false));
         // Soft-pause flag — surfaced in the Today pane header. When true, scheduler skips
-        // the IDLE → entry transition AND restartFromDoneForDay returns TRADING_PAUSED so
+        // the ARMED → entry transition AND restartFromDoneForDay returns TRADING_PAUSED so
         // the + NEW STRADDLE button stays disabled. Open positions continue to be managed.
         m.put("tradingPaused", riskSettings.getStrategyBool(instanceId, "tradingPaused", false));
         return m;
@@ -1409,7 +1485,7 @@ public class ShortStraddle implements Strategy {
     }
 
     /** Hard-stop for the day. Closes any open legs AND parks DONE_FOR_DAY regardless of
-     *  state, so an IDLE leg-sl that hasn't entered yet won't fire its entry later. */
+     *  state, so an ARMED leg-sl that hasn't entered yet won't fire its entry later. */
     @Override
     public synchronized void parkDoneForDay(String reason) {
         if (state == LifecycleState.DONE_FOR_DAY) return;
@@ -1426,14 +1502,25 @@ public class ShortStraddle implements Strategy {
     }
 
     @Override
-    public synchronized void resetToIdle(String reason) {
-        log.info("[short-straddle] Manual reset from {} → IDLE ({})", state, reason);
-        eventService.log("[INFO] [short-straddle] state reset to IDLE (" + reason + ")");
+    public synchronized boolean resetToIdle(String reason) {
+        // Refuse when legs are still open at the broker. Resetting would clear
+        // ceSymbol/peSymbol/qty from memory but leave the broker holding the
+        // shorts — instant orphan. Operator must squareoff first.
+        if (state == LifecycleState.OPEN_BOTH
+                || state == LifecycleState.OPEN_CE_ONLY
+                || state == LifecycleState.OPEN_PE_ONLY) {
+            log.warn("[short-straddle] resetToIdle refused — legs open (state={})", state);
+            eventService.log("[WARNING] [short-straddle] RESET refused — legs are still open. Squareoff first.");
+            return false;
+        }
+        log.info("[short-straddle] Manual reset from {} → ARMED ({})", state, reason);
+        eventService.log("[INFO] [short-straddle] state reset to ARMED (" + reason + ")");
         this.ceSymbol = ""; this.peSymbol = "";
         this.ceQty = 0; this.peQty = 0;
         this.ceOrderId = ""; this.peOrderId = "";
         this.ceClosedAtMillis = 0; this.peClosedAtMillis = 0;
-        transitionTo(LifecycleState.IDLE);
+        transitionTo(LifecycleState.ARMED);
+        return true;
     }
 
     // ── Day rollover + session persistence ────────────────────────────────────
@@ -1479,7 +1566,7 @@ public class ShortStraddle implements Strategy {
         this.observedPreEntryWindow = false;
         this.ceSlMovedToCost = false;
         this.peSlMovedToCost = false;
-        transitionTo(LifecycleState.IDLE);
+        transitionTo(LifecycleState.ARMED);
     }
 
     private void persistSessionFor(String date) {
@@ -1805,10 +1892,13 @@ public class ShortStraddle implements Strategy {
     private double computeCycleCharges(double sellPrem, double buyPrem, int orders) {
         double brokerage = orders * riskSettings.getBrokeragePerOrder();
         double totalPrem = sellPrem + buyPrem;
-        double stt       = sellPrem * STT_SELL_PCT;
-        double exchange  = totalPrem * EXCH_TXN_PCT;
+        double exchRateFrac  = riskSettings.getExchangeRate()  > 0 ? riskSettings.getExchangeRate()  / 100.0 : EXCH_TXN_PCT_FALLBACK;
+        double sttRateFrac   = riskSettings.getSttRate()       > 0 ? riskSettings.getSttRate()       / 100.0 : STT_SELL_PCT_FALLBACK;
+        double stampRateFrac = riskSettings.getStampDutyRate() > 0 ? riskSettings.getStampDutyRate() / 100.0 : STAMP_BUY_PCT_FALLBACK;
+        double stt       = sellPrem * sttRateFrac;
+        double exchange  = totalPrem * exchRateFrac;
         double sebi      = (totalPrem / 10_000_000.0) * SEBI_PER_CRORE;
-        double stamp     = buyPrem * STAMP_BUY_PCT;
+        double stamp     = buyPrem * stampRateFrac;
         double gst       = (brokerage + exchange + sebi) * GST_PCT;
         return round2(brokerage + stt + exchange + sebi + stamp + gst);
     }

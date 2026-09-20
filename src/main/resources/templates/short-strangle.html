@@ -39,7 +39,8 @@
         .roll-table th, .roll-table td { padding:8px 10px; border-bottom:1px solid var(--border); text-align:left; }
         .roll-table th { color:var(--text-muted); font-weight:600; font-size:0.7rem; text-transform:uppercase; letter-spacing:0.06em; }
         .reset-btn    { background:rgba(251,191,36,0.10); border:1px solid rgba(251,191,36,0.30); color:var(--accent-amber, #fbbf24); padding:6px 14px; border-radius:6px; font-family:var(--font-mono); font-size:0.72rem; font-weight:700; cursor:pointer; }
-        .reset-btn:hover { background:rgba(251,191,36,0.18); border-color:rgba(251,191,36,0.45); }
+        .reset-btn:hover:not(:disabled) { background:rgba(251,191,36,0.18); border-color:rgba(251,191,36,0.45); }
+        .reset-btn:disabled { background:transparent; border-color:var(--border); color:var(--text-muted); cursor:not-allowed; opacity:0.55; }
         /* Left sidebar nav icons */
         .nav-icon:hover { color:var(--text-primary) !important; background:var(--bg-card-hover) !important; border-color:var(--border) !important; }
         .nav-icon.active { color:var(--accent-cyan) !important; background:rgba(125,211,252,0.12) !important; border-color:rgba(125,211,252,0.35) !important; }
@@ -195,7 +196,7 @@
                         color:var(--accent-red, #f87171);padding:6px 14px;border-radius:6px;
                         font-family:var(--font-mono);font-size:0.72rem;font-weight:700;
                         cursor:pointer;letter-spacing:0.04em;">✕ SQUAREOFF STRANGLE</button>
-                    <button id="strangleResetBtn" class="reset-btn" onclick="resetStrangle()" title="Force the in-memory state back to IDLE. Use after a rejection has been fixed and the bot needs to re-arm without a restart." style="letter-spacing:0.04em;">↻ RESET TO IDLE</button>
+                    <button id="strangleResetBtn" class="reset-btn" onclick="resetStrangle()" disabled title="Force the in-memory state back to ARMED. Enabled only when state is DONE_FOR_DAY — use after a rejection has been fixed and the bot needs to re-arm without a restart." style="letter-spacing:0.04em;">↻ RESET</button>
                     <button id="strangleNewBtn" onclick="newStrangle()" disabled
                             title="Manually enter another strangle today at the current ATM (only after the prior cycle has closed and during market hours)."
                             style="background:rgba(52,211,153,0.10);border:1px solid rgba(52,211,153,0.40);
@@ -499,11 +500,10 @@
 </div><!-- /flex wrapper -->
 
 <script src="/js/common.js?v=2"></script>
-<script src="/js/ticker.js?v=4"></script>
-<script src="/js/settings-modal.js?v=9"></script>
+<script src="/js/ticker.js?v=5"></script>
+<script src="/js/settings-modal.js?v=10"></script>
 <script src="/js/strategy-settings-form.js?v=13"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
-<script src="/js/manual-terminal-modal.js?v=19"></script>
 
 <script>
     // ── Footer year ──────────────────────────────────────────────────────────
@@ -688,12 +688,20 @@
             lastDashboardData = d;
             var SHAPE = 'short-strangle';
             applyShapeChrome(SHAPE, d);
-            // Target-delta badge — shows the per-leg delta target this instance is hunting for.
+            // Strike-target badge — shows the active selection mode's target value.
+            // DELTA → "Δ ≈ 0.20", PREMIUM → "₹ 50". Hidden when neither value is set.
             var offsetBadge = document.getElementById('strangleOffsetBadge');
-            if (offsetBadge && d.targetDelta != null) {
-                var td = Number(d.targetDelta) || 0;
-                offsetBadge.textContent = 'Δ ≈ ' + (td / 100).toFixed(2);
-                offsetBadge.style.display = '';
+            if (offsetBadge) {
+                var mode = String(d.strikeSelectionMode || 'DELTA').toUpperCase();
+                if (mode === 'PREMIUM' && d.targetPremium != null) {
+                    var tp = Number(d.targetPremium) || 0;
+                    offsetBadge.textContent = '₹ ' + tp.toFixed(0);
+                    offsetBadge.style.display = '';
+                } else if (d.targetDelta != null) {
+                    var td = Number(d.targetDelta) || 0;
+                    offsetBadge.textContent = 'Δ ≈ ' + (td / 100).toFixed(2);
+                    offsetBadge.style.display = '';
+                }
             }
             // Hero — true net = realised + open MTM − charges
             var ch = d.charges || {};
@@ -787,9 +795,34 @@
             refreshPauseToggle(d);
 
             var statePill = document.getElementById('heroStatePill');
-            statePill.textContent = d.state || '—';
-            statePill.style.color = (d.state === 'OPEN_BOTH' || d.state === 'OPEN_CE_ONLY' || d.state === 'OPEN_PE_ONLY') ? 'var(--accent-green)'
-                : (d.state === 'DONE_FOR_DAY') ? 'var(--accent-cyan)' : 'var(--text-muted)';
+            // Prefer server-computed displayState (rewrites ARMED → IDLE on
+            // weekends/holidays with a tooltip explaining why).
+            var pillState = d.displayState || d.state || '—';
+            statePill.textContent = pillState;
+            statePill.style.color = (pillState === 'OPEN_BOTH' || pillState === 'OPEN_CE_ONLY' || pillState === 'OPEN_PE_ONLY') ? 'var(--accent-green)'
+                : (pillState === 'DONE_FOR_DAY') ? 'var(--accent-cyan)'
+                : (pillState === 'IDLE') ? 'var(--accent-amber, #fbbf24)'
+                : 'var(--text-muted)';
+            if (d.displayStateReason) {
+                statePill.title = d.displayStateReason;
+                statePill.style.cursor = 'help';
+            } else {
+                statePill.removeAttribute('title');
+                statePill.style.cursor = 'default';
+            }
+            // RESET button — only meaningful when state is DONE_FOR_DAY.
+            var resetBtn = document.getElementById('strangleResetBtn');
+            if (resetBtn) {
+                var canReset = (d.state === 'DONE_FOR_DAY');
+                resetBtn.disabled = !canReset;
+                if (!canReset) {
+                    resetBtn.title = d.state === 'OPEN_BOTH' || d.state === 'OPEN_CE_ONLY' || d.state === 'OPEN_PE_ONLY'
+                        ? 'Legs currently open — squareoff first, then reset if needed.'
+                        : 'Reset only applies when state is DONE_FOR_DAY (recover from a rejection).';
+                } else {
+                    resetBtn.title = 'Force state back to ARMED so the scheduler re-evaluates the entry window.';
+                }
+            }
 
             // Display LTP — uses the unguarded value so pre-market shows yesterday's close
             // (same behaviour as the ticker bar). The strict niftyLtp is still used elsewhere
@@ -1735,7 +1768,7 @@
             }
         }).catch(err => { if (window.showToast) showToast('Reset failed: ' + (err.message || err), 'error'); })
           .finally(() => {
-            if (btn) { btn.disabled = false; btn.textContent = '↻ RESET TO IDLE'; }
+            if (btn) { btn.textContent = '↻ RESET'; }
             loadDashboard();
           });
     }

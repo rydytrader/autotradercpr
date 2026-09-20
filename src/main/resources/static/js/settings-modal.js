@@ -70,15 +70,12 @@
                     '<div class="sm-field"><label>Portfolio Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Global kill switch trigger. When aggregate net day P&L across all strategies drops below this % of Initial Capital, every strategy is flattened. 0 disables.</div></div>' +
                     '<div class="sm-field"><label>Max Portfolio Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto-calculated from Initial Capital × Daily Risk %. This is the sole rupee loss threshold across the whole book — when aggregate (consumed risk + open MTM − charges) across every enabled strategy breaches this, all positions are flattened.</div></div>' +
                   '</div>' +
-                  '<div class="sm-pane" data-pane="adjustments" style="display:none;">' +
-                    '<div class="sm-field"><label>Auto Squareoff Time (HH:mm IST)</label><input type="time" id="sm-manualAutoSquareOffTime" step="60"><div class="sm-hint">Manual-terminal positions (adjustment trades) flatten automatically at this IST time. Leave blank to disable.</div></div>' +
-                  '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
                     '<div class="sm-field"><label>Brokerage per Order (₹)</label><input type="number" id="sm-brokeragePerOrder" step="1" min="0"><div class="sm-hint">Flat per-order brokerage. Drives charge estimates on every dashboard + session row.</div></div>' +
                     '<div class="sm-field"><label>STT Rate (%)</label><input type="number" id="sm-sttRate" step="0.0001" min="0"></div>' +
-                    '<div class="sm-field"><label>Exchange Rate (%)</label><input type="number" id="sm-exchangeRate" step="0.0001" min="0"></div>' +
+                    '<div class="sm-field"><label>Exchange Transaction Charge (%)</label><input type="number" id="sm-exchangeRate" step="0.0001" min="0"></div>' +
                     '<div class="sm-field"><label>GST Rate (%)</label><input type="number" id="sm-gstRate" step="0.01" min="0"></div>' +
-                    '<div class="sm-field"><label>SEBI Rate (%)</label><input type="number" id="sm-sebiRate" step="0.0001" min="0"></div>' +
+                    '<div class="sm-field"><label>SEBI Turnover Fee (₹ per crore)</label><input type="number" id="sm-sebiRate" step="0.1" min="0"></div>' +
                     '<div class="sm-field"><label>Stamp Duty Rate (%)</label><input type="number" id="sm-stampDutyRate" step="0.0001" min="0"></div>' +
                   '</div>' +
                   // Users tab (static, admin only)
@@ -152,7 +149,6 @@
         html += '<button class="sm-tab" data-tab="straddles">STRADDLES</button>';
         html += '<button class="sm-tab" data-tab="strangles">STRANGLES</button>';
         html += '<button class="sm-tab" data-tab="portfolio-risk">PORTFOLIO RISK</button>';
-        html += '<button class="sm-tab" data-tab="adjustments">ADJUSTMENTS</button>';
         html += '<button class="sm-tab" data-tab="charges">CHARGES</button>';
         html += '<button class="sm-tab" data-tab="users">USERS</button>';
         strip.innerHTML = html;
@@ -177,9 +173,6 @@
         } else if (tab === 'portfolio-risk') {
             var pp = modalEl.querySelector('[data-pane="portfolio-risk"]'); if (pp) pp.style.display = '';
             loadPortfolioRiskValues();
-        } else if (tab === 'adjustments') {
-            var ap = modalEl.querySelector('[data-pane="adjustments"]'); if (ap) ap.style.display = '';
-            loadAdjustmentsValues();
         } else if (tab === 'charges') {
             var pane = modalEl.querySelector('[data-pane="charges"]'); if (pane) pane.style.display = '';
         } else if (tab === 'users') {
@@ -191,7 +184,6 @@
     // ── Save ─────────────────────────────────────────────────────────────────
     function saveSettings() {
         if (activeTab === 'portfolio-risk') return savePortfolioRiskTab();
-        if (activeTab === 'adjustments')    return saveAdjustmentsTab();
         if (activeTab === 'charges')        return saveChargesTab();
         if (activeTab === 'straddles')      { showBanner('Use the row buttons (✎ ✕ enable/disable) — no batch save.', 'info'); return; }
         if (activeTab === 'strangles')      { showBanner('Use the row buttons (✎ ✕ enable/disable) — no batch save.', 'info'); return; }
@@ -486,20 +478,6 @@
         postSettings('/api/settings/risk', body);
     }
 
-    function loadAdjustmentsValues() {
-        fetch('/api/settings/risk').then(function(r) { return r.json(); }).then(function(d) {
-            if (!d) return;
-            var el = document.getElementById('sm-manualAutoSquareOffTime');
-            if (el) el.value = d.manualAutoSquareOffTime || '';
-        }).catch(function() {});
-    }
-
-    function saveAdjustmentsTab() {
-        var el = document.getElementById('sm-manualAutoSquareOffTime');
-        var body = { manualAutoSquareOffTime: el ? (el.value || '').trim() : '' };
-        postSettings('/api/settings/risk', body);
-    }
-
     function saveChargesTab() {
         var body = {
             brokeragePerOrder: parseFloat(document.getElementById('sm-brokeragePerOrder').value) || 0,
@@ -609,7 +587,6 @@
             if (activeTab === 'straddles')           loadStraddles();
             else if (activeTab === 'strangles')      loadStrangles();
             else if (activeTab === 'portfolio-risk') loadPortfolioRiskValues();
-            else if (activeTab === 'adjustments')    loadAdjustmentsValues();
             else if (activeTab === 'charges')        loadChargesValues();
             else                                     switchTab('straddles');
         }

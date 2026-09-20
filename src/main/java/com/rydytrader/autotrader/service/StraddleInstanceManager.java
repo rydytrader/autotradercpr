@@ -217,7 +217,7 @@ public class StraddleInstanceManager implements ApplicationRunner {
         if (s == null) throw new IllegalArgumentException("Unknown instance: " + instanceId);
         if (!enabled) {
             String state = s.currentState();
-            if (!"IDLE".equals(state) && !"DONE_FOR_DAY".equals(state)) {
+            if (!"ARMED".equals(state) && !"IDLE".equals(state) && !"DONE_FOR_DAY".equals(state)) {
                 throw new IllegalStateException(
                     "Cannot disable while legs are open (state=" + state + "). Squareoff first.");
             }
@@ -234,7 +234,7 @@ public class StraddleInstanceManager implements ApplicationRunner {
         ShortStraddle s = instances.get(instanceId);
         if (s != null) {
             String state = s.currentState();
-            if (!"IDLE".equals(state) && !"DONE_FOR_DAY".equals(state)) {
+            if (!"ARMED".equals(state) && !"IDLE".equals(state) && !"DONE_FOR_DAY".equals(state)) {
                 throw new IllegalStateException(
                     "Cannot delete while legs are open (state=" + state + "). Squareoff first.");
             }

@@ -184,16 +184,6 @@
                     <button class="scope-pill active" data-strategy="all">All Strategies</button>
                     <!-- Strategy-specific pills injected at runtime from /api/strategies -->
                 </div>
-                <!-- Include adjustments toggle — sums manual-terminal closed trades into the
-                     money tiles (Total Return / Current Capital / Avg Monthly % / Max Drawdown
-                     / Equity Curve). Strategy-stats tiles stay strategy-pure regardless. State
-                     persists in localStorage. -->
-                <label style="display:flex; align-items:center; gap:6px; margin-left:14px; cursor:pointer; font-family:var(--font-mono); font-size:0.72rem; color:var(--text-secondary);"
-                       title="When ticked, manual-terminal closed trades are folded into Total Return, Current Capital, Avg Monthly % and the equity curve. Win Rate, Profit Factor, R:R, Best/Worst, SL Days, streaks stay strategy-only regardless.">
-                    <input type="checkbox" id="includeAdjustments" checked
-                           style="accent-color: var(--accent-cyan, #22d3ee); width:14px; height:14px;">
-                    Include adjustments in P&amp;L
-                </label>
             </div>
         </div>
     </div>
@@ -265,10 +255,10 @@
     <!-- FOUR DETAIL CARDS (drill-down stats — only metrics NOT already in the hero) -->
     <div class="fade-in ah-detail-grid" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:20px;">
 
-        <!-- Straddle Performance -->
+        <!-- Session Performance -->
         <div class="section-card" style="margin-bottom:0;">
             <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Straddle Performance</div>
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Session Performance</div>
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -322,7 +312,7 @@
                     <span class="stat-value" id="ahTotalCharges" style="font-size:1rem;">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Avg per Straddle</span>
+                    <span class="stat-label" style="margin:0;">Avg per Session</span>
                     <span class="stat-value" id="ahAvgCharges" style="font-size:1rem; color:var(--text-muted);">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -333,29 +323,27 @@
             </div>
         </div>
 
-        <!-- Adjustments — manual-terminal closed trades for the selected period. -->
+        <!-- Edge Metrics -->
         <div class="section-card" style="margin-bottom:0;">
             <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan, #22d3ee);"></div> Adjustments</div>
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-cyan, #22d3ee);"></div> Edge Metrics</div>
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Count</span>
-                    <span class="stat-value" id="ahAdjCount" style="font-size:1rem;"
-                          title="Number of closed manual-terminal trades in the selected period.">—</span>
+                    <span class="stat-label" style="margin:0;" title="Expectancy = average net P&L per session. Positive means the strategy is a positive-EV bet on average.">Expectancy</span>
+                    <span class="stat-value" id="ahExpectancy" style="font-size:1rem;">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Net P&L</span>
-                    <span class="stat-value" id="ahAdjNetPnl" style="font-size:1rem;"
-                          title="Sum of net P&L across all manual-terminal trades. Always shown — independent of the Include adjustments checkbox.">—</span>
+                    <span class="stat-label" style="margin:0;" title="Recovery Factor = total net P&L / max drawdown. Higher = the strategy's profits recover deeper drawdowns faster.">Recovery Factor</span>
+                    <span class="stat-value" id="ahRecoveryFactor" style="font-size:1rem;">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Charges</span>
-                    <span class="stat-value" id="ahAdjCharges" style="font-size:1rem; color:var(--text-muted);"
-                          title="Manual-terminal charges (broker + statutory). Placeholder 0 in v1 — per-trade brokerage estimate to be added.">—</span>
+                    <span class="stat-label" style="margin:0;" title="Sharpe ratio annualised at 250 sessions/yr. > 1 is generally decent risk-adjusted return; > 2 is very good. Sensitive to session count — takes ~30+ sessions to stabilise.">Sharpe Ratio</span>
+                    <span class="stat-value" id="ahSharpe" style="font-size:1rem;">—</span>
                 </div>
             </div>
         </div>
+
     </div>
 
     <!-- EQUITY CURVE -->
@@ -366,6 +354,17 @@
         </div>
         <div style="padding:20px 28px; height:360px;">
             <canvas id="equityCurveChart"></canvas>
+        </div>
+    </div>
+
+    <!-- PER-SESSION P&L BARS -->
+    <div class="section-card fade-in" style="margin-bottom:20px;">
+        <div class="section-header">
+            <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> Session P&L</div>
+            <span class="section-badge" style="font-size:0.6rem; margin-left:auto;">Net P&L per trading session (green = profit · red = loss)</span>
+        </div>
+        <div style="padding:20px 28px; height:280px;">
+            <canvas id="sessionBarsChart"></canvas>
         </div>
     </div>
 
@@ -380,10 +379,9 @@
 </div><!-- /flex wrapper -->
 
 <script src="/js/common.js?v=2"></script>
-<script src="/js/ticker.js?v=4"></script>
-<script src="/js/settings-modal.js?v=9"></script>
+<script src="/js/ticker.js?v=5"></script>
+<script src="/js/settings-modal.js?v=10"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
-<script src="/js/manual-terminal-modal.js?v=19"></script>
 
 <script>
     // Footer year
@@ -431,16 +429,6 @@
     document.addEventListener('DOMContentLoaded', function() {
         var homeIcon = document.querySelector('.nav-icon[data-nav-key="home"]');
         if (homeIcon) homeIcon.classList.add('active');
-        // Wire the include-adjustments checkbox. Restore previous state from localStorage.
-        var adjCb = document.getElementById('includeAdjustments');
-        if (adjCb) {
-            adjCb.checked = currentIncludeAdjustments;
-            adjCb.addEventListener('change', function() {
-                currentIncludeAdjustments = adjCb.checked;
-                try { window.localStorage.setItem('homeIncludeAdjustments', currentIncludeAdjustments ? 'true' : 'false'); } catch (e) {}
-                loadSummary(true);
-            });
-        }
     });
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -460,12 +448,6 @@
     // ── Selectors ────────────────────────────────────────────────────────────
     var currentPeriod   = 'today';
     var currentStrategy = 'all';
-    var currentIncludeAdjustments = (function() {
-        // localStorage so the operator's choice survives a refresh.
-        var stored = null;
-        try { stored = window.localStorage.getItem('homeIncludeAdjustments'); } catch (e) {}
-        return stored === null ? true : stored === 'true';
-    })();
     var lastEquityRenderMs = 0;
     var EQUITY_REFRESH_MS = 900000; // 15 minutes — the curve doesn't change tick-to-tick
     var pickedYear = '';  // empty = picker not in use
@@ -660,13 +642,60 @@
         });
     }
 
+    // ── Per-session bar chart ────────────────────────────────────────────────
+    var sessionBarsChart = null;
+    /** {@code byDate} is a map from yyyy-MM-dd → { netPnl, charges, straddles, ... }.
+     *  Render one bar per date, coloured by sign; green for profit, red for loss. */
+    function renderSessionBarsChart(byDate) {
+        var ctx = document.getElementById('sessionBarsChart');
+        if (!ctx) return;
+        ctx = ctx.getContext('2d');
+        if (sessionBarsChart) { sessionBarsChart.destroy(); sessionBarsChart = null; }
+        var styles = getComputedStyle(document.documentElement);
+        var gridCol  = styles.getPropertyValue('--border').trim()     || 'rgba(255,255,255,0.06)';
+        var textCol  = styles.getPropertyValue('--text-muted').trim() || '#888';
+        var greenCol = styles.getPropertyValue('--accent-green').trim() || '#34d399';
+        var redCol   = (styles.getPropertyValue('--accent-red').trim())  || '#f87171';
+        var dates = byDate ? Object.keys(byDate).sort() : [];
+        var values = dates.map(function(d) { return Number((byDate[d] || {}).netPnl) || 0; });
+        var colors = values.map(function(v) { return v >= 0 ? greenCol : redCol; });
+        sessionBarsChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: dates,
+                datasets: [{
+                    label: 'Net P&L',
+                    data: values,
+                    backgroundColor: colors,
+                    borderColor: colors,
+                    borderWidth: 1,
+                    borderRadius: 3,
+                    maxBarThickness: 28
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false }, tooltip: {
+                    callbacks: { label: function(ctx) { return fmtRs(ctx.parsed.y); } }
+                } },
+                scales: {
+                    x: { ticks: { color: textCol, maxRotation: 0, autoSkip: true, maxTicksLimit: 12 },
+                         grid: { display: false } },
+                    y: { ticks: { color: textCol, callback: function(v) { return fmtRs(v); } },
+                         grid: { color: gridCol },
+                         beginAtZero: true }
+                }
+            }
+        });
+    }
+
     // ── Load + render the analytics payload ──────────────────────────────────
     // forceEquity=true → re-render the equity curve immediately (selector changes, initial
     // load). false → skip the curve if the hourly cadence hasn't elapsed (the 5s live poll).
     function loadSummary(forceEquity) {
         var url = '/api/analytics/summary?period=' + encodeURIComponent(currentPeriod)
-                + '&strategyId=' + encodeURIComponent(currentStrategy)
-                + '&includeAdjustments=' + (currentIncludeAdjustments ? 'true' : 'false');
+                + '&strategyId=' + encodeURIComponent(currentStrategy);
         var range = pickerRange();
         if (range.from) url += '&from=' + encodeURIComponent(range.from);
         if (range.to)   url += '&to='   + encodeURIComponent(range.to);
@@ -733,12 +762,13 @@
             setVal('ahCurWin',      String(st.currentWinStreak || 0), st.currentWinStreak);
             setVal('ahLongestWin',  String(st.longestWinStreak || 0));
             setVal('ahLongestLoss', String(st.longestLossStreak || 0), -(st.longestLossStreak || 0));
-            // Edge Metrics card removed — operator considered low-signal at current scale.
-            // Adjustments mini-card — always populated, regardless of the include-adjustments toggle.
-            var adj = d.adjustments || { count: 0, netPnl: 0, charges: 0 };
-            setVal('ahAdjCount',   String(adj.count || 0));
-            setVal('ahAdjNetPnl',  fmtRs(adj.netPnl), adj.netPnl);
-            setVal('ahAdjCharges', fmtRs(adj.charges));
+            // Edge Metrics card — expectancy / recovery factor / Sharpe.
+            var expectancy     = Number(edge.expectancy     || 0);
+            var recoveryFactor = Number(edge.recoveryFactor || 0);
+            var sharpe         = Number(edge.sharpe         || 0);
+            setVal('ahExpectancy',     fmtRs(expectancy),  expectancy);
+            setVal('ahRecoveryFactor', recoveryFactor > 0 ? recoveryFactor.toFixed(2) + 'x' : '—', recoveryFactor);
+            setVal('ahSharpe',         sharpe !== 0 ? sharpe.toFixed(2) : '—', sharpe);
             // Costs card
             var charges = Number(st.totalCharges || 0);
             // Backend emits perf.straddles (count of rows in the trade pool — one per cycle
@@ -760,6 +790,7 @@
             var nowMs = Date.now();
             if (forceEquity || lastEquityRenderMs === 0 || (nowMs - lastEquityRenderMs >= EQUITY_REFRESH_MS)) {
                 renderEquityChart(eq.labels || [], eq.values || [], cap.startingCapital, eq.kinds || []);
+                renderSessionBarsChart(d.byDate || {});
                 lastEquityRenderMs = nowMs;
             }
         }).catch(function() {});
