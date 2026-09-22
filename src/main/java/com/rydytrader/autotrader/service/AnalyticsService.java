@@ -75,6 +75,12 @@ public class AnalyticsService {
         List<Trade> closed = new ArrayList<>();
         for (Trade t : trades) if (isClosedStraddle(t)) closed.add(t);
         double startingCapital = riskSettings.getStartingCapital();
+        // For the "money available now" number (currentCapital) we always want
+        // starting + ALL-TIME net across the same strategy scope, independent
+        // of the period filter — otherwise Today shows just starting on a
+        // no-trade day. Total Return / Return % / equity curve stay
+        // filter-scoped since those are the "in-window" metrics.
+        List<Trade> allTimeTrades = loadTrades("all", strategyId, null, null);
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("period",        period);
@@ -85,7 +91,7 @@ public class AnalyticsService {
         out.put("sessionCount",  distinctDates(closed));
         out.put("includeAdjustments", false);
 
-        out.put("capital",     capital(trades, startingCapital));
+        out.put("capital",     capital(trades, startingCapital, allTimeTrades));
         out.put("performance", performance(closed));
         out.put("extremes",    extremes(closed));
         out.put("streaks",     streaks(closed));
@@ -354,9 +360,14 @@ public class AnalyticsService {
     }
 
     // ── CAPITAL ─────────────────────────────────────────────────────────────
-    private Map<String, Object> capital(List<Trade> trades, double starting) {
+    /** {@code trades} is filter-scoped (Total Return / Return % / avg-monthly).
+     *  {@code allTimeTrades} is unfiltered (currentCapital only — the "money
+     *  available now" figure that must be independent of the period filter). */
+    private Map<String, Object> capital(List<Trade> trades, double starting,
+                                        List<Trade> allTimeTrades) {
         double netSum = trades.stream().mapToDouble(Trade::netPnl).sum();
-        double current = starting + netSum;
+        double allTimeNet = allTimeTrades.stream().mapToDouble(Trade::netPnl).sum();
+        double current = starting + allTimeNet;
         double returnPct = starting > 0 ? (netSum / starting) * 100.0 : 0;
         // Avg monthly % — group by yyyy-MM, sum net, divide by starting, average.
         Map<String, Double> byMonth = new LinkedHashMap<>();

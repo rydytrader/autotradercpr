@@ -1344,11 +1344,14 @@ public class ShortStraddle implements Strategy {
         m.put("legSlPct",    legSlPctBoxed);
         m.put("legSlPoints", legSlPointsBoxed);
         // Effective per-leg loss at SL — uses points if set, else (entryPremium × pct/100).
+        // Fallback: when neither points nor pct is populated (weekend / DTE row unset /
+        // currentWeeklyExpiry unresolved) but a leg is genuinely open, use 50 % so the
+        // Active Risk tile still shows a meaningful number instead of "—".
         java.util.function.DoubleUnaryOperator legLossAtSl = (entry) -> {
             if (entry <= 0) return 0;
             if (legSlPointsBoxed != null && legSlPointsBoxed > 0) return legSlPointsBoxed;
             if (legSlPctBoxed    != null && legSlPctBoxed    > 0) return entry * (legSlPctBoxed / 100.0);
-            return 0;
+            return entry * 0.50;
         };
         // Worst-case loss for the currently-OPEN legs if they hit SL (Active Risk on the
         // dashboard). Closed legs are excluded — their loss has already been realised.

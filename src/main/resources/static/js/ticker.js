@@ -216,7 +216,9 @@
         renderStrip();  // paint placeholder immediately so the slot isn't empty
         if (typeof EventSource !== 'undefined') { connectSSE(); } else { startPolling(); }
         loadPnl();
-        pnlPollInterval = setInterval(loadPnl, 2000);
+        // 500ms poll — P&L updates feel real-time. Server cost is negligible
+        // (iterate strategies, sum liveNetPnlToday which reads cached LTPs).
+        pnlPollInterval = setInterval(loadPnl, 500);
     }
 
     window.addEventListener('beforeunload', function() {
