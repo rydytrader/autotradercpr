@@ -3,6 +3,7 @@ package com.rydytrader.autotrader.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.rydytrader.autotrader.config.FyersProperties;
 import com.rydytrader.autotrader.fyers.FyersClientRouter;
+import com.rydytrader.autotrader.service.MarketHolidayService;
 import com.rydytrader.autotrader.store.TokenStore;
 import com.rydytrader.autotrader.util.BlackScholes;
 import org.slf4j.Logger;
@@ -31,18 +32,28 @@ public class OptionChainController {
     private static final Logger log = LoggerFactory.getLogger(OptionChainController.class);
 
     private static final String DEFAULT_SYMBOL = "NSE:NIFTY50-INDEX";
-    private static final long   STRIKE_STEP    = 50;
+
+    /** Strike step per underlying — NIFTY rounds to 50, SENSEX to 100. Anything else
+     *  falls back to 50. */
+    private static long strikeStepFor(String indexSymbol) {
+        if (indexSymbol == null) return 50L;
+        if (indexSymbol.toUpperCase().contains("SENSEX")) return 100L;
+        return 50L;
+    }
 
     private final FyersClientRouter fyersClient;
     private final TokenStore        tokenStore;
     private final FyersProperties   fyersProperties;
+    private final MarketHolidayService marketHolidayService;
 
     public OptionChainController(FyersClientRouter fyersClient,
                                  TokenStore tokenStore,
-                                 FyersProperties fyersProperties) {
-        this.fyersClient     = fyersClient;
-        this.tokenStore      = tokenStore;
-        this.fyersProperties = fyersProperties;
+                                 FyersProperties fyersProperties,
+                                 MarketHolidayService marketHolidayService) {
+        this.fyersClient          = fyersClient;
+        this.tokenStore           = tokenStore;
+        this.fyersProperties      = fyersProperties;
+        this.marketHolidayService = marketHolidayService;
     }
 
     @GetMapping
@@ -85,7 +96,8 @@ public class OptionChainController {
         if (spot <= 0) {
             return ResponseEntity.status(502).body(Map.of("error", "spot_unresolved"));
         }
-        long atm = Math.round(spot / (double) STRIKE_STEP) * STRIKE_STEP;
+        long strikeStep = strikeStepFor(symbol);
+        long atm = Math.round(spot / (double) strikeStep) * strikeStep;
 
         NavigableMap<Long, Leg[]> byStrike = groupByStrike(chain);
 
@@ -105,11 +117,11 @@ public class OptionChainController {
         if (atmPair != null && atmPair[0] != null && atmPair[1] != null
                 && atmPair[0].ltp > 0 && atmPair[1].ltp > 0) {
             double forward = atm + (atmPair[0].ltp - atmPair[1].ltp);
-            long synth = Math.round(forward / (double) STRIKE_STEP) * STRIKE_STEP;
+            long synth = Math.round(forward / (double) strikeStep) * strikeStep;
             if (byStrike.containsKey(synth)) syntheticAtm = synth;
         }
 
-        List<Map<String, Object>> outRows = sliceWindow(byStrike, atm, strikes, syntheticAtm);
+        List<Map<String, Object>> outRows = sliceWindow(byStrike, atm, strikes, syntheticAtm, strikeStep);
 
         // Resistance = max CE OI on strikes ABOVE spot (call writers defending a ceiling).
         // Support    = max PE OI on strikes BELOW spot (put writers defending a floor).
@@ -122,8 +134,8 @@ public class OptionChainController {
             if (strike > atm) peakCeOiAbove = Math.max(peakCeOiAbove, legOi(r, "ce"));
             if (strike < atm) peakPeOiBelow = Math.max(peakPeOiBelow, legOi(r, "pe"));
         }
-        List<Long> resistanceStrikes = pickDirectionalWalls(outRows, atm, "ce", peakCeOiAbove, true,  2);
-        List<Long> supportStrikes    = pickDirectionalWalls(outRows, atm, "pe", peakPeOiBelow, false, 2);
+        List<Long> resistanceStrikes = pickDirectionalWalls(outRows, atm, "ce", peakCeOiAbove, true,  2, strikeStep);
+        List<Long> supportStrikes    = pickDirectionalWalls(outRows, atm, "pe", peakPeOiBelow, false, 2, strikeStep);
 
         String expiry = resolveExpiry(outRows);
 
@@ -197,11 +209,12 @@ public class OptionChainController {
     }
 
     private List<Map<String, Object>> sliceWindow(NavigableMap<Long, Leg[]> byStrike,
-                                                  long atm, int strikes, long syntheticAtm) {
+                                                  long atm, int strikes, long syntheticAtm,
+                                                  long strikeStep) {
         List<Map<String, Object>> out = new ArrayList<>();
-        long lo = atm - (long) strikes * STRIKE_STEP;
-        long hi = atm + (long) strikes * STRIKE_STEP;
-        for (long s = lo; s <= hi; s += STRIKE_STEP) {
+        long lo = atm - (long) strikes * strikeStep;
+        long hi = atm + (long) strikes * strikeStep;
+        for (long s = lo; s <= hi; s += strikeStep) {
             Leg[] pair = byStrike.get(s);
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("strike",          s);
@@ -264,7 +277,7 @@ public class OptionChainController {
      *  </ul> */
     private List<Long> pickDirectionalWalls(List<Map<String, Object>> rows, long atm,
                                             String legKey, long peakOi, boolean aboveAtm,
-                                            int topN) {
+                                            int topN, long strikeStep) {
         if (peakOi <= 0 || topN <= 0) return Collections.emptyList();
         long threshold = Math.max(1, (long) (peakOi * WALL_THRESHOLD));
         List<long[]> candidates = new ArrayList<>();
@@ -291,7 +304,7 @@ public class OptionChainController {
 
         // R2 / S2 onwards — further from ATM than R1 (next level out), within proximity, then
         // rank by OI desc (closer to R1 breaks OI ties).
-        long proximityRange = (long) R2_PROXIMITY_STRIKES * STRIKE_STEP;
+        long proximityRange = (long) R2_PROXIMITY_STRIKES * strikeStep;
         List<long[]> near = new ArrayList<>();
         for (long[] c : candidates) {
             long s = c[0];
@@ -370,6 +383,7 @@ public class OptionChainController {
 
     @SuppressWarnings("unchecked")
     private String resolveExpiry(List<Map<String, Object>> rows) {
+        LocalDate today = LocalDate.now();
         for (Map<String, Object> row : rows) {
             for (String k : new String[]{"ce", "pe"}) {
                 Object leg = row.get(k);
@@ -377,25 +391,67 @@ public class OptionChainController {
                 Object sym = ((Map<String, Object>) leg).get("symbol");
                 if (sym instanceof String && !((String) sym).isEmpty()) {
                     String exp = parseExpiryFromSymbol((String) sym);
-                    if (!exp.isEmpty()) return exp;
+                    if (exp.isEmpty()) continue;
+                    // Reject already-expired dates — the Fyers V3 chain occasionally lingers
+                    // on the just-past Tuesday on new-expiry-day mornings; fall back below.
+                    try {
+                        if (LocalDate.parse(exp).isBefore(today)) continue;
+                    } catch (Exception ignored) { continue; }
+                    return exp;
                 }
             }
         }
+        // Fyers may not carry parseable symbols in the sliced window pre-market on the
+        // first day of a new expiry week. Fall back to next-Tuesday (weekly NIFTY expiry
+        // day as of 2026), skipping holidays.
+        return nextExpectedWeeklyExpiry();
+    }
+
+    /** Deterministic fallback: next trading Tuesday from today (weekly NIFTY expiry day as
+     *  of 2026). Skips holidays via {@link MarketHolidayService}. Returns {@code ""} if no
+     *  Tuesday is found within a 2-week window (should never happen in practice). */
+    private String nextExpectedWeeklyExpiry() {
+        try {
+            LocalDate cursor = LocalDate.now();
+            for (int i = 0; i < 14; i++) {
+                if (cursor.getDayOfWeek() == java.time.DayOfWeek.TUESDAY
+                        && (marketHolidayService == null || marketHolidayService.isTradingDay(cursor))) {
+                    return cursor.toString();
+                }
+                cursor = cursor.plusDays(1);
+            }
+        } catch (Exception ignored) {}
         return "";
     }
 
-    /** Mirrors {@code ShortStraddle.parseExpiryFromSymbol} — kept local so the controller
-     *  doesn't reach across the strategy package for an 18-line helper. Format example:
-     *  {@code NSE:NIFTY50M28FEB25C24850} → tail {@code 28FEB25...} → not the form used;
-     *  the actual Fyers weekly form is {@code 25604} for 2026-06-04 (YY M-char DD). */
+    /** Decodes the tail of a Fyers option symbol into an ISO date. Handles both underlyings
+     *  (NIFTY / SENSEX) and both encodings — WEEKLY {@code YYMDD} and MONTHLY {@code YYMON}. */
     static String parseExpiryFromSymbol(String fyersSymbol) {
         if (fyersSymbol == null) return "";
         try {
-            int hash = fyersSymbol.indexOf("NIFTY");
-            if (hash < 0) return "";
-            String tail = fyersSymbol.substring(hash + 5);
+            int hash = -1;
+            String matched = null;
+            for (String p : new String[]{"NIFTY", "SENSEX"}) {
+                int idx = fyersSymbol.indexOf(p);
+                if (idx >= 0) { hash = idx; matched = p; break; }
+            }
+            if (hash < 0 || matched == null) return "";
+            String tail = fyersSymbol.substring(hash + matched.length());
             if (tail.length() < 5) return "";
             int yr = Integer.parseInt(tail.substring(0, 2));
+            String maybeMonth3 = tail.substring(2, 5).toUpperCase();
+            int monthlyIdx = "JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC".indexOf(maybeMonth3);
+            if (monthlyIdx >= 0 && monthlyIdx % 3 == 0) {
+                int month = monthlyIdx / 3 + 1;
+                LocalDate last = LocalDate.of(2000 + yr, month, 1)
+                    .withDayOfMonth(java.time.YearMonth.of(2000 + yr, month).lengthOfMonth());
+                // Expiry day per underlying — NIFTY = Tuesday, SENSEX = Thursday.
+                java.time.DayOfWeek expiryDow = "SENSEX".equals(matched)
+                    ? java.time.DayOfWeek.THURSDAY
+                    : java.time.DayOfWeek.TUESDAY;
+                while (last.getDayOfWeek() != expiryDow) last = last.minusDays(1);
+                return last.toString();
+            }
             char monthCh = tail.charAt(2);
             int month;
             if (monthCh >= '1' && monthCh <= '9') month = monthCh - '0';

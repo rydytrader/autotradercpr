@@ -20,7 +20,9 @@
     var pnlPollInterval = null;
 
     // Last-known values so partial updates (either feed alone) still render both chips.
-    var lastNifty = { lp: 0, ch: 0, chp: 0 };
+    var lastNifty  = { lp: 0, ch: 0, chp: 0 };
+    var lastSensex = { lp: 0, ch: 0, chp: 0 };
+    var lastVix    = { lp: 0, ch: 0, chp: 0 };
     var lastDayPnl = 0;
 
     // ── TRADE NOTIFICATIONS (unchanged) ─────────────────────────────────────
@@ -113,24 +115,45 @@
         return '<span style="color:var(--text-muted); margin:0 18px; opacity:0.35; font-weight:400;">|</span>';
     }
 
-    function renderStrip() {
-        var track = document.getElementById('tickerTrack');
-        if (!track) return;
-        styleTrackForStrip(track);
-
-        var ltp = Number(lastNifty.lp || 0);
-        var ch  = Number(lastNifty.ch || 0);
-        var chp = Number(lastNifty.chp || 0);
-        var ltpText = ltp > 0 ? ltp.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}) : '—';
-        var ltpColor = ltp <= 0 ? 'var(--text-primary)'
-                     : ch > 0  ? 'var(--accent-green, #34d399)'
-                     : ch < 0  ? 'var(--accent-red, #f87171)'
-                     : 'var(--text-primary)';
+    /** Format one index chip's value + change text + color from a {lp,ch,chp} record. */
+    function formatIndex(rec) {
+        var ltp = Number(rec.lp  || 0);
+        var ch  = Number(rec.ch  || 0);
+        var chp = Number(rec.chp || 0);
+        var ltpText = ltp > 0
+            ? ltp.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})
+            : '—';
+        var color = ltp <= 0 ? 'var(--text-primary)'
+                  : ch > 0   ? 'var(--accent-green, #34d399)'
+                  : ch < 0   ? 'var(--accent-red, #f87171)'
+                  : 'var(--text-primary)';
         var chgText = '';
         if (ltp > 0 && !(ch === 0 && chp === 0)) {
             var sign = ch > 0 ? '+' : '−';
             chgText = ' ' + sign + Math.abs(ch).toFixed(2) + ' (' + sign + Math.abs(chp).toFixed(2) + '%)';
         }
+        return { text: ltpText + chgText, color: color };
+    }
+
+    function renderStrip() {
+        var track = document.getElementById('tickerTrack');
+        if (!track) return;
+        styleTrackForStrip(track);
+
+        var nifty  = formatIndex(lastNifty);
+        var sensex = formatIndex(lastSensex);
+        // VIX: raise = fear (green would be misleading); keep color-neutral so viewers
+        // don't confuse it with an equity-index gain/loss.
+        var vixLtp = Number(lastVix.lp || 0);
+        var vixText = vixLtp > 0
+            ? vixLtp.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})
+            : '—';
+        var vixChp = Number(lastVix.chp || 0);
+        if (vixLtp > 0 && vixChp !== 0) {
+            var vixSign = vixChp > 0 ? '+' : '−';
+            vixText += ' (' + vixSign + Math.abs(vixChp).toFixed(2) + '%)';
+        }
+        var vixColor = 'var(--text-primary)';
 
         var pnl = Number(lastDayPnl || 0);
         var pnlColor = pnl > 0 ? 'var(--accent-green, #34d399)'
@@ -139,25 +162,32 @@
 
         var leadingRule = '<span style="display:inline-block; width:1px; height:22px; background:var(--border); margin-right:18px; opacity:0.7;"></span>';
         track.innerHTML = leadingRule +
-            chip('NIFTY', ltpText + chgText, ltpColor) +
-            divider() +
+            chip('NIFTY',  nifty.text,  nifty.color)  + divider() +
+            chip('SENSEX', sensex.text, sensex.color) + divider() +
+            chip('VIX',    vixText,     vixColor)     + divider() +
             chip('P&L', fmtInr(pnl), pnlColor);
     }
 
-    // NIFTY — extract from the SSE ticker array
+    // Extract NIFTY + SENSEX + VIX ticks from the SSE ticker array. Any subset may be in
+    // one payload; we update whichever we find and re-render so the strip stays live.
     function applyTickerPayload(data) {
         if (!Array.isArray(data)) return;
+        var changed = false;
         for (var i = 0; i < data.length; i++) {
             var t = data[i];
             var sym = (t && (t.symbol || t.short_name)) || '';
-            // MarketDataService pushes symbols already stripped to "NIFTY 50" /
-            // "NIFTY BANK" via short_name — accept either form.
             if (sym === 'NSE:NIFTY50-INDEX' || sym === 'NIFTY 50' || sym === 'NIFTY50' || sym === 'Nifty 50') {
                 lastNifty = { lp: Number(t.lp || 0), ch: Number(t.ch || 0), chp: Number(t.chp || 0) };
-                renderStrip();
-                return;
+                changed = true;
+            } else if (sym === 'BSE:SENSEX-INDEX' || sym === 'SENSEX' || sym === 'Sensex') {
+                lastSensex = { lp: Number(t.lp || 0), ch: Number(t.ch || 0), chp: Number(t.chp || 0) };
+                changed = true;
+            } else if (sym === 'NSE:INDIAVIX-INDEX' || sym === 'INDIA VIX' || sym === 'INDIAVIX' || sym === 'India VIX') {
+                lastVix = { lp: Number(t.lp || 0), ch: Number(t.ch || 0), chp: Number(t.chp || 0) };
+                changed = true;
             }
         }
+        if (changed) renderStrip();
     }
 
     function connectSSE() {

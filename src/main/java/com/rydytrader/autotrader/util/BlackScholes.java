@@ -36,6 +36,44 @@ public final class BlackScholes {
         return isCall ? normCdf(d1) : normCdf(d1) - 1.0;
     }
 
+    /** BSM gamma — {@code N'(d1) / (S σ √T)}. Same formula for calls and puts.
+     *  Interpreted as delta change per 1-point move in the underlying. */
+    public static double gamma(double S, double K, double T, double r, double sigma) {
+        if (S <= 0 || K <= 0 || T <= 0 || sigma <= 0) return 0;
+        double d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
+        return normPdf(d1) / (S * sigma * Math.sqrt(T));
+    }
+
+    /** BSM theta — option value change per day. Returns per-DAY theta (annual theta / 365)
+     *  so the caller can display it directly as "Rs / day". Standard sign convention: theta
+     *  is negative for long calls / puts (options bleed value as time passes); positive
+     *  for the SHORT side of the position. */
+    public static double theta(double S, double K, double T, double r, double sigma, boolean isCall) {
+        if (S <= 0 || K <= 0 || T <= 0 || sigma <= 0) return 0;
+        double sqrtT = Math.sqrt(T);
+        double d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * sqrtT);
+        double d2 = d1 - sigma * sqrtT;
+        double term1 = -(S * normPdf(d1) * sigma) / (2 * sqrtT);
+        double term2 = r * K * Math.exp(-r * T);
+        double annualTheta = isCall
+            ? term1 - term2 * normCdf(d2)
+            : term1 + term2 * normCdf(-d2);
+        return annualTheta / 365.0;
+    }
+
+    /** BSM vega — option value change per 1 PERCENT (0.01) change in σ.
+     *  Same formula for calls and puts. Divided by 100 so the returned number is per-1%. */
+    public static double vega(double S, double K, double T, double r, double sigma) {
+        if (S <= 0 || K <= 0 || T <= 0 || sigma <= 0) return 0;
+        double d1 = (Math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * Math.sqrt(T));
+        return (S * normPdf(d1) * Math.sqrt(T)) / 100.0;
+    }
+
+    /** Standard normal PDF — φ(x) = (1/√(2π)) × exp(−x²/2). */
+    public static double normPdf(double x) {
+        return Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
+    }
+
     /** BSM theoretical price — Black-Scholes formula for European calls/puts. */
     public static double price(double S, double K, double T, double r, double sigma, boolean isCall) {
         if (S <= 0 || K <= 0 || T <= 0 || sigma <= 0) {

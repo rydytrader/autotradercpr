@@ -112,6 +112,11 @@ public interface Strategy {
      *  fetched). Used by analytics to scope the "current expiry" period filter. */
     default String currentWeeklyExpiry() { return ""; }
 
+    /** Underlying instrument the strategy is configured against (e.g. NIFTY / SENSEX).
+     *  Empty when the concept doesn't apply. Surfaced in {@code /api/strategies} so the
+     *  sidebar chip can render it as a small subtitle under the short code. */
+    default String underlyingName() { return ""; }
+
     /** Today's already-closed straddles read from in-memory state — used by the Analytics page
      *  live overlay so today's metrics reflect closes that haven't been persisted to the
      *  {@code straddle_trades} table yet (leg-sl persists only when state reaches DONE_FOR_DAY).

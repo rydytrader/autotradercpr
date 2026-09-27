@@ -117,8 +117,9 @@
         // Two-tab layout: Basic (entry/order placement) and Risk (per-leg SL / move-to-cost
         // / per-DTE rows). Field's tab attribute decides bucket; missing tab falls back to
         // basic so older schemas keep rendering. DTE rows always live under Risk.
-        var basicFields = [];
-        var riskFields  = [];
+        var basicFields   = [];
+        var riskFields    = [];
+        var reentryFields = [];
         var dteMap = {};
         var dteOrder = [];
         schema.forEach(function(f) {
@@ -129,8 +130,9 @@
                 dteMap[n][m[2]] = f;
                 return;
             }
-            if (f.tab === 'risk') riskFields.push(f);
-            else                  basicFields.push(f);
+            if (f.tab === 'reentry')   reentryFields.push(f);
+            else if (f.tab === 'risk') riskFields.push(f);
+            else                       basicFields.push(f);
         });
 
         function gridOf(fields) {
@@ -164,17 +166,25 @@
         }
         if (!riskHtml) riskHtml = '<div style="color:var(--text-muted);font-style:italic;padding:14px 0;">No risk settings.</div>';
 
-        // Tab strip — buttons wire up in switchTab below.
+        var reentryHtml = gridOf(reentryFields)
+            || '<div style="color:var(--text-muted);font-style:italic;padding:14px 0;">No re-entry settings.</div>';
+
+        // Tab strip — buttons wire up in switchTab below. RE-ENTRY tab appears
+        // only when the strategy declares fields for it.
         var strip = document.getElementById('ssTabstrip');
         strip.innerHTML =
             '<button class="ss-tab active" data-tab="basic">BASIC</button>' +
-            '<button class="ss-tab" data-tab="risk">RISK</button>';
+            '<button class="ss-tab" data-tab="risk">RISK</button>' +
+            (reentryFields.length ? '<button class="ss-tab" data-tab="reentry">RE-ENTRY</button>' : '');
         strip.querySelectorAll('.ss-tab').forEach(function(b) {
             b.addEventListener('click', function() { switchTab(b.getAttribute('data-tab')); });
         });
         document.getElementById('ssBody').innerHTML =
             '<div class="ss-pane active" data-pane="basic">' + basicHtml + '</div>' +
-            '<div class="ss-pane"        data-pane="risk">'  + riskHtml  + '</div>';
+            '<div class="ss-pane"        data-pane="risk">'  + riskHtml  + '</div>' +
+            (reentryFields.length
+                ? '<div class="ss-pane" data-pane="reentry">' + reentryHtml + '</div>'
+                : '');
     }
 
     function switchTab(tab) {

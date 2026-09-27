@@ -414,12 +414,12 @@
                 var strangles = list.filter(function(s) { return s.type === 'STRANGLE'; });
                 var pathnow = window.location.pathname;
 
-                var chipStyle = 'display:flex;align-items:center;justify-content:center;'
-                    + 'width:72px;height:40px;border-radius:8px;text-decoration:none;'
+                var chipStyle = 'display:flex;flex-direction:column;align-items:center;justify-content:center;'
+                    + 'width:88px;min-height:52px;padding:8px 12px;border-radius:8px;text-decoration:none;'
                     + 'font-family:var(--font-mono);font-weight:700;font-size:0.86rem;'
                     + 'color:var(--text-secondary);border:1px solid transparent;'
                     + 'background:transparent;cursor:pointer;letter-spacing:0.06em;'
-                    + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 6px;';
+                    + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.15;';
                 var dividerStyle = 'width:64px;height:1px;background:var(--border);margin:4px 0;';
                 var labelStyle = 'font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;'
                     + 'color:var(--text-muted);text-transform:uppercase;text-align:center;'
@@ -442,9 +442,23 @@
                         a.href = '/strategies/' + s.id;
                         a.className = 'nav-icon';
                         var label = s.displayName || s.id;
-                        a.title = s.description ? (label + ' — ' + s.description) : label;
+                        var underlying = s.underlying || '';
+                        a.title = s.description
+                            ? (label + ' (' + underlying + ') — ' + s.description)
+                            : (underlying ? (label + ' — ' + underlying) : label);
                         a.setAttribute('data-nav-key', s.id);
-                        a.textContent = s.navIcon || s.shortCode || s.id;
+                        // Two-line chip: bold short code on top, small muted underlying below.
+                        var primary = document.createElement('span');
+                        primary.textContent = s.navIcon || s.shortCode || s.id;
+                        primary.style.cssText = 'display:block;';
+                        a.appendChild(primary);
+                        if (underlying) {
+                            var sub = document.createElement('span');
+                            sub.textContent = underlying;
+                            sub.style.cssText = 'display:block;font-size:0.52rem;font-weight:600;'
+                                + 'color:var(--text-muted);letter-spacing:0.08em;margin-top:2px;';
+                            a.appendChild(sub);
+                        }
                         a.style.cssText = chipStyle;
                         if (pathnow === ('/strategies/' + s.id)) a.classList.add('active');
                         aside.appendChild(a);

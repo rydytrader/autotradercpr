@@ -32,6 +32,12 @@ public interface FyersClient {
     /** GET /api/v3/optionChain — get option chain with OI data */
     JsonNode getOptionChain(String symbol, int strikeCount, String authHeader) throws Exception;
 
+    /** GET /api/v3/optionChain with an explicit expiry timestamp (Unix seconds).
+     *  Fyers uses this to select a specific expiry from {@code expiryData}. Pass 0 for the
+     *  broker's default "nearest" expiry (equivalent to the no-timestamp overload). */
+    JsonNode getOptionChain(String symbol, int strikeCount, long expiryTsSecs, String authHeader)
+        throws Exception;
+
     /** GET /data/quotes — get quotes for a comma-separated list of symbols */
     JsonNode getQuotes(String symbols, String authHeader) throws Exception;
 

@@ -74,16 +74,16 @@
 
 <div style="display:flex;flex:1;min-height:0;">
 <aside class="strategy-nav-aside"
-       style="width:96px;flex-shrink:0;background:var(--navbar-bg);backdrop-filter:blur(16px);
+       style="width:112px;flex-shrink:0;background:var(--navbar-bg);backdrop-filter:blur(16px);
               border-right:1px solid var(--border);
               display:flex;flex-direction:column;align-items:center;padding:18px 8px 0;gap:10px;">
     <div style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;
                 color:var(--text-muted);text-transform:uppercase;text-align:center;
                 width:72px;margin:2px 0 4px;">MAIN</div>
     <a href="/home" class="nav-icon" title="Home" data-nav-key="home"
-       style="display:flex;align-items:center;justify-content:center;width:72px;height:34px;
-              border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
-              font-size:0.78rem;letter-spacing:0.10em;color:var(--text-secondary);
+       style="display:flex;align-items:center;justify-content:center;width:88px;height:36px;
+              padding:0 12px;border-radius:8px;text-decoration:none;font-family:var(--font-mono);
+              font-weight:700;font-size:0.78rem;letter-spacing:0.10em;color:var(--text-secondary);
               border:1px solid transparent;background:transparent;cursor:pointer;">HOME</a>
     <div style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
     <div th:if="${not #lists.isEmpty(sidebarStraddles)}"
@@ -95,12 +95,18 @@
            th:title="${#strings.isEmpty(strat.description) ? strat.displayName : strat.displayName + ' — ' + strat.description}"
            th:attr="data-nav-key=${strat.id}"
            class="nav-icon"
-           th:text="${strat.navIcon}"
-           style="display:flex;align-items:center;justify-content:center;width:72px;height:40px;
-                  border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
-                  font-size:0.86rem;color:var(--text-secondary);border:1px solid transparent;
-                  background:transparent;cursor:pointer;letter-spacing:0.06em;white-space:nowrap;
-                  overflow:hidden;text-overflow:ellipsis;padding:0 6px;">C</a>
+           style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+                  width:88px;min-height:52px;padding:8px 12px;border-radius:8px;text-decoration:none;
+                  font-family:var(--font-mono);font-weight:700;font-size:0.86rem;
+                  color:var(--text-secondary);border:1px solid transparent;background:transparent;
+                  cursor:pointer;letter-spacing:0.06em;white-space:nowrap;overflow:hidden;
+                  text-overflow:ellipsis;line-height:1.15;">
+            <span th:text="${strat.navIcon}" style="display:block;"></span>
+            <span th:if="${not #strings.isEmpty(strat.underlying)}"
+                  th:text="${strat.underlying}"
+                  style="display:block;font-size:0.52rem;font-weight:600;color:var(--text-muted);
+                         letter-spacing:0.08em;margin-top:2px;"></span>
+        </a>
         <div th:unless="${iter.last}"
              style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
     </th:block>
@@ -113,12 +119,18 @@
            th:title="${#strings.isEmpty(strat.description) ? strat.displayName : strat.displayName + ' — ' + strat.description}"
            th:attr="data-nav-key=${strat.id}"
            class="nav-icon"
-           th:text="${strat.navIcon}"
-           style="display:flex;align-items:center;justify-content:center;width:72px;height:40px;
-                  border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
-                  font-size:0.86rem;color:var(--text-secondary);border:1px solid transparent;
-                  background:transparent;cursor:pointer;letter-spacing:0.06em;white-space:nowrap;
-                  overflow:hidden;text-overflow:ellipsis;padding:0 6px;">G</a>
+           style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+                  width:88px;min-height:52px;padding:8px 12px;border-radius:8px;text-decoration:none;
+                  font-family:var(--font-mono);font-weight:700;font-size:0.86rem;
+                  color:var(--text-secondary);border:1px solid transparent;background:transparent;
+                  cursor:pointer;letter-spacing:0.06em;white-space:nowrap;overflow:hidden;
+                  text-overflow:ellipsis;line-height:1.15;">
+            <span th:text="${strat.navIcon}" style="display:block;"></span>
+            <span th:if="${not #strings.isEmpty(strat.underlying)}"
+                  th:text="${strat.underlying}"
+                  style="display:block;font-size:0.52rem;font-weight:600;color:var(--text-muted);
+                         letter-spacing:0.08em;margin-top:2px;"></span>
+        </a>
         <div th:unless="${iter.last}"
              style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
     </th:block>
@@ -176,19 +188,16 @@
         <div class="section-header">
             <div class="section-title"><div class="section-title-dot"></div> Overview</div>
             <div style="margin-left:auto;display:flex;align-items:center;gap:18px;">
-                <div id="heroNiftySection"
-                     title="NIFTY 50 — last known LTP with change vs prev close"
-                     style="display:flex; align-items:baseline; gap:8px; padding-right:16px; border-right:1px solid var(--border);">
-                    <span style="font-family:var(--font-mono); font-size:0.82rem; font-weight:600; color:var(--text-secondary); letter-spacing:0.06em;">NIFTY 50 -</span>
-                    <span class="stat-value" id="heroNiftyLtp" style="font-size:1rem;">—</span>
-                    <span id="heroNiftyChange" style="font-family:var(--font-mono); font-size:0.7rem; color:var(--text-muted);"></span>
+                <!-- NIFTY + VIX values moved to the global header ticker so this overview
+                     doesn't duplicate them. Hidden DOM stubs are kept so existing JS that
+                     writes to heroNiftyLtp / heroVixLtp doesn't error. -->
+                <div id="heroNiftySection" style="display:none;">
+                    <span class="stat-value" id="heroNiftyLtp"></span>
+                    <span id="heroNiftyChange"></span>
                 </div>
-                <div id="heroVixSection"
-                     title="India VIX — implied volatility index, last known LTP with change vs prev close"
-                     style="display:flex; align-items:baseline; gap:8px; padding-right:16px; border-right:1px solid var(--border);">
-                    <span style="font-family:var(--font-mono); font-size:0.82rem; font-weight:600; color:var(--text-secondary); letter-spacing:0.06em;">VIX -</span>
-                    <span class="stat-value" id="heroVixLtp" style="font-size:1rem;">—</span>
-                    <span id="heroVixChange" style="font-family:var(--font-mono); font-size:0.7rem; color:var(--text-muted);"></span>
+                <div id="heroVixSection" style="display:none;">
+                    <span class="stat-value" id="heroVixLtp"></span>
+                    <span id="heroVixChange"></span>
                 </div>
                 <div style="display:flex;gap:8px;">
                     <button id="strangleCloseBtn" onclick="closeStrangle()" title="Square off both legs at market and end today's session." style="
@@ -250,7 +259,7 @@
         <div class="section-header" style="display:flex; align-items:center; justify-content:space-between;">
             <div class="section-title"><div class="section-title-dot"></div> Market Clock</div>
             <span id="weeklyExpiryPill"
-                  title="Current NIFTY weekly options expiry • trading days remaining (excl. weekends + holidays)"
+                  title="Current weekly options expiry • trading days remaining (excl. weekends + holidays)"
                   style="display:inline-flex; align-items:center; gap:6px;
                          background:rgba(125,211,252,0.10); border:1px solid rgba(125,211,252,0.25);
                          color:var(--accent-cyan); font-family:var(--font-mono); font-weight:700;
@@ -319,7 +328,15 @@
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0; text-transform:uppercase; letter-spacing:0.06em;">STRIKE</span>
-                    <span class="stat-value" id="paneCeStrike" style="font-size:0.9rem;" title="">—</span>
+                    <span style="display:flex; align-items:baseline; gap:8px;">
+                        <span class="stat-value" id="paneCeStrike" style="font-size:0.9rem;" title="">—</span>
+                        <span id="paneCeGreeks"
+                              title="Real-time Black-Scholes greeks — hover for Δ / Θ / V / IV"
+                              style="font-family:var(--font-mono); font-size:0.66rem; font-weight:700;
+                                     color:var(--text-muted); background:rgba(128,128,128,0.10);
+                                     border:1px solid var(--border); padding:2px 8px; border-radius:6px;
+                                     cursor:help; white-space:nowrap;">∂</span>
+                    </span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" id="paneCeEntryLtpLabel" style="margin:0;">Entry / LTP</span>
@@ -354,7 +371,15 @@
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0; text-transform:uppercase; letter-spacing:0.06em;">STRIKE</span>
-                    <span class="stat-value" id="panePeStrike" style="font-size:0.9rem;" title="">—</span>
+                    <span style="display:flex; align-items:baseline; gap:8px;">
+                        <span class="stat-value" id="panePeStrike" style="font-size:0.9rem;" title="">—</span>
+                        <span id="panePeGreeks"
+                              title="Real-time Black-Scholes greeks — hover for Δ / Θ / V / IV"
+                              style="font-family:var(--font-mono); font-size:0.66rem; font-weight:700;
+                                     color:var(--text-muted); background:rgba(128,128,128,0.10);
+                                     border:1px solid var(--border); padding:2px 8px; border-radius:6px;
+                                     cursor:help; white-space:nowrap;">∂</span>
+                    </span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" id="panePeEntryLtpLabel" style="margin:0;">Entry / LTP</span>
@@ -852,6 +877,12 @@
                     expiryEl.textContent = '—';
                 }
             }
+            // Keep the pill's tooltip in sync with the underlying so it reads the right
+            // instrument (NIFTY / SENSEX) instead of always saying NIFTY.
+            var pill = document.getElementById('weeklyExpiryPill');
+            if (pill && d.underlying) {
+                pill.title = 'Current ' + d.underlying + ' weekly options expiry • trading days remaining (excl. weekends + holidays)';
+            }
             var dteEl = document.getElementById('weeklyExpiryDte');
             if (dteEl) {
                 var dte = (d.daysToExpiry == null || d.daysToExpiry < 0) ? null : Number(d.daysToExpiry);
@@ -916,6 +947,7 @@
             ceMtm.className = 'stat-value';
             if ((d.ceMtm || 0) > 0.5) ceMtm.classList.add('pnl-positive');
             else if ((d.ceMtm || 0) < -0.5) ceMtm.classList.add('pnl-negative');
+            renderGreeksBadge('paneCeGreeks', d.ceDelta, d.ceTheta, d.ceVega, d.ceIv);
 
             // Pane 3: PE Leg
             var peQtyEl = document.getElementById('panePeQty');
@@ -933,6 +965,7 @@
             peMtm.className = 'stat-value';
             if ((d.peMtm || 0) > 0.5) peMtm.classList.add('pnl-positive');
             else if ((d.peMtm || 0) < -0.5) peMtm.classList.add('pnl-negative');
+            renderGreeksBadge('panePeGreeks', d.peDelta, d.peTheta, d.peVega, d.peIv);
 
             // Pane 4: Today
             document.getElementById('paneDay').textContent = d.dayKey || '—';
@@ -1550,18 +1583,21 @@
         // premium (best LTP < target × tolerance, or chain unavailable), show NA.
         if (unavailable === true) return { value: 'NA', projected: true, unavailable: true };
 
+        // Date-code alternation — WEEKLY YYMDD (M in 0-9/O/N/D) or MONTHLY YYMON
+        // (three-letter month, used when the week's Tuesday IS the monthly expiry).
+        var DATE_ALT = '(?:[0-9OND]{5}|[0-9]{2}(?:JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC))';
         if (fyersSymbol) {
-            var mA = fyersSymbol.match(/[0-9OND]{5}(\d{4,6})(?:CE|PE)$/i);
+            var mA = fyersSymbol.match(new RegExp(DATE_ALT + '(\\d{4,6})(?:CE|PE)$', 'i'));
             if (mA) return { value: mA[1], projected: false };
-            var mB = fyersSymbol.match(/[0-9OND]{5}[CP](\d{4,6})$/i);
+            var mB = fyersSymbol.match(new RegExp(DATE_ALT + '[CP](\\d{4,6})$', 'i'));
             if (mB) return { value: mB[1], projected: false };
         }
         // Pre-entry: prefer the actual OTM strike the bot would trade, parsed from the
         // projected leg symbol the server resolved by premium.
         if (projectedSym) {
-            var pA = projectedSym.match(/[0-9OND]{5}(\d{4,6})(?:CE|PE)$/i);
+            var pA = projectedSym.match(new RegExp(DATE_ALT + '(\\d{4,6})(?:CE|PE)$', 'i'));
             if (pA) return { value: '~' + pA[1], projected: true };
-            var pB = projectedSym.match(/[0-9OND]{5}[CP](\d{4,6})$/i);
+            var pB = projectedSym.match(new RegExp(DATE_ALT + '[CP](\\d{4,6})$', 'i'));
             if (pB) return { value: '~' + pB[1], projected: true };
         }
         // Fallback: synthetic ATM (used by straddle dashboards and by strangle ones until
@@ -1603,6 +1639,68 @@
             el.textContent = Number(trigger).toFixed(2);
         }
     }
+    // Paint the leg's greeks chip next to the strike. Icon stays "∂"; the actual Δ / Θ / V
+    // / IV values render into the tooltip so hovering surfaces them without occupying line
+    // width. Fields are null server-side when the leg is closed / no tick yet / IV
+    // inversion fails — we show "—" for those in the tooltip.
+    function renderGreeksBadge(elId, delta, theta, vega, ivPct) {
+        var el = document.getElementById(elId);
+        if (!el) return;
+        function fmt(v, dp) {
+            if (v === null || v === undefined) return '—';
+            var n = Number(v);
+            if (!isFinite(n)) return '—';
+            return n.toFixed(dp);
+        }
+        // Verdict for each greek FROM THE SHORT-SELLER'S PERSPECTIVE. Icons:
+        //   ✓ good for the short   ! watch   ✗ hurting the short   — neutral / n/a.
+        function deltaVerdict(d) {
+            if (d === null || d === undefined || !isFinite(Number(d))) return '—';
+            var a = Math.abs(Number(d));
+            if (a < 0.35) return '✓ safe zone — spot has NOT run against this leg';
+            if (a < 0.55) return '— near entry — no strong directional move yet';
+            if (a < 0.70) return '! stretched — spot drifting against this leg';
+            return           '✗ deep ITM risk — spot ran hard against you, SL likely';
+        }
+        function thetaVerdict(t) {
+            if (t === null || t === undefined || !isFinite(Number(t))) return '—';
+            var earn = Math.abs(Number(t));
+            return '✓ short EARNS ~₹' + earn.toFixed(2) + '/day of time decay';
+        }
+        function vegaVerdict(v) {
+            if (v === null || v === undefined || !isFinite(Number(v))) return '—';
+            var mag = Math.abs(Number(v));
+            if (mag < 3)  return '✓ low IV sensitivity — small hit even on a 1-2% IV pop';
+            if (mag < 8)  return '— moderate IV exposure — 1% IV move = ~₹' + mag.toFixed(1) + ' P&L';
+            return             '! high IV exposure — a vol spike WILL hurt this leg';
+        }
+        function ivVerdict(iv) {
+            if (iv === null || iv === undefined || !isFinite(Number(iv))) return '—';
+            var v = Number(iv);
+            if (v < 10) return '! low IV — thin premium, less cushion to absorb a move';
+            if (v < 18) return '✓ typical NIFTY ATM weekly range';
+            if (v < 25) return '! elevated IV — event / news day risk';
+            return           '✗ high IV — sold rich but a resolution can crush vega further';
+        }
+        el.textContent = '∂';
+        el.title =
+            'Δ delta   ' + fmt(delta, 4) + '\n' +
+            '  Option value change per 1pt spot move.\n' +
+            '  ' + deltaVerdict(delta) + '\n' +
+            '\n' +
+            'Θ theta   ' + fmt(theta, 2) + '  ₹/day\n' +
+            '  Time decay per day (option loses this).\n' +
+            '  ' + thetaVerdict(theta) + '\n' +
+            '\n' +
+            'V vega    ' + fmt(vega, 2) + '  per 1% IV\n' +
+            '  Value change per 1% IV move.\n' +
+            '  ' + vegaVerdict(vega) + '\n' +
+            '\n' +
+            'IV        ' + fmt(ivPct, 2) + ' %\n' +
+            '  Implied vol backed out from current premium.\n' +
+            '  ' + ivVerdict(ivPct);
+    }
+
     // Paint the leg's STRIKE cell. Pre-entry rows append the projected leg's LTP in muted
     // text so the operator can see where the strikes are currently trading even before
     // the bot has placed an order. Post-entry rows just show the strike number.

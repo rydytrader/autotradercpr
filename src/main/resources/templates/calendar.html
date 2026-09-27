@@ -96,16 +96,16 @@
 
 <div style="display:flex;flex:1;min-height:0;">
 <aside class="strategy-nav-aside"
-       style="width:96px;flex-shrink:0;background:var(--navbar-bg);backdrop-filter:blur(16px);
+       style="width:112px;flex-shrink:0;background:var(--navbar-bg);backdrop-filter:blur(16px);
               border-right:1px solid var(--border);
               display:flex;flex-direction:column;align-items:center;padding:18px 8px 0;gap:10px;">
     <div style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;
                 color:var(--text-muted);text-transform:uppercase;text-align:center;
                 width:72px;margin:2px 0 4px;">MAIN</div>
     <a href="/home" class="nav-icon" title="Home" data-nav-key="home"
-       style="display:flex;align-items:center;justify-content:center;width:72px;height:34px;
-              border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
-              font-size:0.78rem;letter-spacing:0.10em;color:var(--text-secondary);
+       style="display:flex;align-items:center;justify-content:center;width:88px;height:36px;
+              padding:0 12px;border-radius:8px;text-decoration:none;font-family:var(--font-mono);
+              font-weight:700;font-size:0.78rem;letter-spacing:0.10em;color:var(--text-secondary);
               border:1px solid transparent;background:transparent;cursor:pointer;">HOME</a>
     <div style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
     <div th:if="${not #lists.isEmpty(sidebarStraddles)}"
@@ -117,12 +117,18 @@
            th:title="${#strings.isEmpty(strat.description) ? strat.displayName : strat.displayName + ' — ' + strat.description}"
            th:attr="data-nav-key=${strat.id}"
            class="nav-icon"
-           th:text="${strat.navIcon}"
-           style="display:flex;align-items:center;justify-content:center;width:72px;height:40px;
-                  border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
-                  font-size:0.86rem;color:var(--text-secondary);border:1px solid transparent;
-                  background:transparent;cursor:pointer;letter-spacing:0.06em;white-space:nowrap;
-                  overflow:hidden;text-overflow:ellipsis;padding:0 6px;">C</a>
+           style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+                  width:88px;min-height:52px;padding:8px 12px;border-radius:8px;text-decoration:none;
+                  font-family:var(--font-mono);font-weight:700;font-size:0.86rem;
+                  color:var(--text-secondary);border:1px solid transparent;background:transparent;
+                  cursor:pointer;letter-spacing:0.06em;white-space:nowrap;overflow:hidden;
+                  text-overflow:ellipsis;line-height:1.15;">
+            <span th:text="${strat.navIcon}" style="display:block;"></span>
+            <span th:if="${not #strings.isEmpty(strat.underlying)}"
+                  th:text="${strat.underlying}"
+                  style="display:block;font-size:0.52rem;font-weight:600;color:var(--text-muted);
+                         letter-spacing:0.08em;margin-top:2px;"></span>
+        </a>
         <div th:unless="${iter.last}"
              style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
     </th:block>
@@ -135,12 +141,18 @@
            th:title="${#strings.isEmpty(strat.description) ? strat.displayName : strat.displayName + ' — ' + strat.description}"
            th:attr="data-nav-key=${strat.id}"
            class="nav-icon"
-           th:text="${strat.navIcon}"
-           style="display:flex;align-items:center;justify-content:center;width:72px;height:40px;
-                  border-radius:8px;text-decoration:none;font-family:var(--font-mono);font-weight:700;
-                  font-size:0.86rem;color:var(--text-secondary);border:1px solid transparent;
-                  background:transparent;cursor:pointer;letter-spacing:0.06em;white-space:nowrap;
-                  overflow:hidden;text-overflow:ellipsis;padding:0 6px;">G</a>
+           style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+                  width:88px;min-height:52px;padding:8px 12px;border-radius:8px;text-decoration:none;
+                  font-family:var(--font-mono);font-weight:700;font-size:0.86rem;
+                  color:var(--text-secondary);border:1px solid transparent;background:transparent;
+                  cursor:pointer;letter-spacing:0.06em;white-space:nowrap;overflow:hidden;
+                  text-overflow:ellipsis;line-height:1.15;">
+            <span th:text="${strat.navIcon}" style="display:block;"></span>
+            <span th:if="${not #strings.isEmpty(strat.underlying)}"
+                  th:text="${strat.underlying}"
+                  style="display:block;font-size:0.52rem;font-weight:600;color:var(--text-muted);
+                         letter-spacing:0.08em;margin-top:2px;"></span>
+        </a>
         <div th:unless="${iter.last}"
              style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
     </th:block>

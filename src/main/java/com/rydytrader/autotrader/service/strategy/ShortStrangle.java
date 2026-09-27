@@ -47,9 +47,9 @@ public class ShortStrangle implements Strategy {
 
     private static final Logger log = LoggerFactory.getLogger(ShortStraddle.class);
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
-    private static final int    NIFTY_LOT_SIZE = 65;
-    private static final String NIFTY_SYMBOL   = "NSE:NIFTY50-INDEX";
-    private static final int    STRIKE_STEP    = 50;
+    // Instrument constants (index symbol, lot size, strike step, weekly expiry day) now come
+    // from the per-instance {@code underlying} setting via {@link #underlying()}. Old NIFTY-
+    // only constants removed — every call site reads the current underlying at fire time.
 
     /** Charge constants (NIFTY weekly options, FY 2025-26). */
     /** Fallback STT rate (0.15% on sell-side premium, post 2026 hike) used
@@ -145,6 +145,16 @@ public class ShortStrangle implements Strategy {
      *  on every new cycle entry (multi-straddle days start each cycle fresh). */
     private volatile boolean ceSlMovedToCost = false;
     private volatile boolean peSlMovedToCost = false;
+
+    /** Re-entry-on-SL counters: bumped in {@link #closeLeg} when reason is CE_SL_HIT / PE_SL_HIT
+     *  AND re-entry is enabled AND cap not yet reached. Reset on day rollover. */
+    private volatile int  ceReEntriesCount = 0;
+    private volatile int  peReEntriesCount = 0;
+    /** Wall-clock millis after which a scheduled re-entry may fire. 0 = no pending re-entry.
+     *  Set in {@link #closeLeg} SL path; cleared once the re-entry is placed (or skipped past
+     *  cutoff / cap). Checked in {@link #tick}. */
+    private volatile long pendingCeReEntryAtMillis = 0;
+    private volatile long pendingPeReEntryAtMillis = 0;
 
     /** True once at least one tick has run today with the scheduler observing the pre-entry
      *  window (state==ARMED, now<entryTime). Reset on every day rollover. Used to detect a
@@ -337,6 +347,10 @@ public class ShortStrangle implements Strategy {
     @Override public String shortCode()    { return shortCode; }
     @Override public String currentState() { return state.name(); }
     @Override public String navIcon()      { return shortCode != null && !shortCode.isEmpty() ? shortCode : "∧"; }
+
+    /** Public accessor for the per-instance underlying — used by the sidebar chip to show
+     *  the instrument (NIFTY / SENSEX) as a subtitle under the short code. */
+    public String underlyingName() { return underlying().name(); }
     @Override public boolean forceClose(String reason) { return forceCloseAll(reason); }
 
     /** Public entry point for the dashboard's per-leg Close buttons. Synchronized — funnels
@@ -424,6 +438,16 @@ public class ShortStrangle implements Strategy {
         // the global Settings modal owns enable/disable so the operator has one consistent
         // place to flip an instance on or off; the per-instance ⚙ Settings dialog is for
         // trading config only (entry time, lots, per-day SL %, squareoff).
+        // Underlying — NIFTY (NSE, lot 65, step 50) or SENSEX (BSE, lot 20, step 100).
+        // Drives every downstream lookup: option-chain fetch symbol, lot size, strike step,
+        // and the weekly-expiry day fallback in nextExpectedWeeklyExpiry.
+        java.util.Map<String, Object> underlyingFld = new java.util.LinkedHashMap<>();
+        underlyingFld.put("key", "underlying");
+        underlyingFld.put("type", "select");
+        underlyingFld.put("default", "NIFTY");
+        underlyingFld.put("label", "Underlying");
+        underlyingFld.put("options", java.util.List.of("NIFTY", "SENSEX"));
+        s.add(underlyingFld);
         s.add(field("entryTime",     "time",    "09:20", "Entry Time (HH:mm IST)", null));
         s.add(field("squareOffTime", "time",    "15:15", "Squareoff Time (HH:mm IST)", null));
         s.add(field("lotsPerLeg",    "int",      1,      "Lots per Leg", null));
@@ -465,6 +489,19 @@ public class ShortStrangle implements Strategy {
         s.add(field("moveSlToCostOnFirstLegHit", "boolean", false,
             "Move SL to Cost on First Leg SL Hit",
             "When one leg's SL fires, drops the surviving leg's SL trigger from entry + threshold down to its entry premium — locking break-even on the surviving leg."));
+        // Re-entry on SL — helps recover on V-shape / inverted-V days. When a
+        // leg's SL fires, wait {@code reEntryDelaySeconds}, then re-enter the
+        // same side at the current ATM. Capped at {@code maxReEntriesPerLeg}
+        // per side per day. No new re-entries after {@code reEntryLatestTime}.
+        // Off by default.
+        s.add(field("reEntryOnSlEnabled",  "boolean", false, "Re-entry on SL Enabled",
+            "When one leg's SL fires, wait the delay below and re-enter the same side at the current ATM (using the active strikeSelectionMode). Capped by max re-entries and latest time. Off by default."));
+        s.add(field("maxReEntriesPerLeg",  "int",     1,     "Max Re-entries per Leg",
+            "How many times each side (CE / PE) can be re-entered per day after its SL fires. 1 = at most one recovery entry per side."));
+        s.add(field("reEntryDelaySeconds", "int",     300,   "Re-entry Delay (seconds)",
+            "Wait this many seconds after the SL fires before re-entering — filters out mid-move wick stops from immediate re-entry into the same wave."));
+        s.add(field("reEntryLatestTime",   "time",    "14:30", "Re-entry Latest Time (HH:mm IST)",
+            "No new re-entries after this IST time — not enough runway before the timed squareoff for a fresh entry."));
         // Per-DTE enable + SL %. Rows ordered 4 → 3 → 2 → 1 → 0 so the layout reads top-down
         // away-from-expiry → expiry-day. Defaults: every level on at 50 %, matching the
         // previous single-SL behaviour. Keys live under {@code dte.<N>.*} so the lookup
@@ -474,15 +511,17 @@ public class ShortStrangle implements Strategy {
             s.add(field("dte." + n + ".legSlPct",    "percent", 50,   n + " DTE — SL %",       null));
             s.add(field("dte." + n + ".legSlPoints", "double",  0,    n + " DTE — SL Points",  null));
         }
-        // Bucket each field into a UI tab. Anything related to per-leg SL or move-to-cost is
-        // "risk"; everything else (entry time, squareoff time, lots, order type, target
-        // premium, premium tolerance) is "basic".
+        // Bucket each field into a UI tab. Risk = per-leg SL + move-to-cost.
+        // Re-entry = re-entry-on-SL group. Everything else = basic.
         for (java.util.Map<String, Object> f : s) {
             String k = String.valueOf(f.get("key"));
-            boolean risk = "moveSlToCostOnFirstLegHit".equals(k) || k.startsWith("dte.");
-            f.put("tab", risk ? "risk" : "basic");
+            boolean risk    = "moveSlToCostOnFirstLegHit".equals(k) || k.startsWith("dte.");
+            boolean reentry = k.startsWith("reEntry") || "maxReEntriesPerLeg".equals(k);
+            String tab = reentry ? "reentry" : (risk ? "risk" : "basic");
+            f.put("tab", tab);
             // Long-hint fields span both grid columns so the hint stays on one line.
             if ("moveSlToCostOnFirstLegHit".equals(k)) f.put("wide", true);
+            if ("reEntryOnSlEnabled".equals(k))        f.put("wide", true);
         }
         return s;
     }
@@ -500,6 +539,7 @@ public class ShortStrangle implements Strategy {
     @Override
     public java.util.Map<String, Object> getSettingsValues() {
         java.util.Map<String, Object> v = new java.util.LinkedHashMap<>();
+        v.put("underlying",    riskSettings.getStrategyString(instanceId, "underlying",    "NIFTY"));
         v.put("entryTime",     riskSettings.getStrategyString(instanceId, "entryTime",     "09:20"));
         v.put("squareOffTime", riskSettings.getStrategyString(instanceId, "squareOffTime", "15:15"));
         v.put("lotsPerLeg",    riskSettings.getStrategyInt(instanceId,    "lotsPerLeg",    1));
@@ -509,6 +549,10 @@ public class ShortStrangle implements Strategy {
         v.put("targetPremium",       riskSettings.getStrategyDouble(instanceId, "targetPremium",       50));
         v.put("moveSlToCostOnFirstLegHit",
             riskSettings.getStrategyBool(instanceId, "moveSlToCostOnFirstLegHit", false));
+        v.put("reEntryOnSlEnabled",  riskSettings.getStrategyBool(instanceId,   "reEntryOnSlEnabled",  false));
+        v.put("maxReEntriesPerLeg",  riskSettings.getStrategyInt(instanceId,    "maxReEntriesPerLeg",  1));
+        v.put("reEntryDelaySeconds", riskSettings.getStrategyInt(instanceId,    "reEntryDelaySeconds", 300));
+        v.put("reEntryLatestTime",   riskSettings.getStrategyString(instanceId, "reEntryLatestTime",   "14:30"));
         for (String n : DTE_LEVELS) {
             v.put("dte." + n + ".enabled",     riskSettings.getStrategyBool(instanceId,   "dte." + n + ".enabled",     true));
             v.put("dte." + n + ".legSlPct",    riskSettings.getStrategyDouble(instanceId, "dte." + n + ".legSlPct",    50));
@@ -560,10 +604,35 @@ public class ShortStrangle implements Strategy {
             riskSettings.setStrategySetting(instanceId, "moveSlToCostOnFirstLegHit",
                 Boolean.parseBoolean(String.valueOf(values.get("moveSlToCostOnFirstLegHit"))));
         }
+        if (values.containsKey("reEntryOnSlEnabled")) {
+            riskSettings.setStrategySetting(instanceId, "reEntryOnSlEnabled",
+                Boolean.parseBoolean(String.valueOf(values.get("reEntryOnSlEnabled"))));
+        }
+        if (values.containsKey("maxReEntriesPerLeg")) {
+            int n = asInt(values.get("maxReEntriesPerLeg"), 1);
+            if (n < 0)  n = 0;
+            if (n > 10) n = 10;
+            riskSettings.setStrategySetting(instanceId, "maxReEntriesPerLeg", n);
+        }
+        if (values.containsKey("reEntryDelaySeconds")) {
+            int n = asInt(values.get("reEntryDelaySeconds"), 300);
+            if (n < 0)    n = 0;
+            if (n > 3600) n = 3600;
+            riskSettings.setStrategySetting(instanceId, "reEntryDelaySeconds", n);
+        }
+        if (values.containsKey("reEntryLatestTime")) {
+            riskSettings.setStrategySetting(instanceId, "reEntryLatestTime",
+                String.valueOf(values.get("reEntryLatestTime")));
+        }
         if (values.containsKey("orderType")) {
             String ot = String.valueOf(values.get("orderType")).trim().toUpperCase();
             if (!"INTRADAY".equals(ot) && !"OVERNIGHT".equals(ot)) ot = "INTRADAY";
             riskSettings.setStrategySetting(instanceId, "orderType", ot);
+        }
+        if (values.containsKey("underlying")) {
+            String u = String.valueOf(values.get("underlying")).trim().toUpperCase();
+            if (!"NIFTY".equals(u) && !"SENSEX".equals(u)) u = "NIFTY";
+            riskSettings.setStrategySetting(instanceId, "underlying", u);
         }
         for (String n : DTE_LEVELS) {
             String enKey = "dte." + n + ".enabled";
@@ -583,6 +652,13 @@ public class ShortStrangle implements Strategy {
     private String productType() {
         String ot = riskSettings.getStrategyString(instanceId, "orderType", "INTRADAY");
         return "OVERNIGHT".equalsIgnoreCase(ot) ? "MARGIN" : "INTRADAY";
+    }
+
+    /** Reads the per-instance {@code underlying} setting and returns the matching
+     *  {@link Underlying} enum. Defaults to NIFTY when unset or unknown. Every symbol /
+     *  lot / strike-step / expiry-day lookup in the strategy funnels through this. */
+    private Underlying underlying() {
+        return Underlying.fromName(riskSettings.getStrategyString(instanceId, "underlying", "NIFTY"));
     }
 
     /** Today's DTE row key as a digit string ("0".."4"), or empty when no row applies.
@@ -738,6 +814,10 @@ public class ShortStrangle implements Strategy {
             this.consumedRiskToday       = p.consumedRiskToday;
             this.ceSlMovedToCost = p.ceSlMovedToCost;
             this.peSlMovedToCost = p.peSlMovedToCost;
+            this.ceReEntriesCount = p.ceReEntriesCount;
+            this.peReEntriesCount = p.peReEntriesCount;
+            this.pendingCeReEntryAtMillis = p.pendingCeReEntryAtMillis;
+            this.pendingPeReEntryAtMillis = p.pendingPeReEntryAtMillis;
             this.currentWeeklyExpiry = p.currentWeeklyExpiry != null ? p.currentWeeklyExpiry : "";
             if (p.combinedPremiumSamples != null) {
                 this.combinedPremiumSamples.clear();
@@ -855,8 +935,16 @@ public class ShortStrangle implements Strategy {
                     doInitialEntry();
                 }
             }
-            case OPEN_BOTH, OPEN_CE_ONLY, OPEN_PE_ONLY -> checkLegSlOrSquareoff(now, squareOffTime);
-            case DONE_FOR_DAY -> { /* idle until tomorrow */ }
+            case OPEN_BOTH, OPEN_CE_ONLY, OPEN_PE_ONLY -> {
+                processPendingReEntries();
+                checkLegSlOrSquareoff(now, squareOffTime);
+            }
+            case DONE_FOR_DAY -> {
+                // Even if both legs closed (both SL'd), a scheduled re-entry may still fire.
+                if (pendingCeReEntryAtMillis > 0 || pendingPeReEntryAtMillis > 0) {
+                    processPendingReEntries();
+                }
+            }
         }
     }
 
@@ -890,13 +978,13 @@ public class ShortStrangle implements Strategy {
         this.peSlMovedToCost = false;
         this.combinedPremiumSamples.clear();
 
-        double niftyLtp = marketDataService.getLtp(NIFTY_SYMBOL);
+        double niftyLtp = marketDataService.getLtp(underlying().indexSymbol());
         if (niftyLtp <= 0) {
             log.info("[short-strangle] Skipping entry — NIFTY LTP unavailable (waiting for first tick)");
             return;
         }
         // Balanced-ATM selection — single-method (put-call parity / synthetic futures).
-        BalancedAtmSelector.AtmSelection sel = atmSelector.select(niftyLtp);
+        BalancedAtmSelector.AtmSelection sel = atmSelector.select(underlying(), niftyLtp);
         this.lastAtmSelection = sel;
         if (sel == null) {
             log.warn("[short-strangle] Balanced-ATM selection failed (chain unavailable) — aborting day");
@@ -911,13 +999,13 @@ public class ShortStrangle implements Strategy {
         String pickTag;
         if ("PREMIUM".equalsIgnoreCase(mode)) {
             double targetPremium = riskSettings.getStrategyDouble(instanceId, "targetPremium", 50);
-            strikes = atmSelector.resolveStrikeSymbolsByPremium(atmStrike, targetPremium);
+            strikes = atmSelector.resolveStrikeSymbolsByPremium(underlying(), atmStrike, targetPremium);
             pickTag = String.format(java.util.Locale.US,
                 "premium-based pick: ATM=%d target=₹%.2f", atmStrike, targetPremium);
         } else {
             int    targetDelta100 = riskSettings.getStrategyInt(instanceId, "targetDelta", 20);
             double targetDelta    = targetDelta100 / 100.0;
-            strikes = atmSelector.resolveStrikeSymbolsByDelta(atmStrike, niftyLtp, targetDelta);
+            strikes = atmSelector.resolveStrikeSymbolsByDelta(underlying(), atmStrike, niftyLtp, targetDelta);
             pickTag = String.format(java.util.Locale.US,
                 "delta-based pick: ATM=%d target=%.2f", atmStrike, targetDelta);
         }
@@ -940,7 +1028,7 @@ public class ShortStrangle implements Strategy {
             transitionTo(LifecycleState.DONE_FOR_DAY);
             return;
         }
-        int qty = Math.max(1, riskSettings.getStrategyInt(instanceId, "lotsPerLeg", 1)) * NIFTY_LOT_SIZE;
+        int qty = Math.max(1, riskSettings.getStrategyInt(instanceId, "lotsPerLeg", 1)) * underlying().lotSize();
         String product = productType();
 
         OrderDTO ceResp = orderService.placeOrder(resolvedCe, qty, -1, 0, product);
@@ -984,7 +1072,7 @@ public class ShortStrangle implements Strategy {
         // with the broker-confirmed fill and does ALL turnover / P&L bookkeeping.
         this.ceEntryPremium = readEntryPremium(resolvedCe);
         this.peEntryPremium = readEntryPremium(resolvedPe);
-        this.currentWeeklyExpiry = parseExpiryFromSymbol(resolvedCe);
+        this.currentWeeklyExpiry = parseExpiryFromSymbol(resolvedCe, underlying());
         registerPendingFill(ceResp.getId(), PendingType.ENTRY_CE, qty, 0);
         registerPendingFill(peResp.getId(), PendingType.ENTRY_PE, qty, 0);
         transitionTo(LifecycleState.OPEN_BOTH);
@@ -1107,7 +1195,7 @@ public class ShortStrangle implements Strategy {
         // never arrives. The WS callback (onActualFill) later applies the actual-vs-
         // provisional delta so numbers converge to broker-confirmed values.
         double quotedLtp = marketDataService.getLtp(symbol);
-        double niftyAtClose = marketDataService.getLtp(NIFTY_SYMBOL);
+        double niftyAtClose = marketDataService.getLtp(underlying().indexSymbol());
         String closedCe = isCe ? symbol : "";
         String closedPe = isCe ? "" : symbol;
 
@@ -1148,12 +1236,170 @@ public class ShortStrangle implements Strategy {
             this.peOrderId = "";
             transitionTo(isCeOpen() ? LifecycleState.OPEN_CE_ONLY : LifecycleState.DONE_FOR_DAY);
         }
+        // Re-entry on SL — schedule a re-entry timestamp; the scheduler tick() picks it up.
+        if ("CE_SL_HIT".equals(reason) || "PE_SL_HIT".equals(reason)) {
+            scheduleReEntryIfEligible(isCe);
+        }
+    }
+
+    /** Called from closeLeg on CE_SL_HIT / PE_SL_HIT. Sets a pending re-entry timestamp
+     *  if the feature is enabled, the per-leg cap hasn't been reached, and the current
+     *  time is before the configured cutoff. The tick() loop performs the actual re-entry
+     *  once wall clock reaches the pending timestamp. */
+    private void scheduleReEntryIfEligible(boolean isCe) {
+        if (!riskSettings.getStrategyBool(instanceId, "reEntryOnSlEnabled", false)) return;
+        int maxPerLeg = Math.max(0, riskSettings.getStrategyInt(instanceId, "maxReEntriesPerLeg", 1));
+        int used = isCe ? ceReEntriesCount : peReEntriesCount;
+        if (used >= maxPerLeg) {
+            log.info("[short-strangle] Re-entry skipped for {} — cap reached ({}/{}).",
+                isCe ? "CE" : "PE", used, maxPerLeg);
+            return;
+        }
+        LocalTime latest = parseTime(
+            riskSettings.getStrategyString(instanceId, "reEntryLatestTime", "14:30"), "14:30");
+        if (LocalTime.now(IST).isAfter(latest)) {
+            log.info("[short-strangle] Re-entry skipped for {} — past latest time {}.",
+                isCe ? "CE" : "PE", latest);
+            return;
+        }
+        int delaySec = Math.max(0, riskSettings.getStrategyInt(instanceId, "reEntryDelaySeconds", 300));
+        long fireAt = System.currentTimeMillis() + delaySec * 1000L;
+        if (isCe) pendingCeReEntryAtMillis = fireAt;
+        else      pendingPeReEntryAtMillis = fireAt;
+        String msg = (isCe ? "CE" : "PE") + " re-entry scheduled in " + delaySec + "s (attempt "
+            + (used + 1) + "/" + maxPerLeg + ")";
+        log.info("[short-strangle] {}", msg);
+        eventService.log("[INFO] [short-strangle] " + msg);
+        notifyTelegram(msg);
+        // Persist so a mid-delay restart preserves the pending re-entry.
+        persist();
+    }
+
+    /** Scheduler-invoked hook. Runs on every tick — cheap ints/longs. If a pending re-entry
+     *  timestamp has elapsed for either side, place a fresh sell at the current strike for that
+     *  side using the active strikeSelectionMode. */
+    private synchronized void processPendingReEntries() {
+        long now = System.currentTimeMillis();
+        boolean fired = false;
+        if (pendingCeReEntryAtMillis > 0 && now >= pendingCeReEntryAtMillis) {
+            pendingCeReEntryAtMillis = 0;
+            performReEntry(true);
+            fired = true;
+        }
+        if (pendingPeReEntryAtMillis > 0 && now >= pendingPeReEntryAtMillis) {
+            pendingPeReEntryAtMillis = 0;
+            performReEntry(false);
+            fired = true;
+        }
+        if (fired) persist();
+    }
+
+    /** Place a fresh SELL for the given side at the current selected strike (DELTA or PREMIUM
+     *  mode as configured). Uses the same strike selection dispatcher as the initial entry so
+     *  the re-entry strike matches whatever the pipeline would pick fresh right now. */
+    private synchronized void performReEntry(boolean isCe) {
+        // Re-check gates in case config changed or cutoff passed between schedule and fire.
+        if (!riskSettings.getStrategyBool(instanceId, "reEntryOnSlEnabled", false)) return;
+        LocalTime latest = parseTime(
+            riskSettings.getStrategyString(instanceId, "reEntryLatestTime", "14:30"), "14:30");
+        LocalTime nowT = LocalTime.now(IST);
+        if (nowT.isAfter(latest)) {
+            log.info("[short-strangle] Re-entry aborted for {} — past latest time {} at fire.",
+                isCe ? "CE" : "PE", latest);
+            return;
+        }
+        LocalTime squareOff = parseTime(getSquareOffTime(), "15:15");
+        if (!nowT.isBefore(squareOff)) {
+            log.info("[short-strangle] Re-entry aborted for {} — past squareoff time {}.",
+                isCe ? "CE" : "PE", squareOff);
+            return;
+        }
+        if (isCe && isCeOpen()) return;
+        if (!isCe && isPeOpen()) return;
+
+        double niftyLtp = marketDataService.getLtp(underlying().indexSymbol());
+        if (niftyLtp <= 0) {
+            log.warn("[short-strangle] Re-entry aborted for {} — NIFTY LTP unavailable.", isCe ? "CE" : "PE");
+            return;
+        }
+        BalancedAtmSelector.AtmSelection sel = atmSelector.select(underlying(), niftyLtp);
+        if (sel == null) {
+            log.warn("[short-strangle] Re-entry aborted for {} — ATM selector failed.", isCe ? "CE" : "PE");
+            return;
+        }
+        long atmStrike = sel.chosenAtm();
+        // Reuse the initial-entry strike dispatch so re-entry honors the configured mode.
+        String mode = riskSettings.getStrategyString(instanceId, "strikeSelectionMode", "DELTA");
+        BalancedAtmSelector.StrikeSymbols strikes;
+        if ("PREMIUM".equalsIgnoreCase(mode)) {
+            double targetPremium = riskSettings.getStrategyDouble(instanceId, "targetPremium", 50);
+            strikes = atmSelector.resolveStrikeSymbolsByPremium(underlying(), atmStrike, targetPremium);
+        } else {
+            int    targetDelta100 = riskSettings.getStrategyInt(instanceId, "targetDelta", 20);
+            double targetDelta    = targetDelta100 / 100.0;
+            strikes = atmSelector.resolveStrikeSymbolsByDelta(underlying(), atmStrike, niftyLtp, targetDelta);
+        }
+        if (strikes == null) {
+            log.warn("[short-strangle] Re-entry aborted for {} — strike resolver failed.", isCe ? "CE" : "PE");
+            return;
+        }
+        String sym = isCe ? strikes.ceSymbol() : strikes.peSymbol();
+        if (sym == null || sym.isEmpty()) {
+            log.warn("[short-strangle] Re-entry aborted for {} — resolver returned empty symbol.", isCe ? "CE" : "PE");
+            return;
+        }
+        int qty = Math.max(1, riskSettings.getStrategyInt(instanceId, "lotsPerLeg", 1)) * underlying().lotSize();
+        String product = productType();
+
+        OrderDTO resp = orderService.placeOrder(sym, qty, -1, 0, product);
+        orderCountToday++;
+        if (resp == null || resp.getId() == null || resp.getId().isEmpty() || !"ok".equals(resp.getStatus())) {
+            log.error("[short-strangle] Re-entry rejected for {}: {}", isCe ? "CE" : "PE", resp);
+            eventService.log("[ERROR] [short-strangle] " + (isCe ? "CE" : "PE") + " re-entry rejected");
+            return;
+        }
+
+        try { marketDataService.subscribeAdditional(java.util.Collections.singletonList(sym)); }
+        catch (Exception ignored) {}
+
+        double entryLtp = readEntryPremium(sym);
+        if (isCe) {
+            this.ceSymbol = sym;
+            this.ceQty = qty;
+            this.ceOrderId = resp.getId();
+            this.ceEntryPremium = entryLtp;
+            this.ceClosedAtMillis = 0;
+            this.ceLegPnl = 0;
+            this.ceClosePremium = 0;
+            this.ceSlMovedToCost = false;
+            ceReEntriesCount++;
+            registerPendingFill(resp.getId(), PendingType.ENTRY_CE, qty, 0);
+            transitionTo(isPeOpen() ? LifecycleState.OPEN_BOTH : LifecycleState.OPEN_CE_ONLY);
+        } else {
+            this.peSymbol = sym;
+            this.peQty = qty;
+            this.peOrderId = resp.getId();
+            this.peEntryPremium = entryLtp;
+            this.peClosedAtMillis = 0;
+            this.peLegPnl = 0;
+            this.peClosePremium = 0;
+            this.peSlMovedToCost = false;
+            peReEntriesCount++;
+            registerPendingFill(resp.getId(), PendingType.ENTRY_PE, qty, 0);
+            transitionTo(isCeOpen() ? LifecycleState.OPEN_BOTH : LifecycleState.OPEN_PE_ONLY);
+        }
+        String msg = (isCe ? "CE" : "PE") + " re-entered (" + mode.toUpperCase() + ") @ " + sym + " qty=" + qty
+            + " ltp=" + String.format("%.2f", entryLtp) + " (NIFTY " + String.format("%.2f", niftyLtp) + ")";
+        log.info("[short-strangle] {}", msg);
+        eventService.log("[INFO] [short-strangle] " + msg);
+        notifyTelegram(msg);
+        pushEvent("RE_ENTRY_" + (isCe ? "CE" : "PE"), niftyLtp, isCe ? sym : "", isCe ? "" : sym, 0);
     }
 
     /** Close every leg still open. Used by timed squareoff + manual squareoff. */
     private void closeRemainingLegs(String reason) {
         java.util.List<String> unsubAfter = new java.util.ArrayList<>();
-        double niftyAtClose = marketDataService.getLtp(NIFTY_SYMBOL);
+        double niftyAtClose = marketDataService.getLtp(underlying().indexSymbol());
         double totalPnl = 0;
         // Treat risk-event force-closes (per-strategy max-loss kill, portfolio kill) as SL
         // hits for analytics — the bot didn't choose to ride out to squareoff, the loss
@@ -1300,9 +1546,9 @@ public class ShortStrangle implements Strategy {
             // waited ~1-2s for Fyers, freezing the entire payload (positions included).
             CompletableFuture.runAsync(() -> {
                 try {
-                    double niftyLtp = marketDataService != null ? marketDataService.getLtp(NIFTY_SYMBOL) : 0;
+                    double niftyLtp = marketDataService != null ? marketDataService.getLtp(underlying().indexSymbol()) : 0;
                     if (niftyLtp <= 0) return;
-                    BalancedAtmSelector.AtmSelection picked = atmSelector.select(niftyLtp);
+                    BalancedAtmSelector.AtmSelection picked = atmSelector.select(underlying(), niftyLtp);
                     if (picked != null) {
                         cachedAtmPreview   = picked;
                         cachedAtmPreviewMs = System.currentTimeMillis();
@@ -1344,8 +1590,8 @@ public class ShortStrangle implements Strategy {
             CompletableFuture.runAsync(() -> {
                 try {
                     BalancedAtmSelector.StrikeSymbols pick = "PREMIUM".equals(capturedMode)
-                        ? atmSelector.resolveStrikeSymbolsByPremium(capturedAtm, capturedTarget)
-                        : atmSelector.resolveStrikeSymbolsByDelta(capturedAtm, capturedSpot, capturedTarget);
+                        ? atmSelector.resolveStrikeSymbolsByPremium(underlying(), capturedAtm, capturedTarget)
+                        : atmSelector.resolveStrikeSymbolsByDelta(underlying(), capturedAtm, capturedSpot, capturedTarget);
                     cachedOtmPreview       = pick;
                     cachedOtmPreviewTarget = capturedTarget;
                     cachedOtmPreviewAtm    = capturedAtm;
@@ -1368,6 +1614,17 @@ public class ShortStrangle implements Strategy {
     @Override
     public java.util.Map<String, Object> getDashboard() {
         rolloverIfNewDay();
+        // Detect a stale currentWeeklyExpiry — happens when the operator switches the
+        // underlying (NIFTY ↔ SENSEX) mid-day. A value populated by a prior underlying
+        // will land on the wrong weekday, so we clear it and force a refresh.
+        if (currentWeeklyExpiry != null && !currentWeeklyExpiry.isEmpty()) {
+            try {
+                java.time.DayOfWeek expected = underlying().expiryDayOfWeek();
+                if (LocalDate.parse(currentWeeklyExpiry).getDayOfWeek() != expected) {
+                    this.currentWeeklyExpiry = "";
+                }
+            } catch (Exception ignored) {}
+        }
         if (currentWeeklyExpiry == null || currentWeeklyExpiry.isEmpty()) {
             tryResolveWeeklyExpiry();
         }
@@ -1379,15 +1636,21 @@ public class ShortStrangle implements Strategy {
         m.put("strikeSelectionMode", riskSettings.getStrategyString(instanceId, "strikeSelectionMode", "DELTA"));
         m.put("targetDelta",         riskSettings.getStrategyInt(instanceId,    "targetDelta",         20));
         m.put("targetPremium",       riskSettings.getStrategyDouble(instanceId, "targetPremium",       50));
-        m.put("weeklyExpiry",    currentWeeklyExpiry);
-        m.put("daysToExpiry",    tradingDaysToExpiry(currentWeeklyExpiry));
+        // Fallback to the underlying's deterministic next-expiry when the broker-confirmed
+        // value has not resolved yet (first day of new expiry, pre-market, cold page load).
+        String displayExpiry = (currentWeeklyExpiry != null && !currentWeeklyExpiry.isEmpty())
+            ? currentWeeklyExpiry
+            : nextExpectedWeeklyExpiry();
+        m.put("weeklyExpiry",    displayExpiry);
+        m.put("daysToExpiry",    tradingDaysToExpiry(displayExpiry));
+        m.put("underlying",      underlying().name());
         synchronized (combinedPremiumSamples) {
             m.put("combinedPremiumSamples", new java.util.ArrayList<>(combinedPremiumSamples));
         }
         if (marketDataService != null) {
-            m.put("niftyDisplayLtp", round2(marketDataService.getDisplayLtp(NIFTY_SYMBOL)));
-            m.put("niftyChange",     round2(marketDataService.getDisplayChange(NIFTY_SYMBOL)));
-            m.put("niftyChangePct",  round2(marketDataService.getDisplayChangePct(NIFTY_SYMBOL)));
+            m.put("niftyDisplayLtp", round2(marketDataService.getDisplayLtp(underlying().indexSymbol())));
+            m.put("niftyChange",     round2(marketDataService.getDisplayChange(underlying().indexSymbol())));
+            m.put("niftyChangePct",  round2(marketDataService.getDisplayChangePct(underlying().indexSymbol())));
             String vix = "NSE:INDIAVIX-INDEX";
             m.put("vixDisplayLtp",   round2(marketDataService.getDisplayLtp(vix)));
             m.put("vixChange",       round2(marketDataService.getDisplayChange(vix)));
@@ -1401,7 +1664,7 @@ public class ShortStrangle implements Strategy {
                 m.put("peChangePct", round2(marketDataService.getDisplayChangePct(peSymbol)));
             }
         }
-        double niftyLtp = marketDataService != null ? marketDataService.getLtp(NIFTY_SYMBOL) : 0;
+        double niftyLtp = marketDataService != null ? marketDataService.getLtp(underlying().indexSymbol()) : 0;
         m.put("niftyLtp", niftyLtp);
 
         // Balanced-ATM projection — drives the projected strike shown on the CE/PE leg cards
@@ -1491,6 +1754,27 @@ public class ShortStrangle implements Strategy {
         m.put("realisedPnlToday", round2(realisedPnlToday));
         m.put("totalPnlToday", round2(realisedPnlToday + ceMtm + peMtm));
 
+        // Per-leg greeks — computed via Black-Scholes on the fly. Skipped (fields become
+        // null on the wire → dashboard renders "—") when the leg is closed, the option
+        // hasn't ticked yet, or the IV inversion falls through (deep ITM in thin markets).
+        double spotForGreeks = marketDataService != null ? marketDataService.getLtp(underlying().indexSymbol()) : 0;
+        java.util.Map<String, Object> ceGreeks = isCeOpen()
+            ? computeLegGreeks(ceSymbol, spotForGreeks, ceLtp, true)
+            : emptyGreeks();
+        java.util.Map<String, Object> peGreeks = isPeOpen()
+            ? computeLegGreeks(peSymbol, spotForGreeks, peLtp, false)
+            : emptyGreeks();
+        m.put("ceDelta", ceGreeks.get("delta"));
+        m.put("ceTheta", ceGreeks.get("theta"));
+        m.put("ceVega",  ceGreeks.get("vega"));
+        m.put("ceGamma", ceGreeks.get("gamma"));
+        m.put("ceIv",    ceGreeks.get("iv"));
+        m.put("peDelta", peGreeks.get("delta"));
+        m.put("peTheta", peGreeks.get("theta"));
+        m.put("peVega",  peGreeks.get("vega"));
+        m.put("peGamma", peGreeks.get("gamma"));
+        m.put("peIv",    peGreeks.get("iv"));
+
         // Per-leg SL triggers + consumed % (replaces combined SL in the leg-sl dashboard).
         // legSlPct / legSlPoints come from the per-day config — null on weekends, where the
         // Risk Band renders "—" rather than a misleading 50 % fallback. Points takes
@@ -1517,7 +1801,10 @@ public class ShortStrangle implements Strategy {
             if (isCeOpen() && ceEntryPremium > 0) maxLossPerStraddle += legLossAtSl.applyAsDouble(ceEntryPremium) * legQty;
             if (isPeOpen() && peEntryPremium > 0) maxLossPerStraddle += legLossAtSl.applyAsDouble(peEntryPremium) * legQty;
         }
+        // Emit under both keys so the shared straddle dashboard JS (reads maxLossPerStraddle)
+        // AND the strangle dashboard JS (reads maxLossPerStrangle) both pick it up.
         m.put("maxLossPerStraddle", round2(maxLossPerStraddle));
+        m.put("maxLossPerStrangle", round2(maxLossPerStraddle));
         // Realised P&L from legs already closed in the CURRENT cycle — kept for backward
         // compatibility with anything still reading closedLegsPnl. Multi-straddle days
         // should read consumedRiskToday instead (below) since that aggregates across cycles.
@@ -1621,7 +1908,7 @@ public class ShortStrangle implements Strategy {
         }
         m.put("dteConfig", dteMap);
         m.put("lotsPerLeg",    riskSettings.getStrategyInt(instanceId, "lotsPerLeg", 1));
-        m.put("lotSize",       NIFTY_LOT_SIZE);
+        m.put("lotSize",       underlying().lotSize());
         m.put("enabled",       riskSettings.getStrategyBool(instanceId, "enabled", false));
         // Soft-pause flag — surfaced in the Today pane header. When true, scheduler skips
         // the ARMED → entry transition AND restartFromDoneForDay returns TRADING_PAUSED so
@@ -1722,9 +2009,17 @@ public class ShortStrangle implements Strategy {
         this.recentEvents.clear();
         this.combinedPremiumSamples.clear();
         this.lastAtmSelection = null;
+        // Clear the pre-entry ATM preview cache — otherwise the dashboard keeps
+        // showing yesterday's expiry's strikes until the 30s TTL naturally expires.
+        this.cachedAtmPreview   = null;
+        this.cachedAtmPreviewMs = 0;
         this.observedPreEntryWindow = false;
         this.ceSlMovedToCost = false;
         this.peSlMovedToCost = false;
+        this.ceReEntriesCount = 0;
+        this.peReEntriesCount = 0;
+        this.pendingCeReEntryAtMillis = 0;
+        this.pendingPeReEntryAtMillis = 0;
         transitionTo(LifecycleState.ARMED);
     }
 
@@ -1756,7 +2051,7 @@ public class ShortStrangle implements Strategy {
     private String[] resolveAtmSymbols(long atmStrike) {
         try {
             String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
-            JsonNode root = fyersClient.getOptionChain(NIFTY_SYMBOL, 30, auth);
+            JsonNode root = fyersClient.getOptionChain(underlying().indexSymbol(), 30, auth);
             if (root == null) return null;
             JsonNode data = root.has("data") ? root.get("data") : null;
             JsonNode chain = data != null && data.has("optionsChain") ? data.get("optionsChain")
@@ -1795,15 +2090,16 @@ public class ShortStrangle implements Strategy {
             try {
                 String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
                 if (auth == null || auth.endsWith(":") || auth.endsWith(":null")) return;
-                JsonNode root = fyersClient.getOptionChain(NIFTY_SYMBOL, 4, auth);
+                JsonNode root = fyersClient.getOptionChain(underlying().indexSymbol(), 4, auth);
                 if (root == null) return;
                 JsonNode data = root.has("data") ? root.get("data") : null;
                 JsonNode chain = data != null && data.has("optionsChain") ? data.get("optionsChain")
                     : (root.has("optionsChain") ? root.get("optionsChain") : null);
                 if (chain == null || !chain.isArray()) return;
+                Underlying u = underlying();
                 for (JsonNode row : chain) {
                     String sym = row.has("symbol") ? row.get("symbol").asText() : "";
-                    String exp = parseExpiryFromSymbol(sym);
+                    String exp = parseExpiryFromSymbol(sym, u);
                     if (!exp.isEmpty()) { this.currentWeeklyExpiry = exp; return; }
                 }
             } catch (Exception e) {
@@ -1812,6 +2108,26 @@ public class ShortStrangle implements Strategy {
                 expiryRefreshInFlight.set(false);
             }
         });
+    }
+
+    /** Deterministic fallback used when {@link #currentWeeklyExpiry} is still empty —
+     *  typically on the first day of a new expiry week, pre-market, before any leg has
+     *  been placed AND before the async Fyers chain fetch has resolved. Walks forward day
+     *  by day looking for the next trading Tuesday (NIFTY weekly expiry day as of 2026),
+     *  skipping holidays via {@link MarketHolidayService}. Returns {@code ""} on failure. */
+    private String nextExpectedWeeklyExpiry() {
+        try {
+            java.time.DayOfWeek expiryDow = underlying().expiryDayOfWeek();
+            LocalDate cursor = LocalDate.now(IST);
+            for (int i = 0; i < 14; i++) {
+                if (cursor.getDayOfWeek() == expiryDow
+                        && (marketHolidayService == null || marketHolidayService.isTradingDay(cursor))) {
+                    return cursor.toString();
+                }
+                cursor = cursor.plusDays(1);
+            }
+        } catch (Exception ignored) {}
+        return "";
     }
 
     private int tradingDaysToExpiry(String expiryIso) {
@@ -1830,14 +2146,93 @@ public class ShortStrangle implements Strategy {
         } catch (Exception e) { return -1; }
     }
 
+    // ── Greeks — real-time Black-Scholes for leg cards ───────────────────────
+    private static final java.util.regex.Pattern STRIKE_PATTERN =
+        java.util.regex.Pattern.compile("(\\d{4,6})(?:CE|PE)$", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    private static long parseStrikeFromSymbol(String sym) {
+        if (sym == null) return 0;
+        java.util.regex.Matcher m = STRIKE_PATTERN.matcher(sym);
+        return m.find() ? Long.parseLong(m.group(1)) : 0;
+    }
+
+    private double yearsToExpiryPrecise() {
+        if (currentWeeklyExpiry == null || currentWeeklyExpiry.isEmpty()) return 0;
+        try {
+            LocalDate expiry = LocalDate.parse(currentWeeklyExpiry);
+            java.time.ZonedDateTime expiryClose = expiry.atTime(15, 30).atZone(IST);
+            java.time.ZonedDateTime now = java.time.ZonedDateTime.now(IST);
+            long seconds = java.time.temporal.ChronoUnit.SECONDS.between(now, expiryClose);
+            if (seconds <= 0) return 1.0 / (365.0 * 24.0);
+            return seconds / (365.0 * 24.0 * 3600.0);
+        } catch (Exception e) { return 0; }
+    }
+
+    private java.util.Map<String, Object> computeLegGreeks(String symbol, double spot,
+                                                            double optionLtp, boolean isCall) {
+        java.util.Map<String, Object> g = emptyGreeks();
+        if (spot <= 0 || optionLtp <= 0 || symbol == null || symbol.isEmpty()) return g;
+        long strike = parseStrikeFromSymbol(symbol);
+        if (strike <= 0) return g;
+        double T = yearsToExpiryPrecise();
+        if (T <= 0) return g;
+        double r = com.rydytrader.autotrader.util.BlackScholes.DEFAULT_RISK_FREE_RATE;
+        double iv = com.rydytrader.autotrader.util.BlackScholes.impliedVol(spot, strike, T, r, optionLtp, isCall);
+        if (iv <= 0) return g;
+        g.put("delta", round4(com.rydytrader.autotrader.util.BlackScholes.delta(spot, strike, T, r, iv, isCall)));
+        g.put("theta", round2(com.rydytrader.autotrader.util.BlackScholes.theta(spot, strike, T, r, iv, isCall)));
+        g.put("vega",  round2(com.rydytrader.autotrader.util.BlackScholes.vega (spot, strike, T, r, iv)));
+        g.put("gamma", round4(com.rydytrader.autotrader.util.BlackScholes.gamma(spot, strike, T, r, iv)));
+        g.put("iv",    round2(iv * 100.0));
+        return g;
+    }
+
+    private static java.util.Map<String, Object> emptyGreeks() {
+        java.util.Map<String, Object> g = new java.util.LinkedHashMap<>();
+        g.put("delta", null); g.put("theta", null); g.put("vega", null);
+        g.put("gamma", null); g.put("iv", null);
+        return g;
+    }
+
+    private static double round4(double v) { return Math.round(v * 10000.0) / 10000.0; }
+
+    /** Decodes the tail of a Fyers NIFTY option symbol into an ISO date. Handles both:
+     *  WEEKLY {@code YYMDD} (e.g. {@code 26929} → 2026-09-29, M is 1-9/O/N/D) and
+     *  MONTHLY {@code YYMON} (e.g. {@code 26SEP} → last-Tuesday of Sep-2026 → 2026-09-29).
+     *  Fyers uses the monthly format when a week's Tuesday IS also the monthly expiry. */
     public static String parseExpiryFromSymbol(String fyersSymbol) {
+        return parseExpiryFromSymbol(fyersSymbol, null);
+    }
+
+    /** Handles NIFTY and SENSEX prefixes; monthly-format decode walks back from the last
+     *  day of the month to {@code u.expiryDayOfWeek()} (Tuesday when u is null). */
+    public static String parseExpiryFromSymbol(String fyersSymbol, Underlying u) {
         if (fyersSymbol == null) return "";
         try {
-            int hash = fyersSymbol.indexOf("NIFTY");
-            if (hash < 0) return "";
-            String tail = fyersSymbol.substring(hash + 5);
+            int hash = -1;
+            String matched = null;
+            for (String p : new String[]{"NIFTY", "SENSEX"}) {
+                int idx = fyersSymbol.indexOf(p);
+                if (idx >= 0) { hash = idx; matched = p; break; }
+            }
+            if (hash < 0 || matched == null) return "";
+            String tail = fyersSymbol.substring(hash + matched.length());
             if (tail.length() < 5) return "";
             int yr = Integer.parseInt(tail.substring(0, 2));
+            String maybeMonth3 = tail.substring(2, 5).toUpperCase();
+            int monthlyIdx = "JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC".indexOf(maybeMonth3);
+            if (monthlyIdx >= 0 && monthlyIdx % 3 == 0) {
+                int month = monthlyIdx / 3 + 1;
+                java.time.DayOfWeek expiryDow;
+                if (u != null) expiryDow = u.expiryDayOfWeek();
+                else expiryDow = "SENSEX".equals(matched)
+                    ? java.time.DayOfWeek.THURSDAY
+                    : java.time.DayOfWeek.TUESDAY;
+                LocalDate last = LocalDate.of(2000 + yr, month, 1)
+                    .withDayOfMonth(java.time.YearMonth.of(2000 + yr, month).lengthOfMonth());
+                while (last.getDayOfWeek() != expiryDow) last = last.minusDays(1);
+                return last.toString();
+            }
             char monthCh = tail.charAt(2);
             int month;
             if (monthCh >= '1' && monthCh <= '9') month = monthCh - '0';
@@ -2033,7 +2428,7 @@ public class ShortStrangle implements Strategy {
             t.setSessionDate(dayKey != null && !dayKey.isEmpty() ? dayKey : LocalDate.now(IST).toString());
             t.setClosedAtMillis(System.currentTimeMillis());
             int qty = Math.max(ceQty, peQty);
-            if (qty == 0) qty = Math.max(1, riskSettings.getStrategyInt(instanceId, "lotsPerLeg", 1)) * NIFTY_LOT_SIZE;
+            if (qty == 0) qty = Math.max(1, riskSettings.getStrategyInt(instanceId, "lotsPerLeg", 1)) * underlying().lotSize();
             t.setQty(qty);
             t.setGrossPnl(round2(cycleGross));
             t.setCharges(round2(charges));
@@ -2041,6 +2436,17 @@ public class ShortStrangle implements Strategy {
             t.setCloseReason("DONE_FOR_DAY");
             t.setSlHitCount(cycleSls);
             tradeRepo.save(t);
+            // Re-baseline cycle-start counters to the current values. Without this, a next
+            // cycle in the same day (e.g. a scheduled re-entry that fires after this
+            // DONE_FOR_DAY and ends in another DONE_FOR_DAY at squareoff) would compute
+            // its cycleGross = cumulativeRealised - originalCycleStart(0), double-counting
+            // this cycle's P&L on the next row. Snapshot post-write so the next cycle's
+            // row carries only the delta from now onward.
+            this.cycleStartRealisedPnl   = realisedPnlToday          + inFlightPnl;
+            this.cycleStartSellTurnover  = sellPremiumTurnoverToday;
+            this.cycleStartBuyTurnover   = buyPremiumTurnoverToday   + inFlightBuyTurnover;
+            this.cycleStartOrderCount    = orderCountToday;
+            this.cycleStartSlHits        = slHitsToday;
         } catch (Exception e) {
             log.warn("[short-strangle] Failed to persist straddle_trades row: {}", e.getMessage());
         }
@@ -2093,6 +2499,10 @@ public class ShortStrangle implements Strategy {
         s.consumedRiskToday       = this.consumedRiskToday;
         s.ceSlMovedToCost = this.ceSlMovedToCost;
         s.peSlMovedToCost = this.peSlMovedToCost;
+        s.ceReEntriesCount = this.ceReEntriesCount;
+        s.peReEntriesCount = this.peReEntriesCount;
+        s.pendingCeReEntryAtMillis = this.pendingCeReEntryAtMillis;
+        s.pendingPeReEntryAtMillis = this.pendingPeReEntryAtMillis;
         s.currentWeeklyExpiry = this.currentWeeklyExpiry;
         synchronized (combinedPremiumSamples) {
             s.combinedPremiumSamples = new java.util.ArrayList<>(combinedPremiumSamples);

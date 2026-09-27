@@ -76,6 +76,7 @@ public class ViewController {
             e.put("description", s.description());
             e.put("shortCode", s.shortCode());
             e.put("navIcon", s.shortCode());
+            e.put("underlying", s.underlyingName());
             e.put("href", "/strategies/" + s.id());
             e.put("type", s.strategyType());
             nav.add(e);

@@ -14,8 +14,27 @@
     var overlayEl  = null;
     var bodyEl     = null;
     var titleSubEl = null;
+    var titleTextEl = null;
     var refreshBtn = null;
+    var tabsEl     = null;
     var refreshLockUntil = 0;
+
+    // Currently-selected underlying — NIFTY or SENSEX. Persisted per-browser so a reopen
+    // remembers the last chain viewed. Default NIFTY.
+    var UNDERLYINGS = [
+        { key: 'NIFTY',  label: 'NIFTY',  symbol: 'NSE:NIFTY50-INDEX' },
+        { key: 'SENSEX', label: 'SENSEX', symbol: 'BSE:SENSEX-INDEX'  }
+    ];
+    var activeUnderlyingKey = (function() {
+        try { return localStorage.getItem('oc_underlying') || 'NIFTY'; }
+        catch (e) { return 'NIFTY'; }
+    })();
+    function activeUnderlying() {
+        for (var i = 0; i < UNDERLYINGS.length; i++) {
+            if (UNDERLYINGS[i].key === activeUnderlyingKey) return UNDERLYINGS[i];
+        }
+        return UNDERLYINGS[0];
+    }
 
     function ensureBuilt() {
         if (overlayEl) return overlayEl;
@@ -25,10 +44,11 @@
                 '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--border);gap:12px;">' +
                   '<div style="flex:1;min-width:0;">' +
                     '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
-                      '<div style="font-family:var(--font-mono);font-size:0.92rem;font-weight:700;color:var(--text-primary);">⊞ NIFTY OPTIONS CHAIN</div>' +
+                      '<div id="oc-title" style="font-family:var(--font-mono);font-size:0.92rem;font-weight:700;color:var(--text-primary);">⊞ NIFTY OPTIONS CHAIN</div>' +
                       '<span class="oc-chip oc-chip-ce">CALLS ←</span>' +
                       '<span class="oc-chip oc-chip-pe">→ PUTS</span>' +
                     '</div>' +
+                    '<div id="oc-tabs" style="display:flex;gap:4px;margin-top:8px;"></div>' +
                     '<div id="oc-sub" style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);margin-top:4px;">—</div>' +
                   '</div>' +
                   '<button id="oc-refresh" title="Refresh" style="background:transparent;border:1px solid var(--border);color:var(--text-secondary);width:30px;height:30px;border-radius:6px;cursor:pointer;font-size:0.95rem;">⟳</button>' +
@@ -40,10 +60,12 @@
         var wrap = document.createElement('div');
         wrap.innerHTML = html;
         document.body.appendChild(wrap.firstChild);
-        overlayEl  = document.getElementById('ocOverlay');
-        bodyEl     = document.getElementById('oc-body');
-        titleSubEl = document.getElementById('oc-sub');
-        refreshBtn = document.getElementById('oc-refresh');
+        overlayEl   = document.getElementById('ocOverlay');
+        bodyEl      = document.getElementById('oc-body');
+        titleSubEl  = document.getElementById('oc-sub');
+        titleTextEl = document.getElementById('oc-title');
+        tabsEl      = document.getElementById('oc-tabs');
+        refreshBtn  = document.getElementById('oc-refresh');
 
         refreshBtn.addEventListener('click', function() {
             var now = Date.now();
@@ -51,6 +73,8 @@
             refreshLockUntil = now + 1500;
             fetchAndRender();
         });
+
+        renderTabs();
 
         overlayEl.addEventListener('click', function(e) {
             if (e.target === overlayEl) close();
@@ -110,6 +134,7 @@
     function open() {
         ensureBuilt();
         overlayEl.style.display = 'flex';
+        renderTabs();
         fetchAndRender();
     }
 
@@ -117,10 +142,44 @@
         if (overlayEl) overlayEl.style.display = 'none';
     }
 
+    /** Redraws the NIFTY / SENSEX tab strip. Highlights the active tab, wires
+     *  clicks to switch underlying + refetch. */
+    function renderTabs() {
+        if (!tabsEl) return;
+        var html = '';
+        for (var i = 0; i < UNDERLYINGS.length; i++) {
+            var u = UNDERLYINGS[i];
+            var isActive = u.key === activeUnderlyingKey;
+            var bg = isActive ? 'var(--accent-yellow, #facc15)' : 'transparent';
+            var fg = isActive ? '#0f0f0f' : 'var(--text-muted)';
+            var bd = isActive ? '1px solid var(--accent-yellow, #facc15)' : '1px solid var(--border)';
+            html += '<button type="button" data-oc-tab="' + u.key + '" ' +
+                'style="font-family:var(--font-mono);font-size:0.66rem;font-weight:700;letter-spacing:0.08em;' +
+                'padding:5px 12px;border-radius:6px;cursor:pointer;background:' + bg + ';color:' + fg + ';border:' + bd + ';">' +
+                u.label + '</button>';
+        }
+        tabsEl.innerHTML = html;
+        var btns = tabsEl.querySelectorAll('[data-oc-tab]');
+        for (var j = 0; j < btns.length; j++) {
+            btns[j].addEventListener('click', function() {
+                var key = this.getAttribute('data-oc-tab');
+                if (!key || key === activeUnderlyingKey) return;
+                activeUnderlyingKey = key;
+                try { localStorage.setItem('oc_underlying', key); } catch (e) {}
+                renderTabs();
+                fetchAndRender();
+            });
+        }
+        if (titleTextEl) {
+            titleTextEl.textContent = '⊞ ' + activeUnderlying().label + ' OPTIONS CHAIN';
+        }
+    }
+
     function fetchAndRender() {
         bodyEl.innerHTML = '<div class="oc-msg">Loading chain…</div>';
         titleSubEl.textContent = '—';
-        fetch('/api/option-chain', { credentials: 'same-origin' })
+        var url = '/api/option-chain?symbol=' + encodeURIComponent(activeUnderlying().symbol);
+        fetch(url, { credentials: 'same-origin' })
             .then(function(r) {
                 if (r.status === 401) return r.json().then(function(j) { throw { kind:'auth', msg:j.error || 'not_logged_in' }; });
                 if (!r.ok) return r.json().catch(function(){return{};}).then(function(j) { throw { kind:'svc', msg:(j && j.error) || ('HTTP ' + r.status), detail:j && j.message }; });

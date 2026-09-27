@@ -123,6 +123,7 @@ public class StraddleInstanceController {
         m.put("description",  s.description());
         m.put("shortCode",    s.shortCode());
         m.put("navIcon",      s.navIcon());
+        m.put("underlying",   s.underlyingName());
         m.put("currentState", s.currentState());
         // enabled = riskSettings.getStrategyBool — read via the entity to avoid races; instance
         // settings are saved through the strategy interface POST, which is the same data flow.
