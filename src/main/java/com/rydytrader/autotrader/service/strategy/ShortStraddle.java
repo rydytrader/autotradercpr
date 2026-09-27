@@ -148,15 +148,28 @@ public class ShortStraddle implements Strategy {
     private volatile boolean ceSlMovedToCost = false;
     private volatile boolean peSlMovedToCost = false;
 
-    /** Re-entry-on-SL counters: bumped in {@link #closeLeg} when reason is CE_SL_HIT / PE_SL_HIT
-     *  AND re-entry is enabled AND cap not yet reached. Reset on day rollover. */
+    /** Trailing-SL ratchet counters — how many profit-step thresholds the leg has crossed
+     *  since entry. Each step tightens the SL trigger by {@code trailingSlTightenPct}
+     *  (% of entry). Ratchet only: never decrements when profit pulls back. Reset on
+     *  every new entry / re-entry / day rollover. Persisted across restarts. */
+    private volatile int ceTrailingStepsHit = 0;
+    private volatile int peTrailingStepsHit = 0;
+
+    /** Combined attempt counters — bumped by BOTH Re-Execute and Re-Entry flavors. When
+     *  count reaches maxReEntriesPerLeg, no further attempts fire on that side today. */
     private volatile int  ceReEntriesCount = 0;
     private volatile int  peReEntriesCount = 0;
-    /** Wall-clock millis after which a scheduled re-entry may fire. 0 = no pending re-entry.
-     *  Set in {@link #closeLeg} SL path; cleared once the re-entry is placed (or skipped past
-     *  cutoff / cap). Checked in {@link #tick}. */
+    /** Re-Execute pending timestamps — wall-clock millis after which the delayed fresh-strike
+     *  re-execute may fire. 0 = none pending. Cleared once the order is placed or skipped. */
     private volatile long pendingCeReEntryAtMillis = 0;
     private volatile long pendingPeReEntryAtMillis = 0;
+    /** Re-Entry (same-strike, wait-for-return) pending state — records the SL'd leg's
+     *  symbol and its original entry premium so we can monitor LTP for return-to-band.
+     *  Empty symbol = none pending. */
+    private volatile String pendingCeReEntrySymbol = "";
+    private volatile String pendingPeReEntrySymbol = "";
+    private volatile double pendingCeReEntryPrice  = 0;
+    private volatile double pendingPeReEntryPrice  = 0;
 
     /** True once at least one tick has run today with the scheduler observing the pre-entry
      *  window (state==ARMED, now<entryTime). Reset on every day rollover. Used to detect a
@@ -455,19 +468,38 @@ public class ShortStraddle implements Strategy {
         s.add(field("moveSlToCostOnFirstLegHit", "boolean", false,
             "Move SL to Cost on First Leg SL Hit",
             "When one leg's SL fires, drops the surviving leg's SL trigger from entry + threshold down to its entry premium — locking break-even on the surviving leg."));
-        // Re-entry on SL — helps recover on V-shape / inverted-V days. When a
-        // leg's SL fires, wait {@code reEntryDelaySeconds}, then re-enter the
-        // same side at the current ATM. Capped at {@code maxReEntriesPerLeg}
-        // per side per day. No new re-entries after {@code reEntryLatestTime}.
-        // Off by default.
-        s.add(field("reEntryOnSlEnabled",  "boolean", false, "Re-entry on SL Enabled",
-            "When one leg's SL fires, wait the delay below and re-enter the same side at the current ATM. Capped by max re-entries and latest time. Off by default."));
-        s.add(field("maxReEntriesPerLeg",  "int",     1,     "Max Re-entries per Leg",
-            "How many times each side (CE / PE) can be re-entered per day after its SL fires. 1 = at most one recovery entry per side."));
-        s.add(field("reEntryDelaySeconds", "int",     300,   "Re-entry Delay (seconds)",
-            "Wait this many seconds after the SL fires before re-entering — filters out mid-move wick stops from immediate re-entry into the same wave."));
-        s.add(field("reEntryLatestTime",   "time",    "14:30", "Re-entry Latest Time (HH:mm IST)",
-            "No new re-entries after this IST time — not enough runway before the timed squareoff for a fresh entry."));
+        // Trailing SL — Quantman-style ratchet. Every N% favorable move of the option
+        // premium (as % of entry) tightens the SL trigger by M% of entry. Ratchet only —
+        // pullbacks in profit never loosen the tightened SL. Off by default.
+        s.add(field("trailingSlEnabled",         "boolean", false,
+            "Trailing SL Enabled",
+            "Every N% favorable premium move tightens the SL trigger by M% of entry. Ratchet — never loosens. Off by default."));
+        s.add(field("trailingSlProfitStepPct",   "percent", 15,
+            "Trailing SL — Profit Step %",
+            "Favorable premium-move step as % of entry that triggers each SL tighten."));
+        s.add(field("trailingSlTightenPct",      "percent", 10,
+            "Trailing SL — Tighten % (of entry)",
+            "How much the SL trigger moves tighter (as % of entry) at each step. Once cumulative tighten meets or exceeds the base SL %, SL sits at / below entry and locks in profit."));
+        // Re-Execute on SL (Quantman "Re-Execute") — after an SL, wait a fixed delay then
+        // open a FRESH-strike leg on the same side using current-ATM selection. Best for
+        // trending days where the original strike has run away. The old key is
+        // reEntryOnSlEnabled — kept for storage compat; UI label renamed for clarity.
+        s.add(field("reEntryOnSlEnabled",  "boolean", false, "Re-Execute on SL (fresh strike)",
+            "After SL, wait the delay below and open a FRESH strike on the same side at current ATM. Best for trending days. Capped by max attempts + latest time."));
+        s.add(field("reEntryDelaySeconds", "int",     300,   "Re-Execute Delay (seconds)",
+            "Wait this many seconds after the SL fires before the fresh-strike re-execute — filters out mid-move wick stops."));
+        // Re-Entry on SL (Quantman "Re-Entry") — after an SL, monitor the SAME strike and
+        // re-sell it when its LTP falls back to within tolerance of the original entry.
+        // Best for range-bound days where premium spikes and returns.
+        s.add(field("reEntrySameStrikeOnSlEnabled", "boolean", false, "Re-Entry on SL (same strike, wait for return)",
+            "After SL, monitor the SAME strike and re-sell it when its LTP returns to within tolerance of the original entry. Best for range-bound days. Capped by max attempts + latest time."));
+        s.add(field("reEntrySameStrikeTolerancePct", "percent", 5, "Re-Entry Price Tolerance (%)",
+            "LTP must be within this % of the original entry premium for Re-Entry to fire. 5% means +/- 5% band around entry."));
+        // Shared gates for BOTH flavors — combined attempt count and latest fire time.
+        s.add(field("maxReEntriesPerLeg",  "int",     1,     "Max Attempts per Leg (both flavors)",
+            "Total combined cap for Re-Execute + Re-Entry per side per day. 1 = at most one recovery attempt per side."));
+        s.add(field("reEntryLatestTime",   "time",    "14:30", "Latest Attempt Time (HH:mm IST)",
+            "No new Re-Execute or Re-Entry attempts after this IST time — not enough runway before squareoff."));
         // Per-DTE enable + SL %. Rows ordered 4 → 3 → 2 → 1 → 0 so the layout reads top-down
         // away-from-expiry → expiry-day. Defaults: every level on at 50 %, matching the
         // previous single-SL behaviour. Keys live under {@code dte.<N>.*} so the lookup
@@ -481,13 +513,18 @@ public class ShortStraddle implements Strategy {
         // Re-entry = re-entry-on-SL group. Everything else = basic.
         for (java.util.Map<String, Object> f : s) {
             String k = String.valueOf(f.get("key"));
-            boolean risk    = "moveSlToCostOnFirstLegHit".equals(k) || k.startsWith("dte.");
-            boolean reentry = k.startsWith("reEntry") || "maxReEntriesPerLeg".equals(k);
+            boolean risk    = "moveSlToCostOnFirstLegHit".equals(k)
+                           || k.startsWith("dte.")
+                           || k.startsWith("trailingSl");
+            boolean reentry = k.startsWith("reEntry")
+                           || "maxReEntriesPerLeg".equals(k);
             String tab = reentry ? "reentry" : (risk ? "risk" : "basic");
             f.put("tab", tab);
             // Long-hint fields span both grid columns so the hint stays on one line.
-            if ("moveSlToCostOnFirstLegHit".equals(k)) f.put("wide", true);
-            if ("reEntryOnSlEnabled".equals(k))        f.put("wide", true);
+            if ("moveSlToCostOnFirstLegHit".equals(k))       f.put("wide", true);
+            if ("reEntryOnSlEnabled".equals(k))              f.put("wide", true);
+            if ("reEntrySameStrikeOnSlEnabled".equals(k))    f.put("wide", true);
+            if ("trailingSlEnabled".equals(k))               f.put("wide", true);
         }
         return s;
     }
@@ -509,10 +546,18 @@ public class ShortStraddle implements Strategy {
         v.put("orderType",     riskSettings.getStrategyString(instanceId, "orderType",     "INTRADAY"));
         v.put("moveSlToCostOnFirstLegHit",
             riskSettings.getStrategyBool(instanceId, "moveSlToCostOnFirstLegHit", false));
-        v.put("reEntryOnSlEnabled",  riskSettings.getStrategyBool(instanceId,   "reEntryOnSlEnabled",  false));
-        v.put("maxReEntriesPerLeg",  riskSettings.getStrategyInt(instanceId,    "maxReEntriesPerLeg",  1));
-        v.put("reEntryDelaySeconds", riskSettings.getStrategyInt(instanceId,    "reEntryDelaySeconds", 300));
-        v.put("reEntryLatestTime",   riskSettings.getStrategyString(instanceId, "reEntryLatestTime",   "14:30"));
+        v.put("trailingSlEnabled",
+            riskSettings.getStrategyBool(instanceId, "trailingSlEnabled", false));
+        v.put("trailingSlProfitStepPct",
+            riskSettings.getStrategyDouble(instanceId, "trailingSlProfitStepPct", 15));
+        v.put("trailingSlTightenPct",
+            riskSettings.getStrategyDouble(instanceId, "trailingSlTightenPct", 10));
+        v.put("reEntryOnSlEnabled",           riskSettings.getStrategyBool(instanceId,   "reEntryOnSlEnabled",           false));
+        v.put("reEntryDelaySeconds",          riskSettings.getStrategyInt(instanceId,    "reEntryDelaySeconds",          300));
+        v.put("reEntrySameStrikeOnSlEnabled", riskSettings.getStrategyBool(instanceId,   "reEntrySameStrikeOnSlEnabled", false));
+        v.put("reEntrySameStrikeTolerancePct",riskSettings.getStrategyDouble(instanceId, "reEntrySameStrikeTolerancePct", 5));
+        v.put("maxReEntriesPerLeg",           riskSettings.getStrategyInt(instanceId,    "maxReEntriesPerLeg",           1));
+        v.put("reEntryLatestTime",            riskSettings.getStrategyString(instanceId, "reEntryLatestTime",            "14:30"));
         for (String n : DTE_LEVELS) {
             v.put("dte." + n + ".enabled",     riskSettings.getStrategyBool(instanceId,   "dte." + n + ".enabled",     true));
             v.put("dte." + n + ".legSlPct",    riskSettings.getStrategyDouble(instanceId, "dte." + n + ".legSlPct",    50));
@@ -547,6 +592,22 @@ public class ShortStraddle implements Strategy {
             riskSettings.setStrategySetting(instanceId, "moveSlToCostOnFirstLegHit",
                 Boolean.parseBoolean(String.valueOf(values.get("moveSlToCostOnFirstLegHit"))));
         }
+        if (values.containsKey("trailingSlEnabled")) {
+            riskSettings.setStrategySetting(instanceId, "trailingSlEnabled",
+                Boolean.parseBoolean(String.valueOf(values.get("trailingSlEnabled"))));
+        }
+        if (values.containsKey("trailingSlProfitStepPct")) {
+            double n = asDouble(values.get("trailingSlProfitStepPct"), 15);
+            if (n <= 0)    n = 15;
+            if (n > 100)   n = 100;
+            riskSettings.setStrategySetting(instanceId, "trailingSlProfitStepPct", n);
+        }
+        if (values.containsKey("trailingSlTightenPct")) {
+            double n = asDouble(values.get("trailingSlTightenPct"), 10);
+            if (n <= 0)    n = 10;
+            if (n > 100)   n = 100;
+            riskSettings.setStrategySetting(instanceId, "trailingSlTightenPct", n);
+        }
         if (values.containsKey("reEntryOnSlEnabled")) {
             riskSettings.setStrategySetting(instanceId, "reEntryOnSlEnabled",
                 Boolean.parseBoolean(String.valueOf(values.get("reEntryOnSlEnabled"))));
@@ -566,6 +627,16 @@ public class ShortStraddle implements Strategy {
         if (values.containsKey("reEntryLatestTime")) {
             riskSettings.setStrategySetting(instanceId, "reEntryLatestTime",
                 String.valueOf(values.get("reEntryLatestTime")));
+        }
+        if (values.containsKey("reEntrySameStrikeOnSlEnabled")) {
+            riskSettings.setStrategySetting(instanceId, "reEntrySameStrikeOnSlEnabled",
+                Boolean.parseBoolean(String.valueOf(values.get("reEntrySameStrikeOnSlEnabled"))));
+        }
+        if (values.containsKey("reEntrySameStrikeTolerancePct")) {
+            double n = asDouble(values.get("reEntrySameStrikeTolerancePct"), 5);
+            if (n <= 0)   n = 5;
+            if (n > 100)  n = 100;
+            riskSettings.setStrategySetting(instanceId, "reEntrySameStrikeTolerancePct", n);
         }
         if (values.containsKey("orderType")) {
             String ot = String.valueOf(values.get("orderType")).trim().toUpperCase();
@@ -655,16 +726,64 @@ public class ShortStraddle implements Strategy {
         return 0;
     }
 
-    /** Per-leg trigger price taking the "moved to cost" override into account. When the
-     *  surviving leg has been flagged after the other leg's SL fired (and the setting is
-     *  on), the trigger collapses to the entry premium itself — i.e. close the moment the
-     *  leg gives back its remaining premium and goes flat instead of waiting for the full
-     *  SL distance. */
+    /** Per-leg trigger price taking every SL override into account, tightest wins:
+     *  <ul>
+     *    <li><b>Base</b> — {@code entryPremium + slPoints} or {@code entryPremium × (1+slPct)}
+     *        from the DTE config.</li>
+     *    <li><b>Trailing ratchet</b> — subtracts {@code stepsHit × trailingSlTightenPct%}
+     *        of entry. Once cumulative tighten meets the base SL %, the effective trigger
+     *        sits at / below entry and locks in profit.</li>
+     *    <li><b>Move-to-cost override</b> — after the OTHER leg's SL fires and the setting
+     *        is on, the trigger collapses to the entry premium itself.</li>
+     *  </ul>
+     *  Trigger is always {@code >= currentLtp} where possible (never widens past the base
+     *  or crosses to nonsensical values). */
     private double effectiveLegTrigger(boolean isCe) {
-        boolean moved = isCe ? ceSlMovedToCost : peSlMovedToCost;
         double entry  = isCe ? ceEntryPremium  : peEntryPremium;
-        if (moved && entry > 0) return entry;
-        return computeLegTrigger(entry);
+        if (entry <= 0) return 0;
+        double base = computeLegTrigger(entry);
+        if (base <= 0) return 0;
+        // Trailing tighten — only applied when the setting is on.
+        if (riskSettings.getStrategyBool(instanceId, "trailingSlEnabled", false)) {
+            int steps = isCe ? ceTrailingStepsHit : peTrailingStepsHit;
+            double tightenPct = riskSettings.getStrategyDouble(instanceId, "trailingSlTightenPct", 10);
+            if (steps > 0 && tightenPct > 0) {
+                double tightenAmount = entry * (tightenPct / 100.0) * steps;
+                base = base - tightenAmount;
+                // Trigger floor: never go below zero. Below-entry values are allowed and
+                // desirable — they lock in profit as the SL trigger sits under entry.
+                if (base < 0) base = 0;
+            }
+        }
+        // Move-to-cost is the tightest possible override — wins whenever it's set.
+        boolean moved = isCe ? ceSlMovedToCost : peSlMovedToCost;
+        if (moved && base > entry) base = entry;
+        return base;
+    }
+
+    /** Called on every SL-trigger check. Walks the trailing-ratchet forward when the
+     *  current profit% (as % of entry) has crossed a new {@code trailingSlProfitStepPct}
+     *  threshold. Ratchet only — never decrements. */
+    private void updateTrailingSteps(boolean isCe, double ltp) {
+        if (!riskSettings.getStrategyBool(instanceId, "trailingSlEnabled", false)) return;
+        double entry = isCe ? ceEntryPremium : peEntryPremium;
+        if (entry <= 0 || ltp <= 0) return;
+        double profitPct = (entry - ltp) / entry * 100.0;
+        if (profitPct <= 0) return;
+        double stepPct = riskSettings.getStrategyDouble(instanceId, "trailingSlProfitStepPct", 15);
+        if (stepPct <= 0) return;
+        int newSteps = (int) Math.floor(profitPct / stepPct);
+        int current  = isCe ? ceTrailingStepsHit : peTrailingStepsHit;
+        if (newSteps > current) {
+            if (isCe) ceTrailingStepsHit = newSteps;
+            else      peTrailingStepsHit = newSteps;
+            double tightenPct = riskSettings.getStrategyDouble(instanceId, "trailingSlTightenPct", 10);
+            String msg = String.format(
+                "%s trailing SL — profit %.1f%% crossed step %d (of %.1f%%). SL tightens by %d × %.1f%% of entry.",
+                isCe ? "CE" : "PE", profitPct, newSteps, stepPct, newSteps, tightenPct);
+            log.info("[short-straddle] {}", msg);
+            eventService.log("[INFO] [short-straddle] " + msg);
+        }
     }
 
     /** Called from {@link #checkLegSlTriggers} right after one leg's SL fires while the other
@@ -757,10 +876,16 @@ public class ShortStraddle implements Strategy {
             this.consumedRiskToday       = p.consumedRiskToday;
             this.ceSlMovedToCost = p.ceSlMovedToCost;
             this.peSlMovedToCost = p.peSlMovedToCost;
+            this.ceTrailingStepsHit = p.ceTrailingStepsHit;
+            this.peTrailingStepsHit = p.peTrailingStepsHit;
             this.ceReEntriesCount = p.ceReEntriesCount;
             this.peReEntriesCount = p.peReEntriesCount;
             this.pendingCeReEntryAtMillis = p.pendingCeReEntryAtMillis;
             this.pendingPeReEntryAtMillis = p.pendingPeReEntryAtMillis;
+            this.pendingCeReEntrySymbol   = p.pendingCeReEntrySymbol != null ? p.pendingCeReEntrySymbol : "";
+            this.pendingPeReEntrySymbol   = p.pendingPeReEntrySymbol != null ? p.pendingPeReEntrySymbol : "";
+            this.pendingCeReEntryPrice    = p.pendingCeReEntryPrice;
+            this.pendingPeReEntryPrice    = p.pendingPeReEntryPrice;
             this.currentWeeklyExpiry = p.currentWeeklyExpiry != null ? p.currentWeeklyExpiry : "";
             if (p.combinedPremiumSamples != null) {
                 this.combinedPremiumSamples.clear();
@@ -884,7 +1009,8 @@ public class ShortStraddle implements Strategy {
             }
             case DONE_FOR_DAY -> {
                 // Even if both legs closed (both SL'd), a scheduled re-entry may still fire.
-                if (pendingCeReEntryAtMillis > 0 || pendingPeReEntryAtMillis > 0) {
+                if (pendingCeReEntryAtMillis > 0 || pendingPeReEntryAtMillis > 0
+                        || !pendingCeReEntrySymbol.isEmpty() || !pendingPeReEntrySymbol.isEmpty()) {
                     processPendingReEntries();
                 }
             }
@@ -919,6 +1045,8 @@ public class ShortStraddle implements Strategy {
         this.ceClosedAtMillis = 0; this.peClosedAtMillis = 0;
         this.ceSlMovedToCost = false;
         this.peSlMovedToCost = false;
+        this.ceTrailingStepsHit = 0;
+        this.peTrailingStepsHit = 0;
         this.combinedPremiumSamples.clear();
 
         double niftyLtp = marketDataService.getLtp(underlying().indexSymbol());
@@ -1050,6 +1178,9 @@ public class ShortStraddle implements Strategy {
             : (todayPct != null ? String.format("%.0f%%", todayPct) : "—");
         if (isCeOpen() && ceEntryPremium > 0 && !ceSymbol.isEmpty()) {
             double ceLtp = marketDataService.getLtp(ceSymbol);
+            // Advance the trailing ratchet before reading the effective trigger so the
+            // freshly-tightened trigger is what we compare against on this same tick.
+            if (ceLtp > 0) updateTrailingSteps(true, ceLtp);
             double trigger = effectiveLegTrigger(true);
             if (ceLtp > 0 && trigger > 0 && ceLtp >= trigger) {
                 double consumedPts = ceLtp - ceEntryPremium;
@@ -1067,6 +1198,7 @@ public class ShortStraddle implements Strategy {
         }
         if (isPeOpen() && peEntryPremium > 0 && !peSymbol.isEmpty()) {
             double peLtp = marketDataService.getLtp(peSymbol);
+            if (peLtp > 0) updateTrailingSteps(false, peLtp);
             double trigger = effectiveLegTrigger(false);
             if (peLtp > 0 && trigger > 0 && peLtp >= trigger) {
                 double consumedPts = peLtp - peEntryPremium;
@@ -1154,29 +1286,31 @@ public class ShortStraddle implements Strategy {
             this.peOrderId = "";
             transitionTo(isCeOpen() ? LifecycleState.OPEN_CE_ONLY : LifecycleState.DONE_FOR_DAY);
         }
-        // Re-entry on SL — schedule a re-entry timestamp; the scheduler tick() picks it up.
+        // On SL — schedule BOTH recovery flavors independently. Each has its own gate;
+        // whichever fires first wins (the other is cleared when a leg is successfully
+        // re-opened). Combined attempt cap enforced via ceReEntriesCount / peReEntriesCount.
         if ("CE_SL_HIT".equals(reason) || "PE_SL_HIT".equals(reason)) {
             scheduleReEntryIfEligible(isCe);
+            scheduleSameStrikeReEntryIfEligible(isCe, symbol, entry);
         }
     }
 
-    /** Called from closeLeg on CE_SL_HIT / PE_SL_HIT. Sets a pending re-entry timestamp
-     *  if the feature is enabled, the per-leg cap hasn't been reached, and the current
-     *  time is before the configured cutoff. The tick() loop performs the actual re-entry
-     *  once wall clock reaches the pending timestamp. */
+    /** Re-Execute (fresh-strike after delay). Called from closeLeg on CE_SL_HIT / PE_SL_HIT.
+     *  Sets a pending timestamp if enabled + attempt-cap not reached + not past latest time.
+     *  The tick() loop fires the actual placement once wall clock passes the timestamp. */
     private void scheduleReEntryIfEligible(boolean isCe) {
         if (!riskSettings.getStrategyBool(instanceId, "reEntryOnSlEnabled", false)) return;
         int maxPerLeg = Math.max(0, riskSettings.getStrategyInt(instanceId, "maxReEntriesPerLeg", 1));
         int used = isCe ? ceReEntriesCount : peReEntriesCount;
         if (used >= maxPerLeg) {
-            log.info("[short-straddle] Re-entry skipped for {} — cap reached ({}/{}).",
+            log.info("[short-straddle] Re-Execute skipped for {} — cap reached ({}/{}).",
                 isCe ? "CE" : "PE", used, maxPerLeg);
             return;
         }
         LocalTime latest = parseTime(
             riskSettings.getStrategyString(instanceId, "reEntryLatestTime", "14:30"), "14:30");
         if (LocalTime.now(IST).isAfter(latest)) {
-            log.info("[short-straddle] Re-entry skipped for {} — past latest time {}.",
+            log.info("[short-straddle] Re-Execute skipped for {} — past latest time {}.",
                 isCe ? "CE" : "PE", latest);
             return;
         }
@@ -1184,22 +1318,59 @@ public class ShortStraddle implements Strategy {
         long fireAt = System.currentTimeMillis() + delaySec * 1000L;
         if (isCe) pendingCeReEntryAtMillis = fireAt;
         else      pendingPeReEntryAtMillis = fireAt;
-        String msg = (isCe ? "CE" : "PE") + " re-entry scheduled in " + delaySec + "s (attempt "
+        String msg = (isCe ? "CE" : "PE") + " Re-Execute scheduled in " + delaySec + "s (attempt "
             + (used + 1) + "/" + maxPerLeg + ")";
         log.info("[short-straddle] {}", msg);
         eventService.log("[INFO] [short-straddle] " + msg);
         notifyTelegram(msg);
-        // Persist so a mid-delay restart preserves the pending re-entry.
         persist();
     }
 
-    /** Scheduler-invoked hook. Runs on every tick — cheap ints/longs. If a pending re-entry
-     *  timestamp has elapsed for either side, place a fresh sell at the current ATM for that
-     *  side. Skips gracefully if the state has since closed the day or the other leg has
-     *  concurrently re-opened (unlikely). */
+    /** Re-Entry (same-strike, wait-for-return). Called alongside {@link #scheduleReEntryIfEligible}
+     *  on SL. Records the SL'd symbol + its original entry premium; every tick we then check if
+     *  the LTP of that symbol has fallen back within tolerance of entry and, if so, re-sell it. */
+    private void scheduleSameStrikeReEntryIfEligible(boolean isCe, String symbol, double entryPremium) {
+        if (!riskSettings.getStrategyBool(instanceId, "reEntrySameStrikeOnSlEnabled", false)) return;
+        if (symbol == null || symbol.isEmpty() || entryPremium <= 0) return;
+        int maxPerLeg = Math.max(0, riskSettings.getStrategyInt(instanceId, "maxReEntriesPerLeg", 1));
+        int used = isCe ? ceReEntriesCount : peReEntriesCount;
+        if (used >= maxPerLeg) return; // combined cap — Re-Execute counters share this
+        LocalTime latest = parseTime(
+            riskSettings.getStrategyString(instanceId, "reEntryLatestTime", "14:30"), "14:30");
+        if (LocalTime.now(IST).isAfter(latest)) return;
+        if (isCe) {
+            pendingCeReEntrySymbol = symbol;
+            pendingCeReEntryPrice  = entryPremium;
+        } else {
+            pendingPeReEntrySymbol = symbol;
+            pendingPeReEntryPrice  = entryPremium;
+        }
+        double tol = riskSettings.getStrategyDouble(instanceId, "reEntrySameStrikeTolerancePct", 5);
+        String msg = String.format(
+            "%s Re-Entry armed — waiting for %s LTP to return within %.1f%% of entry %.2f",
+            isCe ? "CE" : "PE", symbol, tol, entryPremium);
+        log.info("[short-straddle] {}", msg);
+        eventService.log("[INFO] [short-straddle] " + msg);
+        notifyTelegram(msg);
+        // Keep the SL'd symbol subscribed so its LTP keeps ticking (subscribeAdditional is
+        // idempotent — no-op if already subscribed).
+        try { marketDataService.subscribeAdditional(java.util.Collections.singletonList(symbol)); }
+        catch (Exception ignored) {}
+        persist();
+    }
+
+    /** Scheduler-invoked hook. Runs on every tick — cheap ints/longs + LTP reads. Fires
+     *  whichever recovery flavor is ready:
+     *  <ul>
+     *    <li><b>Re-Execute</b> — pending timestamp has elapsed.</li>
+     *    <li><b>Re-Entry</b> — the SL'd symbol's LTP has come back within tolerance of entry.</li>
+     *  </ul>
+     *  On a successful re-open of a side, the OTHER pending flavor for that side is cleared
+     *  (the leg is open again — can't re-open twice). */
     private synchronized void processPendingReEntries() {
         long now = System.currentTimeMillis();
         boolean fired = false;
+        // Re-Execute first — timer-based, cheapest check.
         if (pendingCeReEntryAtMillis > 0 && now >= pendingCeReEntryAtMillis) {
             pendingCeReEntryAtMillis = 0;
             performReEntry(true);
@@ -1210,7 +1381,43 @@ public class ShortStraddle implements Strategy {
             performReEntry(false);
             fired = true;
         }
+        // Re-Entry (same strike, wait for return). Only meaningful if the leg is still closed.
+        if (!pendingCeReEntrySymbol.isEmpty() && !isCeOpen()) {
+            if (checkSameStrikeReEntryTrigger(true)) fired = true;
+        }
+        if (!pendingPeReEntrySymbol.isEmpty() && !isPeOpen()) {
+            if (checkSameStrikeReEntryTrigger(false)) fired = true;
+        }
         if (fired) persist();
+    }
+
+    /** For the side's pending same-strike Re-Entry: check current LTP against the recorded
+     *  entry premium. If within {@code tolerancePct} band, fire the re-sell. Returns true when
+     *  something changed (fired OR cleared due to latest-time expiry) so the caller persists. */
+    private boolean checkSameStrikeReEntryTrigger(boolean isCe) {
+        String sym    = isCe ? pendingCeReEntrySymbol : pendingPeReEntrySymbol;
+        double target = isCe ? pendingCeReEntryPrice  : pendingPeReEntryPrice;
+        if (sym == null || sym.isEmpty() || target <= 0) return false;
+        // Latest-time gate — if we're past the cutoff, abandon.
+        LocalTime latest = parseTime(
+            riskSettings.getStrategyString(instanceId, "reEntryLatestTime", "14:30"), "14:30");
+        if (LocalTime.now(IST).isAfter(latest)) {
+            clearPendingSameStrikeReEntry(isCe);
+            return true;
+        }
+        double ltp = marketDataService.getLtp(sym);
+        if (ltp <= 0) return false;
+        double tolPct = riskSettings.getStrategyDouble(instanceId, "reEntrySameStrikeTolerancePct", 5);
+        double diffPct = Math.abs(ltp - target) / target * 100.0;
+        if (diffPct > tolPct) return false; // outside tolerance band
+        // In band — fire.
+        performSameStrikeReEntry(isCe);
+        return true;
+    }
+
+    private void clearPendingSameStrikeReEntry(boolean isCe) {
+        if (isCe) { pendingCeReEntrySymbol = ""; pendingCeReEntryPrice = 0; }
+        else      { pendingPeReEntrySymbol = ""; pendingPeReEntryPrice = 0; }
     }
 
     /** Place a fresh SELL for the given side at the current ATM. Re-uses the balanced ATM
@@ -1279,6 +1486,7 @@ public class ShortStraddle implements Strategy {
             this.ceLegPnl = 0;
             this.ceClosePremium = 0;
             this.ceSlMovedToCost = false;
+            this.ceTrailingStepsHit = 0;
             ceReEntriesCount++;
             registerPendingFill(resp.getId(), PendingType.ENTRY_CE, qty, 0);
             transitionTo(isPeOpen() ? LifecycleState.OPEN_BOTH : LifecycleState.OPEN_CE_ONLY);
@@ -1291,12 +1499,88 @@ public class ShortStraddle implements Strategy {
             this.peLegPnl = 0;
             this.peClosePremium = 0;
             this.peSlMovedToCost = false;
+            this.peTrailingStepsHit = 0;
             peReEntriesCount++;
             registerPendingFill(resp.getId(), PendingType.ENTRY_PE, qty, 0);
             transitionTo(isCeOpen() ? LifecycleState.OPEN_BOTH : LifecycleState.OPEN_PE_ONLY);
         }
-        String msg = (isCe ? "CE" : "PE") + " re-entered @ " + sym + " qty=" + qty
+        // Successful re-open — cancel the OTHER pending flavor for this side. The leg is
+        // open again; a same-strike-wait would only lead to an over-position.
+        clearPendingSameStrikeReEntry(isCe);
+        String msg = (isCe ? "CE" : "PE") + " Re-Execute filled @ " + sym + " qty=" + qty
             + " ltp=" + String.format("%.2f", entryLtp) + " (NIFTY " + String.format("%.2f", niftyLtp) + ")";
+        log.info("[short-straddle] {}", msg);
+        eventService.log("[INFO] [short-straddle] " + msg);
+        notifyTelegram(msg);
+        pushEvent("RE_EXECUTE_" + (isCe ? "CE" : "PE"), niftyLtp, isCe ? sym : "", isCe ? "" : sym, 0);
+    }
+
+    /** Fires the same-strike Re-Entry — re-sells the SAME symbol we watched come back within
+     *  tolerance. Reuses the SL'd leg's original entry as the new position's entry reference
+     *  (the actual fill price overwrites via {@link #onActualFill} in the WS path). */
+    private synchronized void performSameStrikeReEntry(boolean isCe) {
+        String sym    = isCe ? pendingCeReEntrySymbol : pendingPeReEntrySymbol;
+        double target = isCe ? pendingCeReEntryPrice  : pendingPeReEntryPrice;
+        if (sym == null || sym.isEmpty() || target <= 0) return;
+        // Re-check every gate — config may have changed since arming.
+        if (!riskSettings.getStrategyBool(instanceId, "reEntrySameStrikeOnSlEnabled", false)) {
+            clearPendingSameStrikeReEntry(isCe);
+            return;
+        }
+        LocalTime nowT = LocalTime.now(IST);
+        LocalTime squareOff = parseTime(getSquareOffTime(), "15:15");
+        if (!nowT.isBefore(squareOff)) { clearPendingSameStrikeReEntry(isCe); return; }
+        if (isCe && isCeOpen())  { clearPendingSameStrikeReEntry(true); return; }
+        if (!isCe && isPeOpen()) { clearPendingSameStrikeReEntry(false); return; }
+        int maxPerLeg = Math.max(0, riskSettings.getStrategyInt(instanceId, "maxReEntriesPerLeg", 1));
+        int used = isCe ? ceReEntriesCount : peReEntriesCount;
+        if (used >= maxPerLeg) { clearPendingSameStrikeReEntry(isCe); return; }
+
+        int qty = Math.max(1, riskSettings.getStrategyInt(instanceId, "lotsPerLeg", 1)) * underlying().lotSize();
+        String product = productType();
+        OrderDTO resp = orderService.placeOrder(sym, qty, -1, 0, product);
+        orderCountToday++;
+        if (resp == null || resp.getId() == null || resp.getId().isEmpty() || !"ok".equals(resp.getStatus())) {
+            log.error("[short-straddle] Re-Entry rejected for {}: {}", isCe ? "CE" : "PE", resp);
+            eventService.log("[ERROR] [short-straddle] " + (isCe ? "CE" : "PE") + " Re-Entry rejected");
+            clearPendingSameStrikeReEntry(isCe);
+            return;
+        }
+        double entryLtp = readEntryPremium(sym);
+        double niftyLtp = marketDataService.getLtp(underlying().indexSymbol());
+        if (isCe) {
+            this.ceSymbol = sym;
+            this.ceQty = qty;
+            this.ceOrderId = resp.getId();
+            this.ceEntryPremium = entryLtp;
+            this.ceClosedAtMillis = 0;
+            this.ceLegPnl = 0;
+            this.ceClosePremium = 0;
+            this.ceSlMovedToCost = false;
+            this.ceTrailingStepsHit = 0;
+            ceReEntriesCount++;
+            registerPendingFill(resp.getId(), PendingType.ENTRY_CE, qty, 0);
+            transitionTo(isPeOpen() ? LifecycleState.OPEN_BOTH : LifecycleState.OPEN_CE_ONLY);
+        } else {
+            this.peSymbol = sym;
+            this.peQty = qty;
+            this.peOrderId = resp.getId();
+            this.peEntryPremium = entryLtp;
+            this.peClosedAtMillis = 0;
+            this.peLegPnl = 0;
+            this.peClosePremium = 0;
+            this.peSlMovedToCost = false;
+            this.peTrailingStepsHit = 0;
+            peReEntriesCount++;
+            registerPendingFill(resp.getId(), PendingType.ENTRY_PE, qty, 0);
+            transitionTo(isCeOpen() ? LifecycleState.OPEN_BOTH : LifecycleState.OPEN_PE_ONLY);
+        }
+        // Cancel the OTHER pending flavor for this side (Re-Execute timer).
+        if (isCe) pendingCeReEntryAtMillis = 0; else pendingPeReEntryAtMillis = 0;
+        clearPendingSameStrikeReEntry(isCe);
+        String msg = String.format(
+            "%s Re-Entry filled @ %s qty=%d ltp=%.2f (returned within tolerance of entry %.2f, NIFTY %.2f)",
+            isCe ? "CE" : "PE", sym, qty, entryLtp, target, niftyLtp);
         log.info("[short-straddle] {}", msg);
         eventService.log("[INFO] [short-straddle] " + msg);
         notifyTelegram(msg);
@@ -1847,10 +2131,16 @@ public class ShortStraddle implements Strategy {
         this.observedPreEntryWindow = false;
         this.ceSlMovedToCost = false;
         this.peSlMovedToCost = false;
+        this.ceTrailingStepsHit = 0;
+        this.peTrailingStepsHit = 0;
         this.ceReEntriesCount = 0;
         this.peReEntriesCount = 0;
         this.pendingCeReEntryAtMillis = 0;
         this.pendingPeReEntryAtMillis = 0;
+        this.pendingCeReEntrySymbol = "";
+        this.pendingPeReEntrySymbol = "";
+        this.pendingCeReEntryPrice = 0;
+        this.pendingPeReEntryPrice = 0;
         transitionTo(LifecycleState.ARMED);
     }
 
@@ -2346,10 +2636,16 @@ public class ShortStraddle implements Strategy {
         s.consumedRiskToday       = this.consumedRiskToday;
         s.ceSlMovedToCost = this.ceSlMovedToCost;
         s.peSlMovedToCost = this.peSlMovedToCost;
+        s.ceTrailingStepsHit = this.ceTrailingStepsHit;
+        s.peTrailingStepsHit = this.peTrailingStepsHit;
         s.ceReEntriesCount = this.ceReEntriesCount;
         s.peReEntriesCount = this.peReEntriesCount;
         s.pendingCeReEntryAtMillis = this.pendingCeReEntryAtMillis;
         s.pendingPeReEntryAtMillis = this.pendingPeReEntryAtMillis;
+        s.pendingCeReEntrySymbol   = this.pendingCeReEntrySymbol;
+        s.pendingPeReEntrySymbol   = this.pendingPeReEntrySymbol;
+        s.pendingCeReEntryPrice    = this.pendingCeReEntryPrice;
+        s.pendingPeReEntryPrice    = this.pendingPeReEntryPrice;
         s.currentWeeklyExpiry = this.currentWeeklyExpiry;
         synchronized (combinedPremiumSamples) {
             s.combinedPremiumSamples = new java.util.ArrayList<>(combinedPremiumSamples);

@@ -80,6 +80,10 @@ public class ShortStraddleStateStore {
          *  instead of silently reverting to the wider entry × (1 + slPct/100) trigger. */
         public boolean ceSlMovedToCost;
         public boolean peSlMovedToCost;
+        /** Trailing-SL ratchet — number of profit-step thresholds each leg has crossed
+         *  since entry. Reset on new entry / re-entry / day rollover. */
+        public int     ceTrailingStepsHit;
+        public int     peTrailingStepsHit;
         /** Re-entry-on-SL bookkeeping. Counters are per-leg use counts vs the cap;
          *  pending timestamps are epoch millis at which a scheduled re-entry should fire
          *  (0 = none scheduled). Persisted so a mid-delay restart doesn't drop the pending
@@ -88,6 +92,12 @@ public class ShortStraddleStateStore {
         public int     peReEntriesCount;
         public long    pendingCeReEntryAtMillis;
         public long    pendingPeReEntryAtMillis;
+        /** Same-strike Re-Entry pending state — SL'd symbol we're monitoring for a return
+         *  to within tolerance of the original entry premium, so we can re-sell it. */
+        public String  pendingCeReEntrySymbol;
+        public String  pendingPeReEntrySymbol;
+        public double  pendingCeReEntryPrice;
+        public double  pendingPeReEntryPrice;
         public String  currentWeeklyExpiry;
         /** Cycle events ring (ENTRY / CE_SL / PE_SL / SQUAREOFF) — {time, event, nifty, ce, pe, pnl}. */
         public java.util.List<java.util.Map<String, Object>> recentEvents;
