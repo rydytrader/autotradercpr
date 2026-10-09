@@ -46,12 +46,11 @@ public class SettingsController {
         result.put("brokeragePerOrder",   riskSettings.getBrokeragePerOrder(effectiveMode));
         result.put("sttRate",             riskSettings.getSttRate(effectiveMode));
         result.put("exchangeRate",        riskSettings.getExchangeRate(effectiveMode));
+        result.put("bseExchangeRate",     riskSettings.getBseExchangeRate(effectiveMode));
         result.put("gstRate",             riskSettings.getGstRate(effectiveMode));
         result.put("sebiRate",            riskSettings.getSebiRate(effectiveMode));
         result.put("stampDutyRate",       riskSettings.getStampDutyRate(effectiveMode));
         result.put("brokeragePct",        riskSettings.getBrokeragePct(effectiveMode));
-        // Notifications
-        result.put("telegramAlertFrequency", riskSettings.getTelegramAlertFrequency(effectiveMode));
         return result;
     }
 
@@ -79,12 +78,11 @@ public class SettingsController {
             if (body.containsKey("brokeragePerOrder")) riskSettings.setBrokeragePerOrder(effectiveMode, Double.parseDouble(body.get("brokeragePerOrder").toString()));
             if (body.containsKey("sttRate"))           riskSettings.setSttRate(effectiveMode, Double.parseDouble(body.get("sttRate").toString()));
             if (body.containsKey("exchangeRate"))      riskSettings.setExchangeRate(effectiveMode, Double.parseDouble(body.get("exchangeRate").toString()));
+            if (body.containsKey("bseExchangeRate"))   riskSettings.setBseExchangeRate(effectiveMode, Double.parseDouble(body.get("bseExchangeRate").toString()));
             if (body.containsKey("gstRate"))           riskSettings.setGstRate(effectiveMode, Double.parseDouble(body.get("gstRate").toString()));
             if (body.containsKey("sebiRate"))          riskSettings.setSebiRate(effectiveMode, Double.parseDouble(body.get("sebiRate").toString()));
             if (body.containsKey("stampDutyRate"))     riskSettings.setStampDutyRate(effectiveMode, Double.parseDouble(body.get("stampDutyRate").toString()));
             if (body.containsKey("brokeragePct"))      riskSettings.setBrokeragePct(effectiveMode, Double.parseDouble(body.get("brokeragePct").toString()));
-            // Notifications
-            if (body.containsKey("telegramAlertFrequency")) riskSettings.setTelegramAlertFrequency(effectiveMode, Integer.parseInt(body.get("telegramAlertFrequency").toString()));
             riskSettings.saveFor(effectiveMode);
             return ResponseEntity.ok(Map.of("ok", true, "message", "Settings saved"));
         } catch (Exception e) {

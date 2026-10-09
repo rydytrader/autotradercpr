@@ -37,8 +37,6 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     private final EventService     eventService;
     @SuppressWarnings("unused")
     private final MarketDataService marketDataService;
-    @SuppressWarnings("unused")
-    private final TelegramService   telegramService;
 
     @org.springframework.beans.factory.annotation.Autowired
     @Lazy
@@ -113,13 +111,11 @@ public class OrderEventService implements FyersOrderWebSocket.OrderCallback {
     public OrderEventService(TokenStore tokenStore,
                               FyersProperties fyersProperties,
                               EventService eventService,
-                              MarketDataService marketDataService,
-                              TelegramService telegramService) {
+                              MarketDataService marketDataService) {
         this.tokenStore = tokenStore;
         this.fyersProperties = fyersProperties;
         this.eventService = eventService;
         this.marketDataService = marketDataService;
-        this.telegramService = telegramService;
     }
 
     /** Setter used by callers wanting to avoid construction-time circular DI (legacy). */

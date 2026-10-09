@@ -58,7 +58,6 @@ public class StrangleInstanceManager implements ApplicationRunner {
     private final ObjectProvider<MarketDataService> marketDataServiceProvider;
     private final ObjectProvider<OrderService> orderServiceProvider;
     private final ObjectProvider<MarketHolidayService> marketHolidayServiceProvider;
-    private final ObjectProvider<TelegramService> telegramServiceProvider;
     private final ObjectProvider<StrategySessionRepository> sessionRepoProvider;
     private final ObjectProvider<StrategyTradeRepository> tradeRepoProvider;
     private final ObjectProvider<OrderEventService> orderEventServiceProvider;
@@ -76,7 +75,6 @@ public class StrangleInstanceManager implements ApplicationRunner {
                                     @Lazy ObjectProvider<MarketDataService> marketDataServiceProvider,
                                     @Lazy ObjectProvider<OrderService> orderServiceProvider,
                                     @Lazy ObjectProvider<MarketHolidayService> marketHolidayServiceProvider,
-                                    @Lazy ObjectProvider<TelegramService> telegramServiceProvider,
                                     @Lazy ObjectProvider<StrategySessionRepository> sessionRepoProvider,
                                     @Lazy ObjectProvider<StrategyTradeRepository> tradeRepoProvider,
                                     @Lazy ObjectProvider<OrderEventService> orderEventServiceProvider,
@@ -91,7 +89,6 @@ public class StrangleInstanceManager implements ApplicationRunner {
         this.marketDataServiceProvider = marketDataServiceProvider;
         this.orderServiceProvider = orderServiceProvider;
         this.marketHolidayServiceProvider = marketHolidayServiceProvider;
-        this.telegramServiceProvider = telegramServiceProvider;
         this.sessionRepoProvider = sessionRepoProvider;
         this.tradeRepoProvider = tradeRepoProvider;
         this.orderEventServiceProvider = orderEventServiceProvider;
@@ -129,7 +126,6 @@ public class StrangleInstanceManager implements ApplicationRunner {
             marketDataServiceProvider.getObject(),
             orderServiceProvider.getObject(),
             marketHolidayServiceProvider.getObject(),
-            telegramServiceProvider.getObject(),
             sessionRepoProvider.getObject(),
             tradeRepoProvider.getObject(),
             orderEventServiceProvider.getObject(),

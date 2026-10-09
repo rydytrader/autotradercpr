@@ -82,20 +82,28 @@ public class AnalyticsService {
         // filter-scoped since those are the "in-window" metrics.
         List<Trade> allTimeTrades = loadTrades("all", strategyId, null, null);
 
+        // Wins/losses/streaks/extremes/edge should count ONE outcome per trading day,
+        // not one per strategy-instance-cycle. Two instances on the same day = ONE
+        // session with combined net P&L. Aggregate here and pass the per-session list
+        // to those metrics.
+        List<Trade> perSession = aggregateBySession(closed);
+
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("period",        period);
         out.put("strategyId",    strategyId);
         out.put("from",          from);
         out.put("to",            to);
-        out.put("straddleCount", closed.size());
-        out.put("sessionCount",  distinctDates(closed));
+        // straddleCount now reads as "session count" — one per trading day. Kept the
+        // legacy key name so the frontend doesn't break, but the value is per-session.
+        out.put("straddleCount", perSession.size());
+        out.put("sessionCount",  perSession.size());
         out.put("includeAdjustments", false);
 
         out.put("capital",     capital(trades, startingCapital, allTimeTrades));
-        out.put("performance", performance(closed));
-        out.put("extremes",    extremes(closed));
-        out.put("streaks",     streaks(closed));
-        out.put("edge",        edge(closed, startingCapital));
+        out.put("performance", performance(perSession));
+        out.put("extremes",    extremes(perSession));
+        out.put("streaks",     streaks(perSession));
+        out.put("edge",        edge(perSession, startingCapital));
         out.put("equityCurve", equityCurve(trades, startingCapital));
         out.put("byMonth",     byMonth(trades, closed));
         out.put("byDate",      byDate(trades, closed));
@@ -153,8 +161,11 @@ public class AnalyticsService {
     private Map<String, Object> byMonth(List<Trade> trades, List<Trade> closed) {
         java.util.NavigableMap<String, int[]>    winLossByKey = new java.util.TreeMap<>();
         java.util.NavigableMap<String, double[]> netByKey     = new java.util.TreeMap<>();
-        // Win/loss counters — only closed straddles count as outcomes.
-        for (Trade t : closed) {
+        // Win/loss counters — aggregate per TRADING DAY (session), not per instance-cycle.
+        // Two instances closing on the same day = ONE session with combined net P&L, not
+        // two separate outcomes. Matches straddleCount/sessionCount in the top-level summary.
+        List<Trade> perSessionClosed = aggregateBySession(closed);
+        for (Trade t : perSessionClosed) {
             String date = t.sessionDate();
             if (date == null || date.length() < 7) continue;
             String key  = date.substring(0, 7);
@@ -330,6 +341,37 @@ public class AnalyticsService {
         Set<String> dates = new java.util.HashSet<>();
         for (Trade t : trades) dates.add(t.sessionDate());
         return dates.size();
+    }
+
+    /** Roll {@code trades} into one synthetic Trade per session_date, summing gross /
+     *  charges / net / SL count and taking the latest closedAtMillis on that date. Used
+     *  by wins/losses/streaks/extremes/edge so a day with multiple strategy instances
+     *  counts as ONE session, not one-per-instance. Preserves input order by date so the
+     *  drawdown / streak walks still work. */
+    private static List<Trade> aggregateBySession(List<Trade> trades) {
+        // Preserve chronological order — take earliest-date first, latest last.
+        java.util.LinkedHashMap<String, Trade> byDate = new java.util.LinkedHashMap<>();
+        List<Trade> sorted = new java.util.ArrayList<>(trades);
+        sorted.sort(java.util.Comparator.comparing(Trade::sessionDate)
+                                        .thenComparingLong(Trade::closedAtMillis));
+        for (Trade t : sorted) {
+            Trade prev = byDate.get(t.sessionDate());
+            if (prev == null) {
+                byDate.put(t.sessionDate(), t);
+            } else {
+                byDate.put(t.sessionDate(), new Trade(
+                    "all",  // aggregated across instances
+                    t.sessionDate(),
+                    Math.max(prev.closedAtMillis(), t.closedAtMillis()),
+                    prev.grossPnl() + t.grossPnl(),
+                    prev.charges()  + t.charges(),
+                    prev.netPnl()   + t.netPnl(),
+                    prev.closeReason(),
+                    prev.slHitCount() + t.slHitCount()
+                ));
+            }
+        }
+        return new java.util.ArrayList<>(byDate.values());
     }
 
     // ── Period helpers ──────────────────────────────────────────────────────

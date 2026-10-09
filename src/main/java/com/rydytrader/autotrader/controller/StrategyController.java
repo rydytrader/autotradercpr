@@ -2,6 +2,7 @@ package com.rydytrader.autotrader.controller;
 
 import com.rydytrader.autotrader.service.strategy.BalancedAtmSelector;
 import com.rydytrader.autotrader.service.strategy.ShortStraddle;
+import com.rydytrader.autotrader.service.strategy.ShortStrangle;
 import com.rydytrader.autotrader.service.strategy.Strategy;
 import com.rydytrader.autotrader.service.strategy.StrategyRegistry;
 import org.springframework.http.ResponseEntity;
@@ -39,6 +40,10 @@ public class StrategyController {
         double dayPnl = 0;
         double charges = 0;
         for (Strategy s : registry.all()) {
+            // Skip disabled strategies — their live P&L shouldn't flow into the portfolio
+            // ticker. Matches AnalyticsService.loadTrades which filters disabled strategies
+            // out of all historical analytics.
+            if (!s.isEnabled()) continue;
             try { dayPnl  += s.liveNetPnlToday(); } catch (Exception ignored) {}
             try { charges += s.liveChargesToday(); } catch (Exception ignored) {}
         }
@@ -131,6 +136,65 @@ public class StrategyController {
         out.put("message", ok
             ? "Strategy " + id + " — legs flattened. State → DONE_FOR_DAY."
             : "Nothing to square off — no active position for " + id + ".");
+        return ResponseEntity.ok(out);
+    }
+
+    /** Manual reset of the survivor's {@code slMovedToCost} flag — surfaced as a "reset"
+     *  button next to the MOVED TO COST pill in the strategy dashboard. Live escape hatch
+     *  for the pre-2026-09-29 bug where a same-strike re-entry left the survivor stuck at
+     *  the cost-basis SL. */
+    @PostMapping("/api/strategies/{id}/reset-cost-flag/{leg}")
+    public ResponseEntity<Map<String, Object>> resetCostFlag(@PathVariable String id,
+                                                             @PathVariable String leg) {
+        Strategy s = registry.get(id);
+        if (s == null) return ResponseEntity.notFound().build();
+        String legUpper = leg == null ? "" : leg.toUpperCase();
+        if (!"CE".equals(legUpper) && !"PE".equals(legUpper)) {
+            return ResponseEntity.badRequest().body(java.util.Map.of(
+                "success", false, "message", "leg must be 'ce' or 'pe'"));
+        }
+        boolean reset;
+        if (s instanceof ShortStraddle ss)      reset = ss.resetLegCostFlag(legUpper);
+        else if (s instanceof ShortStrangle sg) reset = sg.resetLegCostFlag(legUpper);
+        else return ResponseEntity.badRequest().body(java.util.Map.of(
+            "success", false, "message", "Strategy does not expose SL cost flag"));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("success", reset);
+        out.put("message", reset
+            ? legUpper + " leg SL cost flag cleared. Original SL restored."
+            : legUpper + " leg is not currently at cost — nothing to reset.");
+        return ResponseEntity.ok(out);
+    }
+
+    /** "+ OPEN CE / PE" button — opens a closed leg right now, regardless of re-execute cap or
+     *  pending timer. The strategy decides whether it's allowed (day cycle started, leg closed,
+     *  before squareoff). */
+    @PostMapping("/api/strategies/{id}/open-leg/{leg}")
+    public ResponseEntity<Map<String, Object>> openLeg(@PathVariable String id,
+                                                       @PathVariable String leg) {
+        Strategy s = registry.get(id);
+        if (s == null) return ResponseEntity.notFound().build();
+        String legUpper = leg == null ? "" : leg.toUpperCase();
+        if (!"CE".equals(legUpper) && !"PE".equals(legUpper)) {
+            return ResponseEntity.badRequest().body(java.util.Map.of(
+                "success", false, "message", "leg must be 'ce' or 'pe'"));
+        }
+        String code;
+        try { code = s.openOneLeg(legUpper); }
+        catch (Exception e) { code = "EXCEPTION: " + e.getMessage(); }
+        boolean ok = "OK".equals(code);
+        String message = switch (code) {
+            case "OK"           -> legUpper + " leg opened at the current " + "strike pick.";
+            case "NOT_STARTED"  -> "Refused — today's cycle hasn't started yet. Use + NEW STRADDLE / STRANGLE for the first entry.";
+            case "ALREADY_OPEN" -> legUpper + " leg is already open.";
+            case "REJECTED"     -> legUpper + " order was rejected by the broker — see event log.";
+            case "UNSUPPORTED"  -> "This strategy doesn't support opening a single leg.";
+            default             -> legUpper + " open aborted (" + code + ") — see event log.";
+        };
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("success", ok);
+        out.put("code", code);
+        out.put("message", message);
         return ResponseEntity.ok(out);
     }
 

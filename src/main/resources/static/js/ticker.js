@@ -142,8 +142,7 @@
 
         var nifty  = formatIndex(lastNifty);
         var sensex = formatIndex(lastSensex);
-        // VIX: raise = fear (green would be misleading); keep color-neutral so viewers
-        // don't confuse it with an equity-index gain/loss.
+        // VIX: green when rising, red when falling (operator preference).
         var vixLtp = Number(lastVix.lp || 0);
         var vixText = vixLtp > 0
             ? vixLtp.toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2})
@@ -153,7 +152,9 @@
             var vixSign = vixChp > 0 ? '+' : '−';
             vixText += ' (' + vixSign + Math.abs(vixChp).toFixed(2) + '%)';
         }
-        var vixColor = 'var(--text-primary)';
+        var vixColor = vixChp > 0 ? 'var(--accent-green, #34d399)'
+                     : vixChp < 0 ? 'var(--accent-red, #f87171)'
+                     : 'var(--text-primary)';
 
         var pnl = Number(lastDayPnl || 0);
         var pnlColor = pnl > 0 ? 'var(--accent-green, #34d399)'

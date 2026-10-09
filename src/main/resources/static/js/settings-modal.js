@@ -73,10 +73,24 @@
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
                     '<div class="sm-field"><label>Brokerage per Order (₹)</label><input type="number" id="sm-brokeragePerOrder" step="1" min="0"><div class="sm-hint">Flat per-order brokerage. Drives charge estimates on every dashboard + session row.</div></div>' +
                     '<div class="sm-field"><label>STT Rate (%)</label><input type="number" id="sm-sttRate" step="0.0001" min="0"></div>' +
-                    '<div class="sm-field"><label>Exchange Transaction Charge (%)</label><input type="number" id="sm-exchangeRate" step="0.0001" min="0"></div>' +
+                    '<div class="sm-field"><label>NSE Exchange Transaction Charge (%)</label><input type="number" id="sm-exchangeRate" step="0.0001" min="0"><div class="sm-hint">Applied when the strategy trades NIFTY (NSE F&amp;O).</div></div>' +
+                    '<div class="sm-field"><label>BSE Exchange Transaction Charge (%)</label><input type="number" id="sm-bseExchangeRate" step="0.0001" min="0"><div class="sm-hint">Applied when the strategy trades SENSEX (BSE F&amp;O).</div></div>' +
                     '<div class="sm-field"><label>GST Rate (%)</label><input type="number" id="sm-gstRate" step="0.01" min="0"></div>' +
                     '<div class="sm-field"><label>SEBI Turnover Fee (₹ per crore)</label><input type="number" id="sm-sebiRate" step="0.1" min="0"></div>' +
                     '<div class="sm-field"><label>Stamp Duty Rate (%)</label><input type="number" id="sm-stampDutyRate" step="0.0001" min="0"></div>' +
+                  '</div>' +
+                  // Data tab (static) — danger zone
+                  '<div class="sm-pane" data-pane="data" style="display:none;">' +
+                    '<div class="sm-hint" style="margin-bottom:14px;">Persisted trade history across <b>all</b> instances. Clearing wipes the analytics, calendar and home-page history. Today\'s running P&amp;L in memory is not touched and rolls over normally.</div>' +
+                    '<div id="sm-data-stats" style="font-family:var(--font-mono);font-size:0.78rem;margin-bottom:18px;color:var(--text-primary);">Loading…</div>' +
+                    '<div style="padding:14px;border:1px solid rgba(248,113,113,0.45);border-radius:8px;background:rgba(248,113,113,0.06);">' +
+                      '<div style="font-family:var(--font-mono);font-size:0.84rem;font-weight:700;margin-bottom:8px;color:var(--accent-red, #f87171);">Clear all trade history</div>' +
+                      '<div class="sm-hint" style="margin-bottom:10px;">Deletes every row in strategy_trades and strategy_sessions. Cannot be undone. Refused while any instance has an open leg. Type <b>DELETE</b> to enable the button.</div>' +
+                      '<div style="display:flex;gap:8px;align-items:center;">' +
+                        '<input type="text" id="sm-data-confirm" placeholder="DELETE" autocomplete="off" style="max-width:160px;" oninput="SettingsModal.onClearConfirmInput()">' +
+                        '<button class="sm-btn-primary" id="sm-data-clear-btn" disabled style="background:var(--accent-red, #f87171);border-color:var(--accent-red, #f87171);" onclick="SettingsModal.clearTradeData()">Clear trade history</button>' +
+                      '</div>' +
+                    '</div>' +
                   '</div>' +
                   // Users tab (static, admin only)
                   '<div class="sm-pane" data-pane="users" style="display:none;">' +
@@ -150,6 +164,7 @@
         html += '<button class="sm-tab" data-tab="strangles">STRANGLES</button>';
         html += '<button class="sm-tab" data-tab="portfolio-risk">PORTFOLIO RISK</button>';
         html += '<button class="sm-tab" data-tab="charges">CHARGES</button>';
+        html += '<button class="sm-tab" data-tab="data">DATA</button>';
         html += '<button class="sm-tab" data-tab="users">USERS</button>';
         strip.innerHTML = html;
         strip.querySelectorAll('.sm-tab').forEach(function(b) {
@@ -175,6 +190,9 @@
             loadPortfolioRiskValues();
         } else if (tab === 'charges') {
             var pane = modalEl.querySelector('[data-pane="charges"]'); if (pane) pane.style.display = '';
+        } else if (tab === 'data') {
+            var dp = modalEl.querySelector('[data-pane="data"]'); if (dp) dp.style.display = '';
+            loadDataStats();
         } else if (tab === 'users') {
             var p2 = modalEl.querySelector('[data-pane="users"]'); if (p2) p2.style.display = '';
             loadUsers();
@@ -188,7 +206,59 @@
         if (activeTab === 'straddles')      { showBanner('Use the row buttons (✎ ✕ enable/disable) — no batch save.', 'info'); return; }
         if (activeTab === 'strangles')      { showBanner('Use the row buttons (✎ ✕ enable/disable) — no batch save.', 'info'); return; }
         if (activeTab === 'users')          { showBanner('Use the row buttons to manage users.', 'info'); return; }
+        if (activeTab === 'data')           { showBanner('Nothing to save here — use the Clear button.', 'info'); return; }
         showBanner('No save action for this tab.', 'info');
+    }
+
+    // ── Data tab — trade-history maintenance ─────────────────────────────────
+    function loadDataStats() {
+        var el = document.getElementById('sm-data-stats');
+        if (!el) return;
+        el.textContent = 'Loading…';
+        fetch('/api/trade-data/stats').then(function(r) { return r.json(); }).then(function(d) {
+            var range = (d.firstDate && d.lastDate) ? (d.firstDate + ' → ' + d.lastDate) : '—';
+            var open  = (d.openLegs && d.openLegs.length) ? d.openLegs.join(', ') : 'none';
+            el.innerHTML =
+                '<div>Trade rows: <b>' + (d.tradeRows || 0) + '</b></div>' +
+                '<div>Session rows: <b>' + (d.sessionRows || 0) + '</b></div>' +
+                '<div>Date range: <b>' + range + '</b></div>' +
+                '<div>Open legs: <b style="color:' + (open === 'none' ? 'var(--accent-green)' : 'var(--accent-red, #f87171)') + ';">' + open + '</b></div>';
+        }).catch(function() { el.textContent = 'Failed to load stats.'; });
+        var inp = document.getElementById('sm-data-confirm'); if (inp) inp.value = '';
+        var btn = document.getElementById('sm-data-clear-btn'); if (btn) btn.disabled = true;
+    }
+
+    function onClearConfirmInput() {
+        var inp = document.getElementById('sm-data-confirm');
+        var btn = document.getElementById('sm-data-clear-btn');
+        if (inp && btn) btn.disabled = (inp.value.trim() !== 'DELETE');
+    }
+
+    function clearTradeData() {
+        var inp = document.getElementById('sm-data-confirm');
+        if (!inp || inp.value.trim() !== 'DELETE') { showBanner('Type DELETE to confirm.', 'error'); return; }
+        window.showConfirm({
+            title: 'Clear ALL trade history?',
+            body: 'Deletes every strategy_trades and strategy_sessions row for every instance and resets today\'s in-memory counters.\n\nThis cannot be undone.',
+            confirmLabel: 'Delete everything',
+            onConfirm: doClearTradeData
+        });
+    }
+    function doClearTradeData() {
+        var btn = document.getElementById('sm-data-clear-btn');
+        if (btn) { btn.disabled = true; btn.textContent = 'Clearing…'; }
+        fetch('/api/trade-data/clear', {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders()),
+            body: JSON.stringify({ confirm: 'DELETE' })
+        }).then(function(r) { return r.json(); }).then(function(d) {
+            showBanner(d.message || (d.success ? 'Cleared.' : 'Failed.'), d.success ? 'success' : 'error');
+        }).catch(function(e) {
+            showBanner('Clear failed: ' + (e.message || e), 'error');
+        }).finally(function() {
+            if (btn) btn.textContent = 'Clear trade history';
+            loadDataStats();
+        });
     }
 
     // ── Straddles CRUD ───────────────────────────────────────────────────────
@@ -497,6 +567,7 @@
             brokeragePerOrder: parseFloat(document.getElementById('sm-brokeragePerOrder').value) || 0,
             sttRate:           parseFloat(document.getElementById('sm-sttRate').value) || 0,
             exchangeRate:      parseFloat(document.getElementById('sm-exchangeRate').value) || 0,
+            bseExchangeRate:   parseFloat(document.getElementById('sm-bseExchangeRate').value) || 0,
             gstRate:           parseFloat(document.getElementById('sm-gstRate').value) || 0,
             sebiRate:          parseFloat(document.getElementById('sm-sebiRate').value) || 0,
             stampDutyRate:     parseFloat(document.getElementById('sm-stampDutyRate').value) || 0
@@ -577,6 +648,7 @@
             document.getElementById('sm-brokeragePerOrder').value = d.brokeragePerOrder != null ? d.brokeragePerOrder : 0;
             document.getElementById('sm-sttRate').value           = d.sttRate != null ? d.sttRate : 0;
             document.getElementById('sm-exchangeRate').value      = d.exchangeRate != null ? d.exchangeRate : 0;
+            document.getElementById('sm-bseExchangeRate').value   = d.bseExchangeRate != null ? d.bseExchangeRate : 0;
             document.getElementById('sm-gstRate').value           = d.gstRate != null ? d.gstRate : 0;
             document.getElementById('sm-sebiRate').value          = d.sebiRate != null ? d.sebiRate : 0;
             document.getElementById('sm-stampDutyRate').value     = d.stampDutyRate != null ? d.stampDutyRate : 0;
@@ -675,7 +747,14 @@
         }).catch(function(err) { showBanner('✗ Save failed: ' + (err.message || err), 'error'); });
     }
     function deleteUser(id, email) {
-        if (!confirm('Delete user "' + email + '"? This cannot be undone.')) return;
+        window.showConfirm({
+            title: 'Delete user?',
+            body: 'Delete user "' + email + '"? This cannot be undone.',
+            confirmLabel: 'Delete',
+            onConfirm: function() { doDeleteUser(id); }
+        });
+    }
+    function doDeleteUser(id) {
         fetch('/api/users/' + id + '/delete', {
             method: 'POST',
             headers: csrfHeaders()
@@ -712,6 +791,8 @@
         editStrangleForm: function(s) { showStrangleForm(s); },
         cancelStrangleForm: cancelStrangleForm,
         saveStrangle: saveStrangle,
+        onClearConfirmInput: onClearConfirmInput,
+        clearTradeData: clearTradeData,
         toggleStrangle: toggleStrangle
     };
 })();

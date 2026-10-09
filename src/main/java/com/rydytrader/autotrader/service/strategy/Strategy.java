@@ -46,12 +46,24 @@ public interface Strategy {
      *  closeable legs — only ShortStraddle overrides. */
     default boolean closeOneLeg(String leg, String reason) { return false; }
 
+    /** Operator-initiated open of one closed leg ({@code "CE"} / {@code "PE"}) at the current
+     *  strike-selection pick, bypassing the re-execute enable / cap / latest-time gates and
+     *  cancelling that side's pending timer. Returns {@code "OK"} or a reason code
+     *  ({@code NOT_STARTED}, {@code ALREADY_OPEN}, {@code REJECTED}, {@code ABORTED},
+     *  {@code UNSUPPORTED}). */
+    default String openOneLeg(String leg) { return "UNSUPPORTED"; }
+
     /** Manual same-day restart after the strategy has reached its DONE_FOR_DAY terminal
      *  state. Drives the dashboard's {@code + NEW STRADDLE} button. Returns {@code "OK"}
      *  when an entry was placed, a gate name (e.g. {@code "MAX_LOSS_HIT"}) when one of the
      *  scheduler's preconditions blocked the restart, or {@code "UNSUPPORTED"} for strategies
      *  that don't support multi-cycle days. Only ShortStraddle overrides. */
     default String restartFromDoneForDay(String reason) { return "UNSUPPORTED"; }
+
+    /** Operator "clear trade data" hook — zero today's in-memory P&L / SL / charge counters
+     *  so the live overlay doesn't re-synthesise today after the DB rows were deleted.
+     *  Returns false (no-op) when legs are open or the strategy doesn't track day state. */
+    default boolean resetTodayCounters() { return false; }
 
     /** Hard-stop the strategy for the day. Closes any open positions AND parks DONE_FOR_DAY
      *  regardless of current state — so a strategy that's IDLE (waiting for entry time)

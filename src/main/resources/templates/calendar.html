@@ -305,7 +305,8 @@
 
 <script src="/js/common.js?v=2"></script>
 <script src="/js/ticker.js?v=6"></script>
-<script src="/js/settings-modal.js?v=10"></script>
+<script src="/js/app-confirm.js?v=1"></script>
+<script src="/js/settings-modal.js?v=11"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
 <!-- TradingView Lightweight Charts — MIT, standalone JS library. Same open-source
      chart engine used by TradingView's own free chart pages. -->
@@ -376,7 +377,12 @@
             fetch('/api/market-holidays').then(r => r.json()).catch(() => [])
         ]).then(([strategies, holidays]) => {
             (holidays || []).forEach(h => NSE_HOLIDAYS[h.date] = h.name || 'Holiday');
-            const list = Array.isArray(strategies) ? strategies : [];
+            // Match AnalyticsService.loadTrades — only aggregate history for currently-enabled
+            // strategies. Disabled instances still appear in /api/strategies (so the sidebar can
+            // list them), but their past rows must NOT contribute to the calendar's P&L / session
+            // counts or the yearly month cards will inflate.
+            const list = (Array.isArray(strategies) ? strategies : [])
+                .filter(s => s && s.enabled !== false);
             if (list.length === 0) {
                 allSessions = [];
                 render();
@@ -572,18 +578,36 @@
             // pick up the freshest per-straddle numbers. Year view doesn't use day cells.
             analyticsByDate = d.byDate || {};
             if (view === 'month') renderMonthGrid();
-            // Year-grid month cards — patch each card's Win % cell using per-straddle byMonth
-            // data. Cards in month view don't have these elements (querySelectorAll = []).
+            // Year-grid month cards — patch each card with per-straddle byMonth data from the
+            // backend so the yearly month cards match the month-view hero EXACTLY. The initial
+            // render uses frontend allSessions aggregation, which can drift from the backend
+            // analytics (different data sources, disabled-strategy filter, etc.). Backend
+            // is the single source of truth; frontend render is just a placeholder until this
+            // patch arrives. Cards in month view don't have these elements (querySelectorAll = []).
             const byMonth = d.byMonth || {};
             document.querySelectorAll('.cal-month-card[data-ym]').forEach(function(card) {
                 const ym = card.getAttribute('data-ym');
                 const stats = byMonth[ym];
+                // Win % cell
                 const wrEl = card.querySelector('.cal-month-winrate');
-                if (!wrEl) return;
-                if (stats && (stats.wins + stats.losses) > 0) {
-                    wrEl.textContent = Number(stats.winRate || 0).toFixed(1) + '%';
-                } else {
-                    wrEl.textContent = '—';
+                if (wrEl) {
+                    if (stats && (stats.wins + stats.losses) > 0) {
+                        wrEl.textContent = Number(stats.winRate || 0).toFixed(1) + '%';
+                    } else {
+                        wrEl.textContent = '—';
+                    }
+                }
+                // Net P&L cell — authoritative from backend. Card classes (profit/loss border +
+                // pnl colour) re-applied so the visual state reflects the backend number, not
+                // the stale allSessions aggregation.
+                const pnlEl = card.querySelector('.cal-month-pnl');
+                if (pnlEl && stats && stats.netPnl != null) {
+                    const net = Number(stats.netPnl);
+                    pnlEl.textContent = fmtMoney(net);
+                    pnlEl.classList.remove('profit', 'loss');
+                    card.classList.remove('profit', 'loss');
+                    if (net > 0)      { pnlEl.classList.add('profit'); card.classList.add('profit'); }
+                    else if (net < 0) { pnlEl.classList.add('loss');   card.classList.add('loss');   }
                 }
             });
         }).catch(() => {});

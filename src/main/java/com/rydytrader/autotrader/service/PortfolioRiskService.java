@@ -34,7 +34,6 @@ public class PortfolioRiskService {
     private final EventService eventService;
 
     @Autowired @Lazy private MarketHolidayService marketHolidayService;
-    @Autowired @Lazy private TelegramService telegramService;
 
     /** ISO date string of the last day we fired the kill switch — prevents repeated trigger
      *  spam if the operator manually opens a new straddle after a portfolio-kill. Reset by
@@ -94,8 +93,6 @@ public class PortfolioRiskService {
             aggregate, maxLoss, riskPct, riskSettings.getStartingCapital());
         log.warn("[PortfolioRisk] {}", msg);
         eventService.log("[WARNING] [portfolio-risk] " + msg);
-        try { if (telegramService != null) telegramService.sendMessage("[PortfolioRisk] " + msg); }
-        catch (Exception ignored) {}
 
         for (Strategy s : strategyRegistry.all()) {
             // Disabled instances aren't running — nothing to flatten and they're already

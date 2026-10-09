@@ -90,13 +90,17 @@ public class ShortStrangleStateStore {
          *  re-entry or forget how many attempts have been consumed. */
         public int     ceReEntriesCount;
         public int     peReEntriesCount;
+        public boolean survivorRolledToday;
+        public int     ceSlHitsToday, peSlHitsToday;
+        public boolean rollArmedForCe, rollArmedForPe;
+        public String  hedgeCeSymbol, hedgePeSymbol;
+        public int     hedgeCeQty, hedgePeQty;
+        public double  hedgeCeEntryPremium, hedgePeEntryPremium;
+        public double  hedgeCeClosePremium, hedgePeClosePremium;
+        public double  hedgeCeLegPnl, hedgePeLegPnl;
         public long    pendingCeReEntryAtMillis;
         public long    pendingPeReEntryAtMillis;
         /** Same-strike Re-Entry pending state — SL'd symbol being monitored for return. */
-        public String  pendingCeReEntrySymbol;
-        public String  pendingPeReEntrySymbol;
-        public double  pendingCeReEntryPrice;
-        public double  pendingPeReEntryPrice;
         public String  currentWeeklyExpiry;
         /** Cycle events ring (ENTRY / CE_SL / PE_SL / SQUAREOFF) — {time, event, nifty, ce, pe, pnl}. */
         public java.util.List<java.util.Map<String, Object>> recentEvents;

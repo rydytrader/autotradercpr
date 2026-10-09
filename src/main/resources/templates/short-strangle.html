@@ -212,6 +212,17 @@
                                    color:var(--accent-green);padding:6px 14px;border-radius:6px;
                                    font-family:var(--font-mono);font-size:0.72rem;font-weight:700;
                                    cursor:pointer;letter-spacing:0.04em;">+ NEW STRANGLE</button>
+                    <!-- Pause Trading toggle. When ON the scheduler skips its IDLE→entry transition
+                         and + NEW STRANGLE is disabled; open positions continue to be managed. -->
+                    <label id="pauseTradingToggle" style="margin-left:12px;display:inline-flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.66rem;letter-spacing:0.06em;color:var(--text-muted);text-transform:uppercase;cursor:pointer;user-select:none;"
+                           title="Pause auto-entry. Open positions keep running; no new strangle fires while this is on.">
+                        <span id="pauseTradingLabel">Pause Trading</span>
+                        <span style="position:relative;display:inline-block;width:34px;height:18px;">
+                            <input type="checkbox" id="pauseTradingInput" style="opacity:0;width:0;height:0;">
+                            <span id="pauseTradingTrack" style="position:absolute;inset:0;background:var(--bg-card);border:1px solid var(--border);border-radius:18px;transition:background 0.18s,border-color 0.18s;"></span>
+                            <span id="pauseTradingThumb" style="position:absolute;left:2px;top:2px;width:12px;height:12px;background:var(--text-secondary);border-radius:50%;transition:transform 0.18s,background 0.18s;"></span>
+                        </span>
+                    </label>
                 </div>
             </div>
         </div>
@@ -313,11 +324,23 @@
         <div class="section-card" id="ceLegCard" style="margin-bottom:0;">
             <div class="section-header">
                 <div class="section-title"><div class="section-title-dot" style="background:var(--accent-green);"></div> CE Leg</div>
+                <span id="ceReExecCountdown"
+                      title="Re-Execute pending — countdown until the scheduler re-opens this leg at a fresh strike"
+                      style="display:none; margin-left:auto; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
+                             color:var(--accent-yellow, #facc15); letter-spacing:0.06em;
+                             background:rgba(250,204,21,0.10); border:1px solid rgba(250,204,21,0.35);
+                             padding:3px 10px; border-radius:999px;">RE-EXEC · —</span>
                 <span id="paneCeQty"
                       style="margin-left:auto; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
                              color:var(--accent-green); letter-spacing:0.06em;
                              background:rgba(52,211,153,0.10); border:1px solid rgba(52,211,153,0.25);
                              padding:3px 10px; border-radius:999px;">QTY · —</span>
+                <button id="ceOpenBtn" onclick="openLeg('ce')"
+                        title="Open a fresh CE leg now at the current strike pick — ignores the re-execute cap and cancels any pending timer"
+                        style="display:none; margin-left:8px; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
+                               color:var(--accent-green); letter-spacing:0.06em;
+                               background:rgba(52,211,153,0.10); border:1px solid rgba(52,211,153,0.45);
+                               padding:3px 10px; border-radius:6px; cursor:pointer;">+ OPEN CE</button>
                 <button id="ceCloseBtn" onclick="closeLeg('ce')" disabled
                         title="Close just the CE leg at market"
                         style="margin-left:8px; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
@@ -330,6 +353,11 @@
                     <span class="stat-label" style="margin:0; text-transform:uppercase; letter-spacing:0.06em;">STRIKE</span>
                     <span style="display:flex; align-items:baseline; gap:8px;">
                         <span class="stat-value" id="paneCeStrike" style="font-size:0.9rem;" title="">—</span>
+                        <span id="paneCeMoneyness" title="Moneyness vs current spot (live)"
+                              style="display:none; font-family:var(--font-mono); font-size:0.66rem; font-weight:700;
+                                     color:var(--text-muted); background:rgba(128,128,128,0.10);
+                                     border:1px solid var(--border); padding:2px 8px; border-radius:6px;
+                                     white-space:nowrap;"></span>
                         <span id="paneCeGreeks"
                               title="Real-time Black-Scholes greeks — hover for Δ / Θ / V / IV"
                               style="font-family:var(--font-mono); font-size:0.66rem; font-weight:700;
@@ -356,11 +384,23 @@
         <div class="section-card" id="peLegCard" style="margin-bottom:0;">
             <div class="section-header">
                 <div class="section-title"><div class="section-title-dot" style="background:var(--accent-red, #f87171);"></div> PE Leg</div>
+                <span id="peReExecCountdown"
+                      title="Re-Execute pending — countdown until the scheduler re-opens this leg at a fresh strike"
+                      style="display:none; margin-left:auto; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
+                             color:var(--accent-yellow, #facc15); letter-spacing:0.06em;
+                             background:rgba(250,204,21,0.10); border:1px solid rgba(250,204,21,0.35);
+                             padding:3px 10px; border-radius:999px;">RE-EXEC · —</span>
                 <span id="panePeQty"
                       style="margin-left:auto; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
                              color:var(--accent-red, #f87171); letter-spacing:0.06em;
                              background:rgba(248,113,113,0.10); border:1px solid rgba(248,113,113,0.25);
                              padding:3px 10px; border-radius:999px;">QTY · —</span>
+                <button id="peOpenBtn" onclick="openLeg('pe')"
+                        title="Open a fresh PE leg now at the current strike pick — ignores the re-execute cap and cancels any pending timer"
+                        style="display:none; margin-left:8px; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
+                               color:var(--accent-red, #f87171); letter-spacing:0.06em;
+                               background:rgba(248,113,113,0.10); border:1px solid rgba(248,113,113,0.45);
+                               padding:3px 10px; border-radius:6px; cursor:pointer;">+ OPEN PE</button>
                 <button id="peCloseBtn" onclick="closeLeg('pe')" disabled
                         title="Close just the PE leg at market"
                         style="margin-left:8px; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
@@ -373,6 +413,11 @@
                     <span class="stat-label" style="margin:0; text-transform:uppercase; letter-spacing:0.06em;">STRIKE</span>
                     <span style="display:flex; align-items:baseline; gap:8px;">
                         <span class="stat-value" id="panePeStrike" style="font-size:0.9rem;" title="">—</span>
+                        <span id="panePeMoneyness" title="Moneyness vs current spot (live)"
+                              style="display:none; font-family:var(--font-mono); font-size:0.66rem; font-weight:700;
+                                     color:var(--text-muted); background:rgba(128,128,128,0.10);
+                                     border:1px solid var(--border); padding:2px 8px; border-radius:6px;
+                                     white-space:nowrap;"></span>
                         <span id="panePeGreeks"
                               title="Real-time Black-Scholes greeks — hover for Δ / Θ / V / IV"
                               style="font-family:var(--font-mono); font-size:0.66rem; font-weight:700;
@@ -395,34 +440,26 @@
             </div>
         </div>
 
-        <!-- Today's Activity -->
+        <!-- Hedge wings -->
         <div class="section-card" style="margin-bottom:0;">
             <div class="section-header">
-                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> Today</div>
-                <!-- Pause Trading toggle. When ON the scheduler skips its IDLE→entry transition
-                     and + NEW STRANGLE is disabled; open positions continue to be managed. -->
-                <label id="pauseTradingToggle" style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:0.66rem;letter-spacing:0.06em;color:var(--text-muted);text-transform:uppercase;cursor:pointer;user-select:none;"
-                       title="Pause auto-entry. Open positions keep running; no new strangle fires while this is on.">
-                    <span id="pauseTradingLabel">Pause Trading</span>
-                    <span style="position:relative;display:inline-block;width:34px;height:18px;">
-                        <input type="checkbox" id="pauseTradingInput" style="opacity:0;width:0;height:0;">
-                        <span id="pauseTradingTrack" style="position:absolute;inset:0;background:var(--bg-card);border:1px solid var(--border);border-radius:18px;transition:background 0.18s,border-color 0.18s;"></span>
-                        <span id="pauseTradingThumb" style="position:absolute;left:2px;top:2px;width:12px;height:12px;background:var(--text-secondary);border-radius:50%;transition:transform 0.18s,background 0.18s;"></span>
-                    </span>
-                </label>
+                <div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> Hedge</div>
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Date</span>
-                    <span class="stat-value" id="paneDay" style="font-size:0.9rem;">—</span>
+                    <span class="stat-label" style="margin:0;" title="Long far-OTM CE bought with the entry (HEDGE tab)">CE wing</span>
+                    <span class="stat-value" id="paneHedgeCe" style="font-size:0.85rem;" title="">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Events</span>
-                    <span class="stat-value" id="paneEventCount" style="font-size:1rem;">0</span>
+                    <span class="stat-label" style="margin:0;" title="Long far-OTM PE bought with the entry (HEDGE tab)">PE wing</span>
+                    <span class="stat-value" id="paneHedgePe" style="font-size:0.85rem;" title="">—</span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="stat-label" style="margin:0;">Last Event</span>
-                    <span class="stat-value" id="paneLastEvent" style="font-size:0.85rem;">—</span>
+                    <span class="stat-label" style="margin:0;" title="Combined live P&L of both wings. Sub-text: total premium paid for them (your insurance cost) and hedge-to-short lot ratio.">Hedge P&amp;L</span>
+                    <span style="display:flex; align-items:baseline; gap:8px;">
+                        <span class="stat-value" id="paneHedgePnl" style="font-size:1rem;">—</span>
+                        <span id="paneHedgeCost" style="font-family:var(--font-mono); font-size:0.66rem; color:var(--text-muted);"></span>
+                    </span>
                 </div>
             </div>
         </div>
@@ -526,8 +563,9 @@
 
 <script src="/js/common.js?v=2"></script>
 <script src="/js/ticker.js?v=6"></script>
-<script src="/js/settings-modal.js?v=10"></script>
-<script src="/js/strategy-settings-form.js?v=13"></script>
+<script src="/js/app-confirm.js?v=1"></script>
+<script src="/js/settings-modal.js?v=11"></script>
+<script src="/js/strategy-settings-form.js?v=14"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
 
 <script>
@@ -649,14 +687,27 @@
             if (entryLtpLabel) entryLtpLabel.textContent = 'Entry / LTP';
             if (mtmLabel)      mtmLabel.textContent      = 'MTM';
         }
-        // Close-leg button — enabled only when the leg is currently open (entered + not closed).
+        // Leg open  → show CLOSE. Leg closed → swap in + OPEN (any time the day's cycle has
+        // started, regardless of re-execute cap or pending timer — the operator can pre-empt
+        // the timer). Pre-cycle (ARMED) shows neither: the scheduled entry handles that.
         var legOpen = entry > 0 && !(leg === 'ce' ? d.ceClosed : d.peClosed);
+        var cycleStarted = ['OPEN_BOTH', 'OPEN_CE_ONLY', 'OPEN_PE_ONLY', 'DONE_FOR_DAY'].indexOf(d.state) >= 0;
         var btn = document.getElementById(leg + 'CloseBtn');
         if (btn) {
+            btn.style.display = legOpen ? '' : 'none';
             btn.disabled = !legOpen;
             btn.style.opacity = legOpen ? '1' : '0.35';
             btn.style.cursor  = legOpen ? 'pointer' : 'not-allowed';
         }
+        // + OPEN only inside the tradeable window: market hours (09:15–15:40) AND before this
+        // instance's squareoff time — outside that the backend would refuse anyway.
+        var nowM = new Date().getHours() * 60 + new Date().getMinutes();
+        var dow  = new Date().getDay();
+        var sqM  = hmToMins(d.squareOffTime);
+        var tradeable = dow >= 1 && dow <= 5 && nowM >= 9 * 60 + 15 && nowM < 15 * 60 + 40
+                     && (sqM <= 0 || nowM < sqM);
+        var openBtn = document.getElementById(leg + 'OpenBtn');
+        if (openBtn) openBtn.style.display = (!legOpen && cycleStarted && tradeable) ? '' : 'none';
     }
 
     function renderLegEntryLine(leg, d) {
@@ -939,6 +990,7 @@
             var ceStrikeInfo = strikeForLeg(d.ceSymbol, d.niftyLtp, d.projectedAtm,
                 d.projectedAtmCeSym, d.projectedAtmCeUnavailable);
             renderProjectedStrike(ceStrikeEl, ceStrikeInfo, d.projectedAtmCeLtp);
+            setMoneyness('paneCeMoneyness', d.ceSymbol ? d.ceMoneyness : d.projectedCeMoneyness);
             ceStrikeEl.title = d.ceSymbol || (ceStrikeInfo.projected && d.projectedAtmCeSym ? d.projectedAtmCeSym : '');
             applyLegClosedChrome('ce', d);
             renderLegEntryLine('ce', d);
@@ -948,6 +1000,7 @@
             if ((d.ceMtm || 0) > 0.5) ceMtm.classList.add('pnl-positive');
             else if ((d.ceMtm || 0) < -0.5) ceMtm.classList.add('pnl-negative');
             renderGreeksBadge('paneCeGreeks', d.ceDelta, d.ceTheta, d.ceVega, d.ceIv);
+            armReExecCountdown('ce', d.ceReExecuteMsRemaining);
 
             // Pane 3: PE Leg
             var peQtyEl = document.getElementById('panePeQty');
@@ -957,6 +1010,7 @@
             var peStrikeInfo = strikeForLeg(d.peSymbol, d.niftyLtp, d.projectedAtm,
                 d.projectedAtmPeSym, d.projectedAtmPeUnavailable);
             renderProjectedStrike(peStrikeEl, peStrikeInfo, d.projectedAtmPeLtp);
+            setMoneyness('panePeMoneyness', d.peSymbol ? d.peMoneyness : d.projectedPeMoneyness);
             peStrikeEl.title = d.peSymbol || (peStrikeInfo.projected && d.projectedAtmPeSym ? d.projectedAtmPeSym : '');
             applyLegClosedChrome('pe', d);
             renderLegEntryLine('pe', d);
@@ -966,13 +1020,11 @@
             if ((d.peMtm || 0) > 0.5) peMtm.classList.add('pnl-positive');
             else if ((d.peMtm || 0) < -0.5) peMtm.classList.add('pnl-negative');
             renderGreeksBadge('panePeGreeks', d.peDelta, d.peTheta, d.peVega, d.peIv);
+            armReExecCountdown('pe', d.peReExecuteMsRemaining);
 
-            // Pane 4: Today
-            document.getElementById('paneDay').textContent = d.dayKey || '—';
+            // Pane 4: Hedge wings
+            renderHedgePane(d);
             var rolls = d.recentRolls || [];
-            document.getElementById('paneEventCount').textContent = rolls.length;
-            document.getElementById('paneLastEvent').textContent = rolls.length > 0
-                ? (rolls[0].event + ' @ ' + rolls[0].time) : '—';
 
 
             // Today's cycle events table
@@ -1623,6 +1675,7 @@
         }
         var trigText = escapeHtml(Number(trigger).toFixed(2));
         if (movedToCost) {
+            var legForBtn = (elId === 'panePeSlTrigger') ? 'PE' : 'CE';
             // display:inline-block + line-height:1.2 lets the pill render its own padding +
             // border above/below without being squashed by the parent .stat-value's
             // line-height:1. Without inline-block the pill paints into the same 1-em line
@@ -1634,15 +1687,110 @@
                 + 'background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.45);'
                 + 'padding:2px 6px;border-radius:4px;margin-right:8px;vertical-align:middle;">'
                 + 'MOVED TO COST</span>'
-                + trigText;
+                + trigText
+                + ' <button type="button" data-cost-leg="' + legForBtn + '" '
+                + 'title="Reset this leg\'s SL back to the wider original SL (undo Move-to-Cost)" '
+                + 'style="margin-left:8px;padding:2px 8px;font-size:0.6rem;font-weight:700;'
+                + 'letter-spacing:0.05em;text-transform:uppercase;cursor:pointer;'
+                + 'color:var(--accent-amber, #fbbf24);'
+                + 'background:transparent;border:1px solid rgba(251,191,36,0.55);'
+                + 'border-radius:4px;line-height:1.2;vertical-align:middle;">RESET</button>';
+            var btn = el.querySelector('button[data-cost-leg]');
+            if (btn) btn.addEventListener('click', function () { resetCostFlag(legForBtn); });
         } else {
             el.textContent = Number(trigger).toFixed(2);
         }
+    }
+    // POST the reset endpoint for the leg whose "MOVED TO COST" pill was clicked. On success
+    // the next status poll (1s) repaints the cell without the pill/button.
+    function resetCostFlag(leg) {
+        if (!leg) return;
+        showConfirm({
+            title: 'Reset ' + leg + ' SL back to the original wider SL?',
+            body: 'The leg will no longer close at entry premium — it will run to its full risk-band SL or timed squareoff.',
+            confirmLabel: 'Reset SL',
+            onConfirm: function() { doResetCostFlag(leg); }
+        });
+    }
+    function doResetCostFlag(leg) {
+        fetch('/api/strategies/' + encodeURIComponent(STRATEGY_ID) + '/reset-cost-flag/'
+              + encodeURIComponent(leg), {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders())
+        })
+            .then(function (r) { return r.json(); })
+            .then(function (j) {
+                if (j && j.message) {
+                    console.log('[reset-cost-flag]', j.message);
+                    if (window.showToast) showToast(j.message, j.success ? 'success' : 'error');
+                }
+                loadDashboard();
+            })
+            .catch(function (e) {
+                console.error('[reset-cost-flag] failed', e);
+                if (window.showToast) showToast('Reset failed: ' + (e.message || e), 'error');
+            });
     }
     // Paint the leg's greeks chip next to the strike. Icon stays "∂"; the actual Δ / Θ / V
     // / IV values render into the tooltip so hovering surfaces them without occupying line
     // width. Fields are null server-side when the leg is closed / no tick yet / IV
     // inversion fails — we show "—" for those in the tooltip.
+    // Moneyness chip next to the strike — "ATM" / "OTM-2" / "ITM-1", live vs current spot.
+    // Shown for the open leg, or the projected pre-entry strike before entry. Hidden when
+    // the backend can't resolve it (no symbol / no spot tick yet).
+    // Hedge pane — CE wing / PE wing lines read "LONG 25500 · 10.20 → 14.80 · +299" while
+    // open and "closed 25500 · 10.20 → 3.10 · −462" after squareoff/expiry; "—" when the
+    // HEDGE tab is off or the wings weren't bought. Third row: combined wing P&L, with the
+    // premium paid (insurance cost) and hedge:short lot ratio as sub-text.
+    function renderHedgePane(d) {
+        function line(Cap) {
+            var el = document.getElementById('paneHedge' + Cap);
+            if (!el) return 0;
+            var sym = d['hedge' + Cap + 'Symbol'];
+            if (!sym) { el.textContent = '—'; el.title = ''; el.className = 'stat-value'; return 0; }
+            var qty = Number(d['hedge' + Cap + 'Qty'] || 0);
+            var entry = Number(d['hedge' + Cap + 'EntryPremium'] || 0);
+            var ltp = Number(d['hedge' + Cap + 'Ltp'] || 0);
+            var mtm = Number(d['hedge' + Cap + 'Mtm'] || 0);
+            var strike = d['hedge' + Cap + 'Strike'] || sym;
+            el.textContent = (qty > 0 ? 'LONG ' : 'closed ') + strike + ' · ' + entry.toFixed(2) + ' → ' + ltp.toFixed(2) + ' · ' + fmtRs(mtm);
+            el.title = sym + (qty > 0 ? ' · qty ' + qty : '');
+            el.className = 'stat-value' + (mtm > 0.5 ? ' pnl-positive' : (mtm < -0.5 ? ' pnl-negative' : ''));
+            return entry * (qty > 0 ? qty : 0);
+        }
+        var ceCost = line('Ce'), peCost = line('Pe');
+        var pnlEl = document.getElementById('paneHedgePnl');
+        var costEl = document.getElementById('paneHedgeCost');
+        var any = !!(d.hedgeCeSymbol || d.hedgePeSymbol);
+        if (!any) {
+            if (pnlEl) { pnlEl.textContent = '—'; pnlEl.className = 'stat-value'; }
+            if (costEl) costEl.textContent = 'hedge off';
+            return;
+        }
+        var pnl = Number(d.hedgeMtm || 0);
+        if (pnlEl) {
+            pnlEl.textContent = fmtRs(pnl);
+            pnlEl.className = 'stat-value' + (pnl > 0.5 ? ' pnl-positive' : (pnl < -0.5 ? ' pnl-negative' : ''));
+        }
+        // Cost = premium paid for the wings at entry (uses entry × original qty even after close).
+        var paid = Number(d.hedgeCeEntryPremium || 0) * Number(d.hedgeCeQty || 0)
+                 + Number(d.hedgePeEntryPremium || 0) * Number(d.hedgePeQty || 0);
+        if (paid <= 0) paid = ceCost + peCost;
+        var shortQty = Math.max(Number(d.ceQty || 0), Number(d.peQty || 0));
+        var hedgeQty = Math.max(Number(d.hedgeCeQty || 0), Number(d.hedgePeQty || 0));
+        var ratio = (shortQty > 0 && hedgeQty > 0) ? ' · ' + hedgeQty + ':' + shortQty : '';
+        if (costEl) costEl.textContent = (paid > 0 ? 'cost ' + fmtRs(paid) : '') + ratio;
+    }
+    function setMoneyness(elId, label) {
+        var el = document.getElementById(elId);
+        if (!el) return;
+        if (!label) { el.style.display = 'none'; el.textContent = ''; return; }
+        el.style.display = '';
+        el.textContent = label;
+        el.style.color = label === 'ATM' ? 'var(--accent-yellow, #facc15)'
+                       : (label.indexOf('ITM') === 0 ? 'var(--accent-red, #f87171)' : 'var(--text-muted)');
+    }
     function renderGreeksBadge(elId, delta, theta, vega, ivPct) {
         var el = document.getElementById(elId);
         if (!el) return;
@@ -1700,6 +1848,32 @@
             '  Implied vol backed out from current premium.\n' +
             '  ' + ivVerdict(ivPct);
     }
+
+    // ── Re-Execute countdown chip ──────────────────────────────────────────
+    var reExecFireAt = { ce: 0, pe: 0 };
+    function armReExecCountdown(side, msRemaining) {
+        var ms = Number(msRemaining || 0);
+        reExecFireAt[side] = ms > 0 ? (Date.now() + ms) : 0;
+        renderReExecChip(side);
+    }
+    function renderReExecChip(side) {
+        var el = document.getElementById(side + 'ReExecCountdown');
+        if (!el) return;
+        var target = reExecFireAt[side];
+        if (!target) { el.style.display = 'none'; return; }
+        var remaining = Math.max(0, target - Date.now());
+        var secs = Math.ceil(remaining / 1000);
+        el.style.display = '';
+        if (secs >= 60) {
+            var m = Math.floor(secs / 60);
+            var s = secs % 60;
+            el.textContent = 'RE-EXEC · ' + m + 'm' + (s < 10 ? '0' + s : s) + 's';
+        } else {
+            el.textContent = 'RE-EXEC · ' + secs + 's';
+        }
+        if (remaining <= 0) reExecFireAt[side] = 0;
+    }
+    setInterval(function() { renderReExecChip('ce'); renderReExecChip('pe'); }, 500);
 
     // Paint the leg's STRIKE cell. Pre-entry rows append the projected leg's LTP in muted
     // text so the operator can see where the strikes are currently trading even before
@@ -1768,44 +1942,45 @@
           });
     }
 
-    // ── In-app confirm modal (replaces native browser confirm) ──────────────
-    function showConfirm(opts) {
-        var ov = document.getElementById('appConfirmOverlay');
-        if (!ov) {
-            ov = document.createElement('div');
-            ov.id = 'appConfirmOverlay';
-            ov.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;align-items:center;justify-content:center;';
-            ov.innerHTML =
-                '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;max-width:480px;width:92vw;font-family:var(--font-mono);color:var(--text-primary);box-shadow:0 16px 48px rgba(0,0,0,0.4);">' +
-                  '<div id="appConfirmTitle" style="padding:18px 22px;border-bottom:1px solid var(--border);font-size:0.92rem;font-weight:700;">—</div>' +
-                  '<div id="appConfirmBody" style="padding:18px 22px;font-size:0.82rem;line-height:1.55;color:var(--text-secondary);white-space:pre-line;">—</div>' +
-                  '<div style="padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px;">' +
-                    '<button id="appConfirmCancel" style="background:transparent;border:1px solid var(--border);color:var(--text-secondary);padding:8px 22px;border-radius:6px;font-family:var(--font-mono);font-size:0.76rem;font-weight:600;cursor:pointer;letter-spacing:0.04em;">No</button>' +
-                    '<button id="appConfirmYes" style="background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.45);color:var(--accent-red,#f87171);padding:8px 22px;border-radius:6px;font-family:var(--font-mono);font-size:0.76rem;font-weight:700;cursor:pointer;letter-spacing:0.04em;">Yes</button>' +
-                  '</div>' +
-                '</div>';
-            document.body.appendChild(ov);
-            ov.addEventListener('click', function(e) { if (e.target === ov) hide(); });
+    // ── Close a single leg (CE or PE) ───────────────────────────────────────
+    // ── Manual open of a closed leg ──────────────────────────────────────────
+    function openLeg(side) {
+        var upper = side.toUpperCase();
+        var d = lastDashboardData || {};
+        var legOpen = (upper === 'CE') ? !d.ceClosed : !d.peClosed;
+        if (legOpen && ((upper === 'CE' ? d.ceEntryPremium : d.peEntryPremium) > 0)) {
+            if (window.showToast) showToast(upper + ' leg is already open', 'info');
+            return;
         }
-        function hide() { ov.style.display = 'none'; document.removeEventListener('keydown', esc); }
-        function esc(e)  { if (e.key === 'Escape') hide(); }
-        document.getElementById('appConfirmTitle').textContent = opts.title || 'Confirm';
-        document.getElementById('appConfirmBody').textContent  = opts.body  || '';
-        var yes = document.getElementById('appConfirmYes');
-        yes.textContent = opts.confirmLabel || 'Yes';
-        // Clear any prior listener by cloning the node
-        var fresh = yes.cloneNode(true);
-        yes.parentNode.replaceChild(fresh, yes);
-        fresh.addEventListener('click', function() {
-            hide();
-            if (typeof opts.onConfirm === 'function') opts.onConfirm();
+        var pendingMs = (upper === 'CE') ? d.ceReExecuteMsRemaining : d.peReExecuteMsRemaining;
+        var timerNote = (pendingMs > 0)
+            ? '\n\nA Re-Execute timer is pending for this side — opening now cancels it.' : '';
+        showConfirm({
+            title: 'Open a fresh ' + upper + ' leg now?',
+            body: 'Sells ' + upper + ' at the current strike pick (' + (d.strikeSelectionMode || 'configured mode') + ').'
+                + ' Does not consume a re-execute attempt.' + timerNote,
+            onConfirm: function() { doOpenLeg(side); }
         });
-        document.getElementById('appConfirmCancel').onclick = hide;
-        document.addEventListener('keydown', esc);
-        ov.style.display = 'flex';
+    }
+    function doOpenLeg(side) {
+        var upper = side.toUpperCase();
+        var btn = document.getElementById((upper === 'CE') ? 'ceOpenBtn' : 'peOpenBtn');
+        var originalText = btn ? btn.textContent : '';
+        if (btn) { btn.disabled = true; btn.textContent = '+ Opening…'; }
+        fetch('/api/strategies/' + STRATEGY_ID + '/open-leg/' + side.toLowerCase(), {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders())
+        }).then(r => r.json()).then(resp => {
+            if (window.showToast) showToast(resp.message || (upper + ' open submitted'),
+                resp.success ? 'success' : 'error');
+        }).catch(err => {
+            if (window.showToast) showToast('Open failed: ' + (err.message || err), 'error');
+        }).finally(() => {
+            if (btn) { btn.disabled = false; btn.textContent = originalText; }
+            loadDashboard();
+        });
     }
 
-    // ── Close a single leg (CE or PE) ───────────────────────────────────────
     function closeLeg(side) {
         var upper = side.toUpperCase();
         var d = lastDashboardData || {};
@@ -1982,10 +2157,6 @@
                     onConfirm: apply,
                     onCancel:  done
                 });
-            } else if (confirm(nowPaused ? bodyOn : bodyOff)) {
-                apply();
-            } else {
-                done();
             }
         });
     })();

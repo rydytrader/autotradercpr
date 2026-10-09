@@ -120,6 +120,7 @@
         var basicFields   = [];
         var riskFields    = [];
         var reentryFields = [];
+        var hedgeFields   = [];
         var dteMap = {};
         var dteOrder = [];
         schema.forEach(function(f) {
@@ -130,7 +131,8 @@
                 dteMap[n][m[2]] = f;
                 return;
             }
-            if (f.tab === 'reentry')   reentryFields.push(f);
+            if (f.tab === 'hedge')          hedgeFields.push(f);
+            else if (f.tab === 'reentry')   reentryFields.push(f);
             else if (f.tab === 'risk') riskFields.push(f);
             else                       basicFields.push(f);
         });
@@ -167,15 +169,18 @@
         if (!riskHtml) riskHtml = '<div style="color:var(--text-muted);font-style:italic;padding:14px 0;">No risk settings.</div>';
 
         var reentryHtml = gridOf(reentryFields)
-            || '<div style="color:var(--text-muted);font-style:italic;padding:14px 0;">No re-entry settings.</div>';
+            || '<div style="color:var(--text-muted);font-style:italic;padding:14px 0;">No adjustment settings.</div>';
+        var hedgeHtml = gridOf(hedgeFields)
+            || '<div style=\"color:var(--text-muted);font-style:italic;padding:14px 0;\">No hedge settings.</div>';
 
-        // Tab strip — buttons wire up in switchTab below. RE-ENTRY tab appears
-        // only when the strategy declares fields for it.
+        // Tab strip — buttons wire up in switchTab below. ADJUSTMENTS tab (re-execute, roll
+        // survivor, …) appears only when the strategy declares fields for it.
         var strip = document.getElementById('ssTabstrip');
         strip.innerHTML =
             '<button class="ss-tab active" data-tab="basic">BASIC</button>' +
             '<button class="ss-tab" data-tab="risk">RISK</button>' +
-            (reentryFields.length ? '<button class="ss-tab" data-tab="reentry">RE-ENTRY</button>' : '');
+            (reentryFields.length ? '<button class="ss-tab" data-tab="reentry">ADJUSTMENTS</button>' : '') +
+            (hedgeFields.length ? '<button class=\"ss-tab\" data-tab=\"hedge\">HEDGE</button>' : '');
         strip.querySelectorAll('.ss-tab').forEach(function(b) {
             b.addEventListener('click', function() { switchTab(b.getAttribute('data-tab')); });
         });
@@ -184,7 +189,8 @@
             '<div class="ss-pane"        data-pane="risk">'  + riskHtml  + '</div>' +
             (reentryFields.length
                 ? '<div class="ss-pane" data-pane="reentry">' + reentryHtml + '</div>'
-                : '');
+                : '') +
+            (hedgeFields.length ? '<div class=\"ss-pane\" data-pane=\"hedge\">' + hedgeHtml + '</div>' : '');
     }
 
     function switchTab(tab) {

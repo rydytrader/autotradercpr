@@ -41,14 +41,14 @@ public class RiskSettingsStore {
         volatile double portfolioMaxRiskPct = 0.0;
         // Charges rates (regulatory — rarely change)
         volatile double sttRate           = 0.15;    // STT % on sell side (NSE options — post 2026 hike)
-        volatile double exchangeRate      = 0.03553; // Exchange transaction % (NSE F&O options — ₹3,553/crore of premium)
+        volatile double exchangeRate      = 0.03553; // NSE exchange transaction % (F&O options — ₹3,553/crore of premium)
+        volatile double bseExchangeRate   = 0.0325;  // BSE exchange transaction % (SENSEX options — ₹3,250/crore of premium)
         volatile double gstRate           = 18.0;     // GST % on brokerage + exchange
         volatile double sebiRate          = 10.0;     // SEBI charges ₹ per crore
         volatile double stampDutyRate     = 0.003;    // Stamp duty % on buy side
         volatile double brokeragePct      = 0.03;     // Brokerage % per order (cap)
         volatile int    fixedQuantity    = 2;     // -1 = use capital-based calculation
         volatile double capitalPerTrade  = 0;     // ₹ per trade (used when fixedQuantity == -1)
-        volatile int    telegramAlertFrequency = 60; // seconds between Telegram portfolio updates (0 = disabled)
         // Global large-candle filter retired — each named pattern (Marubozu, Engulfing,
         // Doji reversal, Morning/Evening star) now enforces its own per-pattern max body
         // cap (xxxMaxBodyAtrMult). See the candle-pattern block below.
@@ -392,13 +392,13 @@ public class RiskSettingsStore {
     // book when aggregate (realised + open MTM − charges) breaches the portfolio threshold.
     public double getSttRate()         { return cfg().sttRate; }
     public double getExchangeRate()    { return cfg().exchangeRate; }
+    public double getBseExchangeRate() { return cfg().bseExchangeRate; }
     public double getGstRate()         { return cfg().gstRate; }
     public double getSebiRate()        { return cfg().sebiRate; }
     public double getStampDutyRate()   { return cfg().stampDutyRate; }
     public double getBrokeragePct()    { return cfg().brokeragePct; }
     public int    getFixedQuantity()   { return cfg().fixedQuantity; }
     public double getCapitalPerTrade() { return cfg().capitalPerTrade; }
-    public int    getTelegramAlertFrequency() { return cfg().telegramAlertFrequency; }
     public boolean isEnableGapCheck() { return cfg().enableGapCheck; }
     public boolean isEnableWeeklyLevelTargetShift() { return cfg().enableWeeklyLevelTargetShift; }
     public boolean isEnableHtfHurdleFilter()    { return cfg().enableHtfHurdleFilter; }
@@ -566,13 +566,13 @@ public class RiskSettingsStore {
     public void setPortfolioMaxRiskPct(double v)  { cfg().portfolioMaxRiskPct = Math.max(0, v); }
     public void setSttRate(double v)         { cfg().sttRate = v; }
     public void setExchangeRate(double v)    { cfg().exchangeRate = v; }
+    public void setBseExchangeRate(double v) { cfg().bseExchangeRate = v; }
     public void setGstRate(double v)         { cfg().gstRate = v; }
     public void setSebiRate(double v)        { cfg().sebiRate = v; }
     public void setStampDutyRate(double v)   { cfg().stampDutyRate = v; }
     public void setBrokeragePct(double v)    { cfg().brokeragePct = v; }
     public void setFixedQuantity(int v)      { cfg().fixedQuantity = v; }
     public void setCapitalPerTrade(double v) { cfg().capitalPerTrade = v; }
-    public void setTelegramAlertFrequency(int v) { cfg().telegramAlertFrequency = v; }
     public void setEnableGapCheck(boolean v) { cfg().enableGapCheck = v; }
     public void setEnableWeeklyLevelTargetShift(boolean v) { cfg().enableWeeklyLevelTargetShift = v; }
     public void setEnableHtfHurdleFilter(boolean v)    { cfg().enableHtfHurdleFilter = v; }
@@ -663,13 +663,13 @@ public class RiskSettingsStore {
     public double getPortfolioMaxRiskPct(String mode)  { return cfgFor(mode).portfolioMaxRiskPct; }
     public double getSttRate(String mode)         { return cfgFor(mode).sttRate; }
     public double getExchangeRate(String mode)    { return cfgFor(mode).exchangeRate; }
+    public double getBseExchangeRate(String mode) { return cfgFor(mode).bseExchangeRate; }
     public double getGstRate(String mode)         { return cfgFor(mode).gstRate; }
     public double getSebiRate(String mode)        { return cfgFor(mode).sebiRate; }
     public double getStampDutyRate(String mode)   { return cfgFor(mode).stampDutyRate; }
     public double getBrokeragePct(String mode)    { return cfgFor(mode).brokeragePct; }
     public int    getFixedQuantity(String mode)   { return cfgFor(mode).fixedQuantity; }
     public double getCapitalPerTrade(String mode) { return cfgFor(mode).capitalPerTrade; }
-    public int    getTelegramAlertFrequency(String mode) { return cfgFor(mode).telegramAlertFrequency; }
     public boolean isEnableTargetShift(String mode) { return cfgFor(mode).enableTargetShift; }
     public boolean isEnableTrailingSl(String mode) { return cfgFor(mode).enableTrailingSl; }
 
@@ -685,13 +685,13 @@ public class RiskSettingsStore {
     public void setPortfolioMaxRiskPct(String mode, double v)  { cfgFor(mode).portfolioMaxRiskPct = Math.max(0, v); }
     public void setSttRate(String mode, double v)         { cfgFor(mode).sttRate = v; }
     public void setExchangeRate(String mode, double v)    { cfgFor(mode).exchangeRate = v; }
+    public void setBseExchangeRate(String mode, double v) { cfgFor(mode).bseExchangeRate = v; }
     public void setGstRate(String mode, double v)         { cfgFor(mode).gstRate = v; }
     public void setSebiRate(String mode, double v)        { cfgFor(mode).sebiRate = v; }
     public void setStampDutyRate(String mode, double v)   { cfgFor(mode).stampDutyRate = v; }
     public void setBrokeragePct(String mode, double v)    { cfgFor(mode).brokeragePct = v; }
     public void setFixedQuantity(String mode, int v)      { cfgFor(mode).fixedQuantity = v; }
     public void setCapitalPerTrade(String mode, double v) { cfgFor(mode).capitalPerTrade = v; }
-    public void setTelegramAlertFrequency(String mode, int v) { cfgFor(mode).telegramAlertFrequency = v; }
     public void setEnableTargetShift(String mode, boolean v) { cfgFor(mode).enableTargetShift = v; }
     public void setEnableTrailingSl(String mode, boolean v) { cfgFor(mode).enableTrailingSl = v; }
 
@@ -717,13 +717,13 @@ public class RiskSettingsStore {
             upsert("portfolioMaxRiskPct",  String.valueOf(c.portfolioMaxRiskPct));
             upsert("sttRate", String.valueOf(c.sttRate));
             upsert("exchangeRate", String.valueOf(c.exchangeRate));
+            upsert("bseExchangeRate", String.valueOf(c.bseExchangeRate));
             upsert("gstRate", String.valueOf(c.gstRate));
             upsert("sebiRate", String.valueOf(c.sebiRate));
             upsert("stampDutyRate", String.valueOf(c.stampDutyRate));
             upsert("brokeragePct", String.valueOf(c.brokeragePct));
             upsert("fixedQuantity", String.valueOf(c.fixedQuantity));
             upsert("capitalPerTrade", String.valueOf(c.capitalPerTrade));
-            upsert("telegramAlertFrequency", String.valueOf(c.telegramAlertFrequency));
             upsert("enableGapCheck", String.valueOf(c.enableGapCheck));
             upsert("enableWeeklyLevelTargetShift", String.valueOf(c.enableWeeklyLevelTargetShift));
             upsert("enableHtfHurdleFilter", String.valueOf(c.enableHtfHurdleFilter));
@@ -878,13 +878,13 @@ public class RiskSettingsStore {
                     case "portfolioMaxRiskPct" -> c.portfolioMaxRiskPct = Math.max(0, Double.parseDouble(v));
                     case "sttRate"           -> c.sttRate = Double.parseDouble(v);
                     case "exchangeRate"      -> c.exchangeRate = Double.parseDouble(v);
+                    case "bseExchangeRate"   -> c.bseExchangeRate = Double.parseDouble(v);
                     case "gstRate"           -> c.gstRate = Double.parseDouble(v);
                     case "sebiRate"          -> c.sebiRate = Double.parseDouble(v);
                     case "stampDutyRate"     -> c.stampDutyRate = Double.parseDouble(v);
                     case "brokeragePct"      -> c.brokeragePct = Double.parseDouble(v);
                     case "fixedQuantity"     -> c.fixedQuantity = Integer.parseInt(v);
                     case "capitalPerTrade"   -> c.capitalPerTrade = Double.parseDouble(v);
-                    case "telegramAlertFrequency" -> c.telegramAlertFrequency = Integer.parseInt(v);
                     // enableLargeCandleFilter / largeCandleAtrThreshold removed — legacy keys silently ignored
                     case "enableGapCheck" -> c.enableGapCheck = Boolean.parseBoolean(v);
                     case "enableWeeklyLevelTargetShift" -> c.enableWeeklyLevelTargetShift = Boolean.parseBoolean(v);
