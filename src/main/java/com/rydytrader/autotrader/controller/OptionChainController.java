@@ -108,18 +108,10 @@ public class OptionChainController {
         double yearsToExpiry = resolveYearsToExpiry(byStrike);
         if (yearsToExpiry > 0) fillDeltas(byStrike, spot, yearsToExpiry);
 
-        // Synthetic-futures ATM (put-call parity): F = atm + (CE − PE) at the spot-ATM
-        // strike, rounded to the nearest step. This is the strike the straddle bot will
-        // actually trade. We surface it as a *separate* marker — the slice + gold band
-        // stay anchored on the naïve spot-ATM, the synthetic strike gets its own pill.
+        // Synthetic (put-call-parity) ATM pill retired 2026-10-14 — the bot trades off
+        // spot-ATM only, and stale chain LTPs made the parity strike land 100+ pts from
+        // spot. Passed as 0 so the modal never paints the pill.
         long syntheticAtm = 0;
-        Leg[] atmPair = byStrike.get(atm);
-        if (atmPair != null && atmPair[0] != null && atmPair[1] != null
-                && atmPair[0].ltp > 0 && atmPair[1].ltp > 0) {
-            double forward = atm + (atmPair[0].ltp - atmPair[1].ltp);
-            long synth = Math.round(forward / (double) strikeStep) * strikeStep;
-            if (byStrike.containsKey(synth)) syntheticAtm = synth;
-        }
 
         List<Map<String, Object>> outRows = sliceWindow(byStrike, atm, strikes, syntheticAtm, strikeStep);
 
@@ -407,19 +399,18 @@ public class OptionChainController {
         return nextExpectedWeeklyExpiry();
     }
 
-    /** Deterministic fallback: next trading Tuesday from today (weekly NIFTY expiry day as
-     *  of 2026). Skips holidays via {@link MarketHolidayService}. Returns {@code ""} if no
-     *  Tuesday is found within a 2-week window (should never happen in practice). */
+    /** Deterministic fallback: the next weekly NIFTY expiry from today, with the NSE holiday
+     *  rule applied (holiday on Tuesday → previous trading day). Returns {@code ""} on failure. */
     private String nextExpectedWeeklyExpiry() {
         try {
-            LocalDate cursor = LocalDate.now();
-            for (int i = 0; i < 14; i++) {
-                if (cursor.getDayOfWeek() == java.time.DayOfWeek.TUESDAY
-                        && (marketHolidayService == null || marketHolidayService.isTradingDay(cursor))) {
-                    return cursor.toString();
-                }
-                cursor = cursor.plusDays(1);
+            LocalDate today = LocalDate.now();
+            if (marketHolidayService != null) {
+                // Holiday on the scheduled Tuesday → expiry moves BACK to the previous trading day.
+                return marketHolidayService.weeklyExpiryOnOrAfter(today, java.time.DayOfWeek.TUESDAY).toString();
             }
+            LocalDate cursor = today;
+            while (cursor.getDayOfWeek() != java.time.DayOfWeek.TUESDAY) cursor = cursor.plusDays(1);
+            return cursor.toString();
         } catch (Exception ignored) {}
         return "";
     }

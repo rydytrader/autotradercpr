@@ -307,11 +307,11 @@
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:12px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" id="paneSlTriggerLabel" style="margin:0;">CE SL Trigger</span>
-                    <span class="stat-value" id="paneSlTrigger" style="font-size:1rem; color:var(--accent-red, #f87171);">—</span>
+                    <span style="display:inline-flex; align-items:center; gap:6px;"><button type="button" class="sl-adj" data-leg="ce" data-dir="down" onclick="adjustSl('ce', 'down')" title="Lower this leg's SL trigger one step" style="font-family:var(--font-mono); font-size:0.7rem; font-weight:700; line-height:1; width:20px; height:20px; padding:0; border-radius:4px; cursor:pointer; color:var(--text-secondary); background:transparent; border:1px solid var(--border);">−</button><span class="stat-value" id="paneSlTrigger" style="font-size:1rem; color:var(--accent-red, #f87171);">—</span><button type="button" class="sl-adj" data-leg="ce" data-dir="up" onclick="adjustSl('ce', 'up')" title="Raise this leg's SL trigger one step" style="font-family:var(--font-mono); font-size:0.7rem; font-weight:700; line-height:1; width:20px; height:20px; padding:0; border-radius:4px; cursor:pointer; color:var(--text-secondary); background:transparent; border:1px solid var(--border);">+</button></span>
                 </div>
                 <div id="panePeSlTriggerRow" style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;">PE SL Trigger</span>
-                    <span class="stat-value" id="panePeSlTrigger" style="font-size:1rem; color:var(--accent-red, #f87171);">—</span>
+                    <span style="display:inline-flex; align-items:center; gap:6px;"><button type="button" class="sl-adj" data-leg="pe" data-dir="down" onclick="adjustSl('pe', 'down')" title="Lower this leg's SL trigger one step" style="font-family:var(--font-mono); font-size:0.7rem; font-weight:700; line-height:1; width:20px; height:20px; padding:0; border-radius:4px; cursor:pointer; color:var(--text-secondary); background:transparent; border:1px solid var(--border);">−</button><span class="stat-value" id="panePeSlTrigger" style="font-size:1rem; color:var(--accent-red, #f87171);">—</span><button type="button" class="sl-adj" data-leg="pe" data-dir="up" onclick="adjustSl('pe', 'up')" title="Raise this leg's SL trigger one step" style="font-family:var(--font-mono); font-size:0.7rem; font-weight:700; line-height:1; width:20px; height:20px; padding:0; border-radius:4px; cursor:pointer; color:var(--text-secondary); background:transparent; border:1px solid var(--border);">+</button></span>
                 </div>
                 <div id="paneLegStateRow" style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;" title="Per-leg open/closed status. When one leg's SL fires, only that leg closes; the other keeps running until its own SL or timed squareoff.">Leg State</span>
@@ -330,11 +330,13 @@
                              color:var(--accent-yellow, #facc15); letter-spacing:0.06em;
                              background:rgba(250,204,21,0.10); border:1px solid rgba(250,204,21,0.35);
                              padding:3px 10px; border-radius:999px;">RE-EXEC · —</span>
+                <button type="button" class="lot-adj" data-leg="ce" data-dir="remove" onclick="adjustLots('ce', 'remove')" title="Exit one lot (buy back)" style="margin-left:auto; font-family:var(--font-mono); font-size:0.7rem; font-weight:700; line-height:1; width:20px; height:20px; padding:0; border-radius:4px; cursor:pointer; color:var(--text-secondary); background:transparent; border:1px solid var(--border);">−</button>
                 <span id="paneCeQty"
-                      style="margin-left:auto; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
+                      style="margin-left:4px; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
                              color:var(--accent-green); letter-spacing:0.06em;
                              background:rgba(52,211,153,0.10); border:1px solid rgba(52,211,153,0.25);
                              padding:3px 10px; border-radius:999px;">QTY · —</span>
+                <button type="button" class="lot-adj" data-leg="ce" data-dir="add" onclick="adjustLots('ce', 'add')" title="Add one lot (sell)" style="margin-left:4px; font-family:var(--font-mono); font-size:0.7rem; font-weight:700; line-height:1; width:20px; height:20px; padding:0; border-radius:4px; cursor:pointer; color:var(--text-secondary); background:transparent; border:1px solid var(--border);">+</button>
                 <button id="ceOpenBtn" onclick="openLeg('ce')"
                         title="Open a fresh CE leg now at the current strike pick — ignores the re-execute cap and cancels any pending timer"
                         style="display:none; margin-left:8px; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
@@ -390,11 +392,13 @@
                              color:var(--accent-yellow, #facc15); letter-spacing:0.06em;
                              background:rgba(250,204,21,0.10); border:1px solid rgba(250,204,21,0.35);
                              padding:3px 10px; border-radius:999px;">RE-EXEC · —</span>
+                <button type="button" class="lot-adj" data-leg="pe" data-dir="remove" onclick="adjustLots('pe', 'remove')" title="Exit one lot (buy back)" style="margin-left:auto; font-family:var(--font-mono); font-size:0.7rem; font-weight:700; line-height:1; width:20px; height:20px; padding:0; border-radius:4px; cursor:pointer; color:var(--text-secondary); background:transparent; border:1px solid var(--border);">−</button>
                 <span id="panePeQty"
-                      style="margin-left:auto; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
+                      style="margin-left:4px; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
                              color:var(--accent-red, #f87171); letter-spacing:0.06em;
                              background:rgba(248,113,113,0.10); border:1px solid rgba(248,113,113,0.25);
                              padding:3px 10px; border-radius:999px;">QTY · —</span>
+                <button type="button" class="lot-adj" data-leg="pe" data-dir="add" onclick="adjustLots('pe', 'add')" title="Add one lot (sell)" style="margin-left:4px; font-family:var(--font-mono); font-size:0.7rem; font-weight:700; line-height:1; width:20px; height:20px; padding:0; border-radius:4px; cursor:pointer; color:var(--text-secondary); background:transparent; border:1px solid var(--border);">+</button>
                 <button id="peOpenBtn" onclick="openLeg('pe')"
                         title="Open a fresh PE leg now at the current strike pick — ignores the re-execute cap and cancels any pending timer"
                         style="display:none; margin-left:8px; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
@@ -444,15 +448,41 @@
         <div class="section-card" style="margin-bottom:0;">
             <div class="section-header">
                 <div class="section-title"><div class="section-title-dot" style="background:var(--accent-yellow);"></div> Hedge</div>
+                <div style="margin-left:auto; display:flex; align-items:center; gap:8px;">
+                    <button id="hedgeCeAddBtn" onclick="openHedge('ce')"
+                            title="Buy a CE hedge wing now — pick the strike in the dialog"
+                            style="display:none; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
+                                   color:var(--accent-green); letter-spacing:0.06em;
+                                   background:rgba(52,211,153,0.10); border:1px solid rgba(52,211,153,0.45);
+                                   padding:3px 10px; border-radius:6px; cursor:pointer;">+ CE HEDGE</button>
+                    <button id="hedgePeAddBtn" onclick="openHedge('pe')"
+                            title="Buy a PE hedge wing now — pick the strike in the dialog"
+                            style="display:none; font-family:var(--font-mono); font-size:0.62rem; font-weight:700;
+                                   color:var(--accent-red, #f87171); letter-spacing:0.06em;
+                                   background:rgba(248,113,113,0.10); border:1px solid rgba(248,113,113,0.45);
+                                   padding:3px 10px; border-radius:6px; cursor:pointer;">+ PE HEDGE</button>
+                </div>
             </div>
             <div style="padding:16px 22px; display:flex; flex-direction:column; gap:14px;">
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;" title="Long far-OTM CE bought with the entry (HEDGE tab)">CE wing</span>
-                    <span class="stat-value" id="paneHedgeCe" style="font-size:0.85rem;" title="">—</span>
+                    <span style="display:inline-flex; align-items:center; gap:8px;">
+                        <span class="stat-value" id="paneHedgeCe" style="font-size:0.85rem;" title="">—</span>
+                        <button id="hedgeCeCloseBtn" onclick="closeHedge('ce')" title="Sell this wing back now"
+                                style="display:none; font-family:var(--font-mono); font-size:0.7rem; font-weight:700; line-height:1;
+                                       width:20px; height:20px; padding:0; border-radius:4px; cursor:pointer; color:var(--accent-red, #f87171);
+                                       background:transparent; border:1px solid rgba(248,113,113,0.45);">×</button>
+                    </span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;" title="Long far-OTM PE bought with the entry (HEDGE tab)">PE wing</span>
-                    <span class="stat-value" id="paneHedgePe" style="font-size:0.85rem;" title="">—</span>
+                    <span style="display:inline-flex; align-items:center; gap:8px;">
+                        <span class="stat-value" id="paneHedgePe" style="font-size:0.85rem;" title="">—</span>
+                        <button id="hedgePeCloseBtn" onclick="closeHedge('pe')" title="Sell this wing back now"
+                                style="display:none; font-family:var(--font-mono); font-size:0.7rem; font-weight:700; line-height:1;
+                                       width:20px; height:20px; padding:0; border-radius:4px; cursor:pointer; color:var(--accent-red, #f87171);
+                                       background:transparent; border:1px solid rgba(248,113,113,0.45);">×</button>
+                    </span>
                 </div>
                 <div style="display:flex; justify-content:space-between; align-items:center;">
                     <span class="stat-label" style="margin:0;" title="Combined live P&L of both wings. Sub-text: total premium paid for them (your insurance cost) and hedge-to-short lot ratio.">Hedge P&amp;L</span>
@@ -562,8 +592,8 @@
 </div><!-- /flex wrapper -->
 
 <script src="/js/common.js?v=2"></script>
-<script src="/js/ticker.js?v=6"></script>
-<script src="/js/app-confirm.js?v=1"></script>
+<script src="/js/ticker.js?v=7"></script>
+<script src="/js/app-confirm.js?v=2"></script>
 <script src="/js/settings-modal.js?v=11"></script>
 <script src="/js/strategy-settings-form.js?v=14"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
@@ -692,6 +722,8 @@
         // the timer). Pre-cycle (ARMED) shows neither: the scheduled entry handles that.
         var legOpen = entry > 0 && !(leg === 'ce' ? d.ceClosed : d.peClosed);
         var cycleStarted = ['OPEN_BOTH', 'OPEN_CE_ONLY', 'OPEN_PE_ONLY', 'DONE_FOR_DAY'].indexOf(d.state) >= 0;
+        // Manual entry mode: single-leg opens are allowed straight from ARMED.
+        if (d.manualEntryMode === true && d.state === 'ARMED') cycleStarted = true;
         var btn = document.getElementById(leg + 'CloseBtn');
         if (btn) {
             btn.style.display = legOpen ? '' : 'none';
@@ -705,7 +737,7 @@
         var dow  = new Date().getDay();
         var sqM  = hmToMins(d.squareOffTime);
         var tradeable = dow >= 1 && dow <= 5 && nowM >= 9 * 60 + 15 && nowM < 15 * 60 + 40
-                     && (sqM <= 0 || nowM < sqM);
+                     && (sqM <= 0 || nowM < sqM || d.positional === true);
         var openBtn = document.getElementById(leg + 'OpenBtn');
         if (openBtn) openBtn.style.display = (!legOpen && cycleStarted && tradeable) ? '' : 'none';
     }
@@ -951,8 +983,10 @@
             // fired and the per-instance setting is on), append a small amber MOVED TO COST
             // badge so the operator can see the SL is now at break-even.
             var ceTrig = Number(d.ceSlTrigger || 0), peTrig = Number(d.peSlTrigger || 0);
-            renderSlTriggerCell('paneSlTrigger',   ceTrig, !!d.ceSlMovedToCost);
-            renderSlTriggerCell('panePeSlTrigger', peTrig, !!d.peSlMovedToCost);
+            renderSlTriggerCell('paneSlTrigger',   ceTrig, !!d.ceSlMovedToCost, d.ceSlManual > 0);
+            renderSlTriggerCell('panePeSlTrigger', peTrig, !!d.peSlMovedToCost, d.peSlManual > 0);
+            syncSlAdjustButtons(d);
+            syncLotButtons(d);
             var legStateEl = document.getElementById('paneLegState');
             if (legStateEl) {
                 // Same 3-state logic as the QTY chip on each leg card:
@@ -1024,6 +1058,7 @@
 
             // Pane 4: Hedge wings
             renderHedgePane(d);
+            syncHedgeButtons(d);
             var rolls = d.recentRolls || [];
 
 
@@ -1052,7 +1087,8 @@
         }).catch(() => {});
     }
     loadDashboard();
-    setInterval(loadDashboard, 5000);
+    // 1 s — keeps the Net Day P&L / MTM tiles in step with the 500 ms header ticker.
+    setInterval(loadDashboard, 1000);
 
     // ── Real-time tick updates from the ticker SSE ───────────────────────────
     // The 5s dashboard poll provides the slow-moving fields (state, charges, recentRolls,
@@ -1666,7 +1702,7 @@
     // Paint a Risk Band SL Trigger cell. When the SL was moved to cost (because the OTHER
     // leg's SL already fired and the per-instance setting was on) we prepend a small amber
     // "MOVED TO COST" pill BEFORE the trigger price so the marker reads first.
-    function renderSlTriggerCell(elId, trigger, movedToCost) {
+    function renderSlTriggerCell(elId, trigger, movedToCost, manual) {
         var el = document.getElementById(elId);
         if (!el) return;
         if (!(trigger > 0)) {
@@ -1674,6 +1710,20 @@
             return;
         }
         var trigText = escapeHtml(Number(trigger).toFixed(2));
+        if (manual) {
+            // Operator override — cyan MANUAL pill + a tiny × that clears it (back to configured SL).
+            var legM = (elId === 'panePeSlTrigger') ? 'pe' : 'ce';
+            el.innerHTML =
+                '<span style="display:inline-block;line-height:1.2;font-family:var(--font-mono);'
+                + 'font-size:0.6rem;font-weight:700;letter-spacing:0.06em;'
+                + 'color:var(--accent-cyan, #7dd3fc);'
+                + 'background:rgba(125,211,252,0.12);border:1px solid rgba(125,211,252,0.45);'
+                + 'padding:2px 6px;border-radius:4px;margin-right:8px;vertical-align:middle;cursor:pointer;" '
+                + 'title="Manual SL — click to clear and return to the configured SL" '
+                + 'onclick="adjustSl(\'' + legM + '\', \'reset\')">MANUAL ×</span>'
+                + trigText;
+            return;
+        }
         if (movedToCost) {
             var legForBtn = (elId === 'panePeSlTrigger') ? 'PE' : 'CE';
             // display:inline-block + line-height:1.2 lets the pill render its own padding +
@@ -1781,6 +1831,134 @@
         var hedgeQty = Math.max(Number(d.hedgeCeQty || 0), Number(d.hedgePeQty || 0));
         var ratio = (shortQty > 0 && hedgeQty > 0) ? ' · ' + hedgeQty + ':' + shortQty : '';
         if (costEl) costEl.textContent = (paid > 0 ? 'cost ' + fmtRs(paid) : '') + ratio;
+    }
+    // +/- buttons on the SL trigger rows — only usable while that leg is open.
+    function syncSlAdjustButtons(d) {
+        var ceOpen = (d.ceEntryPremium > 0) && !d.ceClosed;
+        var peOpen = (d.peEntryPremium > 0) && !d.peClosed;
+        document.querySelectorAll('button.sl-adj').forEach(function(b) {
+            var open = b.getAttribute('data-leg') === 'ce' ? ceOpen : peOpen;
+            b.disabled = !open;
+            b.style.opacity = open ? '1' : '0.3';
+            b.style.cursor  = open ? 'pointer' : 'not-allowed';
+        });
+    }
+    function adjustSl(leg, dir) {
+        fetch('/api/strategies/' + encodeURIComponent(STRATEGY_ID) + '/sl-adjust/' + leg + '/' + dir, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders())
+        }).then(function(r) { return r.json(); }).then(function(j) {
+            if (window.showToast && j && j.message) showToast(j.message, j.success ? 'success' : 'error');
+            loadDashboard();
+        }).catch(function(e) { if (window.showToast) showToast('SL adjust failed: ' + (e.message || e), 'error'); });
+    }
+    // +/- on the QTY pills — add one lot (sell) / exit one lot (buy back). Open legs only.
+    function syncLotButtons(d) {
+        var ceOpen = (d.ceEntryPremium > 0) && !d.ceClosed;
+        var peOpen = (d.peEntryPremium > 0) && !d.peClosed;
+        document.querySelectorAll('button.lot-adj').forEach(function(b) {
+            var open = b.getAttribute('data-leg') === 'ce' ? ceOpen : peOpen;
+            b.disabled = !open;
+            b.style.opacity = open ? '1' : '0.3';
+            b.style.cursor  = open ? 'pointer' : 'not-allowed';
+        });
+    }
+    function adjustLots(leg, dir) {
+        var upper = leg.toUpperCase();
+        var d = lastDashboardData || {};
+        var qty = upper === 'CE' ? Number(d.ceQty || 0) : Number(d.peQty || 0);
+        var lot = Number(d.lotSize || 0);
+        var sym = upper === 'CE' ? d.ceSymbol : d.peSymbol;
+        var add = dir === 'add';
+        var lastLot = !add && lot > 0 && qty <= lot;
+        showConfirm({
+            title: add ? 'Add one lot to ' + upper + '?' : (lastLot ? 'Exit the last ' + upper + ' lot?' : 'Exit one lot of ' + upper + '?'),
+            body: (add ? 'Sells one more lot of ' : 'Buys back one lot of ') + (sym || upper) + ' at market.'
+                + (add ? '\n\nEntry premium becomes the weighted average; SL trigger follows it.'
+                       : (lastLot ? '\n\nThis closes the leg (same as CLOSE ' + upper + ').'
+                                  : '\n\nRealises that lot\'s P&L; the leg stays open with the rest.')),
+            confirmLabel: add ? 'Sell 1 lot' : 'Buy back 1 lot',
+            onConfirm: function() {
+                fetch('/api/strategies/' + encodeURIComponent(STRATEGY_ID) + '/lots/' + leg + '/' + dir, {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders())
+                }).then(function(r) { return r.json(); }).then(function(j) {
+                    if (window.showToast && j && j.message) showToast(j.message, j.success ? 'success' : 'error');
+                    loadDashboard();
+                }).catch(function(e) { if (window.showToast) showToast('Lot adjust failed: ' + (e.message || e), 'error'); });
+            }
+        });
+    }
+    // Manual hedge wings — "+ CE/PE HEDGE" in the Hedge pane header (hidden while that wing is
+    // open), "×" next to an open wing to sell it back. Strike picker = ₹target pick ± 20.
+    function tradeableNow(d) {
+        var now = new Date(), nowM = now.getHours() * 60 + now.getMinutes(), dow = now.getDay();
+        var sqM = hmToMins(d.squareOffTime);
+        return dow >= 1 && dow <= 5 && nowM >= 9 * 60 + 15 && nowM < 15 * 60 + 40
+            && (sqM <= 0 || nowM < sqM || d.positional === true);
+    }
+    function syncHedgeButtons(d) {
+        var ok = tradeableNow(d);
+        var ceOpen = Number(d.hedgeCeQty || 0) > 0, peOpen = Number(d.hedgePeQty || 0) > 0;
+        var a = document.getElementById('hedgeCeAddBtn'); if (a) a.style.display = (ok && !ceOpen) ? '' : 'none';
+        var b = document.getElementById('hedgePeAddBtn'); if (b) b.style.display = (ok && !peOpen) ? '' : 'none';
+        var c = document.getElementById('hedgeCeCloseBtn'); if (c) c.style.display = (ok && ceOpen) ? '' : 'none';
+        var e = document.getElementById('hedgePeCloseBtn'); if (e) e.style.display = (ok && peOpen) ? '' : 'none';
+    }
+    function openHedge(side) {
+        var upper = side.toUpperCase();
+        fetch('/api/strategies/' + encodeURIComponent(STRATEGY_ID) + '/hedge-candidates/' + side, { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(c) {
+                var cands = (c && c.candidates) || [];
+                var opts = cands.map(function(k) {
+                    var label = k.strike + ' · ₹' + Number(k.ltp || 0).toFixed(2) + (k.moneyness ? ' · ' + k.moneyness : '')
+                              + (k.isDefault ? '  (default pick)' : '');
+                    return '<option value="' + escapeHtml(k.symbol) + '"' + (k.isDefault ? ' selected' : '')
+                         + ' style="background:var(--bg-card);color:var(--text-primary);">' + escapeHtml(label) + '</option>';
+                }).join('');
+                var qty = (Number(c && c.lots || 1) * Number(c && c.lotSize || 0)) || '';
+                var html = '<div>BUY a ' + upper + ' hedge wing' + (qty ? ' (qty ' + qty + ')' : '')
+                    + (c && c.spot ? ' — spot ' + Number(c.spot).toFixed(2) : '') + '. No SL on wings; sold at squareoff or settled at expiry.</div>'
+                    + '<div style="margin-top:12px;"><label style="font-family:var(--font-mono);font-size:0.7rem;letter-spacing:0.06em;color:var(--text-muted);text-transform:uppercase;">Strike</label><br>'
+                    + (opts ? '<select id="hedgeStrike" style="color-scheme:dark;margin-top:6px;width:100%;font-family:var(--font-mono);font-size:0.82rem;padding:6px 8px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;">' + opts + '</select>'
+                            : '<div style="color:var(--accent-red,#f87171);margin-top:6px;">Chain unavailable — the ₹target pick will be used.</div>')
+                    + '</div>';
+                showConfirm({
+                    title: 'Buy ' + upper + ' hedge wing?',
+                    bodyHtml: html,
+                    confirmLabel: 'Buy ' + upper + ' wing',
+                    onConfirm: function() {
+                        var sel = document.getElementById('hedgeStrike');
+                        doHedge('/hedge/' + side + '/open' + (sel && sel.value ? '?symbol=' + encodeURIComponent(sel.value) : ''));
+                    }
+                });
+            })
+            .catch(function() {
+                showConfirm({ title: 'Buy ' + upper + ' hedge wing?', body: 'Chain unavailable — the ₹target pick will be used.',
+                              confirmLabel: 'Buy ' + upper + ' wing', onConfirm: function() { doHedge('/hedge/' + side + '/open'); } });
+            });
+    }
+    function closeHedge(side) {
+        var upper = side.toUpperCase();
+        var d = lastDashboardData || {};
+        showConfirm({
+            title: 'Sell the ' + upper + ' hedge wing?',
+            body: 'Sells ' + (d['hedge' + (side === 'ce' ? 'Ce' : 'Pe') + 'Symbol'] || upper + ' wing') + ' at market. The short legs are unaffected.',
+            confirmLabel: 'Sell wing',
+            onConfirm: function() { doHedge('/hedge/' + side + '/close'); }
+        });
+    }
+    function doHedge(path) {
+        fetch('/api/strategies/' + encodeURIComponent(STRATEGY_ID) + path, {
+            method: 'POST', credentials: 'same-origin',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders())
+        }).then(function(r) { return r.json(); }).then(function(j) {
+            if (window.showToast && j && j.message) showToast(j.message, j.success ? 'success' : 'error');
+            loadDashboard();
+        }).catch(function(e) { if (window.showToast) showToast('Hedge action failed: ' + (e.message || e), 'error'); });
     }
     function setMoneyness(elId, label) {
         var el = document.getElementById(elId);
@@ -1943,7 +2121,7 @@
     }
 
     // ── Close a single leg (CE or PE) ───────────────────────────────────────
-    // ── Manual open of a closed leg ──────────────────────────────────────────
+    // ── Manual open of a closed leg — with a strike picker ────────────────────
     function openLeg(side) {
         var upper = side.toUpperCase();
         var d = lastDashboardData || {};
@@ -1954,20 +2132,49 @@
         }
         var pendingMs = (upper === 'CE') ? d.ceReExecuteMsRemaining : d.peReExecuteMsRemaining;
         var timerNote = (pendingMs > 0)
-            ? '\n\nA Re-Execute timer is pending for this side — opening now cancels it.' : '';
-        showConfirm({
-            title: 'Open a fresh ' + upper + ' leg now?',
-            body: 'Sells ' + upper + ' at the current strike pick (' + (d.strikeSelectionMode || 'configured mode') + ').'
-                + ' Does not consume a re-execute attempt.' + timerNote,
-            onConfirm: function() { doOpenLeg(side); }
-        });
+            ? '<div style="margin-top:10px;color:var(--accent-yellow,#facc15);">A Re-Execute timer is pending for this side — opening now cancels it.</div>' : '';
+        fetch('/api/strategies/' + encodeURIComponent(STRATEGY_ID) + '/open-leg-candidates/' + side.toLowerCase(),
+              { credentials: 'same-origin' })
+            .then(function(r) { return r.json(); })
+            .then(function(c) {
+                var cands = (c && c.candidates) || [];
+                var opts = cands.map(function(k) {
+                    var label = k.strike + ' · ₹' + Number(k.ltp || 0).toFixed(2) + (k.moneyness ? ' · ' + k.moneyness : '')
+                              + (k.isDefault ? '  (default pick)' : '');
+                    return '<option value="' + escapeHtml(k.symbol) + '"' + (k.isDefault ? ' selected' : '') + ' style="background:var(--bg-card);color:var(--text-primary);">' + escapeHtml(label) + '</option>';
+                }).join('');
+                var html = '<div>Sell a fresh ' + upper + ' now' + (c && c.spot ? ' (spot ' + Number(c.spot).toFixed(2) + ')' : '') + '. Does not consume a re-execute attempt.</div>'
+                    + '<div style="margin-top:12px;"><label style="font-family:var(--font-mono);font-size:0.7rem;letter-spacing:0.06em;color:var(--text-muted);text-transform:uppercase;">Strike</label><br>'
+                    + (opts ? '<select id="openLegStrike" style="color-scheme:dark;margin-top:6px;width:100%;font-family:var(--font-mono);font-size:0.82rem;padding:6px 8px;background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;">' + opts + '</select>'
+                            : '<div style="color:var(--accent-red,#f87171);margin-top:6px;">Chain unavailable — the configured strike pick will be used.</div>')
+                    + '</div>' + timerNote;
+                showConfirm({
+                    title: 'Open a fresh ' + upper + ' leg?',
+                    bodyHtml: html,
+                    confirmLabel: 'Open ' + upper,
+                    onConfirm: function() {
+                        var sel = document.getElementById('openLegStrike');
+                        doOpenLeg(side, sel ? sel.value : '');
+                    }
+                });
+            })
+            .catch(function() {
+                showConfirm({
+                    title: 'Open a fresh ' + upper + ' leg?',
+                    body: 'Chain unavailable — the configured strike pick will be used.',
+                    confirmLabel: 'Open ' + upper,
+                    onConfirm: function() { doOpenLeg(side, ''); }
+                });
+            });
     }
-    function doOpenLeg(side) {
+    function doOpenLeg(side, symbol) {
         var upper = side.toUpperCase();
         var btn = document.getElementById((upper === 'CE') ? 'ceOpenBtn' : 'peOpenBtn');
         var originalText = btn ? btn.textContent : '';
         if (btn) { btn.disabled = true; btn.textContent = '+ Opening…'; }
-        fetch('/api/strategies/' + STRATEGY_ID + '/open-leg/' + side.toLowerCase(), {
+        var url = '/api/strategies/' + STRATEGY_ID + '/open-leg/' + side.toLowerCase()
+                + (symbol ? '?symbol=' + encodeURIComponent(symbol) : '');
+        fetch(url, {
             method: 'POST',
             headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders())
         }).then(r => r.json()).then(resp => {
@@ -2064,7 +2271,8 @@
     }
     function newStrangleBlockReason(d) {
         if (!d)                                 return 'Waiting for dashboard data';
-        if (d.state !== 'DONE_FOR_DAY')         return 'Only available when state is DONE_FOR_DAY';
+        var manualArmed = d.manualEntryMode === true && d.state === 'ARMED';
+        if (d.state !== 'DONE_FOR_DAY' && !manualArmed) return 'Only available when state is DONE_FOR_DAY';
         if (!isMarketOpenNow())                 return 'Market is closed';
         if (d.todayDayEnabled === false)        return 'Today is disabled in the per-day SL config';
         if (d.tradingPaused === true)           return 'Trading is paused — toggle off to enable new entries';
@@ -2072,8 +2280,8 @@
         // when the aggregate net day P&L breaches the portfolio threshold. No client check
         // needed here; the portfolio kill is global and pre-empts any individual restart.
         var nowMins = new Date().getHours() * 60 + new Date().getMinutes();
-        if (nowMins <  hmToMins(d.entryTime))      return 'Too early — entry window hasn\'t opened';
-        if (nowMins >= hmToMins(d.squareOffTime))  return 'Too late — past squareoff time';
+        if (!manualArmed && nowMins < hmToMins(d.entryTime)) return 'Too early — entry window hasn\'t opened';
+        if (d.positional !== true && nowMins >= hmToMins(d.squareOffTime)) return 'Too late — past squareoff time';
         return '';
     }
     // ── Pause Trading toggle ────────────────────────────────────────────────

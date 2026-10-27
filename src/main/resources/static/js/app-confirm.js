@@ -27,7 +27,9 @@
         function esc(e)  { if (e.key === 'Escape') cancel(); }
         ov.onclick = function (e) { if (e.target === ov) cancel(); };
         document.getElementById('appConfirmTitle').textContent = opts.title || 'Confirm';
-        document.getElementById('appConfirmBody').textContent  = opts.body  || '';
+        var bodyEl = document.getElementById('appConfirmBody');
+        if (opts.bodyHtml) bodyEl.innerHTML = opts.bodyHtml;   // caller-built markup (already escaped)
+        else               bodyEl.textContent = opts.body || '';
         var yes = document.getElementById('appConfirmYes');
         yes.textContent = opts.confirmLabel || 'Yes';
         // Clear any prior listener by cloning the node

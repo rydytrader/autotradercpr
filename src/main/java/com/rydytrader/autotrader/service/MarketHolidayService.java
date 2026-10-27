@@ -91,6 +91,29 @@ public class MarketHolidayService {
         return nowMin >= MARKET_OPEN_MINUTE && nowMin <= MARKET_CLOSE_MINUTE;
     }
 
+    /** Actual weekly expiry on or after {@code from} for an index whose scheduled expiry
+     *  weekday is {@code dow}. NSE/BSE rule: if the scheduled day is a trading holiday the
+     *  contract expires on the PREVIOUS trading day (e.g. Tue 20 Oct 2026 holiday → Mon 19 Oct);
+     *  it never slides forward a week. If that shifted date has already passed relative to
+     *  {@code from}, the next week's scheduled day is evaluated. */
+    public java.time.LocalDate weeklyExpiryOnOrAfter(java.time.LocalDate from, java.time.DayOfWeek dow) {
+        java.time.LocalDate scheduled = from;
+        while (scheduled.getDayOfWeek() != dow) scheduled = scheduled.plusDays(1);
+        for (int i = 0; i < 8; i++) {
+            java.time.LocalDate actual = scheduled;
+            while (!isTradingDay(actual)) actual = actual.minusDays(1);
+            if (!actual.isBefore(from)) return actual;
+            scheduled = scheduled.plusDays(7);
+        }
+        return scheduled;
+    }
+
+    /** True when {@code d} is a legitimate weekly expiry date for {@code dow} — either the
+     *  scheduled weekday itself, or the holiday-shifted previous trading day. */
+    public boolean isWeeklyExpiryDate(java.time.LocalDate d, java.time.DayOfWeek dow) {
+        return d != null && d.equals(weeklyExpiryOnOrAfter(d, dow));
+    }
+
     /** Is it pre-market session (9:00 to 9:15)? */
     public boolean isPreMarket() {
         if (!isTradingDay()) return false;

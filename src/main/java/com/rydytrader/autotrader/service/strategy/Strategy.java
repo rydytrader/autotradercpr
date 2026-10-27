@@ -51,7 +51,29 @@ public interface Strategy {
      *  cancelling that side's pending timer. Returns {@code "OK"} or a reason code
      *  ({@code NOT_STARTED}, {@code ALREADY_OPEN}, {@code REJECTED}, {@code ABORTED},
      *  {@code UNSUPPORTED}). */
-    default String openOneLeg(String leg) { return "UNSUPPORTED"; }
+    default String openOneLeg(String leg) { return openOneLeg(leg, null); }
+
+    /** As {@link #openOneLeg(String)} but with an operator-chosen option symbol from the strike
+     *  picker; {@code symbol} null/empty = use the strategy's strike-selection mode. */
+    default String openOneLeg(String leg, String symbol) { return "UNSUPPORTED"; }
+
+    /** Strike choices for the "+ OPEN" dialog: {@code {spot, defaultSymbol, candidates[{symbol,
+     *  strike, ltp, moneyness, isDefault}]}}. Empty map when unsupported. */
+    default Map<String, Object> openLegCandidates(String leg) { return Map.of(); }
+
+    /** Operator +/- on a leg's SL trigger: {@code dir} +1 raise one step, -1 lower, 0 clear the
+     *  manual override. Returns {@code "OK"} or a reason code. */
+    default String adjustLegSl(String leg, int dir) { return "UNSUPPORTED"; }
+
+    /** Operator +/- on a leg's lot count: {@code dir} +1 sells one more lot, -1 buys one back
+     *  (last lot = full close). Returns {@code "OK"}, {@code "CLOSED"} or a reason code. */
+    default String adjustLegLots(String leg, int dir) { return "UNSUPPORTED"; }
+
+    /** Manual hedge wings. {@code hedgeCandidates} → strike picker payload; {@code openHedgeLeg}
+     *  buys a wing (symbol null = ₹target pick); {@code closeHedgeLeg} sells it back. */
+    default Map<String, Object> hedgeCandidates(String leg) { return Map.of(); }
+    default String openHedgeLeg(String leg, String symbol) { return "UNSUPPORTED"; }
+    default String closeHedgeLeg(String leg) { return "UNSUPPORTED"; }
 
     /** Manual same-day restart after the strategy has reached its DONE_FOR_DAY terminal
      *  state. Drives the dashboard's {@code + NEW STRADDLE} button. Returns {@code "OK"}

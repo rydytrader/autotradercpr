@@ -24,6 +24,7 @@
     var lastSensex = { lp: 0, ch: 0, chp: 0 };
     var lastVix    = { lp: 0, ch: 0, chp: 0 };
     var lastDayPnl = 0;
+    var lastRisk   = null;   // {maxLoss, usedPct, warnPct, warn} from /api/portfolio-pnl-today
 
     // ── TRADE NOTIFICATIONS (unchanged) ─────────────────────────────────────
     var knownSymbols = null;
@@ -111,6 +112,17 @@
                '<span style="margin-left:6px; color:' + valueColor + ';">' + value + '</span>';
     }
 
+    // One-time keyframes for the portfolio-risk warning frame on the P&L chip.
+    var riskStyleDone = false;
+    function ensureRiskStyle() {
+        if (riskStyleDone) return;
+        riskStyleDone = true;
+        var st = document.createElement('style');
+        st.textContent = '@keyframes pnlRiskPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(251,191,36,0.0); } 50% { box-shadow: 0 0 0 4px rgba(251,191,36,0.28); } }'
+                       + ' .pnl-risk-warn { animation: pnlRiskPulse 1.4s ease-in-out infinite; }';
+        document.head.appendChild(st);
+    }
+
     function divider() {
         return '<span style="color:var(--text-muted); margin:0 18px; opacity:0.35; font-weight:400;">|</span>';
     }
@@ -161,12 +173,31 @@
                      : pnl < 0 ? 'var(--accent-red, #f87171)'
                      : 'var(--text-muted)';
 
+        // Portfolio kill-switch proximity. From warnPct (75%) of the max daily loss the P&L
+        // chip gets an amber pulsing frame + "RISK nn%" tag; at/after 100% it turns red.
+        var pnlHtml = chip('P&L', fmtInr(pnl), pnlColor);
+        var r = lastRisk || {};
+        if (r.maxLoss > 0 && r.usedPct >= r.warnPct) {
+            ensureRiskStyle();
+            var killed = r.usedPct >= 100;
+            var col = killed ? 'var(--accent-red, #f87171)' : 'var(--accent-amber, #fbbf24)';
+            var bg  = killed ? 'rgba(248,113,113,0.14)'     : 'rgba(251,191,36,0.14)';
+            var title = (killed ? 'PORTFOLIO MAX LOSS HIT — ' : 'Portfolio loss warning — ')
+                + Math.round(r.usedPct) + '% of the max daily loss used ('
+                + fmtInr(pnl) + ' of −₹' + Math.round(r.maxLoss).toLocaleString('en-IN') + ')';
+            pnlHtml = '<span class="pnl-risk-warn" title="' + title + '" style="display:inline-flex; align-items:center; gap:8px;'
+                + ' padding:2px 10px; border-radius:999px; border:1px solid ' + col + '; background:' + bg + ';">'
+                + pnlHtml
+                + '<span style="font-size:0.6rem; font-weight:700; letter-spacing:0.08em; color:' + col + ';">'
+                + (killed ? 'KILL' : 'RISK ' + Math.round(r.usedPct) + '%') + '</span></span>';
+        }
+
         var leadingRule = '<span style="display:inline-block; width:1px; height:22px; background:var(--border); margin-right:18px; opacity:0.7;"></span>';
         track.innerHTML = leadingRule +
             chip('NIFTY',  nifty.text,  nifty.color)  + divider() +
             chip('SENSEX', sensex.text, sensex.color) + divider() +
             chip('VIX',    vixText,     vixColor)     + divider() +
-            chip('P&L', fmtInr(pnl), pnlColor);
+            pnlHtml;
     }
 
     // Extract NIFTY + SENSEX + VIX ticks from the SSE ticker array. Any subset may be in
@@ -238,6 +269,12 @@
             .then(function(d) {
                 if (d && typeof d.dayPnl !== 'undefined') {
                     lastDayPnl = Number(d.dayPnl || 0);
+                    lastRisk = {
+                        maxLoss: Number(d.maxLoss || 0),
+                        usedPct: Number(d.lossUsedPct || 0),
+                        warnPct: Number(d.warnPct || 75),
+                        warn:    d.riskWarn === true
+                    };
                     renderStrip();
                 }
             }).catch(function() {});

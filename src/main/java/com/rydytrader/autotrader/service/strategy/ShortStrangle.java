@@ -156,6 +156,9 @@ public class ShortStrangle implements Strategy {
     private volatile int  peReEntriesCount = 0;
     /** Roll-the-survivor fired already today (once-per-day guard). Persisted. */
     private volatile boolean survivorRolledToday = false;
+    /** Operator-set SL trigger premium per leg (dashboard +/- buttons). 0 = none; when set it
+     *  overrides base %, trailing and move-to-cost. Cleared when the leg closes / re-opens. */
+    private volatile double ceSlManual = 0, peSlManual = 0;
     /** SL hits per side today (original + re-executed legs). Drives the roll-survivor trigger. */
     private volatile int ceSlHitsToday = 0, peSlHitsToday = 0;
     /** Roll is armed for this side: fires when the side's pending re-execute fills. Persisted. */
@@ -189,7 +192,7 @@ public class ShortStrangle implements Strategy {
      *  synchronously; cumulative P&L / turnover updates happen ONLY when the WS fires the
      *  filled-status event. Equity-bot pattern: register the orderId + context, do the
      *  bookkeeping when the callback arrives. */
-    private enum PendingType { ENTRY_CE, ENTRY_PE, CLOSE_CE, CLOSE_PE }
+    private enum PendingType { ENTRY_CE, ENTRY_PE, CLOSE_CE, CLOSE_PE, ADD_CE, ADD_PE, PART_CE, PART_PE }
     /** {@code provisionalPnl} and {@code provisionalBuyTurnover} are the values
      *  booked synchronously against realisedPnlToday / buyPremiumTurnoverToday
      *  at close-order-placement time (LTP-based). The WS fill callback later
@@ -324,6 +327,34 @@ public class ShortStrangle implements Strategy {
                     String.format("%+.2f", actualPnl - p.provisionalPnl()));
                 eventService.log("[INFO] [short-strangle] PE close filled @ " + String.format("%.2f", price) + " pnl=" + String.format("%.2f", actualPnl));
             }
+            case ADD_CE, ADD_PE -> {
+                // One lot added to an open leg. entryRef = avg entry BEFORE the add, qty = lot
+                // size, provisionalBuyTurnover slot carries the qty before the add. Recompute the
+                // weighted-average entry from the broker-confirmed fill (placement used LTP).
+                boolean ce = p.type() == PendingType.ADD_CE;
+                int prevQty = (int) Math.round(p.provisionalBuyTurnover());
+                int newQty  = prevQty + p.qty();
+                double avg  = newQty > 0 ? (p.entryRef() * prevQty + price * p.qty()) / newQty : price;
+                if (ce) ceEntryPremium = avg; else peEntryPremium = avg;
+                sellPremiumTurnoverToday += price * p.qty();
+                String m = (ce ? "CE" : "PE") + " add-lot filled @ " + String.format("%.2f", price)
+                    + " → avg entry " + String.format("%.2f", avg) + " qty=" + newQty;
+                log.info("[short-strangle] {}", m);
+                eventService.log("[INFO] [short-strangle] " + m);
+            }
+            case PART_CE, PART_PE -> {
+                // One lot bought back from an open leg — same delta refinement as a full close,
+                // but the leg stays open so ceLegPnl / closePremium are NOT touched.
+                double actualPnl  = (p.entryRef() - price) * p.qty();
+                double actualBuyT = price * p.qty();
+                realisedPnlToday        += (actualPnl  - p.provisionalPnl());
+                consumedRiskToday       += (actualPnl  - p.provisionalPnl());
+                buyPremiumTurnoverToday += (actualBuyT - p.provisionalBuyTurnover());
+                String m = (p.type() == PendingType.PART_CE ? "CE" : "PE") + " exit-lot filled @ "
+                    + String.format("%.2f", price) + " pnl=" + String.format("%.2f", actualPnl);
+                log.info("[short-strangle] {}", m);
+                eventService.log("[INFO] [short-strangle] " + m);
+            }
         }
         persist();
     }
@@ -373,12 +404,224 @@ public class ShortStrangle implements Strategy {
      *  and cancelling any pending timer for that side. Refused before the day's cycle has
      *  started (the scheduled 09:20 entry would clobber a lone leg). */
     @Override
-    public synchronized String openOneLeg(String leg) {
+    public synchronized String openOneLeg(String leg, String symbol) {
         boolean isCe = "CE".equalsIgnoreCase(leg);
         if (state != LifecycleState.OPEN_BOTH && state != LifecycleState.OPEN_CE_ONLY
-                && state != LifecycleState.OPEN_PE_ONLY && state != LifecycleState.DONE_FOR_DAY) return "NOT_STARTED";
+                && state != LifecycleState.OPEN_PE_ONLY && state != LifecycleState.DONE_FOR_DAY
+                && !(manualEntryMode() && state == LifecycleState.ARMED)) return "NOT_STARTED";
         if (isCe ? isCeOpen() : isPeOpen()) return "ALREADY_OPEN";
-        return performReEntry(isCe, true);
+        return performReEntry(isCe, true, symbol);
+    }
+
+    /** Dashboard +/- on a leg's SL trigger. {@code dir} +1 raises the trigger one step
+     *  (₹1 of premium), -1 lowers it, 0 clears the manual
+     *  override so the configured % / trailing / cost logic applies again. Refused when the
+     *  leg isn't open or the new trigger would sit at/below the current LTP (would fire at once). */
+    @Override
+    public synchronized String adjustLegSl(String leg, int dir) {
+        boolean isCe = "CE".equalsIgnoreCase(leg);
+        String side = isCe ? "CE" : "PE";
+        if (!(isCe ? isCeOpen() : isPeOpen())) return "NOT_OPEN";
+        if (dir == 0) {
+            if (isCe) ceSlManual = 0; else peSlManual = 0;
+            persist();
+            return "OK";
+        }
+        double cur = effectiveLegTrigger(isCe);
+        if (cur <= 0) return "NO_TRIGGER";
+        double step = 1.0;   // ₹1 per click (operator choice)
+        double next = Math.round((cur + dir * step) * 100.0) / 100.0;
+        String sym = isCe ? ceSymbol : peSymbol;
+        double ltp = marketDataService.getLtp(sym);
+        if (next <= 0) return "INVALID";
+        if (ltp > 0 && next <= ltp) return "BELOW_LTP";
+        if (isCe) ceSlManual = next; else peSlManual = next;
+        persist();
+        String msg = String.format(java.util.Locale.US, "%s SL manually set to %.2f (was %.2f, LTP %.2f)", side, next, cur, ltp);
+        log.info("[short-strangle] {}", msg);
+        return "OK";
+    }
+
+    /** Strike picker for the "+ OPEN CE/PE" dialog: the mode's default pick plus nearby
+     *  strikes on that side (default pick ± 10 steps) with LTP + moneyness. */
+    @Override
+    public java.util.Map<String, Object> openLegCandidates(String leg) {
+        boolean isCe = "CE".equalsIgnoreCase(leg);
+        java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+        double spot = marketDataService.getLtp(underlying().indexSymbol());
+        long step = underlying().strikeStep();
+        if (spot <= 0) { out.put("candidates", java.util.List.of()); return out; }
+        long atm = Math.round(spot / step) * step;
+        String def = previewFreshSymbol(isCe, spot);
+        // 21 strikes: the default pick ± 10 steps (falls back to ATM ± 10 if the pick is unresolved).
+        long centre = parseStrikeFromSymbol(def, spot);
+        if (centre <= 0) centre = atm;
+        long lo = centre - 10 * step;
+        long hi = centre + 10 * step;
+        java.util.List<java.util.Map<String, Object>> cands = new java.util.ArrayList<>();
+        for (java.util.Map<String, Object> row : atmSelector.chainWindow(underlying(), lo, hi)) {
+            String sym = String.valueOf(isCe ? row.get("ceSymbol") : row.get("peSymbol"));
+            double ltp = ((Number) (isCe ? row.get("ceLtp") : row.get("peLtp"))).doubleValue();
+            if (sym == null || sym.isEmpty() || "null".equals(sym)) continue;
+            java.util.Map<String, Object> c = new java.util.LinkedHashMap<>();
+            c.put("symbol", sym);
+            c.put("strike", row.get("strike"));
+            c.put("ltp", round2(ltp));
+            c.put("moneyness", moneynessLabel(sym, isCe));
+            c.put("isDefault", sym.equals(def));
+            cands.add(c);
+        }
+        out.put("spot", round2(spot));
+        out.put("defaultSymbol", def);
+        out.put("candidates", cands);
+        return out;
+    }
+
+    /** Dashboard +/- on a leg's QTY pill. {@code dir} +1 SELLS one more lot of the same symbol
+     *  (entry premium becomes the weighted average), -1 BUYS one lot back (realises that lot's
+     *  P&L; the leg stays open with the rest). Exiting the last lot closes the leg through the
+     *  normal manual-close path. Refused when the leg isn't open or past squareoff time. */
+    @Override
+    public synchronized String adjustLegLots(String leg, int dir) {
+        boolean isCe = "CE".equalsIgnoreCase(leg);
+        String side = isCe ? "CE" : "PE";
+        if (!(isCe ? isCeOpen() : isPeOpen())) return "NOT_OPEN";
+        if (dir == 0) return "INVALID";
+        LocalTime nowT = LocalTime.now(IST);
+        if (!positional() && !nowT.isBefore(parseTime(getSquareOffTime(), "15:15"))) return "PAST_SQUAREOFF";
+        String sym   = isCe ? ceSymbol : peSymbol;
+        int    qty   = isCe ? ceQty : peQty;
+        double entry = isCe ? ceEntryPremium : peEntryPremium;
+        int    lot   = underlying().lotSize();
+        double ltp   = marketDataService.getLtp(sym);
+        String product = productType();
+        if (dir < 0 && qty <= lot) {
+            // Last lot → full close via the normal path (books P&L, transitions state).
+            return closeOneLeg(side, "MANUAL_DASHBOARD") ? "CLOSED" : "REJECTED";
+        }
+        OrderDTO resp = orderService.placeOrder(sym, lot, dir > 0 ? -1 : 1, 0, product);
+        orderCountToday++;
+        if (resp == null || resp.getId() == null || resp.getId().isEmpty() || !"ok".equals(resp.getStatus())) {
+            log.error("[short-strangle] {} {}-lot order rejected: {}", side, dir > 0 ? "add" : "exit", resp);
+            eventService.log("[ERROR] [short-strangle] " + side + (dir > 0 ? " add-lot" : " exit-lot") + " order rejected");
+            return "REJECTED";
+        }
+        if (dir > 0) {
+            // Provisional: weighted avg with LTP; WS fill re-averages with the actual price.
+            int newQty = qty + lot;
+            double avg = (entry > 0 && ltp > 0) ? (entry * qty + ltp * lot) / newQty : (ltp > 0 ? ltp : entry);
+            if (isCe) { ceQty = newQty; ceEntryPremium = avg; ceOrderId = resp.getId(); }
+            else      { peQty = newQty; peEntryPremium = avg; peOrderId = resp.getId(); }
+            registerPendingFill(resp.getId(), isCe ? PendingType.ADD_CE : PendingType.ADD_PE, lot, entry, 0, qty);
+            String msg = String.format(java.util.Locale.US,
+                "%s +1 lot SOLD %s @ ~%.2f → qty %d, avg entry %.2f", side, sym, ltp, newQty, avg);
+            log.info("[short-strangle] {}", msg);
+            eventService.log("[INFO] [short-strangle] " + msg);
+            pushEvent("ADD_LOT_" + side, marketDataService.getLtp(underlying().indexSymbol()), isCe ? sym : "", isCe ? "" : sym, 0);
+        } else {
+            double pnl  = (entry > 0 && ltp > 0) ? (entry - ltp) * lot : 0;
+            double buyT = ltp > 0 ? ltp * lot : 0;
+            realisedPnlToday        += pnl;
+            consumedRiskToday       += pnl;
+            buyPremiumTurnoverToday += buyT;
+            if (isCe) ceQty = qty - lot; else peQty = qty - lot;
+            registerPendingFill(resp.getId(), isCe ? PendingType.PART_CE : PendingType.PART_PE, lot, entry, pnl, buyT);
+            String msg = String.format(java.util.Locale.US,
+                "%s -1 lot BOUGHT BACK %s @ ~%.2f pnl=%.2f → qty %d", side, sym, ltp, pnl, qty - lot);
+            log.info("[short-strangle] {}", msg);
+            eventService.log("[INFO] [short-strangle] " + msg);
+            pushEvent("EXIT_LOT_" + side, marketDataService.getLtp(underlying().indexSymbol()), isCe ? sym : "", isCe ? "" : sym, pnl);
+        }
+        persist();
+        return "OK";
+    }
+
+    /** Strike choices for the "+ CE/PE HEDGE" dialog: the ₹hedgeTargetPremium pick ± 20 strikes
+     *  on that side (bounded by what the chain fetch returns), with LTP + moneyness. */
+    @Override
+    public java.util.Map<String, Object> hedgeCandidates(String leg) {
+        boolean isCe = "CE".equalsIgnoreCase(leg);
+        java.util.Map<String, Object> out = new java.util.LinkedHashMap<>();
+        double spot = marketDataService.getLtp(underlying().indexSymbol());
+        long step = underlying().strikeStep();
+        if (spot <= 0) { out.put("candidates", java.util.List.of()); return out; }
+        long atm = Math.round(spot / step) * step;
+        double target = riskSettings.getStrategyDouble(instanceId, "hedgeTargetPremium", 10);
+        BalancedAtmSelector.StrikeSymbols wings = atmSelector.resolveStrikeSymbolsByPremium(underlying(), atm, target);
+        String def = wings == null ? null : (isCe ? wings.ceSymbol() : wings.peSymbol());
+        long centre = parseStrikeFromSymbol(def, spot);
+        if (centre <= 0) centre = atm;
+        java.util.List<java.util.Map<String, Object>> cands = new java.util.ArrayList<>();
+        for (java.util.Map<String, Object> row : atmSelector.chainWindow(underlying(), centre - 20 * step, centre + 20 * step)) {
+            String sym = String.valueOf(isCe ? row.get("ceSymbol") : row.get("peSymbol"));
+            if (sym == null || sym.isEmpty() || "null".equals(sym)) continue;
+            double ltp = ((Number) (isCe ? row.get("ceLtp") : row.get("peLtp"))).doubleValue();
+            java.util.Map<String, Object> c = new java.util.LinkedHashMap<>();
+            c.put("symbol", sym);
+            c.put("strike", row.get("strike"));
+            c.put("ltp", round2(ltp));
+            c.put("moneyness", moneynessLabel(sym, isCe));
+            c.put("isDefault", sym.equals(def));
+            cands.add(c);
+        }
+        out.put("spot", round2(spot));
+        out.put("defaultSymbol", def);
+        out.put("lots", Math.max(1, riskSettings.getStrategyInt(instanceId, "hedgeLots", 1)));
+        out.put("lotSize", underlying().lotSize());
+        out.put("candidates", cands);
+        return out;
+    }
+
+    /** Operator "+ CE/PE HEDGE": BUY one wing on that side at the chosen symbol (or the ₹target
+     *  pick when none given), hedgeLots × lot size. Refused when that wing is already open or
+     *  past squareoff (intraday). Same bookkeeping as the automatic wings. */
+    @Override
+    public synchronized String openHedgeLeg(String leg, String symbol) {
+        boolean isCe = "CE".equalsIgnoreCase(leg);
+        String side = isCe ? "CE" : "PE";
+        if (isCe ? hedgeCeOpen() : hedgePeOpen()) return "ALREADY_OPEN";
+        LocalTime nowT = LocalTime.now(IST);
+        if (!positional() && !nowT.isBefore(parseTime(getSquareOffTime(), "15:15"))) return "PAST_SQUAREOFF";
+        String sym = symbol;
+        if (sym == null || sym.isEmpty()) {
+            double spot = marketDataService.getLtp(underlying().indexSymbol());
+            if (spot <= 0) return "ABORTED";
+            long atm = Math.round(spot / underlying().strikeStep()) * underlying().strikeStep();
+            BalancedAtmSelector.StrikeSymbols wings = atmSelector.resolveStrikeSymbolsByPremium(
+                underlying(), atm, riskSettings.getStrategyDouble(instanceId, "hedgeTargetPremium", 10));
+            sym = wings == null ? null : (isCe ? wings.ceSymbol() : wings.peSymbol());
+            if (sym == null || sym.isEmpty()) return "ABORTED";
+        }
+        int qty = Math.max(1, riskSettings.getStrategyInt(instanceId, "hedgeLots", 1)) * underlying().lotSize();
+        OrderDTO resp = orderService.placeOrder(sym, qty, 1, 0, productType());
+        orderCountToday++;
+        if (resp == null || resp.getId() == null || resp.getId().isEmpty() || !"ok".equals(resp.getStatus())) {
+            log.error("[short-strangle] manual hedge {} BUY rejected: {} -> {}", side, sym, resp);
+            eventService.log("[ERROR] [short-strangle] manual hedge " + side + " BUY rejected: " + sym);
+            return "REJECTED";
+        }
+        try { marketDataService.subscribeAdditional(java.util.Collections.singletonList(sym)); } catch (Exception ignored) {}
+        double entry = readEntryPremium(sym);
+        buyPremiumTurnoverToday += entry * qty;
+        if (isCe) { hedgeCeSymbol = sym; hedgeCeQty = qty; hedgeCeEntryPremium = entry; hedgeCeClosePremium = 0; hedgeCeLegPnl = 0; }
+        else      { hedgePeSymbol = sym; hedgePeQty = qty; hedgePeEntryPremium = entry; hedgePeClosePremium = 0; hedgePeLegPnl = 0; }
+        String msg = String.format(java.util.Locale.US, "hedge %s wing BOUGHT manually — %s @ %.2f qty=%d", side, sym, entry, qty);
+        log.info("[short-strangle] {}", msg);
+        eventService.log("[INFO] [short-strangle] " + msg);
+        pushEvent("HEDGE_OPEN_" + side, marketDataService.getLtp(underlying().indexSymbol()), isCe ? sym : "", isCe ? "" : sym, 0);
+        persist();
+        return "OK";
+    }
+
+    /** Operator "×" on a wing: SELL it back now. */
+    @Override
+    public synchronized String closeHedgeLeg(String leg) {
+        boolean isCe = "CE".equalsIgnoreCase(leg);
+        if (!(isCe ? hedgeCeOpen() : hedgePeOpen())) return "NOT_OPEN";
+        closeHedgeWing(isCe, "MANUAL");
+        boolean stillOpen = isCe ? hedgeCeOpen() : hedgePeOpen();
+        persist();
+        return stillOpen ? "REJECTED" : "OK";
     }
 
     @Override
@@ -405,15 +648,17 @@ public class ShortStrangle implements Strategy {
     @Override
     public String restartFromDoneForDay(String reason) {
         synchronized (this) {
-            if (state != LifecycleState.DONE_FOR_DAY)        return "NOT_DONE_FOR_DAY";
+            boolean manual = manualEntryMode();
+            if (state != LifecycleState.DONE_FOR_DAY
+                    && !(manual && state == LifecycleState.ARMED)) return "NOT_DONE_FOR_DAY";
             if (!isTodayDayEnabled())                         return "DAY_DISABLED";
             if (riskSettings.getStrategyBool(instanceId, "tradingPaused", false))
                                                               return "TRADING_PAUSED";
             LocalTime now = LocalTime.now(IST);
             LocalTime entryT     = parseTime(getEntryTime(),     "09:20");
             LocalTime squareOffT = parseTime(getSquareOffTime(), "15:15");
-            if (now.isBefore(entryT))             return "BEFORE_ENTRY_TIME";
-            if (!now.isBefore(squareOffT))        return "AFTER_SQUAREOFF_TIME";
+            if (!manual && now.isBefore(entryT))  return "BEFORE_ENTRY_TIME";
+            if (!positional() && !now.isBefore(squareOffT)) return "AFTER_SQUAREOFF_TIME";
             if (!pendingFills.isEmpty())          return "PENDING_FILLS";
             eventService.log("[INFO] [" + instanceId + "] Manual + NEW STRADDLE restart from dashboard ("
                 + reason + ")");
@@ -475,6 +720,17 @@ public class ShortStrangle implements Strategy {
         s.add(underlyingFld);
         s.add(field("entryTime",     "time",    "09:20", "Entry Time (HH:mm IST)", null));
         s.add(field("squareOffTime", "time",    "15:15", "Squareoff Time (HH:mm IST)", null));
+        // Dropdown — INTRADAY (flat at Squareoff Time) or POSITIONAL (carry overnight; only the
+        // exchange expiry closes the position). POSITIONAL needs Order Type = OVERNIGHT.
+        java.util.Map<String, Object> tradeTypeFld = new java.util.LinkedHashMap<>();
+        tradeTypeFld.put("key", "tradeType");
+        tradeTypeFld.put("type", "select");
+        tradeTypeFld.put("default", "INTRADAY");
+        tradeTypeFld.put("label", "Trade Type");
+        tradeTypeFld.put("options", java.util.List.of("INTRADAY", "POSITIONAL"));
+        s.add(tradeTypeFld);
+        s.add(field("manualEntryMode", "boolean", false, "Manual entry mode (no auto-entry)",
+            "On: the scheduler never fires the entry at Entry Time — the instance stays ARMED and you start it yourself any time after market open with + NEW STRANGLE, or open just one side with + OPEN CE / + OPEN PE. Off: automatic entry at Entry Time as usual."));
         s.add(field("expiryDayHoldToExpiry", "boolean", true, "Expiry day: hold to expiry",
             "On the underlying\'s expiry day, skip the timed squareoff and let the legs expire at 15:40 (settled in-memory at last LTP, no close orders). SL still protects until the close. Non-expiry days square off at the time above as usual."));
         s.add(field("lotsPerLeg",    "int",      1,      "Lots per Leg", null));
@@ -563,13 +819,7 @@ public class ShortStrangle implements Strategy {
         // Roll the survivor — always on. After N SL hits on the tested side, close the decayed
         // survivor and re-sell it at the fresh strike pick (guards below).
         s.add(field("rollSurvivorAfterSlCount", "int", 2, "Roll survivor after N SL hits on the tested side",
-            "Once the tested side has taken this many SL hits today, the survivor is rolled together with that side's next re-execute (both legs re-centre as a fresh strangle). No re-execute scheduled = no roll. 2 = from the second stop."));
-        s.add(field("rollSurvivorMaxDecayPct", "int", 40, "Roll only if survivor <= this % of entry",
-            "Survivor LTP must be at or below this % of its entry premium (40 = premium has decayed to 40% or less). Higher = rolls earlier."));
-        s.add(field("rollSurvivorMinOtmSteps", "int", 2, "Roll only if fresh strike >= this many OTM steps",
-            "The new strike must be at least this far OTM from current spot (strike steps). Blocks rolling into a near-ATM strike after a big move."));
-        s.add(field("rollSurvivorLatestTime", "time", "13:30", "Latest roll time (HH:mm IST)",
-            "No survivor roll after this time — not enough runway for the fresh leg."));
+            "Once the tested side has taken this many SL hits today, the survivor is rolled unconditionally together with that side's next re-execute (both legs re-centre as a fresh strangle). No re-execute scheduled = no roll; same strike = kept. 2 = from the second stop."));
         // Hedge wings — buy a far-OTM CE + PE alongside the shorts. Tail protection + margin
         // benefit; costs a little theta on quiet days.
         s.add(field("hedgeEnabled", "boolean", false, "Buy hedge wings with the entry",
@@ -601,6 +851,7 @@ public class ShortStrangle implements Strategy {
             f.put("tab", tab);
             // Long-hint fields span both grid columns so the hint stays on one line.
             if ("moveSlToCostOnFirstLegHit".equals(k)) f.put("wide", true);
+            if ("manualEntryMode".equals(k))                 f.put("wide", true);
             if ("reEntryOnSlEnabled".equals(k))              f.put("wide", true);
             if ("hedgeEnabled".equals(k) || "hedgeKeepWingAfterSl".equals(k)) f.put("wide", true);
             if ("expiryDayHoldToExpiry".equals(k))          f.put("wide", true);
@@ -624,7 +875,9 @@ public class ShortStrangle implements Strategy {
         java.util.Map<String, Object> v = new java.util.LinkedHashMap<>();
         v.put("underlying",    riskSettings.getStrategyString(instanceId, "underlying",    "NIFTY"));
         v.put("entryTime",     riskSettings.getStrategyString(instanceId, "entryTime",     "09:20"));
+        v.put("manualEntryMode", riskSettings.getStrategyBool(instanceId, "manualEntryMode", false));
         v.put("squareOffTime", riskSettings.getStrategyString(instanceId, "squareOffTime", "15:15"));
+        v.put("tradeType", riskSettings.getStrategyString(instanceId, "tradeType", "INTRADAY"));
         v.put("expiryDayHoldToExpiry", riskSettings.getStrategyBool(instanceId, "expiryDayHoldToExpiry", true));
         v.put("lotsPerLeg",    riskSettings.getStrategyInt(instanceId,    "lotsPerLeg",    1));
         v.put("orderType",     riskSettings.getStrategyString(instanceId, "orderType",     "INTRADAY"));
@@ -645,9 +898,6 @@ public class ShortStrangle implements Strategy {
         v.put("maxReEntriesPerLeg",             riskSettings.getStrategyInt(instanceId,  "maxReEntriesPerLeg",             1));
         v.put("reEntryLatestTime",              riskSettings.getStrategyString(instanceId, "reEntryLatestTime",            "14:30"));
         v.put("rollSurvivorAfterSlCount",  riskSettings.getStrategyInt(instanceId,  "rollSurvivorAfterSlCount",  2));
-        v.put("rollSurvivorMaxDecayPct", riskSettings.getStrategyInt(instanceId,    "rollSurvivorMaxDecayPct", 40));
-        v.put("rollSurvivorMinOtmSteps", riskSettings.getStrategyInt(instanceId,    "rollSurvivorMinOtmSteps", 2));
-        v.put("rollSurvivorLatestTime",  riskSettings.getStrategyString(instanceId, "rollSurvivorLatestTime",  "13:30"));
         v.put("hedgeEnabled",         riskSettings.getStrategyBool(instanceId,   "hedgeEnabled",         false));
         v.put("hedgeTargetPremium",   riskSettings.getStrategyDouble(instanceId, "hedgeTargetPremium",   10));
         v.put("hedgeLots",            riskSettings.getStrategyInt(instanceId,    "hedgeLots",            1));
@@ -679,7 +929,13 @@ public class ShortStrangle implements Strategy {
             }
         }
         if (values.containsKey("entryTime"))     riskSettings.setStrategySetting(instanceId, "entryTime",     String.valueOf(values.get("entryTime")));
+        if (values.containsKey("manualEntryMode")) riskSettings.setStrategySetting(instanceId, "manualEntryMode", Boolean.parseBoolean(String.valueOf(values.get("manualEntryMode"))));
         if (values.containsKey("squareOffTime")) riskSettings.setStrategySetting(instanceId, "squareOffTime", String.valueOf(values.get("squareOffTime")));
+        if (values.containsKey("tradeType")) {
+            String tt = String.valueOf(values.get("tradeType")).trim().toUpperCase();
+            if (!"INTRADAY".equals(tt) && !"POSITIONAL".equals(tt)) tt = "INTRADAY";
+            riskSettings.setStrategySetting(instanceId, "tradeType", tt);
+        }
         if (values.containsKey("expiryDayHoldToExpiry")) riskSettings.setStrategySetting(instanceId, "expiryDayHoldToExpiry", Boolean.parseBoolean(String.valueOf(values.get("expiryDayHoldToExpiry"))));
         if (values.containsKey("lotsPerLeg"))    riskSettings.setStrategySetting(instanceId, "lotsPerLeg",    asInt(values.get("lotsPerLeg"), 1));
         if (values.containsKey("strikeSelectionMode")) {
@@ -745,9 +1001,6 @@ public class ShortStrangle implements Strategy {
                 String.valueOf(values.get("reEntryLatestTime")));
         }
         if (values.containsKey("rollSurvivorAfterSlCount")) { int n = asInt(values.get("rollSurvivorAfterSlCount"), 2); if (n < 1) n = 1; if (n > 10) n = 10; riskSettings.setStrategySetting(instanceId, "rollSurvivorAfterSlCount", n); }
-        if (values.containsKey("rollSurvivorMaxDecayPct")) { int n = asInt(values.get("rollSurvivorMaxDecayPct"), 40); if (n < 1) n = 1; if (n > 100) n = 100; riskSettings.setStrategySetting(instanceId, "rollSurvivorMaxDecayPct", n); }
-        if (values.containsKey("rollSurvivorMinOtmSteps")) { int n = asInt(values.get("rollSurvivorMinOtmSteps"), 2); if (n < 0) n = 0; if (n > 10) n = 10; riskSettings.setStrategySetting(instanceId, "rollSurvivorMinOtmSteps", n); }
-        if (values.containsKey("rollSurvivorLatestTime")) riskSettings.setStrategySetting(instanceId, "rollSurvivorLatestTime", String.valueOf(values.get("rollSurvivorLatestTime")));
         if (values.containsKey("hedgeEnabled")) riskSettings.setStrategySetting(instanceId, "hedgeEnabled", Boolean.parseBoolean(String.valueOf(values.get("hedgeEnabled"))));
         if (values.containsKey("hedgeTargetPremium")) { double n = asDouble(values.get("hedgeTargetPremium"), 10); if (n < 1) n = 1; if (n > 200) n = 200; riskSettings.setStrategySetting(instanceId, "hedgeTargetPremium", n); }
         if (values.containsKey("hedgeLots")) { int n = asInt(values.get("hedgeLots"), 1); if (n < 1) n = 1; if (n > 50) n = 50; riskSettings.setStrategySetting(instanceId, "hedgeLots", n); }
@@ -889,6 +1142,8 @@ public class ShortStrangle implements Strategy {
     private double effectiveLegTrigger(boolean isCe) {
         double entry  = isCe ? ceEntryPremium  : peEntryPremium;
         if (entry <= 0) return 0;
+        double manual = isCe ? ceSlManual : peSlManual;
+        if (manual > 0) return manual;   // operator override beats base / trailing / cost
         double base = computeLegTrigger(entry);
         if (base <= 0) return 0;
         if (riskSettings.getStrategyBool(instanceId, "trailingSlEnabled", false)) {
@@ -1042,6 +1297,7 @@ public class ShortStrangle implements Strategy {
             this.ceReEntriesCount = p.ceReEntriesCount;
             this.peReEntriesCount = p.peReEntriesCount;
             this.survivorRolledToday = p.survivorRolledToday;
+            this.ceSlManual = p.ceSlManual; this.peSlManual = p.peSlManual;
             this.ceSlHitsToday = p.ceSlHitsToday; this.peSlHitsToday = p.peSlHitsToday;
             this.rollArmedForCe = p.rollArmedForCe; this.rollArmedForPe = p.rollArmedForPe;
             this.hedgeCeSymbol = p.hedgeCeSymbol != null ? p.hedgeCeSymbol : "";
@@ -1099,9 +1355,12 @@ public class ShortStrangle implements Strategy {
         if (state != LifecycleState.OPEN_BOTH && state != LifecycleState.OPEN_CE_ONLY
                 && state != LifecycleState.OPEN_PE_ONLY) return;
         LocalTime now = LocalTime.now(IST);
-        LocalTime entryTime     = parseTime(getEntryTime(),     "09:20");
         LocalTime squareOffTime = parseTime(getSquareOffTime(), "15:15");
-        if (now.isBefore(entryTime) || now.isAfter(squareOffTime.plusMinutes(5))) return;
+        // Sample whenever a leg is open (state check above) — no entry-time gate, so a manual
+        // open before the scheduled Entry Time still charts. Stop a few minutes after the
+        // squareoff, or after the exchange close on hold-to-expiry days.
+        LocalTime stopAt = (holdToExpiryToday() || positional()) ? MARKET_CLOSE_TIME : squareOffTime;
+        if (now.isAfter(stopAt.plusMinutes(5))) return;
         double ceLtp = (isCeOpen() && !ceSymbol.isEmpty()) ? marketDataService.getLtp(ceSymbol) : 0;
         double peLtp = (isPeOpen() && !peSymbol.isEmpty()) ? marketDataService.getLtp(peSymbol) : 0;
         double total = (ceLtp > 0 ? ceLtp : 0) + (peLtp > 0 ? peLtp : 0);
@@ -1152,6 +1411,8 @@ public class ShortStrangle implements Strategy {
                     if (!isTodayDayEnabled()) {
                         return;
                     }
+                    // Manual entry mode: stay ARMED all day; the operator starts it from the dashboard.
+                    if (manualEntryMode()) return;
                     // Soft pause past the scheduled entry time → park DONE_FOR_DAY. Same
                     // applies if the bot was simply started after entry time and never saw
                     // the pre-entry window. In both cases the 9:20 setup is stale — auto-
@@ -1213,6 +1474,7 @@ public class ShortStrangle implements Strategy {
         this.peSlMovedToCost = false;
         this.ceTrailingStepsHit = 0;
         this.peTrailingStepsHit = 0;
+        this.ceSlManual = 0; this.peSlManual = 0;
         // Fresh cycle → reset re-entry/re-execute budget. Without this the manual +NEW
         // STRANGLE restart carries over the previous cycle's exhausted counts and the new
         // strangle silently loses its Re-Entry/Re-Execute ability.
@@ -1367,7 +1629,15 @@ public class ShortStrangle implements Strategy {
 
     // ── Per-leg SL + timed squareoff ───────────────────────────────────────────
     private void checkLegSlOrSquareoff(LocalTime now, LocalTime squareOffTime) {
-        if (afterOrAt(now, squareOffTime)) {
+        if (positional()) {
+            // Positional: no timed squareoff. Only the exchange expiry closes the position —
+            // settle in-memory at the 15:40 close on the underlying's expiry day.
+            if (isExpiryDayToday() && afterOrAt(now, MARKET_CLOSE_TIME)) {
+                settleExpiredLegs();
+                transitionTo(LifecycleState.DONE_FOR_DAY);
+                return;
+            }
+        } else if (afterOrAt(now, squareOffTime)) {
             if (holdToExpiryToday()) {
                 // Expiry day: ignore the operator squareoff time and ride the legs into
                 // expiry. SL keeps protecting until the exchange close; at/after close we
@@ -1506,12 +1776,14 @@ public class ShortStrangle implements Strategy {
             this.ceClosedAtMillis = nowMs;
             this.ceQty = 0;
             this.ceOrderId = "";
+            this.ceSlManual = 0;
             // CE closed → if PE still open we move to OPEN_PE_ONLY; if PE already closed we're done.
             transitionTo(isPeOpen() ? LifecycleState.OPEN_PE_ONLY : LifecycleState.DONE_FOR_DAY);
         } else {
             this.peClosedAtMillis = nowMs;
             this.peQty = 0;
             this.peOrderId = "";
+            this.peSlManual = 0;
             transitionTo(isCeOpen() ? LifecycleState.OPEN_CE_ONLY : LifecycleState.DONE_FOR_DAY);
         }
         if (("CE_SL_HIT".equals(reason) || "PE_SL_HIT".equals(reason))
@@ -1590,7 +1862,10 @@ public class ShortStrangle implements Strategy {
     /** @param manual operator-initiated open: skips the enable / latest-time / attempt-cap gates
      *  and does not consume a re-execute attempt. Squareoff-time + already-open guards still apply.
      *  @return "OK" or a short reason code. */
-    private synchronized String performReEntry(boolean isCe, boolean manual) {
+    private String performReEntry(boolean isCe, boolean manual) { return performReEntry(isCe, manual, null); }
+
+    /** @param forcedSym operator-chosen symbol from the + OPEN picker; null = use the strike-selection mode. */
+    private synchronized String performReEntry(boolean isCe, boolean manual, String forcedSym) {
         LocalTime nowT = LocalTime.now(IST);
         if (!manual) {
             // Re-check gates in case config changed or cutoff passed between schedule and fire.
@@ -1604,7 +1879,7 @@ public class ShortStrangle implements Strategy {
             }
         }
         LocalTime squareOff = parseTime(getSquareOffTime(), "15:15");
-        if (!nowT.isBefore(squareOff)) {
+        if (!positional() && !nowT.isBefore(squareOff)) {
             log.info("[short-strangle] Re-entry aborted for {} — past squareoff time {}.",
                 isCe ? "CE" : "PE", squareOff);
             disarmRoll(isCe, "ABORTED");
@@ -1650,6 +1925,7 @@ public class ShortStrangle implements Strategy {
             return "ABORTED";
         }
         String sym = isCe ? strikes.ceSymbol() : strikes.peSymbol();
+        if (forcedSym != null && !forcedSym.isEmpty()) sym = forcedSym;   // operator picked a strike
         if (sym == null || sym.isEmpty()) {
             log.warn("[short-strangle] Re-entry aborted for {} — resolver returned empty symbol.", isCe ? "CE" : "PE");
             disarmRoll(isCe, "ABORTED");
@@ -1684,6 +1960,7 @@ public class ShortStrangle implements Strategy {
             this.ceClosePremium = 0;
             this.ceSlMovedToCost = false;
             this.ceTrailingStepsHit = 0;
+            this.ceSlManual = 0;
             this.peSlMovedToCost = false;
             if (!manual) ceReEntriesCount++;
             registerPendingFill(resp.getId(), PendingType.ENTRY_CE, qty, 0);
@@ -1698,6 +1975,7 @@ public class ShortStrangle implements Strategy {
             this.peClosePremium = 0;
             this.peSlMovedToCost = false;
             this.peTrailingStepsHit = 0;
+            this.peSlManual = 0;
             this.ceSlMovedToCost = false;
             if (!manual) peReEntriesCount++;
             registerPendingFill(resp.getId(), PendingType.ENTRY_PE, qty, 0);
@@ -1836,70 +2114,42 @@ public class ShortStrangle implements Strategy {
         persist();
     }
 
-    /** Roll the survivor. Called when {@code exhaustedIsCe}'s side has taken its Nth SL hit
-     *  today (rollSurvivorAfterSlCount) — immediately, or when that side's re-execute fills. If the OTHER leg is still open and has decayed
-     *  to <= rollSurvivorMaxDecayPct of its entry, close it (reason ROLL_SURVIVOR — not an SL)
-     *  and re-sell the same side at the current strike pick. Once per day; skipped after the
-     *  latest-roll time, on hold-to-expiry days, or when the fresh strike would sit closer
-     *  than rollSurvivorMinOtmSteps to spot. No once-per-day limit. */
     private void disarmRoll(boolean isCe, String why) {
         if (!(isCe ? rollArmedForCe : rollArmedForPe)) return;
         if (isCe) rollArmedForCe = false; else rollArmedForPe = false;
         eventService.log("[INFO] [short-strangle] Roll survivor DISARMED — " + (isCe ? "CE" : "PE") + " re-execute did not fill (" + why + ")");
     }
 
+    /** Roll the survivor — fires when the tested side's re-execute fills after its Nth SL
+     *  ({@code rollSurvivorAfterSlCount}). Unconditional by operator decision (2026-10-15):
+     *  no decay / moneyness / time / expiry guards. Only skips when the survivor isn't open
+     *  or the fresh pick resolves to the strike already held (closing + re-selling the same
+     *  contract would just pay charges). Closes with reason ROLL_SURVIVOR (not an SL) and
+     *  re-opens via the manual re-entry path so it doesn't consume a re-execute attempt. */
     private void maybeRollSurvivor(boolean exhaustedIsCe) {
         boolean survivorIsCe = !exhaustedIsCe;
         String side = survivorIsCe ? "CE" : "PE";
         if (!(survivorIsCe ? isCeOpen() : isPeOpen())) return;
         String sym   = survivorIsCe ? ceSymbol : peSymbol;
         double entry = survivorIsCe ? ceEntryPremium : peEntryPremium;
-        if (sym == null || sym.isEmpty() || entry <= 0) return;
-        LocalTime latest = parseTime(riskSettings.getStrategyString(instanceId, "rollSurvivorLatestTime", "13:30"), "13:30");
-        if (LocalTime.now(IST).isAfter(latest)) {
-            eventService.log("[INFO] [short-strangle] Roll survivor " + side + " skipped — past " + latest);
-            return;
-        }
-        if (holdToExpiryToday()) {
-            eventService.log("[INFO] [short-strangle] Roll survivor " + side + " skipped — expiry day (hold to expiry)");
-            return;
-        }
-        double ltp = marketDataService.getLtp(sym);
-        if (ltp <= 0) return;
-        double maxPct = riskSettings.getStrategyInt(instanceId, "rollSurvivorMaxDecayPct", 40);
-        double pct = ltp / entry * 100.0;
-        if (pct > maxPct) {
-            eventService.log(String.format(java.util.Locale.US,
-                "[INFO] [short-strangle] Roll survivor %s skipped — LTP %.2f is %.0f%% of entry %.2f (needs <= %.0f%%)",
-                side, ltp, pct, entry, maxPct));
-            return;
-        }
+        if (sym == null || sym.isEmpty()) return;
+        double ltp  = marketDataService.getLtp(sym);
         double spot = marketDataService.getLtp(underlying().indexSymbol());
-        if (spot <= 0) return;
-        String freshSym = previewFreshSymbol(survivorIsCe, spot);
+        String freshSym = spot > 0 ? previewFreshSymbol(survivorIsCe, spot) : null;
+        if (freshSym == null || freshSym.isEmpty()) {
+            eventService.log("[WARNING] [short-strangle] Roll survivor " + side + " skipped — could not resolve a fresh strike");
+            return;
+        }
         long strike = parseStrikeFromSymbol(freshSym, spot);
-        if (freshSym == null || strike <= 0) return;
         if (freshSym.equals(sym)) {
-            // Same strike as the leg we already hold — closing and re-selling it would only
-            // pay charges for an identical position. Keep the existing leg.
             eventService.log("[INFO] [short-strangle] Roll survivor " + side + " skipped — fresh pick is the same strike ("
                 + strike + "), keeping the existing leg");
             return;
         }
-        long step = underlying().strikeStep();
-        long atm  = Math.round(spot / step) * step;
-        long n    = (strike - atm) / step;
-        long otmSteps = survivorIsCe ? n : -n;
-        int minSteps = riskSettings.getStrategyInt(instanceId, "rollSurvivorMinOtmSteps", 2);
-        if (otmSteps < minSteps) {
-            eventService.log("[INFO] [short-strangle] Roll survivor " + side + " skipped — fresh strike " + strike
-                + " is only " + otmSteps + " steps OTM (needs >= " + minSteps + ")");
-            return;
-        }
-        survivorRolledToday = true;   // informational only — the roll may repeat on later SL hits
+        survivorRolledToday = true;   // informational only
         String msg = String.format(java.util.Locale.US,
             "ROLL SURVIVOR %s — closing %s @ %.2f (%.0f%% of entry %.2f), re-selling fresh strike %d (%s)",
-            side, sym, ltp, pct, entry, strike, freshSym);
+            side, sym, ltp, entry > 0 ? ltp / entry * 100.0 : 0, entry, strike, freshSym);
         log.info("[short-strangle] {}", msg);
         eventService.log("[INFO] [short-strangle] " + msg);
         closeLeg(side, "ROLL_SURVIVOR");
@@ -2208,7 +2458,11 @@ public class ShortStrangle implements Strategy {
         if (currentWeeklyExpiry != null && !currentWeeklyExpiry.isEmpty()) {
             try {
                 java.time.DayOfWeek expected = underlying().expiryDayOfWeek();
-                if (LocalDate.parse(currentWeeklyExpiry).getDayOfWeek() != expected) {
+                LocalDate cur = LocalDate.parse(currentWeeklyExpiry);
+                boolean ok = marketHolidayService != null
+                    ? marketHolidayService.isWeeklyExpiryDate(cur, expected)   // allows the holiday-shifted previous trading day
+                    : cur.getDayOfWeek() == expected;
+                if (!ok) {
                     this.currentWeeklyExpiry = "";
                 }
             } catch (Exception ignored) {}
@@ -2487,6 +2741,12 @@ public class ShortStrangle implements Strategy {
         m.put("ceSymbol",      ceSymbol);
         m.put("ceMoneyness",   moneynessLabel(ceSymbol, true));
         m.put("peMoneyness",   moneynessLabel(peSymbol, false));
+        m.put("ceSlManual", round2(ceSlManual));
+        m.put("peSlManual", round2(peSlManual));
+        m.put("lotSize", underlying().lotSize());
+        m.put("manualEntryMode", manualEntryMode());
+        m.put("positional", positional());
+        m.put("tradeType", positional() ? "POSITIONAL" : "INTRADAY");
         {
             double hSpot = marketDataService.getLtp(underlying().indexSymbol());
             double hCeLtp = hedgeCeOpen() ? marketDataService.getLtp(hedgeCeSymbol) : hedgeCeClosePremium;
@@ -2587,8 +2847,26 @@ public class ShortStrangle implements Strategy {
     private void rolloverIfNewDay() {
         String today = LocalDate.now(IST).toString();
         if (today.equals(dayKey)) return;
-        if (state == LifecycleState.OPEN_BOTH || state == LifecycleState.OPEN_CE_ONLY
-                || state == LifecycleState.OPEN_PE_ONLY) {
+        boolean legsOpen = state == LifecycleState.OPEN_BOTH || state == LifecycleState.OPEN_CE_ONLY
+                || state == LifecycleState.OPEN_PE_ONLY;
+        if (legsOpen && positional() && !(dayKey != null && dayKey.equals(currentWeeklyExpiry))) {
+            // Positional carry: keep the legs, close out the day's books, start a new day.
+            // Positional carry: no session row for a day that stayed open — the calendar
+            // leaves it blank. Turnover + order count are NOT reset below, so every charge
+            // since entry lands on the day the cycle finally closes.
+            String prevDay = dayKey;
+            this.dayKey = today;
+            resetDayCounters();
+            resubscribeOpenLegs();
+            String msg = "position carried overnight " + prevDay + " → " + today + " (positional) — "
+                + (isCeOpen() ? "CE " + ceSymbol + " " : "") + (isPeOpen() ? "PE " + peSymbol : "")
+                + "; SL and adjustments continue";
+            log.info("[short-strangle] {}", msg);
+            eventService.log("[INFO] [short-strangle] " + msg);
+            persist();
+            return;
+        }
+        if (legsOpen) {
             log.warn("[short-strangle] Stale state {} from {} detected at startup — flattening before reset",
                 state, dayKey);
             eventService.log("[WARNING] [short-strangle] stale " + state + " from " + dayKey + " — flattening");
@@ -2607,6 +2885,42 @@ public class ShortStrangle implements Strategy {
     /** Zero every day-level accumulator + per-leg snapshot. Shared by the midnight
      *  rollover and the operator's "clear trade data" reset. Does NOT touch dayKey or
      *  the lifecycle state — callers decide those. */
+    /** Positional rollover: zero the DAY-level books only — legs, hedge wings, SL flags, manual
+     *  SL, trailing steps and the resolved expiry all survive the night. */
+    private void resetDayCounters() {
+        this.realisedPnlToday = 0;
+        // sellPremiumTurnoverToday / buyPremiumTurnoverToday / orderCountToday deliberately
+        // carried — charges accrue across the whole positional cycle.
+        this.slHitsToday = 0;
+        this.cycleStartRealisedPnl = 0;
+        this.cycleStartSellTurnover = 0;
+        this.cycleStartBuyTurnover = 0;
+        this.cycleStartOrderCount = 0;
+        this.cycleStartSlHits = 0;
+        this.consumedRiskToday = 0;
+        this.pendingFills.clear();
+        this.recentEvents.clear();
+        this.combinedPremiumSamples.clear();
+        this.ceReEntriesCount = 0;
+        this.peReEntriesCount = 0;
+        this.pendingCeReEntryAtMillis = 0;
+        this.pendingPeReEntryAtMillis = 0;
+        this.ceSlHitsToday = 0; this.peSlHitsToday = 0;
+        this.rollArmedForCe = false; this.rollArmedForPe = false;
+        this.survivorRolledToday = false;
+        this.observedPreEntryWindow = false;
+    }
+
+    private void resubscribeOpenLegs() {
+        java.util.List<String> syms = new java.util.ArrayList<>();
+        if (isCeOpen() && !ceSymbol.isEmpty()) syms.add(ceSymbol);
+        if (isPeOpen() && !peSymbol.isEmpty()) syms.add(peSymbol);
+        if (hedgeCeOpen()) syms.add(hedgeCeSymbol);
+        if (hedgePeOpen()) syms.add(hedgePeSymbol);
+        if (syms.isEmpty()) return;
+        try { marketDataService.subscribeAdditional(syms); } catch (Exception ignored) {}
+    }
+
     private void resetDayState() {
         this.lastEntryNifty = 0;
         this.ceSymbol = ""; this.peSymbol = "";
@@ -2641,6 +2955,7 @@ public class ShortStrangle implements Strategy {
         this.peSlMovedToCost = false;
         this.ceTrailingStepsHit = 0;
         this.peTrailingStepsHit = 0;
+        this.ceSlManual = 0; this.peSlManual = 0;
         this.ceReEntriesCount = 0;
         this.peReEntriesCount = 0;
         this.survivorRolledToday = false;
@@ -2669,7 +2984,10 @@ public class ShortStrangle implements Strategy {
         return true;
     }
 
-    private void persistSessionFor(String date) {
+    private void persistSessionFor(String date) { persistSessionFor(date, null); }
+
+    /** @param finalStateOverride e.g. {@code "CARRIED"} for a positional day that stayed open. */
+    private void persistSessionFor(String date, String finalStateOverride) {
         if (sessionRepo == null) return;
         java.util.Map<String, Double> chargesBreakdown = computeChargesBreakdown();
         double charges = chargesBreakdown.get("total");
@@ -2682,7 +3000,7 @@ public class ShortStrangle implements Strategy {
         row.setSessionDate(date);
         row.setEntries(ceEntryPremium > 0 || peEntryPremium > 0 || realisedPnlToday != 0 ? 1 : 0);
         row.setRolls(0); // leg-sl never rolls
-        row.setFinalState(state.name());
+        row.setFinalState(finalStateOverride != null ? finalStateOverride : state.name());
         row.setPremiumCollected(round2(sellPremiumTurnoverToday));
         row.setPremiumPaidBack(round2(buyPremiumTurnoverToday));
         row.setGrossPnl(gross);
@@ -2758,20 +3076,21 @@ public class ShortStrangle implements Strategy {
 
     /** Deterministic fallback used when {@link #currentWeeklyExpiry} is still empty —
      *  typically on the first day of a new expiry week, pre-market, before any leg has
-     *  been placed AND before the async Fyers chain fetch has resolved. Walks forward day
-     *  by day looking for the next trading Tuesday (NIFTY weekly expiry day as of 2026),
-     *  skipping holidays via {@link MarketHolidayService}. Returns {@code ""} on failure. */
+     *  been placed AND before the async Fyers chain fetch has resolved. Delegates to
+     *  {@link MarketHolidayService#weeklyExpiryOnOrAfter} so a holiday on the scheduled
+     *  weekday pulls the expiry back to the previous trading day. Returns {@code ""} on failure. */
     private String nextExpectedWeeklyExpiry() {
         try {
             java.time.DayOfWeek expiryDow = underlying().expiryDayOfWeek();
-            LocalDate cursor = LocalDate.now(IST);
-            for (int i = 0; i < 14; i++) {
-                if (cursor.getDayOfWeek() == expiryDow
-                        && (marketHolidayService == null || marketHolidayService.isTradingDay(cursor))) {
-                    return cursor.toString();
-                }
-                cursor = cursor.plusDays(1);
+            LocalDate today = LocalDate.now(IST);
+            if (marketHolidayService != null) {
+                // Holiday rule: a holiday on the scheduled weekday pulls expiry BACK to the
+                // previous trading day — it never slides to next week.
+                return marketHolidayService.weeklyExpiryOnOrAfter(today, expiryDow).toString();
             }
+            LocalDate cursor = today;
+            while (cursor.getDayOfWeek() != expiryDow) cursor = cursor.plusDays(1);
+            return cursor.toString();
         } catch (Exception ignored) {}
         return "";
     }
@@ -3166,6 +3485,7 @@ public class ShortStrangle implements Strategy {
         s.ceReEntriesCount = this.ceReEntriesCount;
         s.peReEntriesCount = this.peReEntriesCount;
         s.survivorRolledToday = this.survivorRolledToday;
+        s.ceSlManual = this.ceSlManual; s.peSlManual = this.peSlManual;
         s.ceSlHitsToday = this.ceSlHitsToday; s.peSlHitsToday = this.peSlHitsToday;
         s.rollArmedForCe = this.rollArmedForCe; s.rollArmedForPe = this.rollArmedForPe;
         s.hedgeCeSymbol = this.hedgeCeSymbol;               s.hedgePeSymbol = this.hedgePeSymbol;
@@ -3196,6 +3516,13 @@ public class ShortStrangle implements Strategy {
 
 
     private String getEntryTime()     { return riskSettings.getStrategyString(instanceId, "entryTime",     "09:20"); }
+    private boolean positional() { return "POSITIONAL".equalsIgnoreCase(riskSettings.getStrategyString(instanceId, "tradeType", "INTRADAY")); }
+    /** 0 DTE on the resolved weekly expiry (independent of the hold-to-expiry setting). */
+    private boolean isExpiryDayToday() {
+        return currentWeeklyExpiry != null && !currentWeeklyExpiry.isEmpty()
+            && tradingDaysToExpiry(currentWeeklyExpiry) == 0;
+    }
+    private boolean manualEntryMode() { return riskSettings.getStrategyBool(instanceId, "manualEntryMode", false); }
     private String getSquareOffTime() { return riskSettings.getStrategyString(instanceId, "squareOffTime", "15:15"); }
 
     private boolean isCeOpen() {

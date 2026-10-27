@@ -91,6 +91,7 @@ public class ShortStraddleStateStore {
         public int     ceReEntriesCount;
         public int     peReEntriesCount;
         public boolean survivorRolledToday;
+        public double  ceSlManual, peSlManual;
         public int     ceSlHitsToday, peSlHitsToday;
         public boolean rollArmedForCe, rollArmedForPe;
         public String  hedgeCeSymbol, hedgePeSymbol;

@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
@@ -28,9 +29,12 @@ import java.util.Map;
 public class StrategyController {
 
     private final StrategyRegistry registry;
+    private final com.rydytrader.autotrader.store.RiskSettingsStore riskSettings;
 
-    public StrategyController(StrategyRegistry registry) {
+    public StrategyController(StrategyRegistry registry,
+                              com.rydytrader.autotrader.store.RiskSettingsStore riskSettings) {
         this.registry = registry;
+        this.riskSettings = riskSettings;
     }
 
     /** Aggregate day P&L + charges across every enabled strategy. Drives the
@@ -50,6 +54,13 @@ public class StrategyController {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("dayPnl",  Math.round(dayPnl * 100.0) / 100.0);
         out.put("charges", Math.round(charges * 100.0) / 100.0);
+        // Portfolio kill-switch proximity — drives the amber/red warning on the header P&L chip.
+        double maxLoss = riskSettings.getPortfolioMaxDailyLoss();
+        double usedPct = (maxLoss > 0 && dayPnl < 0) ? (-dayPnl / maxLoss * 100.0) : 0;
+        out.put("maxLoss",     Math.round(maxLoss * 100.0) / 100.0);
+        out.put("lossUsedPct", Math.round(usedPct * 10.0) / 10.0);
+        out.put("warnPct",     Math.round(com.rydytrader.autotrader.service.PortfolioRiskService.WARN_FRACTION * 100.0));
+        out.put("riskWarn",    maxLoss > 0 && usedPct >= com.rydytrader.autotrader.service.PortfolioRiskService.WARN_FRACTION * 100.0);
         return out;
     }
 
@@ -169,9 +180,126 @@ public class StrategyController {
     /** "+ OPEN CE / PE" button — opens a closed leg right now, regardless of re-execute cap or
      *  pending timer. The strategy decides whether it's allowed (day cycle started, leg closed,
      *  before squareoff). */
+    @GetMapping("/api/strategies/{id}/hedge-candidates/{leg}")
+    public ResponseEntity<Map<String, Object>> hedgeCandidates(@PathVariable String id, @PathVariable String leg) {
+        Strategy s = registry.get(id);
+        if (s == null) return ResponseEntity.notFound().build();
+        try { return ResponseEntity.ok(s.hedgeCandidates(leg == null ? "" : leg.toUpperCase())); }
+        catch (Exception e) { return ResponseEntity.status(502).body(java.util.Map.of("error", String.valueOf(e.getMessage()))); }
+    }
+
+    @PostMapping("/api/strategies/{id}/hedge/{leg}/open")
+    public ResponseEntity<Map<String, Object>> openHedge(@PathVariable String id, @PathVariable String leg,
+                                                         @RequestParam(required = false) String symbol) {
+        Strategy s = registry.get(id);
+        if (s == null) return ResponseEntity.notFound().build();
+        String legUpper = leg == null ? "" : leg.toUpperCase();
+        String code;
+        try { code = s.openHedgeLeg(legUpper, symbol); } catch (Exception e) { code = "EXCEPTION: " + e.getMessage(); }
+        boolean ok = "OK".equals(code);
+        String message = switch (code) {
+            case "OK"             -> legUpper + " hedge wing bought" + (symbol != null && !symbol.isEmpty() ? " at " + symbol : "") + ".";
+            case "ALREADY_OPEN"   -> legUpper + " hedge wing is already open.";
+            case "PAST_SQUAREOFF" -> "Refused — past squareoff time.";
+            case "REJECTED"       -> legUpper + " hedge order was rejected by the broker — see event log.";
+            case "UNSUPPORTED"    -> "This strategy doesn't support hedge wings.";
+            default               -> legUpper + " hedge open failed (" + code + ").";
+        };
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("success", ok); out.put("code", code); out.put("message", message);
+        return ResponseEntity.ok(out);
+    }
+
+    @PostMapping("/api/strategies/{id}/hedge/{leg}/close")
+    public ResponseEntity<Map<String, Object>> closeHedge(@PathVariable String id, @PathVariable String leg) {
+        Strategy s = registry.get(id);
+        if (s == null) return ResponseEntity.notFound().build();
+        String legUpper = leg == null ? "" : leg.toUpperCase();
+        String code;
+        try { code = s.closeHedgeLeg(legUpper); } catch (Exception e) { code = "EXCEPTION: " + e.getMessage(); }
+        boolean ok = "OK".equals(code);
+        String message = switch (code) {
+            case "OK"       -> legUpper + " hedge wing sold.";
+            case "NOT_OPEN" -> legUpper + " hedge wing is not open.";
+            case "REJECTED" -> legUpper + " hedge sell was rejected by the broker — see event log.";
+            default         -> legUpper + " hedge close failed (" + code + ").";
+        };
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("success", ok); out.put("code", code); out.put("message", message);
+        return ResponseEntity.ok(out);
+    }
+
+    /** +/- buttons on a leg's QTY pill. {@code dir} = add | remove. */
+    @PostMapping("/api/strategies/{id}/lots/{leg}/{dir}")
+    public ResponseEntity<Map<String, Object>> adjustLots(@PathVariable String id,
+                                                          @PathVariable String leg,
+                                                          @PathVariable String dir) {
+        Strategy s = registry.get(id);
+        if (s == null) return ResponseEntity.notFound().build();
+        String legUpper = leg == null ? "" : leg.toUpperCase();
+        int d = "add".equalsIgnoreCase(dir) ? 1 : "remove".equalsIgnoreCase(dir) ? -1 : 0;
+        String code;
+        try { code = s.adjustLegLots(legUpper, d); }
+        catch (Exception e) { code = "EXCEPTION: " + e.getMessage(); }
+        boolean ok = "OK".equals(code) || "CLOSED".equals(code);
+        String message = switch (code) {
+            case "OK"             -> legUpper + (d > 0 ? ": one lot added." : ": one lot exited.");
+            case "CLOSED"         -> legUpper + ": last lot exited — leg closed.";
+            case "NOT_OPEN"       -> legUpper + " leg is not open.";
+            case "PAST_SQUAREOFF" -> "Refused — past squareoff time.";
+            case "REJECTED"       -> legUpper + " order was rejected by the broker — see event log.";
+            case "UNSUPPORTED"    -> "This strategy doesn't support lot adjustment.";
+            default               -> legUpper + " lot adjust failed (" + code + ").";
+        };
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("success", ok); out.put("code", code); out.put("message", message);
+        return ResponseEntity.ok(out);
+    }
+
+    /** +/- buttons on a leg's SL trigger. {@code dir} = up | down | reset. */
+    @PostMapping("/api/strategies/{id}/sl-adjust/{leg}/{dir}")
+    public ResponseEntity<Map<String, Object>> adjustSl(@PathVariable String id,
+                                                        @PathVariable String leg,
+                                                        @PathVariable String dir) {
+        Strategy s = registry.get(id);
+        if (s == null) return ResponseEntity.notFound().build();
+        String legUpper = leg == null ? "" : leg.toUpperCase();
+        int d = "up".equalsIgnoreCase(dir) ? 1 : "down".equalsIgnoreCase(dir) ? -1 : 0;
+        String code;
+        try { code = s.adjustLegSl(legUpper, d); }
+        catch (Exception e) { code = "EXCEPTION: " + e.getMessage(); }
+        boolean ok = "OK".equals(code);
+        String message = switch (code) {
+            case "OK"          -> d == 0 ? legUpper + " SL override cleared." : legUpper + " SL moved " + (d > 0 ? "up" : "down") + ".";
+            case "NOT_OPEN"    -> legUpper + " leg is not open.";
+            case "NO_TRIGGER"  -> legUpper + " has no SL trigger yet.";
+            case "BELOW_LTP"   -> "Refused — that would put the SL at or below the current LTP.";
+            case "UNSUPPORTED" -> "This strategy doesn't support manual SL.";
+            default            -> legUpper + " SL adjust failed (" + code + ").";
+        };
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("success", ok); out.put("code", code); out.put("message", message);
+        return ResponseEntity.ok(out);
+    }
+
+    /** Strike choices for the "+ OPEN CE/PE" dialog. */
+    @GetMapping("/api/strategies/{id}/open-leg-candidates/{leg}")
+    public ResponseEntity<Map<String, Object>> openLegCandidates(@PathVariable String id,
+                                                                 @PathVariable String leg) {
+        Strategy s = registry.get(id);
+        if (s == null) return ResponseEntity.notFound().build();
+        String legUpper = leg == null ? "" : leg.toUpperCase();
+        if (!"CE".equals(legUpper) && !"PE".equals(legUpper)) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("error", "leg must be 'ce' or 'pe'"));
+        }
+        try { return ResponseEntity.ok(s.openLegCandidates(legUpper)); }
+        catch (Exception e) { return ResponseEntity.status(502).body(java.util.Map.of("error", String.valueOf(e.getMessage()))); }
+    }
+
     @PostMapping("/api/strategies/{id}/open-leg/{leg}")
     public ResponseEntity<Map<String, Object>> openLeg(@PathVariable String id,
-                                                       @PathVariable String leg) {
+                                                       @PathVariable String leg,
+                                                       @RequestParam(required = false) String symbol) {
         Strategy s = registry.get(id);
         if (s == null) return ResponseEntity.notFound().build();
         String legUpper = leg == null ? "" : leg.toUpperCase();
@@ -180,11 +308,11 @@ public class StrategyController {
                 "success", false, "message", "leg must be 'ce' or 'pe'"));
         }
         String code;
-        try { code = s.openOneLeg(legUpper); }
+        try { code = s.openOneLeg(legUpper, symbol); }
         catch (Exception e) { code = "EXCEPTION: " + e.getMessage(); }
         boolean ok = "OK".equals(code);
         String message = switch (code) {
-            case "OK"           -> legUpper + " leg opened at the current " + "strike pick.";
+            case "OK"           -> legUpper + " leg opened" + (symbol != null && !symbol.isEmpty() ? " at " + symbol : " at the current strike pick") + ".";
             case "NOT_STARTED"  -> "Refused — today's cycle hasn't started yet. Use + NEW STRADDLE / STRANGLE for the first entry.";
             case "ALREADY_OPEN" -> legUpper + " leg is already open.";
             case "REJECTED"     -> legUpper + " order was rejected by the broker — see event log.";

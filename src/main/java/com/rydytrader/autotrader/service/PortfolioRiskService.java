@@ -40,6 +40,11 @@ public class PortfolioRiskService {
      *  comparing against today's date each tick. */
     private volatile String lastFiredDayKey = "";
 
+    /** Fraction of the max daily loss at which the early warning fires (log + amber P&L chip). */
+    public static final double WARN_FRACTION = 0.75;
+    /** ISO date of the last early-warning event — once per day. */
+    private volatile String lastWarnedDayKey = "";
+
     public PortfolioRiskService(StrategyRegistry strategyRegistry,
                                  RiskSettingsStore riskSettings,
                                  EventService eventService) {
@@ -82,6 +87,18 @@ public class PortfolioRiskService {
             catch (Exception e) {
                 log.warn("[PortfolioRisk] {} liveNetPnlToday failed: {}", s.id(), e.getMessage());
             }
+        }
+
+        // Early warning — once per day when the aggregate loss crosses WARN_FRACTION of the
+        // kill threshold. The header P&L chip turns amber from the same fraction (ticker.js
+        // reads lossUsedPct from /api/portfolio-pnl-today); this just leaves a log trail.
+        if (aggregate <= -maxLoss * WARN_FRACTION && !today.equals(lastWarnedDayKey)) {
+            lastWarnedDayKey = today;
+            String w = String.format(java.util.Locale.US,
+                "PORTFOLIO LOSS WARNING — aggregate %.2f is %.0f%% of the max daily loss %.2f (kill at 100%%)",
+                aggregate, -aggregate / maxLoss * 100.0, maxLoss);
+            log.warn("[PortfolioRisk] {}", w);
+            eventService.log("[WARNING] [portfolio-risk] " + w);
         }
 
         if (aggregate >= -maxLoss) return; // still within budget

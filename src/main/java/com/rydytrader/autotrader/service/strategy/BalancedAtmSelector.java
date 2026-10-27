@@ -85,16 +85,12 @@ public class BalancedAtmSelector {
             return null;
         }
 
-        // Put-call parity:  F = K + (CE − PE)   →   round to strike step.
-        double forward = spotAtm + (atmRow.ce - atmRow.pe);
-        long   chosen  = Math.round(forward / (double) step) * step;
-
-        ChainRow chosenRow = chain.get(chosen);
-        if (chosenRow == null || chosenRow.ce <= 0 || chosenRow.pe <= 0) {
-            log.warn("[atm-selector] {} synthetic strike {} unquoted — falling back to spot-ATM {}",
-                u, chosen, spotAtm);
-            chosen = spotAtm; chosenRow = atmRow;
-        }
+        // Spot-ATM only. The put-call-parity "synthetic futures" pick was retired on
+        // 2026-10-14: stale / illiquid chain LTPs made F drift 100-150 pts from spot, which
+        // is far worse than the ~20 pt carry it was meant to capture. Spot rounded to the
+        // strike step is the reference every strike-selection mode now works from.
+        long     chosen    = spotAtm;
+        ChainRow chosenRow = atmRow;
 
         return new AtmSelection(
             spotAtm,
@@ -333,6 +329,23 @@ public class BalancedAtmSelector {
     private static class ChainRow {
         double ce, pe;
         String ceSym = "", peSym = "";
+    }
+
+    /** Strikes in {@code [lo, hi]} with their CE/PE symbols + LTPs from ONE chain fetch —
+     *  feeds the manual "+ OPEN" strike picker. Empty list when the chain is unavailable. */
+    public java.util.List<java.util.Map<String, Object>> chainWindow(Underlying u, long lo, long hi) {
+        NavigableMap<Long, ChainRow> chain = fetchChain(u);
+        java.util.List<java.util.Map<String, Object>> out = new java.util.ArrayList<>();
+        if (chain == null || chain.isEmpty()) return out;
+        for (java.util.Map.Entry<Long, ChainRow> e : chain.subMap(lo, true, hi, true).entrySet()) {
+            ChainRow r = e.getValue();
+            java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("strike", e.getKey());
+            m.put("ceSymbol", r.ceSym); m.put("peSymbol", r.peSym);
+            m.put("ceLtp", r.ce);       m.put("peLtp", r.pe);
+            out.add(m);
+        }
+        return out;
     }
 
     private NavigableMap<Long, ChainRow> fetchChain(Underlying u) {
