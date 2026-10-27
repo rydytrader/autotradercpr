@@ -334,7 +334,13 @@ public class BalancedAtmSelector {
     /** Strikes in {@code [lo, hi]} with their CE/PE symbols + LTPs from ONE chain fetch —
      *  feeds the manual "+ OPEN" strike picker. Empty list when the chain is unavailable. */
     public java.util.List<java.util.Map<String, Object>> chainWindow(Underlying u, long lo, long hi) {
-        NavigableMap<Long, ChainRow> chain = fetchChain(u);
+        return chainWindow(u, lo, hi, 0L);
+    }
+
+    /** Same window for a specific expiry ({@code expiryTsSecs} from {@link #expiryList});
+     *  0 = the chain's current expiry. */
+    public java.util.List<java.util.Map<String, Object>> chainWindow(Underlying u, long lo, long hi, long expiryTsSecs) {
+        NavigableMap<Long, ChainRow> chain = fetchChain(u, expiryTsSecs);
         java.util.List<java.util.Map<String, Object>> out = new java.util.ArrayList<>();
         if (chain == null || chain.isEmpty()) return out;
         for (java.util.Map.Entry<Long, ChainRow> e : chain.subMap(lo, true, hi, true).entrySet()) {
@@ -348,10 +354,57 @@ public class BalancedAtmSelector {
         return out;
     }
 
-    private NavigableMap<Long, ChainRow> fetchChain(Underlying u) {
+    private static final java.time.ZoneId IST_ZONE = java.time.ZoneId.of("Asia/Kolkata");
+    private static final long EXPIRY_CACHE_MS = 10 * 60_000L;
+    private final java.util.Map<String, Object[]> expiryCache = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Upcoming expiries as Fyers lists them in {@code expiryData} (already holiday-shifted by the
+     *  exchange): {@code [{date: ISO, ts: epochSecs}]} in Fyers order. Cached 10 min per underlying;
+     *  empty when Fyers is unavailable. */
+    @SuppressWarnings("unchecked")
+    public java.util.List<java.util.Map<String, Object>> expiryList(Underlying u) {
+        String key = u.indexSymbol();
+        long now = System.currentTimeMillis();
+        Object[] c = expiryCache.get(key);
+        if (c != null && now - (Long) c[0] < EXPIRY_CACHE_MS) return (java.util.List<java.util.Map<String, Object>>) c[1];
+        java.util.List<java.util.Map<String, Object>> out = new java.util.ArrayList<>();
         try {
             String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
-            JsonNode root = fyersClient.getOptionChain(u.indexSymbol(), 30, auth);
+            JsonNode root = fyersClient.getOptionChain(key, 5, 0L, auth);
+            JsonNode data = root != null && root.has("data") ? root.get("data") : null;
+            JsonNode ed = data != null && data.has("expiryData") ? data.get("expiryData") : null;
+            if (ed != null && ed.isArray()) {
+                for (JsonNode e : ed) {
+                    long ts = 0;
+                    try { ts = Long.parseLong(e.path("expiry").asText("0").trim()); } catch (NumberFormatException ignored) {}
+                    LocalDate d = null;
+                    String ds = e.path("date").asText("").trim();
+                    if (!ds.isEmpty()) {
+                        try { d = LocalDate.parse(ds, java.time.format.DateTimeFormatter.ofPattern("dd-MM-yyyy")); } catch (Exception ignored) {}
+                    }
+                    if (d == null && ts > 0) d = java.time.Instant.ofEpochSecond(ts).atZone(IST_ZONE).toLocalDate();
+                    if (d == null) continue;
+                    if (ts <= 0) ts = d.atStartOfDay(IST_ZONE).toEpochSecond();
+                    java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                    m.put("date", d.toString()); m.put("ts", ts);
+                    out.add(m);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[atm-selector] {} expiry list fetch failed: {}", u, e.getMessage());
+        }
+        if (!out.isEmpty()) expiryCache.put(key, new Object[]{now, out});
+        return out;
+    }
+
+    private NavigableMap<Long, ChainRow> fetchChain(Underlying u) { return fetchChain(u, 0L); }
+
+    private NavigableMap<Long, ChainRow> fetchChain(Underlying u, long expiryTsSecs) {
+        try {
+            String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
+            JsonNode root = expiryTsSecs > 0
+                ? fyersClient.getOptionChain(u.indexSymbol(), 30, expiryTsSecs, auth)
+                : fyersClient.getOptionChain(u.indexSymbol(), 30, auth);
             if (root == null) return null;
             JsonNode data = root.has("data") ? root.get("data") : null;
             JsonNode chain = data != null && data.has("optionsChain") ? data.get("optionsChain")

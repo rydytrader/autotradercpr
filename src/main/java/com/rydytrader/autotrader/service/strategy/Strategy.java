@@ -6,8 +6,14 @@ import java.util.Map;
 /**
  * Common contract every options-selling strategy implements. The dashboard, settings modal,
  * and analytics pages drive themselves from this abstraction — there's no place that hardcodes
- * "rolling straddle" anymore. Adding a new strategy = one new {@code @Service} class that
- * implements this interface; Spring auto-discovers it via {@link StrategyRegistry}.
+ * a particular strategy. Adding a new strategy = one new class that implements this interface;
+ * {@link StrategyRegistry} exposes it to the scheduler, controllers and UI.
+ *
+ * <p>Since 2026-10-27 the straddle / strangle instances are <b>manual multi-strike position
+ * managers</b>: the operator opens short legs and hedge legs by hand (any number per side), and
+ * the strategy automates only the per-leg SL, timed squareoff / expiry settlement and the
+ * day-level books. Leg-level operations are addressed by the leg's {@code id} as surfaced in
+ * the dashboard payload's {@code legs} list.
  */
 public interface Strategy {
 
@@ -18,69 +24,86 @@ public interface Strategy {
     /** Human-readable name shown in the UI (nav, settings tab, dashboard heading). */
     String displayName();
 
-    /** One-line description shown under the dashboard title — explains what the strategy does
-     *  at a glance. Default: empty string (no subtitle). Override per concrete strategy. */
+    /** One-line description shown under the dashboard title. Default: empty string. */
     default String description() { return ""; }
 
-    /** Current lifecycle state as a String (strategy-specific enum names). Examples:
-     *  IDLE / OPEN / WAITING_TO_ROLL / DONE_FOR_DAY, or OPEN_BOTH / OPEN_CE_ONLY / etc. */
+    /** Current lifecycle state as a String (strategy-specific enum names), e.g.
+     *  ARMED / OPEN / DONE_FOR_DAY. */
     String currentState();
 
-    /** Lightweight status — state, symbols, qty, expiry, key settings. Cheap to compute,
+    /** Lightweight status — state, legs, expiry, key settings. Cheap to compute,
      *  safe to call frequently. Used by the strategy-sidebar icon active state. */
     Map<String, Object> getStatus();
 
-    /** Full dashboard payload — status + leg LTPs + MTM + charges + samples + cycle events.
-     *  Polled every 5s by the per-strategy dashboard page. Returned shape MAY differ between
-     *  strategies, but must include a {@code dashboardShape} key telling the UI which template
-     *  conditionals to apply. */
+    /** Full dashboard payload — status + per-leg LTP/MTM/SL + charges + cycle events.
+     *  Polled every second by the per-strategy dashboard page. Must include a
+     *  {@code dashboardShape} key telling the UI which template conditionals to apply. */
     Map<String, Object> getDashboard();
 
-    /** Manual squareoff — flatten all open legs and park DONE_FOR_DAY. Returns true if there
+    /** Manual squareoff — flatten every open leg and park DONE_FOR_DAY. Returns true if there
      *  was something to close. */
     boolean forceClose(String reason);
 
-    /** Close just one leg of a multi-leg position. {@code leg} is either {@code "CE"} or
-     *  {@code "PE"} (case-insensitive). Returns true when an open leg was found and a close
-     *  order was placed. Default returns false for strategies that don't have separately
-     *  closeable legs — only ShortStraddle overrides. */
-    default boolean closeOneLeg(String leg, String reason) { return false; }
+    /** Close one leg by its id (short or hedge). Returns true when an open leg was found and a
+     *  close order was placed. */
+    default boolean closeOneLeg(String legId, String reason) { return false; }
 
-    /** Operator-initiated open of one closed leg ({@code "CE"} / {@code "PE"}) at the current
-     *  strike-selection pick, bypassing the re-execute enable / cap / latest-time gates and
-     *  cancelling that side's pending timer. Returns {@code "OK"} or a reason code
-     *  ({@code NOT_STARTED}, {@code ALREADY_OPEN}, {@code REJECTED}, {@code ABORTED},
+    /** Operator "+ OPEN CE / PE": sell a fresh short leg on {@code side} ({@code "CE"} / {@code "PE"})
+     *  at {@code symbol} (null/empty = ATM pick), with the Fyers {@code product} ({@code INTRADAY} /
+     *  {@code MARGIN}), {@code lots} and the SL % of entry. Returns {@code "OK"} or a reason code
+     *  ({@code REJECTED}, {@code ABORTED}, {@code PAST_SQUAREOFF}, {@code MARKET_CLOSED}, {@code INVALID},
      *  {@code UNSUPPORTED}). */
-    default String openOneLeg(String leg) { return openOneLeg(leg, null); }
+    default String openOneLeg(String side, String symbol, String product, int lots, double slPct) { return "UNSUPPORTED"; }
 
-    /** As {@link #openOneLeg(String)} but with an operator-chosen option symbol from the strike
-     *  picker; {@code symbol} null/empty = use the strategy's strike-selection mode. */
-    default String openOneLeg(String leg, String symbol) { return "UNSUPPORTED"; }
+    /** Strike rows for the + STRADDLE / + STRANGLE dialogs: {@code {spot, atm, lotSize,
+     *  rows[{strike, ceSymbol, ceLtp, ceMoneyness, peSymbol, peLtp, peMoneyness, isAtm}]}}. */
+    default Map<String, Object> pairCandidates() { return Map.of(); }
+    /** Same, for a chosen expiry (ISO date from the payload's {@code expiries}); null = nearest. */
+    default Map<String, Object> pairCandidates(String expiry) { return pairCandidates(); }
 
-    /** Strike choices for the "+ OPEN" dialog: {@code {spot, defaultSymbol, candidates[{symbol,
-     *  strike, ltp, moneyness, isDefault}]}}. Empty map when unsupported. */
-    default Map<String, Object> openLegCandidates(String leg) { return Map.of(); }
+    /** Sell a CE and a PE together (straddle when both strikes match, strangle otherwise).
+     *  Returns {@code {ce: code, pe: code}} using the same codes as {@link #openOneLeg}. */
+    default Map<String, String> openPair(String ceSymbol, String peSymbol, String product, int lots, double slPct) {
+        return Map.of("ce", "UNSUPPORTED", "pe", "UNSUPPORTED");
+    }
+
+    /** Strike choices for the "+ OPEN" dialog: {@code {spot, defaultSymbol, lots, lotSize,
+     *  candidates[{symbol, strike, ltp, moneyness, isDefault}]}}. Empty map when unsupported. */
+    default Map<String, Object> openLegCandidates(String side) { return Map.of(); }
+    default Map<String, Object> openLegCandidates(String side, String expiry) { return openLegCandidates(side); }
 
     /** Operator +/- on a leg's SL trigger: {@code dir} +1 raise one step, -1 lower, 0 clear the
      *  manual override. Returns {@code "OK"} or a reason code. */
-    default String adjustLegSl(String leg, int dir) { return "UNSUPPORTED"; }
+    default String adjustLegSl(String legId, int dir) { return "UNSUPPORTED"; }
 
-    /** Operator +/- on a leg's lot count: {@code dir} +1 sells one more lot, -1 buys one back
+    /** Operator typed an SL price for the leg (inline edit). Returns {@code "OK"} or a reason code
+     *  ({@code NOT_OPEN}, {@code NO_TRIGGER}, {@code INVALID}, {@code BELOW_LTP}). */
+    default String setLegSl(String legId, double price) { return "UNSUPPORTED"; }
+
+    /** Operator +/- on a leg's lot count: {@code dir} +1 adds one lot, -1 exits one lot
      *  (last lot = full close). Returns {@code "OK"}, {@code "CLOSED"} or a reason code. */
-    default String adjustLegLots(String leg, int dir) { return "UNSUPPORTED"; }
+    default String adjustLegLots(String legId, int dir) { return "UNSUPPORTED"; }
 
-    /** Manual hedge wings. {@code hedgeCandidates} → strike picker payload; {@code openHedgeLeg}
-     *  buys a wing (symbol null = ₹target pick); {@code closeHedgeLeg} sells it back. */
-    default Map<String, Object> hedgeCandidates(String leg) { return Map.of(); }
-    default String openHedgeLeg(String leg, String symbol) { return "UNSUPPORTED"; }
-    default String closeHedgeLeg(String leg) { return "UNSUPPORTED"; }
+    /** Operator COST button: toggle the leg's SL between its configured trigger and its entry
+     *  premium (break-even). Returns {@code "OK"} or a reason code. */
+    default String toggleLegCost(String legId) { return "UNSUPPORTED"; }
 
-    /** Manual same-day restart after the strategy has reached its DONE_FOR_DAY terminal
-     *  state. Drives the dashboard's {@code + NEW STRADDLE} button. Returns {@code "OK"}
-     *  when an entry was placed, a gate name (e.g. {@code "MAX_LOSS_HIT"}) when one of the
-     *  scheduler's preconditions blocked the restart, or {@code "UNSUPPORTED"} for strategies
-     *  that don't support multi-cycle days. Only ShortStraddle overrides. */
-    default String restartFromDoneForDay(String reason) { return "UNSUPPORTED"; }
+    /** Per-leg premium series for the row-click chart modal:
+     *  {@code {legId, symbol, entry, slTrigger, samples[{t, v}]}}. */
+    default Map<String, Object> legChart(String legId) { return Map.of(); }
+
+    /** Manual hedge legs. {@code hedgeCandidates} → strike picker payload for {@code side};
+     *  {@code openHedgeLeg} buys a wing (symbol null = ₹target pick); {@code closeHedgeLeg}
+     *  sells the leg with that id back. */
+    default Map<String, Object> hedgeCandidates(String side) { return Map.of(); }
+    default Map<String, Object> hedgeCandidates(String side, String expiry) { return hedgeCandidates(side); }
+    default String openHedgeLeg(String side, String symbol, String product, int lots) { return "UNSUPPORTED"; }
+    default String closeHedgeLeg(String legId) { return "UNSUPPORTED"; }
+
+    /** Re-open a closed leg: same side / kind / symbol. {@code product} empty, {@code lots} ≤ 0 or
+     *  {@code slPct} < 0 fall back to the closed leg's own values. Same codes as {@link #openOneLeg},
+     *  plus {@code ALREADY_OPEN} and {@code EXPIRED}. */
+    default String reopenLeg(String legId, String product, int lots, double slPct) { return "UNSUPPORTED"; }
 
     /** Operator "clear trade data" hook — zero today's in-memory P&L / SL / charge counters
      *  so the live overlay doesn't re-synthesise today after the DB rows were deleted.
@@ -88,107 +111,65 @@ public interface Strategy {
     default boolean resetTodayCounters() { return false; }
 
     /** Hard-stop the strategy for the day. Closes any open positions AND parks DONE_FOR_DAY
-     *  regardless of current state — so a strategy that's IDLE (waiting for entry time)
-     *  won't fire new entries later in the session. Used by the portfolio kill switch.
-     *
-     *  <p>Default falls back to {@link #forceClose} which only handles strategies with open
-     *  positions; concrete strategies must override to guarantee the DONE_FOR_DAY transition. */
+     *  regardless of current state. Used by the portfolio kill switch. */
     default void parkDoneForDay(String reason) {
         forceClose(reason);
     }
 
-    /** Manual recovery — flip in-memory state back to IDLE so the next scheduler tick can
-     *  re-evaluate entry conditions. Does not touch broker positions. */
-    /** Force in-memory state → ARMED so the scheduler re-evaluates. Returns
-     *  {@code true} when the reset was applied, {@code false} when refused
-     *  (typically because legs are still open at the broker — resetting would
-     *  orphan them). The refusal reason surfaces through the calling controller. */
+    /** Force in-memory state → ARMED. Returns {@code true} when the reset was applied,
+     *  {@code false} when refused (typically because legs are still open at the broker —
+     *  resetting would orphan them). */
     boolean resetToIdle(String reason);
 
-    /** Schema for the settings modal. Each entry describes one configurable field that this
-     *  strategy reads. The UI renders the form dynamically and POSTs back via the generic
-     *  settings endpoint. Field types: "time" (HH:mm), "int", "double", "percent",
-     *  "rupees", "boolean". */
+    /** Schema for the settings modal. Each entry describes one configurable field. Field
+     *  types: "time" (HH:mm), "int", "double", "percent", "rupees", "boolean", "select". */
     List<Map<String, Object>> getSettingsSchema();
 
-    /** Current saved values for the fields described in {@link #getSettingsSchema()}. Keys
-     *  match the schema entries' {@code key}. Returned values match the schema {@code type}
-     *  (String / int / double / bool). The UI populates the form from this map. */
+    /** Current saved values for the fields described in {@link #getSettingsSchema()}. */
     Map<String, Object> getSettingsValues();
 
-    /** Persist new values for the fields described in {@link #getSettingsSchema()}. The UI
-     *  posts a map of {schemaKey → submittedValue} (typically String); the strategy parses
-     *  each per its schema type and saves to wherever it reads from (legacy direct field or
-     *  the generic strategyConfigs map). */
+    /** Persist new values for the fields described in {@link #getSettingsSchema()}. */
     void saveSettings(Map<String, Object> values);
 
-    /** Operator-facing short code (e.g. {@code "9:20"}) shown as the sidebar label and on
-     *  per-instance pages. Default = {@link #id()}; concrete instances return the entity's
-     *  {@code shortCode} field directly. */
+    /** Operator-facing short code shown as the sidebar label. Default = {@link #id()}. */
     default String shortCode() { return id(); }
 
-    /** True when the operator has flipped the strategy on (Straddles tab → Enable). The
-     *  sidebar and {@code /api/strategies} response filter on this so disabled instances
-     *  don't take up space — they're still queryable via {@code /api/straddles} for the
-     *  Straddles tab itself. Default true so non-runtime strategies don't accidentally
-     *  hide; concrete instances override to read their runtime flag. */
+    /** True when the operator has flipped the strategy on. Default true. */
     default boolean isEnabled() { return true; }
 
-    /** Tiny icon for the left sidebar nav. Default = first letter of id() uppercase.
-     *  Concrete strategies may override to return an emoji or symbol character. */
+    /** Tiny icon for the left sidebar nav. Default = first letter of id() uppercase. */
     default String navIcon() {
         String id = id();
         return id == null || id.isEmpty() ? "?" : id.substring(0, 1).toUpperCase();
     }
 
     /** ISO yyyy-MM-dd of the option series this strategy is currently trading against, or
-     *  the empty string when nothing has been resolved yet (pre-entry, before option chain
-     *  fetched). Used by analytics to scope the "current expiry" period filter. */
+     *  the empty string when nothing has been resolved yet. */
     default String currentWeeklyExpiry() { return ""; }
 
-    /** Underlying instrument the strategy is configured against (e.g. NIFTY / SENSEX).
-     *  Empty when the concept doesn't apply. Surfaced in {@code /api/strategies} so the
-     *  sidebar chip can render it as a small subtitle under the short code. */
+    /** Underlying instrument the strategy is configured against (e.g. NIFTY / SENSEX). */
     default String underlyingName() { return ""; }
 
-    /** Today's already-closed straddles read from in-memory state — used by the Analytics page
-     *  live overlay so today's metrics reflect closes that haven't been persisted to the
-     *  {@code straddle_trades} table yet (leg-sl persists only when state reaches DONE_FOR_DAY).
-     *
-     *  <p>Each map should carry: {@code grossPnl}, {@code charges} (optional), {@code netPnl}
-     *  (optional — defaults to gross when charges missing), {@code closedAtMillis}, {@code closeReason}.
-     *  Default: empty list. */
+    /** Today's already-closed trades read from in-memory state — analytics live overlay. */
     default java.util.List<java.util.Map<String, Object>> todayClosedTrades() {
         return java.util.List.of();
     }
 
-    /** Lightweight accessor for this strategy's running net day P&L (realised + open MTM −
-     *  charges). Used by the portfolio-wide kill switch which sums across all strategies on
-     *  every tick. Default 0 — strategies with positions override. */
+    /** Running net day P&L (realised + open MTM − charges). Used by the portfolio kill switch. */
     default double liveNetPnlToday() { return 0; }
 
-    /** This strategy's total accrued / projected charges for today (brokerage + STT + GST +
-     *  exchange + SEBI + stamp on every leg that has hit the broker, including the still-open
-     *  leg's projected SL-exit charges if any). Used by the analytics live overlay so the
-     *  per-day Charges + Gross numbers for today match what the strategy's dashboard shows.
-     *  Default 0 — strategies without positions today report no charges. */
+    /** Total accrued / projected charges for today. */
     default double liveChargesToday() { return 0; }
 
-    /** Strategy type discriminator — {@code "STRADDLE"} (default) or {@code "STRANGLE"}.
-     *  Surfaced on {@code getStatus()} payloads and the sidebar so the UI can group
-     *  instances and pick the right per-instance dashboard template. */
+    /** Strategy type discriminator — {@code "STRADDLE"} (default) or {@code "STRANGLE"}. */
     default String strategyType() { return "STRADDLE"; }
 
-    /** Scheduler entry point — invoked every 5 s by the unified scheduler. Each concrete
-     *  strategy decides whether the IDLE → entry transition / SL check / squareoff / day
-     *  rollover apply this tick. Default empty so trivial Strategy impls (e.g. observers)
-     *  don't need to override. */
+    /** Scheduler entry point — invoked every 5 s. */
     default void tick() {}
 
-    /** Fast-path SL check — invoked every 500 ms by the unified scheduler. Trims SL-trigger
-     *  detection latency from ~5 s (the regular tick cadence) to ~500 ms. Default empty. */
+    /** Fast-path SL check — invoked every 500 ms. */
     default void fastSlCheck() {}
 
-    /** 1-minute sampling for the dashboard combined-premium chart. Default empty. */
+    /** 1-minute sampling for the per-leg premium charts. */
     default void sampleCombinedPremium() {}
 }

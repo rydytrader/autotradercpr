@@ -53,7 +53,14 @@ public class StraddleInstanceController {
             String name        = asString(body.get("name"));
             String description = asString(body.get("description"));
             String shortCode   = asString(body.get("shortCode"));
+            String underlying  = asString(body.get("underlying"));
+            if (underlying != null && !underlying.isBlank()) {
+                underlying = underlying.trim().toUpperCase();
+                if (name == null || name.isBlank()) name = underlying + " Positions";
+                if (shortCode == null || shortCode.isBlank()) shortCode = underlying;
+            }
             ShortStraddle s = manager.create(name, description, shortCode);
+            if (underlying != null && !underlying.isBlank()) s.saveSettings(java.util.Map.of("underlying", underlying));
             return ResponseEntity.status(HttpStatus.CREATED).body(toDto(s));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(error(e.getMessage()));
@@ -67,8 +74,15 @@ public class StraddleInstanceController {
             String name        = asString(body.get("name"));
             String description = asString(body.get("description"));
             String shortCode   = asString(body.get("shortCode"));
+            String underlying  = asString(body.get("underlying"));
             ShortStraddle s = manager.rename(id, name, description, shortCode);
             if (s == null) return ResponseEntity.notFound().build();
+            java.util.Map<String, Object> patch = new LinkedHashMap<>();
+            if (underlying != null && !underlying.isBlank()) patch.put("underlying", underlying.trim().toUpperCase());
+            if (body.containsKey("defaultLots"))    patch.put("defaultLots", body.get("defaultLots"));
+            if (body.containsKey("defaultProduct")) patch.put("defaultProduct", body.get("defaultProduct"));
+            if (body.containsKey("defaultSlPct"))   patch.put("defaultSlPct", body.get("defaultSlPct"));
+            if (!patch.isEmpty()) s.saveSettings(patch);
             return ResponseEntity.ok(toDto(s));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(error(e.getMessage()));
@@ -124,6 +138,9 @@ public class StraddleInstanceController {
         m.put("shortCode",    s.shortCode());
         m.put("navIcon",      s.navIcon());
         m.put("underlying",   s.underlyingName());
+        m.put("defaultLots",    s.defaultLots());
+        m.put("defaultProduct", s.defaultProduct());
+        m.put("defaultSlPct",   s.defaultSlPct());
         m.put("currentState", s.currentState());
         // enabled = riskSettings.getStrategyBool — read via the entity to avoid races; instance
         // settings are saved through the strategy interface POST, which is the same data flow.

@@ -85,7 +85,6 @@
             <div class="ticker-track" id="tickerTrack"></div>
         </div>
         <div class="nav-right">
-            <button class="theme-toggle" id="calBtn" title="Calendar" onclick="window.location.href='/calendar'" style="font-size:1rem;">▦</button>
             <button class="theme-toggle" id="settingsBtn" title="Settings" onclick="SettingsModal.open()" style="font-size:1rem;">⚙</button>
             <button class="theme-toggle" id="chainBtn" title="Options Chain" onclick="OptionChainModal.open()" style="font-size:1rem;">⊞</button>
             <button class="theme-toggle" id="themeToggle" title="Toggle theme" onclick="toggleTheme()">🌙</button>
@@ -108,54 +107,31 @@
               font-weight:700;font-size:0.78rem;letter-spacing:0.10em;color:var(--text-secondary);
               border:1px solid transparent;background:transparent;cursor:pointer;">HOME</a>
     <div style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
-    <div th:if="${not #lists.isEmpty(sidebarStraddles)}"
-         style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;
-                color:var(--text-muted);text-transform:uppercase;text-align:center;
-                width:72px;margin:6px 0 2px;">STRADDLES</div>
-    <th:block th:each="strat,iter : ${sidebarStraddles}">
+    <th:block th:each="grp,gi : ${sidebarGroups}">
+    <div th:if="${gi.first}"
+         style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;color:var(--text-muted);text-transform:uppercase;text-align:center;width:72px;margin:6px 0 2px;">POSITIONS</div>
+    <div th:unless="${gi.first}" style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
+    <th:block th:each="strat,iter : ${grp.items}">
         <a th:href="@{${strat.href}}"
-           th:title="${#strings.isEmpty(strat.description) ? strat.displayName : strat.displayName + ' — ' + strat.description}"
+           th:title="|${grp.underlying} positions|"
            th:attr="data-nav-key=${strat.id}"
            class="nav-icon"
-           style="display:flex;flex-direction:column;align-items:center;justify-content:center;
-                  width:88px;min-height:52px;padding:8px 12px;border-radius:8px;text-decoration:none;
-                  font-family:var(--font-mono);font-weight:700;font-size:0.86rem;
-                  color:var(--text-secondary);border:1px solid transparent;background:transparent;
-                  cursor:pointer;letter-spacing:0.06em;white-space:nowrap;overflow:hidden;
-                  text-overflow:ellipsis;line-height:1.15;">
-            <span th:text="${strat.navIcon}" style="display:block;"></span>
-            <span th:if="${not #strings.isEmpty(strat.underlying)}"
-                  th:text="${strat.underlying}"
-                  style="display:block;font-size:0.52rem;font-weight:600;color:var(--text-muted);
-                         letter-spacing:0.08em;margin-top:2px;"></span>
+           style="display:flex;align-items:center;justify-content:center;width:88px;height:36px;
+                  padding:0 12px;border-radius:8px;text-decoration:none;font-family:var(--font-mono);
+                  font-weight:700;font-size:0.78rem;letter-spacing:0.10em;color:var(--text-secondary);
+                  border:1px solid transparent;background:transparent;cursor:pointer;"
+           th:text="${grp.underlying}">NIFTY
         </a>
         <div th:unless="${iter.last}"
              style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
     </th:block>
-    <div th:if="${not #lists.isEmpty(sidebarStrangles)}"
-         style="font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;
-                color:var(--text-muted);text-transform:uppercase;text-align:center;
-                width:72px;margin:10px 0 2px;">STRANGLES</div>
-    <th:block th:each="strat,iter : ${sidebarStrangles}">
-        <a th:href="@{${strat.href}}"
-           th:title="${#strings.isEmpty(strat.description) ? strat.displayName : strat.displayName + ' — ' + strat.description}"
-           th:attr="data-nav-key=${strat.id}"
-           class="nav-icon"
-           style="display:flex;flex-direction:column;align-items:center;justify-content:center;
-                  width:88px;min-height:52px;padding:8px 12px;border-radius:8px;text-decoration:none;
-                  font-family:var(--font-mono);font-weight:700;font-size:0.86rem;
-                  color:var(--text-secondary);border:1px solid transparent;background:transparent;
-                  cursor:pointer;letter-spacing:0.06em;white-space:nowrap;overflow:hidden;
-                  text-overflow:ellipsis;line-height:1.15;">
-            <span th:text="${strat.navIcon}" style="display:block;"></span>
-            <span th:if="${not #strings.isEmpty(strat.underlying)}"
-                  th:text="${strat.underlying}"
-                  style="display:block;font-size:0.52rem;font-weight:600;color:var(--text-muted);
-                         letter-spacing:0.08em;margin-top:2px;"></span>
-        </a>
-        <div th:unless="${iter.last}"
-             style="width:64px;height:1px;background:var(--border);margin:4px 0;"></div>
     </th:block>
+    <div style="width:64px;height:1px;background:var(--border);margin:10px 0 4px;"></div>
+    <a href="/calendar" class="nav-icon active" title="Calendar" data-nav-key="calendar"
+       style="display:flex;align-items:center;justify-content:center;width:88px;height:36px;
+              padding:0 12px;border-radius:8px;text-decoration:none;font-family:var(--font-mono);
+              font-weight:700;font-size:0.78rem;letter-spacing:0.10em;color:var(--text-secondary);
+              border:1px solid transparent;background:transparent;cursor:pointer;">CALENDAR</a>
 </aside>
 <div class="app-main" style="flex:1;min-width:0;margin-left:0;width:auto;">
 <div class="page-wrap">
@@ -305,8 +281,8 @@
 
 <script src="/js/common.js?v=2"></script>
 <script src="/js/ticker.js?v=7"></script>
-<script src="/js/app-confirm.js?v=2"></script>
-<script src="/js/settings-modal.js?v=11"></script>
+<script src="/js/app-confirm.js?v=4"></script>
+<script src="/js/settings-modal.js?v=18"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
 <!-- TradingView Lightweight Charts — MIT, standalone JS library. Same open-source
      chart engine used by TradingView's own free chart pages. -->

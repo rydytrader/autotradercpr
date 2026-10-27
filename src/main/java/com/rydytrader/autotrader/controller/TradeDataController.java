@@ -37,7 +37,7 @@ import java.util.Set;
 public class TradeDataController {
 
     private static final Logger log = LoggerFactory.getLogger(TradeDataController.class);
-    private static final Set<String> OPEN_STATES = Set.of("OPEN_BOTH", "OPEN_CE_ONLY", "OPEN_PE_ONLY");
+    private static final Set<String> OPEN_STATES = Set.of("OPEN", "OPEN_BOTH", "OPEN_CE_ONLY", "OPEN_PE_ONLY");
 
     private final StrategyTradeRepository   tradeRepo;
     private final StrategySessionRepository sessionRepo;

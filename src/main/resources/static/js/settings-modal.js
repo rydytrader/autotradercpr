@@ -1,7 +1,7 @@
 /**
  * Settings modal — opened from the gear icon in the navbar.
  *
- * Tabs: STRADDLES · STRANGLES (CRUD for instances) · PORTFOLIO RISK · CHARGES · USERS.
+ * Tabs: POSITIONS (instances, one per underlying) · PORTFOLIO RISK · CHARGES · DATA · USERS.
  * Per-instance trading settings (entry time, lots, SL%) no longer live here — they're
  * opened from each instance's dashboard page via the ⚙ Settings button.
  */
@@ -26,48 +26,25 @@
                 '<div id="sm-tabstrip" style="display:flex;border-bottom:1px solid var(--border);padding:0 24px;overflow-x:auto;"></div>' +
                 // Body (each tab pane scrolls independently)
                 '<div class="sm-body" id="sm-body" style="flex:1;overflow-y:auto;padding:20px 24px;">' +
-                  // Straddles tab — CRUD for short-straddle instances
-                  '<div class="sm-pane" data-pane="straddles" style="display:none;">' +
-                    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
-                      '<div class="sm-hint" style="margin:0;">Each row is an independent short straddle with its own settings, state, sidebar entry and dashboard. Open the per-instance page for trading config.</div>' +
-                      '<button class="sm-btn-primary" onclick="SettingsModal.showStraddleForm()">+ Add Straddle</button>' +
-                    '</div>' +
-                    '<div id="sm-straddles-list" style="font-family:var(--font-mono);font-size:0.78rem;">Loading…</div>' +
-                    '<div id="sm-straddle-form" style="display:none;margin-top:18px;padding:14px;border:1px solid var(--border);border-radius:8px;background:var(--bg-primary);">' +
-                      '<div style="font-family:var(--font-mono);font-size:0.84rem;font-weight:700;margin-bottom:10px;color:var(--text-primary);" id="sm-straddle-form-title">Add Straddle</div>' +
-                      '<input type="hidden" id="sm-straddle-id">' +
-                      '<div class="sm-field"><label>Name</label><input type="text" id="sm-straddle-name" maxlength="80" placeholder="e.g. 9:20 Default"></div>' +
-                      '<div class="sm-field"><label>Description</label><input type="text" id="sm-straddle-description" maxlength="240" placeholder="e.g. standard 1-lot, 50% leg SL"></div>' +
-                      '<div class="sm-field"><label>Short Code <span style="font-size:0.66rem;color:var(--text-muted);">(used as sidebar label — ≤24 chars)</span></label><input type="text" id="sm-straddle-shortCode" maxlength="24" placeholder="e.g. 9:20"></div>' +
-                      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">' +
-                        '<button class="sm-btn-secondary" onclick="SettingsModal.cancelStraddleForm()">Cancel</button>' +
-                        '<button class="sm-btn-primary" onclick="SettingsModal.saveStraddle()">Save</button>' +
+                  // Positions tab — one instance per underlying
+                  '<div class="sm-pane" data-pane="positions" style="display:none;">' +
+                    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:12px;">' +
+                      '<div class="sm-hint" style="margin:0;">Each row is a positions page with its own book, P&L and calendar history. The underlying is what tells them apart.</div>' +
+                      '<div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">' +
+                        '<select id="sm-positions-new-underlying" style="background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);padding:6px 8px;border-radius:6px;font-family:var(--font-mono);font-size:0.76rem;font-weight:700;outline:none;">' +
+                          '<option value="NIFTY" style="background:var(--bg-card);color:var(--text-primary);">NIFTY</option>' +
+                          '<option value="SENSEX" style="background:var(--bg-card);color:var(--text-primary);">SENSEX</option>' +
+                        '</select>' +
+                        '<button class="sm-btn-primary" onclick="SettingsModal.addInstance()">+ Add</button>' +
                       '</div>' +
                     '</div>' +
-                  '</div>' +
-                  // Strangles tab — CRUD for short-strangle instances
-                  '<div class="sm-pane" data-pane="strangles" style="display:none;">' +
-                    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
-                      '<div class="sm-hint" style="margin:0;">Each row is an independent short strangle with its own settings, state, sidebar entry and dashboard. Pick OTM offsets in the per-instance ⚙ Settings.</div>' +
-                      '<button class="sm-btn-primary" onclick="SettingsModal.showStrangleForm()">+ Add Strangle</button>' +
-                    '</div>' +
-                    '<div id="sm-strangles-list" style="font-family:var(--font-mono);font-size:0.78rem;">Loading…</div>' +
-                    '<div id="sm-strangle-form" style="display:none;margin-top:18px;padding:14px;border:1px solid var(--border);border-radius:8px;background:var(--bg-primary);">' +
-                      '<div style="font-family:var(--font-mono);font-size:0.84rem;font-weight:700;margin-bottom:10px;color:var(--text-primary);" id="sm-strangle-form-title">Add Strangle</div>' +
-                      '<input type="hidden" id="sm-strangle-id">' +
-                      '<div class="sm-field"><label>Name</label><input type="text" id="sm-strangle-name" maxlength="80" placeholder="e.g. 9:20 ±100"></div>' +
-                      '<div class="sm-field"><label>Description</label><input type="text" id="sm-strangle-description" maxlength="240" placeholder="e.g. ATM ±100 strangle, 50% leg SL"></div>' +
-                      '<div class="sm-field"><label>Short Code <span style="font-size:0.66rem;color:var(--text-muted);">(used as sidebar label — ≤24 chars)</span></label><input type="text" id="sm-strangle-shortCode" maxlength="24" placeholder="e.g. STG1"></div>' +
-                      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">' +
-                        '<button class="sm-btn-secondary" onclick="SettingsModal.cancelStrangleForm()">Cancel</button>' +
-                        '<button class="sm-btn-primary" onclick="SettingsModal.saveStrangle()">Save</button>' +
-                      '</div>' +
-                    '</div>' +
+                    '<div id="sm-positions-list" style="font-family:var(--font-mono);font-size:0.78rem;">Loading…</div>' +
                   '</div>' +
                   // Portfolio Risk tab (static)
                   '<div class="sm-pane" data-pane="portfolio-risk" style="display:none;">' +
                     '<div class="sm-field"><label>Initial Capital (₹)</label><input type="number" id="sm-startingCapital" step="1000" min="0"><div class="sm-hint">Baseline used by the Home analytics page (capital growth %, equity curve, return %). Default ₹10,00,000.</div></div>' +
                     '<div class="sm-field"><label>Portfolio Max Daily Risk (%)</label><input type="number" id="sm-portfolioMaxRiskPct" step="0.1" min="0"><div class="sm-hint">Global kill switch trigger. When aggregate net day P&L across all strategies drops below this % of Initial Capital, every strategy is flattened. 0 disables.</div></div>' +
+                    '<div class="sm-field"><label>Intraday Squareoff Time (HH:mm)</label><input type="time" id="sm-intradaySquareOffTime"><div class="sm-hint">Positions pages close every INTRADAY (MIS) leg at this time. Positional (NRML) legs are carried to expiry. Default 15:20.</div></div>' +
                     '<div class="sm-field"><label>Max Portfolio Risk (₹)</label><div class="sm-readonly" id="sm-portfolioMaxRiskRupees">—</div><div class="sm-hint">Auto-calculated from Initial Capital × Daily Risk %. This is the sole rupee loss threshold across the whole book — when aggregate (consumed risk + open MTM − charges) across every enabled strategy breaches this, all positions are flattened.</div></div>' +
                   '</div>' +
                   '<div class="sm-pane" data-pane="charges" style="display:none;">' +
@@ -160,8 +137,7 @@
         var strip = document.getElementById('sm-tabstrip');
         if (!strip) return;
         var html = '';
-        html += '<button class="sm-tab" data-tab="straddles">STRADDLES</button>';
-        html += '<button class="sm-tab" data-tab="strangles">STRANGLES</button>';
+        html += '<button class="sm-tab" data-tab="positions">POSITIONS</button>';
         html += '<button class="sm-tab" data-tab="portfolio-risk">PORTFOLIO RISK</button>';
         html += '<button class="sm-tab" data-tab="charges">CHARGES</button>';
         html += '<button class="sm-tab" data-tab="data">DATA</button>';
@@ -179,12 +155,9 @@
             b.classList.toggle('active', b.getAttribute('data-tab') === tab);
         });
         modalEl.querySelectorAll('.sm-pane').forEach(function(p) { p.style.display = 'none'; });
-        if (tab === 'straddles') {
-            var sp = modalEl.querySelector('[data-pane="straddles"]'); if (sp) sp.style.display = '';
-            loadStraddles();
-        } else if (tab === 'strangles') {
-            var stp = modalEl.querySelector('[data-pane="strangles"]'); if (stp) stp.style.display = '';
-            loadStrangles();
+        if (tab === 'positions') {
+            var pp0 = modalEl.querySelector('[data-pane="positions"]'); if (pp0) pp0.style.display = '';
+            loadPositions();
         } else if (tab === 'portfolio-risk') {
             var pp = modalEl.querySelector('[data-pane="portfolio-risk"]'); if (pp) pp.style.display = '';
             loadPortfolioRiskValues();
@@ -203,8 +176,7 @@
     function saveSettings() {
         if (activeTab === 'portfolio-risk') return savePortfolioRiskTab();
         if (activeTab === 'charges')        return saveChargesTab();
-        if (activeTab === 'straddles')      { showBanner('Use the row buttons (✎ ✕ enable/disable) — no batch save.', 'info'); return; }
-        if (activeTab === 'strangles')      { showBanner('Use the row buttons (✎ ✕ enable/disable) — no batch save.', 'info'); return; }
+        if (activeTab === 'positions')      { showBanner('Use the row controls — changes apply immediately.', 'info'); return; }
         if (activeTab === 'users')          { showBanner('Use the row buttons to manage users.', 'info'); return; }
         if (activeTab === 'data')           { showBanner('Nothing to save here — use the Clear button.', 'info'); return; }
         showBanner('No save action for this tab.', 'info');
@@ -261,205 +233,158 @@
         });
     }
 
-    // ── Straddles CRUD ───────────────────────────────────────────────────────
-    function loadStraddles() {
-        var list = document.getElementById('sm-straddles-list');
+    // ── Positions pages (one instance per underlying) ────────────────────────
+    // Name / description / short code are no longer edited: the underlying is the only
+    // thing that tells instances apart. Both legacy endpoints are read so STRADDLE-typed
+    // rows still appear; new rows are created through /api/strangles.
+    var instances = [];
+    function apiBase(s) { return s && s.type === 'STRADDLE' ? '/api/straddles' : '/api/strangles'; }
+    function findInstance(id) { return instances.find(function(s) { return s.id === id; }); }
+
+    function loadPositions() {
+        var list = document.getElementById('sm-positions-list');
         if (!list) return;
         list.textContent = 'Loading…';
-        fetch('/api/straddles').then(function(r) { return r.json(); }).then(function(arr) {
-            straddles = Array.isArray(arr) ? arr : [];
-            renderStraddlesList();
-        }).catch(function() { list.textContent = 'Failed to load straddles.'; });
+        Promise.all([
+            fetch('/api/strangles').then(function(r) { return r.json(); }).catch(function() { return []; }),
+            fetch('/api/straddles').then(function(r) { return r.json(); }).catch(function() { return []; })
+        ]).then(function(res) {
+            var a = Array.isArray(res[0]) ? res[0].map(function(s) { s.type = 'STRANGLE'; return s; }) : [];
+            var b = Array.isArray(res[1]) ? res[1].map(function(s) { s.type = 'STRADDLE'; return s; }) : [];
+            instances = a.concat(b);
+            renderPositionsList();
+        }).catch(function() { list.textContent = 'Failed to load positions pages.'; });
     }
 
-    function renderStraddlesList() {
-        var list = document.getElementById('sm-straddles-list');
+    function renderPositionsList() {
+        var list = document.getElementById('sm-positions-list');
         if (!list) return;
-        if (!straddles || straddles.length === 0) {
-            list.innerHTML = '<div style="color:var(--text-muted);font-style:italic;padding:14px 0;">No straddles yet. Click + Add Straddle to create your first one.</div>';
+        if (!instances.length) {
+            list.innerHTML = '<div style="color:var(--text-muted);font-style:italic;padding:14px 0;">No positions pages yet. Pick an underlying and click + Add.</div>';
             return;
         }
-        list.innerHTML = straddles.map(function(s) {
+        var selStyle = 'background:var(--bg-card);border:1px solid var(--border);color:var(--text-primary);padding:4px 8px;border-radius:6px;font-family:var(--font-mono);font-size:0.76rem;font-weight:700;outline:none;';
+        list.innerHTML = instances.map(function(s) {
             var enabled = s.enabled === true;
-            var name = escapeHtml(s.name || s.shortCode || s.id);
-            var desc = escapeHtml(s.description || '');
-            var sc   = escapeHtml(s.shortCode || '');
             var state = escapeHtml(s.currentState || '—');
-            var rowJson = JSON.stringify(s).replace(/'/g, '&#39;').replace(/"/g, '&quot;');
-            // 4px left strip: green = enabled, red = disabled. Padding-left shaved by 3px
-            // (default 12px → 9px) to compensate for the extra 3px of border beyond the row's
-            // default 1px so content alignment is identical across rows.
+            var u = String(s.underlying || 'NIFTY').toUpperCase();
+            var opts = ['NIFTY', 'SENSEX'].map(function(x) {
+                return '<option value="' + x + '"' + (x === u ? ' selected' : '') + ' style="background:var(--bg-card);color:var(--text-primary);">' + x + '</option>';
+            }).join('');
             var stripStyle = enabled
                 ? 'border-left:4px solid var(--accent-green);padding-left:9px;'
                 : 'border-left:4px solid var(--accent-red, #f87171);padding-left:9px;';
+            var openLegs = /^OPEN/.test(s.currentState || '');
             return '<div class="sm-user-row" style="' + stripStyle + '">' +
-                '<div style="flex:1;">' +
-                    '<div style="color:var(--text-primary);">' + sc + ' · ' + name + '</div>' +
-                    (desc ? '<div style="color:var(--text-muted);font-size:0.7rem;margin-top:2px;">' + desc + '</div>' : '') +
-                    '<div style="color:var(--text-muted);font-size:0.66rem;margin-top:2px;">state ' + state + ' · ' + (enabled ? 'ENABLED' : 'DISABLED') + '</div>' +
+                '<div style="flex:1;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">' +
+                    '<select style="' + selStyle + '"' + (openLegs ? ' disabled title="Close all legs before changing the underlying"' : ' title="Underlying for this positions page"') +
+                        ' onchange="SettingsModal.setInstanceUnderlying(\'' + escapeHtml(s.id) + '\', this)">' + opts + '</select>' +
+                    '<span style="color:var(--text-primary);">POSITIONS</span>' +
+                    '<label style="display:inline-flex;align-items:center;gap:6px;color:var(--text-muted);font-size:0.66rem;">LOTS ' +
+                        '<input type="number" min="1" max="100" step="1" value="' + (Number(s.defaultLots) > 0 ? Number(s.defaultLots) : 1) + '" title="Default lots in the open dialogs" style="' + selStyle + 'width:64px;" ' +
+                        'onchange="SettingsModal.setInstanceDefaults(\'' + escapeHtml(s.id) + '\', { defaultLots: this.value })"></label>' +
+                    '<select title="Default order type in the open dialogs" style="' + selStyle + '" onchange="SettingsModal.setInstanceDefaults(\'' + escapeHtml(s.id) + '\', { defaultProduct: this.value })">' +
+                        '<option value="INTRADAY"' + (String(s.defaultProduct || 'INTRADAY') === 'INTRADAY' ? ' selected' : '') + ' style="background:var(--bg-card);color:var(--text-primary);">INTRADAY</option>' +
+                        '<option value="MARGIN"' + (String(s.defaultProduct) === 'MARGIN' ? ' selected' : '') + ' style="background:var(--bg-card);color:var(--text-primary);">OVERNIGHT</option></select>' +
+                    '<label style="display:inline-flex;align-items:center;gap:6px;color:var(--text-muted);font-size:0.66rem;">SL % ' +
+                        '<input type="number" min="0" max="500" step="5" value="' + (Number(s.defaultSlPct) >= 0 ? Number(s.defaultSlPct) : 50) + '" title="Default SL % of entry in the open dialogs (0 = no SL)" style="' + selStyle + 'width:70px;" ' +
+                        'onchange="SettingsModal.setInstanceDefaults(\'' + escapeHtml(s.id) + '\', { defaultSlPct: this.value })"></label>' +
+                    '<span style="color:var(--text-muted);font-size:0.66rem;">state ' + state + ' · ' + (enabled ? 'ENABLED' : 'DISABLED') + '</span>' +
                 '</div>' +
                 '<div>' +
-                    '<button onclick="SettingsModal.toggleStraddle(\'' + escapeHtml(s.id) + '\', ' + (!enabled) + ')">' + (enabled ? 'Disable' : 'Enable') + '</button>' +
-                    '<button onclick="SettingsModal.editStraddleForm(' + rowJson + ')">Edit</button>' +
+                    '<button onclick="SettingsModal.toggleInstance(\'' + escapeHtml(s.id) + '\', ' + (!enabled) + ')">' + (enabled ? 'Disable' : 'Enable') + '</button>' +
+                    '<button onclick="SettingsModal.deleteInstance(\'' + escapeHtml(s.id) + '\')"' + (openLegs ? ' disabled title="Close all legs first"' : '') + '>Delete</button>' +
                 '</div>' +
             '</div>';
         }).join('');
     }
 
-    function showStraddleForm(s) {
-        document.getElementById('sm-straddle-form').style.display = '';
-        document.getElementById('sm-straddle-form-title').textContent = s ? 'Edit Straddle' : 'Add Straddle';
-        document.getElementById('sm-straddle-id').value          = s ? s.id : '';
-        document.getElementById('sm-straddle-name').value        = s ? (s.name || '') : '';
-        document.getElementById('sm-straddle-description').value = s ? (s.description || '') : '';
-        document.getElementById('sm-straddle-shortCode').value   = s ? (s.shortCode || '') : '';
-    }
-
-    function cancelStraddleForm() {
-        document.getElementById('sm-straddle-form').style.display = 'none';
-    }
-
-    function saveStraddle() {
-        var id = document.getElementById('sm-straddle-id').value;
-        var body = {
-            name:        document.getElementById('sm-straddle-name').value.trim(),
-            description: document.getElementById('sm-straddle-description').value.trim(),
-            shortCode:   document.getElementById('sm-straddle-shortCode').value.trim()
-        };
-        if (!body.name)      { showBanner('✗ Name is required', 'error'); return; }
-        if (!body.shortCode) { showBanner('✗ Short code is required', 'error'); return; }
-        var url    = id ? ('/api/straddles/' + encodeURIComponent(id)) : '/api/straddles';
-        var method = id ? 'PUT' : 'POST';
-        fetch(url, {
-            method: method,
+    function addInstance() {
+        var sel = document.getElementById('sm-positions-new-underlying');
+        var u = sel ? sel.value : 'NIFTY';
+        fetch('/api/strangles', {
+            method: 'POST',
             headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders()),
-            body: JSON.stringify(body)
+            body: JSON.stringify({ name: u + ' Positions', shortCode: u, description: '', underlying: u })
         }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, body: d }; }); })
           .then(function(res) {
-            if (!res.ok) { showBanner('✗ ' + ((res.body && res.body.error) || 'Save failed'), 'error'); return; }
-            showBanner('✓ Straddle ' + (id ? 'updated' : 'created'), 'success');
-            cancelStraddleForm();
-            loadStraddles();
+            if (!res.ok) { showBanner('✗ ' + ((res.body && res.body.error) || 'Create failed'), 'error'); return; }
+            showBanner('✓ ' + u + ' positions page created', 'success');
+            loadPositions();
             refreshSidebar();
-        }).catch(function(err) { showBanner('✗ Save failed: ' + (err.message || err), 'error'); });
+        }).catch(function(err) { showBanner('✗ Create failed: ' + (err.message || err), 'error'); });
     }
 
-    function toggleStraddle(id, enable) {
-        var url = '/api/straddles/' + encodeURIComponent(id) + (enable ? '/enable' : '/disable');
-        fetch(url, { method: 'POST', headers: csrfHeaders() })
+    function setInstanceUnderlying(id, sel) {
+        var s = findInstance(id);
+        if (!s) return;
+        var u = sel.value;
+        fetch(apiBase(s) + '/' + encodeURIComponent(id), {
+            method: 'PUT',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders()),
+            body: JSON.stringify({ underlying: u })
+        }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, body: d }; }); })
+          .then(function(res) {
+            if (!res.ok || (res.body && res.body.underlying && res.body.underlying !== u)) {
+                showBanner('✗ ' + ((res.body && res.body.error) || 'Underlying not changed — close all legs first'), 'error');
+                loadPositions();
+                return;
+            }
+            showBanner('✓ Underlying set to ' + u, 'success');
+            loadPositions();
+            refreshSidebar();
+        }).catch(function(err) { showBanner('✗ Update failed: ' + (err.message || err), 'error'); loadPositions(); });
+    }
+
+    function setInstanceDefaults(id, patch) {
+        var s = findInstance(id);
+        if (!s) return;
+        fetch(apiBase(s) + '/' + encodeURIComponent(id), {
+            method: 'PUT',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders()),
+            body: JSON.stringify(patch)
+        }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, body: d }; }); })
+          .then(function(res) {
+            if (!res.ok) { showBanner('✗ ' + ((res.body && res.body.error) || 'Update failed'), 'error'); loadPositions(); return; }
+            showBanner('✓ Defaults saved', 'success');
+            loadPositions();
+        }).catch(function(err) { showBanner('✗ Update failed: ' + (err.message || err), 'error'); loadPositions(); });
+    }
+
+    function toggleInstance(id, enable) {
+        var s = findInstance(id);
+        if (!s) return;
+        fetch(apiBase(s) + '/' + encodeURIComponent(id) + (enable ? '/enable' : '/disable'), { method: 'POST', headers: csrfHeaders() })
             .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, status: r.status, body: d }; }); })
             .then(function(res) {
                 if (!res.ok) {
                     var msg = (res.body && res.body.error) || 'Toggle failed';
-                    if (res.status === 409 && res.body && res.body.currentState) {
-                        msg += ' (state=' + res.body.currentState + ')';
-                    }
+                    if (res.status === 409 && res.body && res.body.currentState) msg += ' (state=' + res.body.currentState + ')';
                     showBanner('✗ ' + msg, 'error');
                     return;
                 }
-                showBanner('✓ Straddle ' + (enable ? 'enabled' : 'disabled'), 'success');
-                loadStraddles();
+                showBanner('✓ Positions page ' + (enable ? 'enabled' : 'disabled'), 'success');
+                loadPositions();
                 refreshSidebar();
             }).catch(function(err) { showBanner('✗ Toggle failed: ' + (err.message || err), 'error'); });
     }
 
-    // ── Strangles CRUD ───────────────────────────────────────────────────────
-    function loadStrangles() {
-        var list = document.getElementById('sm-strangles-list');
-        if (!list) return;
-        list.textContent = 'Loading…';
-        fetch('/api/strangles').then(function(r) { return r.json(); }).then(function(arr) {
-            strangles = Array.isArray(arr) ? arr : [];
-            renderStranglesList();
-        }).catch(function() { list.textContent = 'Failed to load strangles.'; });
-    }
-
-    function renderStranglesList() {
-        var list = document.getElementById('sm-strangles-list');
-        if (!list) return;
-        if (!strangles || strangles.length === 0) {
-            list.innerHTML = '<div style="color:var(--text-muted);font-style:italic;padding:14px 0;">No strangles yet. Click + Add Strangle to create your first one.</div>';
-            return;
-        }
-        list.innerHTML = strangles.map(function(s) {
-            var enabled = s.enabled === true;
-            var name = escapeHtml(s.name || s.shortCode || s.id);
-            var desc = escapeHtml(s.description || '');
-            var sc   = escapeHtml(s.shortCode || '');
-            var state = escapeHtml(s.currentState || '—');
-            var rowJson = JSON.stringify(s).replace(/'/g, '&#39;').replace(/"/g, '&quot;');
-            var stripStyle = enabled
-                ? 'border-left:4px solid var(--accent-green);padding-left:9px;'
-                : 'border-left:4px solid var(--accent-red, #f87171);padding-left:9px;';
-            return '<div class="sm-user-row" style="' + stripStyle + '">' +
-                '<div style="flex:1;">' +
-                    '<div style="color:var(--text-primary);">' + sc + ' · ' + name + '</div>' +
-                    (desc ? '<div style="color:var(--text-muted);font-size:0.7rem;margin-top:2px;">' + desc + '</div>' : '') +
-                    '<div style="color:var(--text-muted);font-size:0.66rem;margin-top:2px;">state ' + state + ' · ' + (enabled ? 'ENABLED' : 'DISABLED') + '</div>' +
-                '</div>' +
-                '<div>' +
-                    '<button onclick="SettingsModal.toggleStrangle(\'' + escapeHtml(s.id) + '\', ' + (!enabled) + ')">' + (enabled ? 'Disable' : 'Enable') + '</button>' +
-                    '<button onclick="SettingsModal.editStrangleForm(' + rowJson + ')">Edit</button>' +
-                '</div>' +
-            '</div>';
-        }).join('');
-    }
-
-    function showStrangleForm(s) {
-        document.getElementById('sm-strangle-form').style.display = '';
-        document.getElementById('sm-strangle-form-title').textContent = s ? 'Edit Strangle' : 'Add Strangle';
-        document.getElementById('sm-strangle-id').value          = s ? s.id : '';
-        document.getElementById('sm-strangle-name').value        = s ? (s.name || '') : '';
-        document.getElementById('sm-strangle-description').value = s ? (s.description || '') : '';
-        document.getElementById('sm-strangle-shortCode').value   = s ? (s.shortCode || '') : '';
-    }
-
-    function cancelStrangleForm() {
-        document.getElementById('sm-strangle-form').style.display = 'none';
-    }
-
-    function saveStrangle() {
-        var id = document.getElementById('sm-strangle-id').value;
-        var body = {
-            name:        document.getElementById('sm-strangle-name').value.trim(),
-            description: document.getElementById('sm-strangle-description').value.trim(),
-            shortCode:   document.getElementById('sm-strangle-shortCode').value.trim()
+    function deleteInstance(id) {
+        var s = findInstance(id);
+        if (!s) return;
+        var go = function() {
+            fetch(apiBase(s) + '/' + encodeURIComponent(id), { method: 'DELETE', headers: csrfHeaders() })
+                .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, body: d }; }); })
+                .then(function(res) {
+                    if (!res.ok) { showBanner('✗ ' + ((res.body && res.body.error) || 'Delete failed'), 'error'); return; }
+                    showBanner('✓ Positions page removed', 'success');
+                    loadPositions();
+                    refreshSidebar(id);
+                }).catch(function(err) { showBanner('✗ Delete failed: ' + (err.message || err), 'error'); });
         };
-        if (!body.name)      { showBanner('✗ Name is required', 'error'); return; }
-        if (!body.shortCode) { showBanner('✗ Short code is required', 'error'); return; }
-        var url    = id ? ('/api/strangles/' + encodeURIComponent(id)) : '/api/strangles';
-        var method = id ? 'PUT' : 'POST';
-        fetch(url, {
-            method: method,
-            headers: Object.assign({ 'Content-Type': 'application/json' }, csrfHeaders()),
-            body: JSON.stringify(body)
-        }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, body: d }; }); })
-          .then(function(res) {
-            if (!res.ok) { showBanner('✗ ' + ((res.body && res.body.error) || 'Save failed'), 'error'); return; }
-            showBanner('✓ Strangle ' + (id ? 'updated' : 'created'), 'success');
-            cancelStrangleForm();
-            loadStrangles();
-            refreshSidebar();
-        }).catch(function(err) { showBanner('✗ Save failed: ' + (err.message || err), 'error'); });
-    }
-
-    function toggleStrangle(id, enable) {
-        var url = '/api/strangles/' + encodeURIComponent(id) + (enable ? '/enable' : '/disable');
-        fetch(url, { method: 'POST', headers: csrfHeaders() })
-            .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, status: r.status, body: d }; }); })
-            .then(function(res) {
-                if (!res.ok) {
-                    var msg = (res.body && res.body.error) || 'Toggle failed';
-                    if (res.status === 409 && res.body && res.body.currentState) {
-                        msg += ' (state=' + res.body.currentState + ')';
-                    }
-                    showBanner('✗ ' + msg, 'error');
-                    return;
-                }
-                showBanner('✓ Strangle ' + (enable ? 'enabled' : 'disabled'), 'success');
-                loadStrangles();
-                refreshSidebar();
-            }).catch(function(err) { showBanner('✗ Toggle failed: ' + (err.message || err), 'error'); });
+        if (typeof window.showConfirm === 'function') {
+            window.showConfirm({ title: 'Remove the ' + (s.underlying || '') + ' positions page?', body: 'History stays in the database; the page disappears from the sidebar.', confirmLabel: 'Remove', onConfirm: go });
+        } else if (confirm('Remove this positions page?')) go();
     }
 
     // ── Sidebar live refresh ─────────────────────────────────────────────────
@@ -480,16 +405,16 @@
                 while (homeLink.nextSibling) aside.removeChild(homeLink.nextSibling);
 
                 var list = (Array.isArray(arr) ? arr : []).filter(function(s) { return s && s.enabled !== false; });
-                var straddles = list.filter(function(s) { return s.type === 'STRADDLE' || !s.type; });
-                var strangles = list.filter(function(s) { return s.type === 'STRANGLE'; });
+                var groups = {}, order = [];
+                list.forEach(function(s) { var u = String(s.underlying || 'OTHER').toUpperCase(); if (!groups[u]) { groups[u] = []; order.push(u); } groups[u].push(s); });
+                var rank = { NIFTY: 0, SENSEX: 1 };
+                order.sort(function(x, y) { return (rank[x] == null ? 9 : rank[x]) - (rank[y] == null ? 9 : rank[y]); });
                 var pathnow = window.location.pathname;
 
-                var chipStyle = 'display:flex;flex-direction:column;align-items:center;justify-content:center;'
-                    + 'width:88px;min-height:52px;padding:8px 12px;border-radius:8px;text-decoration:none;'
-                    + 'font-family:var(--font-mono);font-weight:700;font-size:0.86rem;'
-                    + 'color:var(--text-secondary);border:1px solid transparent;'
-                    + 'background:transparent;cursor:pointer;letter-spacing:0.06em;'
-                    + 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.15;';
+                var chipStyle = 'display:flex;align-items:center;justify-content:center;width:88px;height:36px;'
+                    + 'padding:0 12px;border-radius:8px;text-decoration:none;font-family:var(--font-mono);'
+                    + 'font-weight:700;font-size:0.78rem;letter-spacing:0.10em;color:var(--text-secondary);'
+                    + 'border:1px solid transparent;background:transparent;cursor:pointer;';
                 var dividerStyle = 'width:64px;height:1px;background:var(--border);margin:4px 0;';
                 var labelStyle = 'font-family:var(--font-mono);font-size:0.62rem;letter-spacing:0.10em;'
                     + 'color:var(--text-muted);text-transform:uppercase;text-align:center;'
@@ -519,16 +444,9 @@
                         a.setAttribute('data-nav-key', s.id);
                         // Two-line chip: bold short code on top, small muted underlying below.
                         var primary = document.createElement('span');
-                        primary.textContent = s.navIcon || s.shortCode || s.id;
+                        primary.textContent = String(s.underlying || 'OTHER').toUpperCase();
                         primary.style.cssText = 'display:block;';
                         a.appendChild(primary);
-                        if (underlying) {
-                            var sub = document.createElement('span');
-                            sub.textContent = underlying;
-                            sub.style.cssText = 'display:block;font-size:0.52rem;font-weight:600;'
-                                + 'color:var(--text-muted);letter-spacing:0.08em;margin-top:2px;';
-                            a.appendChild(sub);
-                        }
                         a.style.cssText = chipStyle;
                         if (pathnow === ('/strategies/' + s.id)) a.classList.add('active');
                         aside.appendChild(a);
@@ -536,16 +454,12 @@
                     });
                 }
 
-                // Divider between HOME and the first strategy group (matches the static template).
                 appendDivider();
-                if (straddles.length > 0) {
-                    appendLabel('STRADDLES', '6px');
-                    appendChips(straddles);
-                }
-                if (strangles.length > 0) {
-                    appendLabel('STRANGLES', '10px');
-                    appendChips(strangles);
-                }
+                if (order.length) appendLabel('POSITIONS', '6px');
+                order.forEach(function(u, gi) {
+                    if (gi > 0) appendDivider();
+                    appendChips(groups[u]);
+                });
 
                 if (deletedId && pathnow === ('/strategies/' + deletedId)) {
                     window.location.href = '/home';
@@ -557,7 +471,8 @@
     function savePortfolioRiskTab() {
         var body = {
             startingCapital:     parseFloat(document.getElementById('sm-startingCapital').value) || 0,
-            portfolioMaxRiskPct: parseFloat(document.getElementById('sm-portfolioMaxRiskPct').value) || 0
+            portfolioMaxRiskPct: parseFloat(document.getElementById('sm-portfolioMaxRiskPct').value) || 0,
+            intradaySquareOffTime: (document.getElementById('sm-intradaySquareOffTime') || {}).value || '15:20'
         };
         postSettings('/api/settings/risk', body);
     }
@@ -618,6 +533,8 @@
             var pctInput = document.getElementById('sm-portfolioMaxRiskPct');
             if (capInput) capInput.value = d.startingCapital != null ? d.startingCapital : 1000000;
             if (pctInput) pctInput.value = d.portfolioMaxRiskPct != null ? d.portfolioMaxRiskPct : 0;
+            var sqInput = document.getElementById('sm-intradaySquareOffTime');
+            if (sqInput) sqInput.value = d.intradaySquareOffTime || '15:20';
             updatePortfolioRiskHint(d.startingCapital || 0, d.portfolioMaxRiskPct || 0);
             if (capInput) capInput.oninput = function() {
                 updatePortfolioRiskHint(parseFloat(capInput.value) || 0, parseFloat(pctInput && pctInput.value) || 0);
@@ -667,14 +584,13 @@
             fetch('/api/strategies').then(function(r) { return r.json(); }).then(function(arr) {
                 strategiesList = Array.isArray(arr) ? arr : [];
             }).catch(function() {});
-            switchTab('straddles');
+            switchTab('positions');
         } else {
             // Re-open: refresh values for the active tab.
-            if (activeTab === 'straddles')           loadStraddles();
-            else if (activeTab === 'strangles')      loadStrangles();
+            if (activeTab === 'positions')           loadPositions();
             else if (activeTab === 'portfolio-risk') loadPortfolioRiskValues();
             else if (activeTab === 'charges')        loadChargesValues();
-            else                                     switchTab('straddles');
+            else                                     switchTab('positions');
         }
     }
 
@@ -782,17 +698,12 @@
         saveUser: saveUser,
         editUser: function(id, u) { showUserForm(u); },
         deleteUser: deleteUser,
-        showStraddleForm: function() { showStraddleForm(); },
-        editStraddleForm: function(s) { showStraddleForm(s); },
-        cancelStraddleForm: cancelStraddleForm,
-        saveStraddle: saveStraddle,
-        toggleStraddle: toggleStraddle,
-        showStrangleForm: function() { showStrangleForm(); },
-        editStrangleForm: function(s) { showStrangleForm(s); },
-        cancelStrangleForm: cancelStrangleForm,
-        saveStrangle: saveStrangle,
+        addInstance: addInstance,
+        setInstanceUnderlying: setInstanceUnderlying,
+        setInstanceDefaults: setInstanceDefaults,
+        toggleInstance: toggleInstance,
+        deleteInstance: deleteInstance,
         onClearConfirmInput: onClearConfirmInput,
-        clearTradeData: clearTradeData,
-        toggleStrangle: toggleStrangle
+        clearTradeData: clearTradeData
     };
 })();

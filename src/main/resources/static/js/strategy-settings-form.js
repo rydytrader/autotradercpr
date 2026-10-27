@@ -147,17 +147,17 @@
 
         var riskHtml = gridOf(riskFields);
         if (dteOrder.length > 0) {
-            riskHtml += '<div class="ss-section-title">Days to Expiry · enable + per-leg SL</div>';
+            riskHtml += '<div class="ss-section-title">Days to Expiry · per-leg SL</div>';
             riskHtml += '<div class="ss-day-grid">';
-            riskHtml += '<div class="ss-day-header"><span>DTE</span><span>Enable</span><span>SL %</span><span>SL Points</span></div>';
+            riskHtml += '<div class="ss-day-header"><span>DTE</span><span></span><span>SL %</span><span>SL Points</span></div>';
             dteOrder.forEach(function(n) {
                 var pair = dteMap[n];
                 var enF = pair.enabled, slF = pair.legSlPct, ptF = pair.legSlPoints;
-                if (!enF || !slF) return;
+                if (!slF) return;
                 riskHtml +=
                     '<div class="ss-day-row">' +
                         '<span class="ss-day-name">' + escapeHtml(n) + ' DTE</span>' +
-                        '<input type="checkbox" id="ss-' + escapeHtml(enF.key) + '">' +
+                        (enF ? '<input type="checkbox" id="ss-' + escapeHtml(enF.key) + '">' : '<span></span>') +
                         '<input type="number" id="ss-' + escapeHtml(slF.key) + '" step="1" min="0">' +
                         (ptF
                             ? '<input type="number" id="ss-' + escapeHtml(ptF.key) + '" step="0.05" min="0" title="Direct premium points (takes precedence over SL % when > 0)">'

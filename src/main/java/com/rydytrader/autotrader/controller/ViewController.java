@@ -75,7 +75,9 @@ public class ViewController {
             e.put("displayName", s.displayName());
             e.put("description", s.description());
             e.put("shortCode", s.shortCode());
-            e.put("navIcon", s.shortCode());
+            // Sidebar label: every instance is a POSITIONS page; the underlying chip below it
+            // tells them apart. The short code is still carried for tooltips / other pages.
+            e.put("navIcon", "POSITIONS");
             e.put("underlying", s.underlyingName());
             e.put("href", "/strategies/" + s.id());
             e.put("type", s.strategyType());
@@ -241,13 +243,32 @@ public class ViewController {
         List<Map<String, Object>> all = sidebarStrategies();
         List<Map<String, Object>> straddles = new ArrayList<>();
         List<Map<String, Object>> strangles = new ArrayList<>();
-        for (Map<String, Object> e : all) {
-            Object t = e.get("type");
-            if ("STRANGLE".equals(t)) strangles.add(e); else straddles.add(e);
-        }
+        // Since the manual position manager both types behave identically, so the sidebar
+        // shows one POSITIONS group (the "strangles" list) and the straddles list stays empty.
+        strangles.addAll(all);
         model.addAttribute("sidebarStrategies", all);
         model.addAttribute("sidebarStraddles", straddles);
         model.addAttribute("sidebarStrangles", strangles);
+        // Sidebar groups: one heading per underlying (NIFTY first, then SENSEX), each
+        // holding that underlying's positions pages.
+        java.util.Map<String, List<Map<String, Object>>> byUnderlying = new java.util.TreeMap<>((x, y) -> {
+            java.util.Map<String, Integer> rank = java.util.Map.of("NIFTY", 0, "SENSEX", 1);
+            int c = Integer.compare(rank.getOrDefault(x, 9), rank.getOrDefault(y, 9));
+            return c != 0 ? c : x.compareTo(y);
+        });
+        for (Map<String, Object> e : all) {
+            String u = String.valueOf(e.getOrDefault("underlying", ""));
+            if (u.isEmpty() || "null".equals(u)) u = "OTHER";
+            byUnderlying.computeIfAbsent(u, k -> new ArrayList<>()).add(e);
+        }
+        List<Map<String, Object>> groups = new ArrayList<>();
+        for (Map.Entry<String, List<Map<String, Object>>> g : byUnderlying.entrySet()) {
+            Map<String, Object> gm = new LinkedHashMap<>();
+            gm.put("underlying", g.getKey());
+            gm.put("items", g.getValue());
+            groups.add(gm);
+        }
+        model.addAttribute("sidebarGroups", groups);
     }
 
     /** Per-strategy operational dashboard. Same template (short-straddle.html) for every
@@ -272,7 +293,7 @@ public class ViewController {
         // Pick the per-instance template based on strategy type. Strangle gets its own
         // template ({@code short-strangle.html}); everything else falls back to the
         // straddle template.
-        return s != null && "STRANGLE".equals(s.strategyType()) ? "short-strangle" : "short-straddle";
+        return "short-strangle";
     }
 
     @GetMapping("/calendar")

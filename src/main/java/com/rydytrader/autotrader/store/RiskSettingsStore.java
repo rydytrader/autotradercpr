@@ -28,6 +28,8 @@ public class RiskSettingsStore {
         volatile double maxRiskPerDayPct  = 1.0;  // max risk per day as % of totalCapital
         volatile double riskPerTrade      = 1000;  // max ₹ loss per trade if SL hits
         volatile String autoSquareOffTime = "";  // empty = disabled, e.g. "15:15"
+        /** Positions pages close every INTRADAY (MIS) leg at this time (HH:mm). Default 15:20. */
+        volatile String intradaySquareOffTime = "15:20";
         volatile double atrMultiplier     = 1.5; // SL = close ± (ATR × this)
         volatile double brokeragePerOrder = 20.0;  // flat brokerage per order in ₹ (Fyers default)
         /** Initial capital used as the baseline for the Analytics Home page (capital growth %,
@@ -377,6 +379,7 @@ public class RiskSettingsStore {
     public double getRiskPerTrade()      { return cfg().riskPerTrade; }
     public double getMaxDailyLoss()      { return cfg().totalCapital * cfg().maxRiskPerDayPct / 100.0; }
     public String getAutoSquareOffTime() { return cfg().autoSquareOffTime; }
+    public String getIntradaySquareOffTime() { return cfg().intradaySquareOffTime; }
     public double getAtrMultiplier()     { return cfg().atrMultiplier; }
     public double getBrokeragePerOrder() { return cfg().brokeragePerOrder; }
     public double getStartingCapital()      { return cfg().startingCapital; }
@@ -560,6 +563,7 @@ public class RiskSettingsStore {
     public void setMaxRiskPerDayPct(double v)  { cfg().maxRiskPerDayPct = v; }
     public void setRiskPerTrade(double v)      { cfg().riskPerTrade = v; }
     public void setAutoSquareOffTime(String v) { cfg().autoSquareOffTime = v; }
+    public void setIntradaySquareOffTime(String v) { cfg().intradaySquareOffTime = (v == null || v.isBlank()) ? "15:20" : v.trim(); }
     public void setAtrMultiplier(double v)     { cfg().atrMultiplier = v; }
     public void setBrokeragePerOrder(double v) { cfg().brokeragePerOrder = v; }
     public void setStartingCapital(double v)      { cfg().startingCapital = Math.max(0, v); }
@@ -711,6 +715,7 @@ public class RiskSettingsStore {
             upsert("maxRiskPerDayPct", String.valueOf(c.maxRiskPerDayPct));
             upsert("riskPerTrade", String.valueOf(c.riskPerTrade));
             upsert("autoSquareOffTime", c.autoSquareOffTime);
+            upsert("intradaySquareOffTime", c.intradaySquareOffTime);
             upsert("atrMultiplier", String.valueOf(c.atrMultiplier));
             upsert("brokeragePerOrder", String.valueOf(c.brokeragePerOrder));
             upsert("startingCapital",      String.valueOf(c.startingCapital));
@@ -869,6 +874,7 @@ public class RiskSettingsStore {
                     case "maxRiskPerDayPct"  -> c.maxRiskPerDayPct = Double.parseDouble(v);
                     case "riskPerTrade"      -> c.riskPerTrade = Double.parseDouble(v);
                     case "autoSquareOffTime" -> c.autoSquareOffTime = v;
+                    case "intradaySquareOffTime" -> c.intradaySquareOffTime = v;
                     case "manualAutoSquareOffTime" -> { /* retired — manual terminal removed */ }
                     case "atrMultiplier"     -> c.atrMultiplier = Double.parseDouble(v);
                     // enableSessionMoveLimit / sessionMoveLimit removed — feature deleted.
