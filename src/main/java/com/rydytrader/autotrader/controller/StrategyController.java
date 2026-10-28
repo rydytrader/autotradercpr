@@ -27,11 +27,74 @@ public class StrategyController {
 
     private final StrategyRegistry registry;
     private final com.rydytrader.autotrader.store.RiskSettingsStore riskSettings;
+    private final com.rydytrader.autotrader.service.strategy.PayoffService payoffService;
 
     public StrategyController(StrategyRegistry registry,
-                              com.rydytrader.autotrader.store.RiskSettingsStore riskSettings) {
+                              com.rydytrader.autotrader.store.RiskSettingsStore riskSettings,
+                              com.rydytrader.autotrader.service.strategy.PayoffService payoffService) {
         this.registry = registry;
         this.riskSettings = riskSettings;
+        this.payoffService = payoffService;
+    }
+
+    // ── SIMULATE modal (read-only — no orders) ────────────────────────────────
+    @GetMapping("/api/strategies/{id}/sim/context")
+    public ResponseEntity<Map<String, Object>> simContext(@PathVariable String id) {
+        Strategy s = registry.get(id);
+        if (s == null) return ResponseEntity.notFound().build();
+        try { return ResponseEntity.ok(s.simContext()); }
+        catch (Exception e) { return ResponseEntity.status(502).body(Map.of("error", String.valueOf(e.getMessage()))); }
+    }
+
+    @GetMapping("/api/strategies/{id}/sim/chain")
+    public ResponseEntity<Map<String, Object>> simChain(@PathVariable String id, @RequestParam(required = false) String expiry) {
+        Strategy s = registry.get(id);
+        if (s == null) return ResponseEntity.notFound().build();
+        try { return ResponseEntity.ok(s.simChain(expiry)); }
+        catch (Exception e) { return ResponseEntity.status(502).body(Map.of("error", String.valueOf(e.getMessage()))); }
+    }
+
+    @PostMapping("/api/strategies/{id}/sim/margin")
+    public ResponseEntity<Map<String, Object>> simMargin(@PathVariable String id,
+                                                         @RequestParam(required = false) String product,
+                                                         @RequestBody com.rydytrader.autotrader.service.strategy.PayoffService.Request body) {
+        Strategy s = registry.get(id);
+        if (s == null) return ResponseEntity.notFound().build();
+        try { return ResponseEntity.ok(s.simMargin(body.legs, product)); }
+        catch (Exception e) { return ResponseEntity.ok(Map.of("error", String.valueOf(e.getMessage()))); }
+    }
+
+    @PostMapping("/api/strategies/{id}/sim/execute")
+    public ResponseEntity<Map<String, Object>> simExecute(@PathVariable String id,
+                                                          @RequestParam(required = false) String product,
+                                                          @RequestParam(required = false, defaultValue = "-1") double slPct,
+                                                          @RequestBody com.rydytrader.autotrader.service.strategy.PayoffService.Request body) {
+        Strategy s = registry.get(id);
+        if (s == null) return ResponseEntity.notFound().build();
+        List<Map<String, Object>> results;
+        try { results = s.simExecute(body.legs, product, slPct); }
+        catch (Exception e) { return ResponseEntity.ok(result(false, "EXCEPTION", "Execute failed: " + e.getMessage())); }
+        int ok = 0;
+        for (Map<String, Object> r : results) if (Boolean.TRUE.equals(r.get("ok"))) ok++;
+        Map<String, Object> out = result(ok == results.size() && !results.isEmpty(), ok == results.size() ? "OK" : "PARTIAL",
+            results.isEmpty() ? "Nothing to execute — no SIM rows." : ok + " of " + results.size() + " order(s) placed.");
+        out.put("results", results);
+        return ResponseEntity.ok(out);
+    }
+
+    @PostMapping("/api/strategies/{id}/sim/payoff")
+    public ResponseEntity<Map<String, Object>> simPayoff(@PathVariable String id,
+                                                         @RequestBody com.rydytrader.autotrader.service.strategy.PayoffService.Request body) {
+        Strategy s = registry.get(id);
+        if (s == null) return ResponseEntity.notFound().build();
+        try {
+            Map<String, Object> ctx = s.simContext();
+            double spot = ctx.get("spot") instanceof Number n ? n.doubleValue() : 0;
+            int lot = ctx.get("lotSize") instanceof Number n ? n.intValue() : 1;
+            return ResponseEntity.ok(payoffService.compute(body, spot, lot));
+        } catch (Exception e) {
+            return ResponseEntity.status(502).body(Map.of("error", String.valueOf(e.getMessage())));
+        }
     }
 
     /** Aggregate day P&L + charges across every enabled strategy — header-strip P&L chip. */

@@ -122,6 +122,13 @@ public class ShortStrangle implements Strategy {
         new java.util.concurrent.ConcurrentHashMap<>();
     private volatile boolean fillListenerWired = false;
     private final AtomicBoolean expiryRefreshInFlight = new AtomicBoolean(false);
+    // Overview tiles: payoff maths over the open legs + Fyers span margin (cached, refreshed async).
+    private final PayoffService payoff = new PayoffService();
+    private static final long MARGIN_CACHE_MS = 120_000L;
+    private volatile double cachedMargin = 0;
+    private volatile String cachedMarginKey = "";
+    private volatile long cachedMarginAt = 0;
+    private final AtomicBoolean marginInFlight = new AtomicBoolean(false);
 
     public ShortStrangle(StrategyInstanceEntity entity,
                          RiskSettingsStore riskSettings,
@@ -463,7 +470,9 @@ public class ShortStrangle implements Strategy {
     public Map<String, Object> pairCandidates() { return pairCandidates(null); }
 
     @Override
-    public Map<String, Object> pairCandidates(String expiry) {
+    public Map<String, Object> pairCandidates(String expiry) { return pairCandidates(expiry, 10); }
+
+    private Map<String, Object> pairCandidates(String expiry, int steps) {
         Map<String, Object> out = new LinkedHashMap<>();
         List<Map<String, Object>> expiries = expiryOptions();
         out.put("expiries", expiries);
@@ -474,7 +483,7 @@ public class ShortStrangle implements Strategy {
         long ts = resolveExpiryTs(expiry, expiries);
         List<Map<String, Object>> rows = new ArrayList<>();
         String firstSym = null;
-        for (Map<String, Object> row : atmSelector.chainWindow(underlying(), atm - 10 * step, atm + 10 * step, ts)) {
+        for (Map<String, Object> row : atmSelector.chainWindow(underlying(), atm - steps * step, atm + steps * step, ts)) {
             String ceSym = String.valueOf(row.get("ceSymbol"));
             String peSym = String.valueOf(row.get("peSymbol"));
             if (ceSym == null || ceSym.isEmpty() || "null".equals(ceSym) || peSym == null || peSym.isEmpty() || "null".equals(peSym)) continue;
@@ -497,6 +506,231 @@ public class ShortStrangle implements Strategy {
         out.put("step", step);
         out.put("lotSize", underlying().lotSize());
         out.put("rows", rows);
+        return out;
+    }
+
+    // ── SIMULATE modal ────────────────────────────────────────────────────────
+    @Override
+    public Map<String, Object> simContext() {
+        Map<String, Object> out = new LinkedHashMap<>();
+        double sp = spot();
+        int lot = underlying().lotSize();
+        double r = com.rydytrader.autotrader.util.BlackScholes.DEFAULT_RISK_FREE_RATE;
+        out.put("underlying", underlying().name());
+        out.put("spot", round2(sp));
+        out.put("lotSize", lot);
+        out.put("riskFree", r);
+        out.put("expiries", expiryOptions());
+        out.put("defaultProduct", defaultProduct());
+        out.put("defaultSlPct", defaultSlPct());
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (Leg l : openLegs()) {
+            boolean ce = isCe(l);
+            double lp = ltp(l.symbol);
+            double T = yearsToExpiryPrecise(l.symbol);
+            long k = parseStrikeFromSymbol(l.symbol, sp);
+            double iv = (sp > 0 && lp > 0 && T > 0 && k > 0)
+                ? com.rydytrader.autotrader.util.BlackScholes.impliedVol(sp, k, T, r, lp, ce) : 0;
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("legId", l.id);
+            m.put("tag", "LIVE");
+            m.put("side", isShort(l) ? "SELL" : "BUY");
+            m.put("type", ce ? "CE" : "PE");
+            m.put("strike", k);
+            m.put("expiry", parseExpiryFromSymbol(l.symbol, underlying()));
+            m.put("lots", Math.max(1, lot > 0 ? l.qty / lot : 1));
+            m.put("qty", l.qty);
+            m.put("price", round2(l.entryPremium));
+            m.put("ltp", round2(lp));
+            m.put("iv", round4(iv));
+            m.put("symbol", l.symbol);
+            m.put("include", true);
+            rows.add(m);
+        }
+        out.put("legs", rows);
+        return out;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> simChain(String expiry) {
+        Map<String, Object> out = pairCandidates(expiry, 25);
+        double sp = spot();
+        double r = com.rydytrader.autotrader.util.BlackScholes.DEFAULT_RISK_FREE_RATE;
+        Object rowsObj = out.get("rows");
+        if (rowsObj instanceof List<?> rows) {
+            for (Object o : rows) {
+                if (!(o instanceof Map)) continue;
+                Map<String, Object> row = (Map<String, Object>) o;
+                double k = ((Number) row.get("strike")).doubleValue();
+                double T = yearsToExpiryPrecise(String.valueOf(row.get("ceSymbol")));
+                double ceLtp = ((Number) row.get("ceLtp")).doubleValue();
+                double peLtp = ((Number) row.get("peLtp")).doubleValue();
+                row.put("ceIv", round4(sp > 0 && T > 0 && ceLtp > 0 ? com.rydytrader.autotrader.util.BlackScholes.impliedVol(sp, k, T, r, ceLtp, true) : 0));
+                row.put("peIv", round4(sp > 0 && T > 0 && peLtp > 0 ? com.rydytrader.autotrader.util.BlackScholes.impliedVol(sp, k, T, r, peLtp, false) : 0));
+            }
+        }
+        return out;
+    }
+
+    /** Open legs as simulator legs: SHORT → SELL, HEDGE → BUY, price = entry, iv implied from LTP. */
+    private List<PayoffService.SimLeg> openLegsAsSim(double sp) {
+        List<PayoffService.SimLeg> out = new ArrayList<>();
+        int lot = underlying().lotSize();
+        double r = com.rydytrader.autotrader.util.BlackScholes.DEFAULT_RISK_FREE_RATE;
+        for (Leg l : openLegs()) {
+            boolean ce = isCe(l);
+            double lp = ltp(l.symbol);
+            double T = yearsToExpiryPrecise(l.symbol);
+            long k = parseStrikeFromSymbol(l.symbol, sp);
+            PayoffService.SimLeg sl = new PayoffService.SimLeg();
+            sl.side = isShort(l) ? "SELL" : "BUY";
+            sl.type = ce ? "CE" : "PE";
+            sl.strike = k;
+            sl.expiry = parseExpiryFromSymbol(l.symbol, underlying());
+            sl.lots = Math.max(1, lot > 0 ? l.qty / lot : 1);
+            sl.price = l.entryPremium;
+            sl.iv = (sp > 0 && lp > 0 && T > 0 && k > 0) ? com.rydytrader.autotrader.util.BlackScholes.impliedVol(sp, k, T, r, lp, ce) : 0;
+            sl.symbol = l.symbol; sl.legId = l.id; sl.tag = "LIVE"; sl.include = true;
+            out.add(sl);
+        }
+        return out;
+    }
+
+    /** Max profit / max loss / POP / breakevens of the open book for the Overview tiles. */
+    private Map<String, Object> openPayoffStats(double sp) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (!hasOpenLegs() || sp <= 0) return out;
+        try {
+            PayoffService.Request req = new PayoffService.Request();
+            req.legs = openLegsAsSim(sp);
+            Map<String, Object> res = payoff.compute(req, sp, underlying().lotSize());
+            if (Boolean.TRUE.equals(res.get("empty"))) return out;
+            for (String k : new String[]{"maxProfit", "maxProfitUnlimited", "maxLoss", "maxLossUnlimited", "pop", "breakevens", "netCredit", "nearestExpiry"}) out.put(k, res.get(k));
+        } catch (Exception e) {
+            log.debug("[{}] payoff stats failed: {}", tag(), e.getMessage());
+        }
+        return out;
+    }
+
+    /** Fyers span margin for the open book. Cached per leg-set for {@value #MARGIN_CACHE_MS} ms and
+     *  refreshed off-thread so the 1 s dashboard poll never waits on the broker. 0 = not known yet. */
+    private double currentSpanMargin(double sp) {
+        List<Leg> open = openLegs();
+        if (open.isEmpty()) { cachedMargin = 0; cachedMarginKey = ""; return 0; }
+        StringBuilder kb = new StringBuilder();
+        boolean anyOvernight = false;
+        for (Leg l : open) { kb.append(l.symbol).append(':').append(l.qty).append(':').append(l.product).append(';'); if (!isIntraday(l)) anyOvernight = true; }
+        String key = kb.toString();
+        long now = System.currentTimeMillis();
+        boolean stale = !key.equals(cachedMarginKey) || now - cachedMarginAt > MARGIN_CACHE_MS;
+        if (stale && marginInFlight.compareAndSet(false, true)) {
+            final String product = anyOvernight ? PRODUCT_MARGIN : PRODUCT_INTRADAY;
+            final List<PayoffService.SimLeg> legsNow = openLegsAsSim(sp);
+            CompletableFuture.runAsync(() -> {
+                try {
+                    Map<String, Object> m = simMargin(legsNow, product);
+                    if (m.get("margin") instanceof Number n && n.doubleValue() > 0) {
+                        cachedMargin = n.doubleValue(); cachedMarginKey = key; cachedMarginAt = System.currentTimeMillis();
+                    } else {
+                        cachedMarginAt = System.currentTimeMillis();   // back off; keep the last good value
+                        cachedMarginKey = key;
+                    }
+                } finally { marginInFlight.set(false); }
+            });
+        }
+        return key.equals(cachedMarginKey) ? cachedMargin : 0;
+    }
+
+    @Override
+    public Map<String, Object> simMargin(List<PayoffService.SimLeg> legs, String product) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        String prod = normaliseProduct(product == null || product.isEmpty() ? defaultProduct() : product);
+        int lot = underlying().lotSize();
+        StringBuilder data = new StringBuilder();
+        int n = 0;
+        for (PayoffService.SimLeg l : legs == null ? List.<PayoffService.SimLeg>of() : legs) {
+            if (l == null || !l.include || l.lots <= 0 || l.symbol == null || l.symbol.isEmpty()) continue;
+            if (n++ > 0) data.append(',');
+            data.append(String.format(java.util.Locale.US,
+                "{\"symbol\":\"%s\",\"qty\":%d,\"side\":%d,\"type\":2,\"productType\":\"%s\",\"limitPrice\":0,\"stopLoss\":0}",
+                l.symbol, l.lots * lot, "BUY".equalsIgnoreCase(l.side) ? 1 : -1, prod));
+        }
+        out.put("product", prod);
+        out.put("legs", n);
+        if (n == 0) { out.put("error", "NO_SYMBOLS"); return out; }
+        try {
+            String auth = fyersProperties.getClientId() + ":" + tokenStore.getAccessToken();
+            JsonNode root = fyersClient.spanMargin("{\"data\":[" + data + "]}", auth);
+            JsonNode d = root != null && root.has("data") ? root.get("data") : root;
+            double margin = 0, avail = 0;
+            if (d != null) {
+                for (String k : new String[]{"total", "margin_total", "margin_new_order", "total_margin"}) {
+                    if (d.has(k) && d.get(k).isNumber()) { margin = d.get(k).asDouble(); break; }
+                }
+                for (String k : new String[]{"margin_avail", "available", "margin_available"}) {
+                    if (d.has(k) && d.get(k).isNumber()) { avail = d.get(k).asDouble(); break; }
+                }
+            }
+            if (margin <= 0) {
+                log.warn("[{}] span_margin response had no usable total: {}", tag(), root);
+                out.put("error", root != null && root.has("message") ? root.get("message").asText() : "NO_TOTAL");
+                return out;
+            }
+            out.put("margin", round2(margin));
+            out.put("available", round2(avail));
+        } catch (Exception e) {
+            log.warn("[{}] span_margin failed: {}", tag(), e.getMessage());
+            out.put("error", String.valueOf(e.getMessage()));
+        }
+        return out;
+    }
+
+    @Override
+    public synchronized List<Map<String, Object>> simExecute(List<PayoffService.SimLeg> legs, String product, double slPct) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        String prod = normaliseProduct(product == null || product.isEmpty() ? defaultProduct() : product);
+        double sl = slPct >= 0 ? slPct : defaultSlPct();
+        int lot = underlying().lotSize();
+        for (PayoffService.SimLeg l : legs == null ? List.<PayoffService.SimLeg>of() : legs) {
+            if (l == null || !l.include || l.lots <= 0 || "LIVE".equalsIgnoreCase(l.tag)) continue;
+            boolean buy = "BUY".equalsIgnoreCase(l.side);
+            String side = "PE".equalsIgnoreCase(l.type) ? "PE" : "CE";
+            String label = (buy ? "BUY " : "SELL ") + l.lots + " lot " + side + " " + (long) l.strike + " " + (l.expiry == null ? "" : l.expiry);
+            Map<String, Object> r = new LinkedHashMap<>();
+            r.put("label", label);
+            String code;
+            if (l.symbol == null || l.symbol.isEmpty()) code = "NO_SYMBOL";
+            else {
+                // A BUY against an open short of the same contract is an exit, not a hedge (and vice versa).
+                Leg opposite = null;
+                for (Leg x : openLegs()) {
+                    if (!l.symbol.equalsIgnoreCase(x.symbol)) continue;
+                    if ((buy && isShort(x)) || (!buy && !isShort(x))) { opposite = x; break; }
+                }
+                if (opposite != null) {
+                    int openLots = Math.max(1, lot > 0 ? opposite.qty / lot : 1);
+                    if (l.lots >= openLots) {
+                        info("SIM execute — exit " + legLabel(opposite) + " (" + label + ")");
+                        closeLegInternal(opposite, "MANUAL");
+                        afterLegsChanged();
+                        code = isOpen(opposite) ? "REJECTED" : "CLOSED";
+                    } else {
+                        info("SIM execute — exit " + l.lots + " lot(s) of " + legLabel(opposite));
+                        code = exitLots(opposite, l.lots);
+                        persist();
+                        if ("OK".equals(code)) code = "REDUCED";
+                    }
+                } else if (buy) {
+                    code = openHedgeLeg(side, l.symbol, prod, l.lots);
+                } else {
+                    code = openOneLeg(side, l.symbol, prod, l.lots, sl);
+                }
+            }
+            r.put("code", code);
+            r.put("ok", "OK".equals(code) || "CLOSED".equals(code) || "REDUCED".equals(code));
+            out.add(r);
+        }
         return out;
     }
 
@@ -1328,6 +1562,8 @@ public class ShortStrangle implements Strategy {
         m.put("totalPnlToday", round2(realisedPnlToday + mtmTotal));
         m.put("maxLossPerStrangle", round2(maxLoss));
         m.put("uncappedLegs", uncapped);
+        m.put("payoff", openPayoffStats(sp));
+        m.put("spanMargin", round2(currentSpanMargin(sp)));
         m.put("consumedRiskToday", round2(consumedRiskToday));
         Map<String, Double> charges = computeChargesBreakdown();
         m.put("charges", charges);

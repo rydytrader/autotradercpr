@@ -23,6 +23,13 @@ public class LiveFyersClient implements FyersClient {
     }
 
     @Override
+    public JsonNode spanMargin(String bodyJson, String authHeader) throws Exception {
+        // Per fyers.in/api-docs/v3/api/calculators/span-margin-calculator the SPAN calculator is still
+        // served from the v2 host; /api/v3/span_margin on api-t1 returns 404.
+        return post("https://api.fyers.in/api/v2/span_margin", bodyJson, authHeader);
+    }
+
+    @Override
     public JsonNode cancelOrder(String orderId, String authHeader) throws Exception {
         String body = "{\"id\":\"" + orderId + "\"}";
         return delete(BASE + "/orders/sync", body, authHeader);

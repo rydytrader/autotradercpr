@@ -54,6 +54,8 @@
         .act-btn.cost-on { color:var(--accent-amber, #fbbf24); border-color:rgba(251,191,36,0.55); background:rgba(251,191,36,0.10); }
         .act-btn.close-x { color:var(--accent-red, #f87171); border-color:rgba(248,113,113,0.45); }
         .act-btn.set-sl { color:var(--accent-yellow, #facc15); border-style:dashed; border-color:rgba(250,204,21,0.55); }
+        .mini-btn.sl-remove { color:var(--text-muted); border-color:transparent; font-size:0.62rem; }
+        .mini-btn.sl-remove:hover { color:var(--accent-red, #f87171); border-color:rgba(248,113,113,0.45); }
         .hdr-btn { font-family:var(--font-mono); font-size:0.64rem; font-weight:700; letter-spacing:0.06em; padding:4px 11px; border-radius:6px; cursor:pointer; }
         .hdr-btn.ce { color:var(--accent-green); background:rgba(52,211,153,0.10); border:1px solid rgba(52,211,153,0.45); }
         .hdr-btn.pe { color:var(--accent-red, #f87171); background:rgba(248,113,113,0.10); border:1px solid rgba(248,113,113,0.45); }
@@ -61,6 +63,26 @@
         .hdr-btn:disabled { opacity:0.35; cursor:not-allowed; }
         /* Leg chart modal */
         #legChartOverlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:9999; align-items:center; justify-content:center; }
+        #simOverlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.65); z-index:9998; align-items:center; justify-content:center; }
+        #simBox { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; width:min(1500px, 95vw); height:min(900px, 92vh); display:flex; flex-direction:column; font-family:var(--font-mono); color:var(--text-primary); box-shadow:0 16px 48px rgba(0,0,0,0.4); overflow:hidden; }
+        .sim-metrics { display:grid; grid-template-columns:repeat(6, 1fr); gap:10px; padding:12px 18px; border-bottom:1px solid var(--border); }
+        .sim-metrics .stat-label { font-size:0.6rem; }
+        .sim-body { display:grid; grid-template-columns:minmax(520px, 46%) 1fr; gap:0; flex:1; min-height:0; }
+        .sim-legs { border-right:1px solid var(--border); overflow:auto; padding:10px 12px; }
+        .sim-legs table { width:100%; border-collapse:collapse; font-size:0.74rem; }
+        .sim-legs th { font-size:0.6rem; letter-spacing:0.06em; color:var(--text-muted); text-align:left; padding:4px 6px; white-space:nowrap; }
+        .sim-legs td { padding:4px 6px; vertical-align:middle; white-space:nowrap; }
+        .sim-legs td.num { text-align:right; }
+        .sim-chart { display:flex; flex-direction:column; min-height:0; padding:10px 14px; }
+        .sim-sliders { display:grid; grid-template-columns:repeat(3, minmax(0, 220px)); justify-content:center; gap:18px; padding:6px 4px 0; }
+        .sim-sliders .stat-label { font-size:0.58rem; white-space:nowrap; }
+        .sim-sliders input[type=range] { width:100%; height:14px; margin:2px 0 0; accent-color:var(--accent-cyan); }
+        .pill.sim-live { color:var(--accent-cyan); background:rgba(125,211,252,0.12); border:1px solid rgba(125,211,252,0.45); }
+        .pill.sim-sim { color:var(--text-muted); background:transparent; border:1px dashed var(--border); }
+        .act-btn.sim-sell { color:var(--accent-red, #f87171); border-color:rgba(248,113,113,0.45); }
+        .act-btn.sim-buy { color:var(--accent-green); border-color:rgba(52,211,153,0.45); }
+        .act-btn.sim-main { color:var(--accent-cyan); border-color:rgba(125,211,252,0.45); background:rgba(125,211,252,0.08); }
+        @media (max-width: 1100px) { .sim-body { grid-template-columns:1fr; overflow:auto; } .sim-legs { border-right:none; border-bottom:1px solid var(--border); } .sim-metrics { grid-template-columns:repeat(3, 1fr); } }
         #legChartBox { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; width:min(960px, 94vw); font-family:var(--font-mono); color:var(--text-primary); box-shadow:0 16px 48px rgba(0,0,0,0.4); }
     </style>
 </head>
@@ -170,14 +192,19 @@
     <div id="dashboardContent">
 
     <!-- TOP ROW: Overview (3 cols) + Market Clock (1 col) -->
-    <div style="display:grid;grid-template-columns:repeat(4, 1fr);gap:16px;margin-bottom:20px;" class="fade-in">
+    <div style="display:grid;grid-template-columns:repeat(5, 1fr);gap:16px;margin-bottom:20px;" class="fade-in">
 
-    <div class="section-card" style="margin-bottom:0;grid-column:span 3;">
+    <div class="section-card" style="margin-bottom:0;grid-column:span 4;">
         <div class="section-header">
             <div class="section-title"><div class="section-title-dot"></div> Overview</div>
             <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
                 <div id="heroNiftySection" style="display:none;"><span id="heroNiftyLtp"></span><span id="heroNiftyChange"></span></div>
                 <div id="heroVixSection" style="display:none;"><span id="heroVixLtp"></span><span id="heroVixChange"></span></div>
+                <button id="simulateBtn" onclick="openSimulator()" title="Payoff simulator — open legs plus what-if BUY / SELL legs" style="
+                    background:rgba(125,211,252,0.08);border:1px solid rgba(125,211,252,0.35);
+                    color:var(--accent-cyan);padding:6px 14px;border-radius:6px;
+                    font-family:var(--font-mono);font-size:0.72rem;font-weight:700;
+                    cursor:pointer;letter-spacing:0.04em;">◔ SIMULATE</button>
                 <button id="squareoffAllBtn" onclick="squareoffAll()" title="Close every open leg at market." style="
                     background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.25);
                     color:var(--accent-red, #f87171);padding:6px 14px;border-radius:6px;
@@ -202,24 +229,24 @@
                     <div class="stat-value" id="heroOpenMtm" style="font-size:1.1rem; margin-top:4px;">0.00</div>
                 </div>
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
-                    <div class="stat-label" title="Worst-case loss for the open SHORT legs if each hits its SL.">Active Risk</div>
-                    <div class="stat-value" id="heroRisk" style="font-size:1.1rem; margin-top:4px;">—</div>
+                    <div class="stat-label" title="Best case at the nearest expiry for the open legs, from entry prices.">Max Profit</div>
+                    <div class="stat-value" id="heroMaxProfit" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center;">
-                    <div class="stat-label" title="Realised LOSS from legs already closed today.">Consumed Risk</div>
-                    <div class="stat-value" id="heroConsumedRisk" style="font-size:1.1rem; margin-top:4px;">—</div>
+                    <div class="stat-label" title="Worst case at the nearest expiry for the open legs, from entry prices. Unlimited when a naked short is open.">Max Loss</div>
+                    <div class="stat-value" id="heroMaxLoss" style="font-size:1.1rem; margin-top:4px;">—</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label" title="Risk 1 to make N (max loss vs max profit).">Risk : Reward</div>
+                    <div class="stat-value" id="heroRr" style="font-size:1.1rem; margin-top:4px;">—</div>
+                </div>
+                <div style="text-align:center;">
+                    <div class="stat-label" title="Fyers SPAN + exposure margin for the open book (refreshed every 2 minutes or when legs change).">Margin</div>
+                    <div class="stat-value" id="heroMargin" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
                     <div class="stat-label">State</div>
                     <div class="stat-value" id="heroStatePill" style="font-size:0.95rem; margin-top:4px;">—</div>
-                </div>
-                <div style="text-align:center;">
-                    <div class="stat-label">Legs Open</div>
-                    <div class="stat-value" id="heroLegsOpen" style="font-size:1.1rem; margin-top:4px;">0</div>
-                </div>
-                <div style="text-align:center; border-left:1px solid var(--border); padding-left:32px;">
-                    <div class="stat-label">Last Entry</div>
-                    <div class="stat-value" id="heroLastEntry" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
             </div>
         </div>
@@ -358,12 +385,67 @@
     </div>
 </div>
 
+<!-- SIMULATE modal (payoff simulator) -->
+<div id="simOverlay">
+    <div id="simBox">
+        <div style="padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;">
+            <div id="simTitle" style="font-size:0.9rem;font-weight:700;">SIMULATE</div>
+            <div id="simSub" style="font-size:0.72rem;color:var(--text-muted);"></div>
+            <div id="simExpiryNote" style="font-size:0.72rem;color:var(--text-muted);"></div>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+                <button class="act-btn sim-main" onclick="simLoadPositions()" title="Reload the open legs as LIVE rows (SIM rows are kept)">LOAD POSITIONS</button>
+                <button class="act-btn" onclick="simClear()" title="Remove every row">CLEAR</button>
+                <button onclick="closeSimulator()" title="Close (Esc)" style="background:transparent;border:1px solid var(--border);color:var(--text-secondary);width:28px;height:28px;border-radius:6px;cursor:pointer;font-family:var(--font-mono);font-weight:700;">×</button>
+            </div>
+        </div>
+        <div class="sim-metrics">
+            <div><div class="stat-label">Prob. of profit</div><div id="simPop" class="stat-value">—</div></div>
+            <div><div class="stat-label">Max profit</div><div id="simMaxProfit" class="stat-value">—</div></div>
+            <div><div class="stat-label">Max loss</div><div id="simMaxLoss" class="stat-value">—</div></div>
+            <div><div class="stat-label">Breakeven</div><div id="simBreakeven" class="stat-value">—</div></div>
+            <div><div class="stat-label">Net credit</div><div id="simNetCredit" class="stat-value">—</div></div>
+            <div><div class="stat-label">Risk : reward</div><div id="simRr" class="stat-value">—</div></div>
+            <div><div class="stat-label">Expected P&amp;L</div><div id="simExpected" class="stat-value">—</div></div>
+            <div><div class="stat-label">Net delta</div><div id="simDelta" class="stat-value">—</div></div>
+            <div><div class="stat-label">Theta / day</div><div id="simTheta" class="stat-value">—</div></div>
+            <div><div class="stat-label">Vega / 1%</div><div id="simVega" class="stat-value">—</div></div>
+            <div><div class="stat-label">±1σ range</div><div id="simRange" class="stat-value">—</div></div>
+            <div><div class="stat-label">Margin</div><div id="simMargin" class="stat-value">—</div></div>
+        </div>
+        <div class="sim-body">
+            <div class="sim-legs">
+                <table>
+                    <thead><tr><th></th><th></th><th>SIDE</th><th>TYPE</th><th>EXPIRY</th><th>STRIKE</th><th>LOTS</th><th>PRICE</th><th></th></tr></thead>
+                    <tbody id="simLegsBody"><tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:28px 10px;">Loading…</td></tr></tbody>
+                </table>
+                <div style="display:flex;align-items:center;gap:10px;padding:12px 6px 4px;border-top:1px solid var(--border);margin-top:8px;">
+                    <button class="act-btn sim-main" onclick="simAddLeg()" style="padding:6px 16px;font-size:0.68rem;" title="Add a what-if leg">+ ADD LEG</button>
+                    <span style="margin-left:auto;font-size:0.66rem;color:var(--text-muted);">Places the ticked SIM rows at market. LIVE rows are untouched.</span>
+                    <button class="act-btn sim-sell" onclick="simExecute()" style="padding:6px 16px;font-size:0.68rem;" title="Place the included SIM rows at market through the position manager">EXECUTE</button>
+                </div>
+            </div>
+            <div class="sim-chart">
+                <div style="flex:1;min-height:260px;position:relative;"><canvas id="simChartCanvas"></canvas></div>
+                <div class="sim-sliders">
+                    <div><div class="stat-label">Target date · <span id="simTargetLabel">today (T+0)</span></div>
+                        <input id="simTargetDays" type="range" min="0" max="0" step="1" value="0" oninput="simSlider('target', this.value)"></div>
+                    <div><div class="stat-label">Spot move · <span id="simSpotLabel">0.0%</span></div>
+                        <input id="simSpotShift" type="range" min="-10" max="10" step="0.25" value="0" oninput="simSlider('spot', this.value)"></div>
+                    <div><div class="stat-label">IV change · <span id="simIvLabel">0.0 pts</span> <a href="#" onclick="simResetSliders(); return false;" style="color:var(--accent-cyan);text-decoration:none;margin-left:8px;">reset</a></div>
+                        <input id="simIvShift" type="range" min="-15" max="15" step="0.5" value="0" oninput="simSlider('iv', this.value)"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script src="/js/common.js?v=2"></script>
 <script src="/js/ticker.js?v=7"></script>
 <script src="/js/app-confirm.js?v=4"></script>
 <script src="/js/settings-modal.js?v=18"></script>
 <script src="/js/strategy-settings-form.js?v=15"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
+<script src="/js/simulator.js?v=5"></script>
 <script>
     (function() { var el = document.getElementById('footerYear'); if (el) el.textContent = new Date().getFullYear(); })();
 
@@ -463,17 +545,18 @@
             setPnl(document.getElementById('heroRealised'), d.realisedPnlToday || 0);
             setPnl(document.getElementById('heroOpenMtm'), d.combinedMtm || 0);
 
-            var riskEl = document.getElementById('heroRisk');
-            var maxLoss = Number(d.maxLossPerStrangle || 0);
-            var uncapped = Number(d.uncappedLegs || 0);
-            if (maxLoss > 0) { riskEl.textContent = '-' + fmtRs(maxLoss); riskEl.className = 'stat-value pnl-negative'; riskEl.style.color = ''; }
-            else if (uncapped > 0) { riskEl.textContent = 'NO SL'; riskEl.className = 'stat-value'; riskEl.style.color = 'var(--accent-yellow, #facc15)'; }
-            else { riskEl.textContent = '—'; riskEl.className = 'stat-value'; riskEl.style.color = 'var(--text-muted)'; }
-            riskEl.title = uncapped > 0 ? uncapped + ' open short leg(s) without an SL — not counted here' : '';
-            var consumedEl = document.getElementById('heroConsumedRisk');
-            var closed = Number(d.consumedRiskToday || 0);
-            if (closed < -0.01) { consumedEl.textContent = fmtRs(closed); consumedEl.className = 'stat-value pnl-negative'; consumedEl.style.color = ''; }
-            else { consumedEl.textContent = '—'; consumedEl.className = 'stat-value'; consumedEl.style.color = 'var(--text-muted)'; }
+            var po = d.payoff || {};
+            var hasPo = po.maxProfit != null;
+            function heroTile(id, text, cls) { var el = document.getElementById(id); if (!el) return; el.textContent = text; el.className = 'stat-value ' + (cls || ''); el.style.color = cls ? '' : 'var(--text-muted)'; }
+            heroTile('heroMaxProfit', !hasPo ? '—' : (po.maxProfitUnlimited ? 'Unlimited' : fmtRs(po.maxProfit)), hasPo ? 'pnl-positive' : '');
+            heroTile('heroMaxLoss', !hasPo ? '—' : (po.maxLossUnlimited ? 'Unlimited' : fmtRs(po.maxLoss)), hasPo ? 'pnl-negative' : '');
+            var rrOk = hasPo && !po.maxProfitUnlimited && !po.maxLossUnlimited && po.maxLoss < 0 && po.maxProfit > 0;
+            heroTile('heroRr', rrOk ? '1 : ' + (po.maxProfit / Math.abs(po.maxLoss)).toFixed(2) : '—', rrOk ? '' : '');
+            var mg = Number(d.spanMargin || 0);
+            heroTile('heroMargin', mg > 0 ? fmtRs(mg) : '—', mg > 0 ? 'x' : '');
+            var rrEl = document.getElementById('heroRr'); if (rrEl && rrOk) rrEl.style.color = '';
+            var mgEl = document.getElementById('heroMargin'); if (mgEl) { mgEl.className = 'stat-value'; mgEl.style.color = mg > 0 ? '' : 'var(--text-muted)'; }
+            var mpEl = document.getElementById('heroMaxProfit'); if (mpEl && hasPo) mpEl.title = (po.breakevens || []).length ? 'Breakeven ' + po.breakevens.map(function (b) { return Math.round(b).toLocaleString('en-IN'); }).join(' / ') + (po.pop != null ? ' · POP ' + Number(po.pop).toFixed(0) + '%' : '') : '';
 
             var statePill = document.getElementById('heroStatePill');
             var pillState = d.displayState || d.state || '—';
@@ -482,8 +565,6 @@
                 : pillState === 'DONE_FOR_DAY' ? 'var(--accent-cyan)'
                 : pillState === 'IDLE' ? 'var(--accent-amber, #fbbf24)' : 'var(--text-muted)';
             statePill.title = d.displayStateReason || '';
-            document.getElementById('heroLegsOpen').textContent = String(d.openLegCount || 0);
-            document.getElementById('heroLastEntry').textContent = d.lastEntryNifty > 0 ? Number(d.lastEntryNifty).toFixed(2) : '—';
 
             var uc = document.getElementById('underlyingChip');
             if (uc) uc.textContent = d.underlying || '—';
@@ -579,6 +660,7 @@
             + '<button class="mini-btn" onclick="event.stopPropagation(); adjustSl(\'' + l.id + '\', \'down\')" title="Lower SL ₹1">−</button>'
             + value
             + '<button class="mini-btn" onclick="event.stopPropagation(); adjustSl(\'' + l.id + '\', \'up\')" title="Raise SL ₹1">+</button>'
+            + '<button class="mini-btn sl-remove" onclick="event.stopPropagation(); confirmRemoveSl(\'' + l.id + '\')" title="Remove the SL (no stop)">✕</button>'
             + '</span>';
     }
     // LTP cell: price plus the move from entry (points and %). Plain price colouring: up green, down red.
@@ -613,7 +695,6 @@
             + '<button class="mini-btn" onclick="event.stopPropagation(); adjustLots(\'' + l.id + '\', \'add\')" title="Add one lot">+</button></span>';
         var actions = '';
         if (l.open) {
-            if (l.kind === 'SHORT') actions += '<button class="act-btn' + (l.slMovedToCost ? ' cost-on' : '') + '" onclick="event.stopPropagation(); toggleCost(\'' + l.id + '\')" title="' + (l.slMovedToCost ? 'SL is at cost — click to restore the configured SL' : 'Move SL to cost (entry premium)') + '">COST</button> ';
             actions += '<button class="act-btn close-x" onclick="event.stopPropagation(); closeLegRow(\'' + l.id + '\')" title="Close this leg at market">CLOSE</button>';
         } else {
             actions = '<span class="' + pnlClass(l.mtm) + '" style="font-size:0.7rem;margin-right:8px;">' + fmtRs(l.mtm || 0) + '</span>'
@@ -693,12 +774,7 @@
             el.innerHTML = '';
             patchLegCells(l);
             if (!(cur > 0)) return;
-            showConfirm({
-                title: 'Remove the SL on ' + l.side + ' ' + l.strike + '?',
-                body: 'This leg will have no stop. It closes only when you close it, or at squareoff / expiry.',
-                confirmLabel: 'Remove SL',
-                onConfirm: function() { postJson('/leg/' + encodeURIComponent(legId) + '/sl-set?value=0'); }
-            });
+            confirmRemoveSl(legId);
         }
         function save() {
             if (done) return;
@@ -720,17 +796,17 @@
         });
         inp.focus(); inp.select();
     }
-    function adjustSl(legId, dir) { postJson('/leg/' + encodeURIComponent(legId) + '/sl/' + dir); }
-    function toggleCost(legId) {
+    // ✕ next to the SL (and typing 0 in the editor): drop the stop; the cell then shows SET SL.
+    function confirmRemoveSl(legId) {
         var l = legById(legId); if (!l) return;
-        if (l.slMovedToCost) { postJson('/leg/' + encodeURIComponent(legId) + '/cost'); return; }
         showConfirm({
-            title: 'Move ' + l.side + ' ' + l.strike + ' SL to cost?',
-            body: 'SL becomes the entry premium (' + Number(l.entryPremium).toFixed(2) + '). The leg closes on any retrace to entry.\n\nClick COST again to restore the configured SL.',
-            confirmLabel: 'Move to cost',
-            onConfirm: function() { postJson('/leg/' + encodeURIComponent(legId) + '/cost'); }
+            title: 'Remove the SL on ' + l.side + ' ' + l.strike + '?',
+            body: 'This leg will have no stop. It closes only when you close it, or at squareoff / expiry.',
+            confirmLabel: 'Remove SL',
+            onConfirm: function() { postJson('/leg/' + encodeURIComponent(legId) + '/sl-set?value=0'); }
         });
     }
+    function adjustSl(legId, dir) { postJson('/leg/' + encodeURIComponent(legId) + '/sl/' + dir); }
     function adjustLots(legId, dir) {
         var l = legById(legId); if (!l) return;
         var d = lastDashboardData || {};

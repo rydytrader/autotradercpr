@@ -61,6 +61,17 @@ public interface Strategy {
     /** Same, for a chosen expiry (ISO date from the payload's {@code expiries}); null = nearest. */
     default Map<String, Object> pairCandidates(String expiry) { return pairCandidates(); }
 
+    /** SIMULATE modal: {@code {underlying, spot, lotSize, riskFree, expiries, legs[]}} where legs are the
+     *  open legs as simulator rows (SHORT → SELL, HEDGE → BUY, price = entry, iv implied from LTP). */
+    default Map<String, Object> simContext() { return Map.of(); }
+    /** SIMULATE modal strike picker: pair rows for {@code expiry} (ATM ± 25 steps) with CE / PE implied vols. */
+    default Map<String, Object> simChain(String expiry) { return Map.of(); }
+    /** SIMULATE modal: broker margin for the basket ({@code {margin, available, product}} or {@code {error}}). */
+    default Map<String, Object> simMargin(List<PayoffService.SimLeg> legs, String product) { return Map.of("error", "UNSUPPORTED"); }
+    /** SIMULATE modal: place the SIM rows through the position manager. SELL → short leg (or exits a
+     *  matching open hedge), BUY → hedge leg (or exits a matching open short). One result per row. */
+    default List<Map<String, Object>> simExecute(List<PayoffService.SimLeg> legs, String product, double slPct) { return List.of(); }
+
     /** Sell a CE and a PE together (straddle when both strikes match, strangle otherwise).
      *  Returns {@code {ce: code, pe: code}} using the same codes as {@link #openOneLeg}. */
     default Map<String, String> openPair(String ceSymbol, String peSymbol, String product, int lots, double slPct) {

@@ -38,6 +38,10 @@ public interface FyersClient {
     JsonNode getOptionChain(String symbol, int strikeCount, long expiryTsSecs, String authHeader)
         throws Exception;
 
+    /** POST /api/v3/span_margin — margin for a basket of orders ({@code {data:[{symbol, qty, side, type,
+     *  productType, limitPrice, stopLoss}]}}). Used by the SIMULATE modal only. */
+    JsonNode spanMargin(String bodyJson, String authHeader) throws Exception;
+
     /** GET /data/quotes — get quotes for a comma-separated list of symbols */
     JsonNode getQuotes(String symbols, String authHeader) throws Exception;
 

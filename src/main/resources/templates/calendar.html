@@ -139,7 +139,7 @@
     <div class="page-header">
         <div>
             <div class="page-title">Calendar</div>
-            <div class="page-subtitle">Straddle P&L by day, month, and year</div>
+            <div class="page-subtitle">Session P&L by day, month, and year</div>
         </div>
         <div style="font-family:var(--font-mono); align-self:flex-start; text-align:right;">
             <div style="font-size:1rem; color:var(--text-secondary);">
@@ -176,7 +176,7 @@
             </div>
             <div style="display:flex; gap:28px; flex-wrap:wrap;">
                 <div style="text-align:center;">
-                    <div class="stat-label">Straddles</div>
+                    <div class="stat-label">Sessions</div>
                     <div class="stat-value" id="heroSessions" style="font-size:1.1rem; margin-top:4px;">—</div>
                 </div>
                 <div style="text-align:center;">
@@ -209,7 +209,7 @@
                 <div style="text-align:center;">
                     <div class="stat-label">Max DD Days</div>
                     <div class="stat-value" id="heroMaxDrawdownDays" style="font-size:1.1rem; margin-top:4px;"
-                         title="Number of straddles between the equity-curve peak and the trough of the deepest drawdown.">—</div>
+                         title="Number of sessions between the equity-curve peak and the trough of the deepest drawdown.">—</div>
                 </div>
                 <div style="text-align:center; border-left:1px solid var(--border); padding-left:28px;">
                     <div class="stat-label">0 SL Days</div>
@@ -886,12 +886,8 @@
                 '<div id="calDayNiftyChart" style="width:100%;height:320px;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;"></div>' +
             '</div>';
         const tradesSections = hasPnl
-            ? '<div id="calDayStraddles" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">' +
-                '<div class="stat-label" style="margin-bottom:8px;">Straddles</div>' +
-                '<div style="color:var(--text-muted);">Loading…</div>' +
-              '</div>' +
-              '<div id="calDayStrangles" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">' +
-                '<div class="stat-label" style="margin-bottom:8px;">Strangles</div>' +
+            ? '<div id="calDaySessions" style="margin-top:18px;border-top:1px solid var(--border);padding-top:14px;">' +
+                '<div class="stat-label" style="margin-bottom:8px;">Sessions</div>' +
                 '<div style="color:var(--text-muted);">Loading…</div>' +
               '</div>'
             : '';
@@ -907,51 +903,43 @@
         // Skip the per-instance trade fetches on no-trade days — nothing to render.
         if (!hasPnl) return;
 
-        // Fan out per-instance trade fetches for this date — every cycle ends up here so a
-        // multi-restart day shows one row per cycle. Order by closedAtMillis after merge.
-        // Partition the merged list by strategy TYPE (STRADDLE vs STRANGLE) and render each
-        // group into its own section. The type comes from /api/strategies (the type field on
-        // each entry); fall back to STRADDLE if it's missing (older /api/strategies responses).
+        // Fan out per-instance trade fetches for this date — every session ends up here so a
+        // multi-restart day shows one row per session. Order by closedAtMillis after merge.
+        // Instances are keyed by underlying (NIFTY / SENSEX), so one merged section.
+        // Rows carry the short code persisted at the time (old sessions still say 50-PREM), so the
+        // INSTRUMENT column is resolved from the instance's current underlying instead.
         fetch('/api/strategies').then(r => r.json()).then(list => {
             list = Array.isArray(list) ? list : [];
-            const typeById = {};
-            list.forEach(s => { if (s && s.id) typeById[s.id] = (s.type || 'STRADDLE'); });
+            const instrumentById = {};
+            list.forEach(s => { if (s && s.id) instrumentById[s.id] = String(s.underlying || s.shortCode || '').toUpperCase(); });
             return Promise.all(list.map(s =>
                 fetch('/api/strategies/' + encodeURIComponent(s.id) + '/trades?date=' + encodeURIComponent(dateStr))
                     .then(r => r.json()).catch(() => ({ trades: [] }))
-            )).then(perInstance => ({ perInstance: perInstance || [], typeById }));
-        }).then(({ perInstance, typeById }) => {
+            )).then(perInstance => ({ perInstance: perInstance || [], instrumentById }));
+        }).then(({ perInstance, instrumentById }) => {
             const all = [];
-            perInstance.forEach(r => (r && r.trades || []).forEach(t => all.push(t)));
+            perInstance.forEach(r => (r && r.trades || []).forEach(t => {
+                t.instrument = instrumentById[t.strategyId] || t.shortCode || t.strategyId || '—';
+                all.push(t);
+            }));
             all.sort((a, b) => (a.closedAtMillis || 0) - (b.closedAtMillis || 0));
-
-            const straddleRows = all.filter(t => (typeById[t.strategyId] || 'STRADDLE') === 'STRADDLE');
-            const strangleRows = all.filter(t => (typeById[t.strategyId] || 'STRADDLE') === 'STRANGLE');
-
-            renderStrategyTradeSection(
-                document.getElementById('calDayStraddles'),
-                straddleRows, 'Straddle', 'Straddles');
-            renderStrategyTradeSection(
-                document.getElementById('calDayStrangles'),
-                strangleRows, 'Strangle', 'Strangles');
+            renderStrategyTradeSection(document.getElementById('calDaySessions'), all, 'Instrument', 'Sessions');
         }).catch(() => {
-            ['calDayStraddles', 'calDayStrangles'].forEach(id => {
-                const wrap = document.getElementById(id);
-                if (wrap) wrap.innerHTML =
-                    '<div class="stat-label" style="margin-bottom:8px;">' + (id === 'calDayStraddles' ? 'Straddles' : 'Strangles') + '</div>' +
-                    '<div style="color:var(--accent-red, #f87171);">Failed to load strategy list.</div>';
-            });
+            const wrap = document.getElementById('calDaySessions');
+            if (wrap) wrap.innerHTML =
+                '<div class="stat-label" style="margin-bottom:8px;">Sessions</div>' +
+                '<div style="color:var(--accent-red, #f87171);">Failed to load strategy list.</div>';
         });
     };
 
-    // Render one strategy-type section into its container. {@code singularLabel} is the
-    // per-row column header (e.g. STRADDLE / STRANGLE) and {@code pluralLabel} the section title.
+    // Render the day's session rows into their container. {@code singularLabel} is the
+    // per-row column header (e.g. INSTRUMENT) and {@code pluralLabel} the section title.
     function renderStrategyTradeSection(wrap, rows, singularLabel, pluralLabel) {
         if (!wrap) return;
         if (!rows || rows.length === 0) {
             wrap.innerHTML =
                 '<div class="stat-label" style="margin-bottom:8px;">' + pluralLabel + '</div>' +
-                '<div style="color:var(--text-muted);">No persisted ' + singularLabel.toLowerCase() + ' rows for this date.</div>';
+                '<div style="color:var(--text-muted);">No persisted ' + pluralLabel.toLowerCase() + ' for this date.</div>';
             return;
         }
         const fmtTime = ms => {
@@ -966,7 +954,7 @@
             body +=
                 '<tr style="border-top:1px solid rgba(128,128,128,0.10);">' +
                     '<td style="padding:8px 10px;color:var(--text-muted);">#' + (i + 1) + '</td>' +
-                    '<td style="padding:8px 10px;color:var(--text-primary);">' + (t.shortCode || t.strategyId || '—') + '</td>' +
+                    '<td style="padding:8px 10px;color:var(--text-primary);">' + (t.instrument || t.shortCode || t.strategyId || '—') + '</td>' +
                     '<td style="padding:8px 10px;">' + fmtTime(t.closedAtMillis) + '</td>' +
                     '<td style="padding:8px 10px;color:var(--text-muted);">' + (t.closeReason || '—') + '</td>' +
                     '<td style="padding:8px 10px;text-align:right;color:var(--text-muted);">' + (t.qty || 0) + '</td>' +
@@ -977,7 +965,7 @@
                 '</tr>';
         });
         wrap.innerHTML =
-            '<div class="stat-label" style="margin-bottom:8px;">' + pluralLabel + ' · ' + rows.length + ' cycle' + (rows.length === 1 ? '' : 's') + '</div>' +
+            '<div class="stat-label" style="margin-bottom:8px;">' + pluralLabel + ' · ' + rows.length + '</div>' +
             '<div style="overflow-x:auto;max-width:100%;">' +
             '<table style="width:100%;min-width:760px;border-collapse:collapse;font-family:var(--font-mono);font-size:0.74rem;table-layout:auto;white-space:nowrap;">' +
                 '<thead><tr style="color:var(--text-muted);font-size:0.66rem;letter-spacing:0.06em;">' +

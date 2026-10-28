@@ -16,6 +16,7 @@ public class FyersClientRouter implements FyersClient {
     }
 
     @Override public JsonNode placeOrder(String json, String auth) throws Exception    { return live.placeOrder(json, auth); }
+    @Override public JsonNode spanMargin(String json, String auth) throws Exception    { return live.spanMargin(json, auth); }
     @Override public JsonNode cancelOrder(String id, String auth) throws Exception     { return live.cancelOrder(id, auth); }
     @Override public JsonNode getOrder(String id, String auth) throws Exception        { return live.getOrder(id, auth); }
     @Override public JsonNode getOrders(String auth) throws Exception                 { return live.getOrders(auth); }
