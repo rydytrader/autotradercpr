@@ -445,7 +445,7 @@
 <script src="/js/settings-modal.js?v=18"></script>
 <script src="/js/strategy-settings-form.js?v=15"></script>
 <script src="/js/option-chain-modal.js?v=26"></script>
-<script src="/js/simulator.js?v=5"></script>
+<script src="/js/simulator.js?v=9"></script>
 <script>
     (function() { var el = document.getElementById('footerYear'); if (el) el.textContent = new Date().getFullYear(); })();
 
@@ -546,17 +546,23 @@
             setPnl(document.getElementById('heroOpenMtm'), d.combinedMtm || 0);
 
             var po = d.payoff || {};
-            var hasPo = po.maxProfit != null;
-            function heroTile(id, text, cls) { var el = document.getElementById(id); if (!el) return; el.textContent = text; el.className = 'stat-value ' + (cls || ''); el.style.color = cls ? '' : 'var(--text-muted)'; }
-            heroTile('heroMaxProfit', !hasPo ? '—' : (po.maxProfitUnlimited ? 'Unlimited' : fmtRs(po.maxProfit)), hasPo ? 'pnl-positive' : '');
-            heroTile('heroMaxLoss', !hasPo ? '—' : (po.maxLossUnlimited ? 'Unlimited' : fmtRs(po.maxLoss)), hasPo ? 'pnl-negative' : '');
-            var rrOk = hasPo && !po.maxProfitUnlimited && !po.maxLossUnlimited && po.maxLoss < 0 && po.maxProfit > 0;
-            heroTile('heroRr', rrOk ? '1 : ' + (po.maxProfit / Math.abs(po.maxLoss)).toFixed(2) : '—', rrOk ? '' : '');
-            var mg = Number(d.spanMargin || 0);
-            heroTile('heroMargin', mg > 0 ? fmtRs(mg) : '—', mg > 0 ? 'x' : '');
-            var rrEl = document.getElementById('heroRr'); if (rrEl && rrOk) rrEl.style.color = '';
-            var mgEl = document.getElementById('heroMargin'); if (mgEl) { mgEl.className = 'stat-value'; mgEl.style.color = mg > 0 ? '' : 'var(--text-muted)'; }
-            var mpEl = document.getElementById('heroMaxProfit'); if (mpEl && hasPo) mpEl.title = (po.breakevens || []).length ? 'Breakeven ' + po.breakevens.map(function (b) { return Math.round(b).toLocaleString('en-IN'); }).join(' / ') + (po.pop != null ? ' · POP ' + Number(po.pop).toFixed(0) + '%' : '') : '';
+            var hasPo = po.maxProfit != null && window.payoffMaxLoss;
+            function heroTile(id, text, cls, title) {
+                var el = document.getElementById(id); if (!el) return;
+                el.textContent = text; el.className = 'stat-value ' + (cls || '');
+                el.style.color = text === '—' ? 'var(--text-muted)' : '';
+                el.title = title || '';
+            }
+            var mp = hasPo ? window.payoffMaxProfit(po) : { text: '—', cls: '', title: '' };
+            var ml = hasPo ? window.payoffMaxLoss(po) : { text: '—', cls: '', title: '' };
+            var rr = hasPo ? window.riskReward(po) : { text: '—', title: '' };
+            var be = hasPo ? window.payoffBreakeven(po) : { text: '—', title: '' };
+            var beNote = hasPo ? ('Breakeven ' + be.text + (po.pop != null ? ' · POP ' + Number(po.pop).toFixed(0) + '%' : '')) : '';
+            heroTile('heroMaxProfit', mp.text, mp.cls, [mp.title, beNote].filter(Boolean).join(' · '));
+            heroTile('heroMaxLoss', ml.text, ml.cls, ml.title);
+            heroTile('heroRr', rr.text, '', rr.title);
+            var mg = Number(d.marginBlocked || d.spanMargin || 0);
+            heroTile('heroMargin', mg > 0 ? fmtRs(mg) : '—', '', mg > 0 && window.marginTooltip ? window.marginTooltip(d.spanMarginDetail, 'Funds blocked for the open book: margin + premium paid (refreshed every 2 min)') : 'Margin not fetched yet');
 
             var statePill = document.getElementById('heroStatePill');
             var pillState = d.displayState || d.state || '—';

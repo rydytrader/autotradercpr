@@ -126,6 +126,7 @@ public class ShortStrangle implements Strategy {
     private final PayoffService payoff = new PayoffService();
     private static final long MARGIN_CACHE_MS = 120_000L;
     private volatile double cachedMargin = 0;
+    private volatile Map<String, Object> cachedMarginDetail = Map.of();
     private volatile String cachedMarginKey = "";
     private volatile long cachedMarginAt = 0;
     private final AtomicBoolean marginInFlight = new AtomicBoolean(false);
@@ -606,7 +607,7 @@ public class ShortStrangle implements Strategy {
             req.legs = openLegsAsSim(sp);
             Map<String, Object> res = payoff.compute(req, sp, underlying().lotSize());
             if (Boolean.TRUE.equals(res.get("empty"))) return out;
-            for (String k : new String[]{"maxProfit", "maxProfitUnlimited", "maxLoss", "maxLossUnlimited", "pop", "breakevens", "netCredit", "nearestExpiry"}) out.put(k, res.get(k));
+            for (String k : new String[]{"maxProfit", "maxProfitUnlimited", "maxLoss", "maxLossUnlimited", "loss2Sigma", "profit2Sigma", "pop", "breakevens", "netCredit", "nearestExpiry"}) out.put(k, res.get(k));
         } catch (Exception e) {
             log.debug("[{}] payoff stats failed: {}", tag(), e.getMessage());
         }
@@ -631,7 +632,7 @@ public class ShortStrangle implements Strategy {
                 try {
                     Map<String, Object> m = simMargin(legsNow, product);
                     if (m.get("margin") instanceof Number n && n.doubleValue() > 0) {
-                        cachedMargin = n.doubleValue(); cachedMarginKey = key; cachedMarginAt = System.currentTimeMillis();
+                        cachedMargin = n.doubleValue(); cachedMarginDetail = m; cachedMarginKey = key; cachedMarginAt = System.currentTimeMillis();
                     } else {
                         cachedMarginAt = System.currentTimeMillis();   // back off; keep the last good value
                         cachedMarginKey = key;
@@ -640,6 +641,11 @@ public class ShortStrangle implements Strategy {
             });
         }
         return key.equals(cachedMarginKey) ? cachedMargin : 0;
+    }
+
+    /** SPAN / exposure / benefit / premium breakdown behind {@link #currentSpanMargin}, for the tile tooltip. */
+    private Map<String, Object> currentSpanMarginDetail(double margin) {
+        return margin > 0 ? cachedMarginDetail : Map.of();
     }
 
     @Override
@@ -671,7 +677,21 @@ public class ShortStrangle implements Strategy {
                 for (String k : new String[]{"margin_avail", "available", "margin_available"}) {
                     if (d.has(k) && d.get(k).isNumber()) { avail = d.get(k).asDouble(); break; }
                 }
+                // v2 span_margin breaks the total down: span + expo = total, benefit already netted in.
+                for (String k : new String[]{"span", "expo", "benefit"}) {
+                    if (d.has(k) && d.get(k).isNumber()) out.put(k, round2(d.get(k).asDouble()));
+                }
             }
+            // Premium paid on the BUY legs is debited from funds on top of the margin blocked on the
+            // shorts, which is how the broker's "margin used" figure usually reads.
+            double premium = 0;
+            for (PayoffService.SimLeg l : legs) {
+                if (l != null && l.include && l.lots > 0 && "BUY".equalsIgnoreCase(l.side)) premium += l.price * l.lots * lot;
+            }
+            out.put("premiumPaid", round2(premium));
+            // What the broker actually takes out of funds: margin on the basket + premium on the longs.
+            out.put("blocked", round2(margin + premium));
+            if (log.isDebugEnabled()) log.debug("[{}] span_margin raw: {}", tag(), root);
             if (margin <= 0) {
                 log.warn("[{}] span_margin response had no usable total: {}", tag(), root);
                 out.put("error", root != null && root.has("message") ? root.get("message").asText() : "NO_TOTAL");
@@ -692,8 +712,13 @@ public class ShortStrangle implements Strategy {
         String prod = normaliseProduct(product == null || product.isEmpty() ? defaultProduct() : product);
         double sl = slPct >= 0 ? slPct : defaultSlPct();
         int lot = underlying().lotSize();
-        for (PayoffService.SimLeg l : legs == null ? List.<PayoffService.SimLeg>of() : legs) {
-            if (l == null || !l.include || l.lots <= 0 || "LIVE".equalsIgnoreCase(l.tag)) continue;
+        // BUY rows (hedges and exits of shorts) go first so the shorts that follow are margined
+        // against the wings already in place; SELL rows after, in the order given.
+        List<PayoffService.SimLeg> ordered = new ArrayList<>();
+        for (PayoffService.SimLeg l : legs == null ? List.<PayoffService.SimLeg>of() : legs) if (l != null && "BUY".equalsIgnoreCase(l.side)) ordered.add(l);
+        for (PayoffService.SimLeg l : legs == null ? List.<PayoffService.SimLeg>of() : legs) if (l != null && !"BUY".equalsIgnoreCase(l.side)) ordered.add(l);
+        for (PayoffService.SimLeg l : ordered) {
+            if (!l.include || l.lots <= 0 || "LIVE".equalsIgnoreCase(l.tag)) continue;
             boolean buy = "BUY".equalsIgnoreCase(l.side);
             String side = "PE".equalsIgnoreCase(l.type) ? "PE" : "CE";
             String label = (buy ? "BUY " : "SELL ") + l.lots + " lot " + side + " " + (long) l.strike + " " + (l.expiry == null ? "" : l.expiry);
@@ -1563,7 +1588,12 @@ public class ShortStrangle implements Strategy {
         m.put("maxLossPerStrangle", round2(maxLoss));
         m.put("uncappedLegs", uncapped);
         m.put("payoff", openPayoffStats(sp));
-        m.put("spanMargin", round2(currentSpanMargin(sp)));
+        double spanMargin = currentSpanMargin(sp);
+        Map<String, Object> marginDetail = currentSpanMarginDetail(spanMargin);
+        double premiumPaid = marginDetail.get("premiumPaid") instanceof Number n ? n.doubleValue() : 0;
+        m.put("spanMargin", round2(spanMargin));
+        m.put("marginBlocked", round2(spanMargin > 0 ? spanMargin + premiumPaid : 0));
+        m.put("spanMarginDetail", marginDetail);
         m.put("consumedRiskToday", round2(consumedRiskToday));
         Map<String, Double> charges = computeChargesBreakdown();
         m.put("charges", charges);

@@ -197,10 +197,22 @@ public class PayoffService {
         greeks.put("theta", round2(dTheta)); greeks.put("vega", round2(dVega));
 
         Map<String, Object> bands = new LinkedHashMap<>();
+        // Worst / best expiry P&L inside the ±2σ band: the practical risk / reward figure when a
+        // side of the payoff is unlimited (naked short or long options).
+        Double loss2s = null, profit2s = null;
         if (sigEval > 0 && tExp > 0) {
             double sT = sigEval * Math.sqrt(tExp);
+            double lo2 = spotEval * Math.exp(-2 * sT), hi2 = spotEval * Math.exp(2 * sT);
             bands.put("lo1", round2(spotEval * Math.exp(-sT))); bands.put("hi1", round2(spotEval * Math.exp(sT)));
-            bands.put("lo2", round2(spotEval * Math.exp(-2 * sT))); bands.put("hi2", round2(spotEval * Math.exp(2 * sT)));
+            bands.put("lo2", round2(lo2)); bands.put("hi2", round2(hi2));
+            double worst = Double.MAX_VALUE, best = -Double.MAX_VALUE;
+            TreeSet<Double> inBand = new TreeSet<>(xs.subSet(lo2, true, hi2, true));
+            inBand.add(lo2); inBand.add(hi2);
+            for (double x : inBand) {
+                double e = expiryPnl(legs, x, near, r, sig);
+                worst = Math.min(worst, e); best = Math.max(best, e);
+            }
+            loss2s = round2(worst); profit2s = round2(best);
         }
 
         out.put("empty", false);
@@ -215,6 +227,10 @@ public class PayoffService {
         out.put("maxProfitUnlimited", profitUnlimited);
         out.put("maxLoss", round2(gridMin));
         out.put("maxLossUnlimited", lossUnlimited);
+        out.put("loss2Sigma", loss2s);
+        out.put("profit2Sigma", profit2s);
+        out.put("loss2Sigma", loss2s);
+        out.put("profit2Sigma", profit2s);
         out.put("netCredit", round2(netCredit));
         out.put("pop", pop);
         out.put("expectedPnl", expected);

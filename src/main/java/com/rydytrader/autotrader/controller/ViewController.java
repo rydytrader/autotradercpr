@@ -125,12 +125,19 @@ public class ViewController {
                     log.error("Error starting services after Fyers login: {}", e.getMessage());
                 }
             }, "fyers-init").start();
-            // No canonical instance any more — multiple straddles live under /strategies/inst-<n>.
-            // Send the operator to the analytics home to pick from the sidebar.
-            return "redirect:/home";
+            // Land on the first enabled instance's POSITIONS page (same order as the sidebar);
+            // the analytics home is only the fallback when no instance is enabled.
+            return "redirect:" + firstPositionsPage();
         }
         log.error("Fyers login callback error");
         return "redirect:/home?fyers=error";
+    }
+
+    private String firstPositionsPage() {
+        for (Strategy s : strategyRegistry.all()) {
+            if (s.isEnabled()) return "/strategies/" + s.id();
+        }
+        return "/home";
     }
 
     @GetMapping("/api/fyers/status")

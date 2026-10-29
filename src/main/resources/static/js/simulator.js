@@ -76,6 +76,9 @@
         var row = rows.find(function (r) { return Number(r.strike) === atm; }) || rows[0];
         var leg = { id: nextId++, tag: 'SIM', include: true, side: 'SELL', type: 'CE', expiry: exp,
                     strike: row ? Number(row.strike) : 0, lots: 1, price: row ? Number(row.ceLtp) || 0 : 0, iv: row ? Number(row.ceIv) || 0 : 0 };
+        // Attach the contract symbol straight away so the row can be margined / executed without the
+        // operator first having to touch the strike.
+        if (row) syncLegFromChain(leg);
         legs.push(leg);
         renderLegs(); recompute();
         if (!exp) toast('Expiry list unavailable — try again', 'error');
@@ -212,8 +215,8 @@
                 if (seq !== marginSeq) return;
                 el.style.opacity = '';
                 if (!m || m.error) { el.textContent = '—'; el.title = 'Margin unavailable' + (m && m.error ? ': ' + m.error : ''); return; }
-                el.textContent = fmtRs(m.margin);
-                el.title = 'Fyers span margin for the basket as ' + (m.product === 'MARGIN' ? 'OVERNIGHT' : 'INTRADAY') + ' (' + m.legs + ' leg(s))' + (m.available ? ' · available ' + fmtRs(m.available) : '');
+                el.textContent = fmtRs(m.blocked != null ? m.blocked : m.margin);
+                el.title = window.marginTooltip(m, 'Funds blocked for the basket as ' + (m.product === 'MARGIN' ? 'OVERNIGHT' : 'INTRADAY') + ' (' + m.legs + ' leg(s)): margin + premium paid');
             })
             .catch(function () { if (seq === marginSeq) { el.style.opacity = ''; el.textContent = '—'; el.title = 'Margin unavailable'; } });
     }
@@ -225,8 +228,10 @@
     function execute() {
         var rows = legs.filter(function (l) { return l.tag === 'SIM' && l.include && l.lots > 0; });
         if (!rows.length) { toast('No SIM rows to execute — LIVE rows are already open', 'info'); return; }
+        // Rows added before their chain loaded may still lack a symbol: resolve from the chain now.
+        rows.forEach(function (l) { if (!l.symbol) syncLegFromChain(l); });
         var missing = rows.filter(function (l) { return !l.symbol; });
-        if (missing.length) { toast('Pick a strike from the chain for every SIM row first', 'error'); return; }
+        if (missing.length) { toast('No contract found for ' + missing.map(function (l) { return l.type + ' ' + l.strike + ' ' + fmtExpiry(l.expiry); }).join(', ') + ' — change the strike or expiry', 'error'); return; }
         var d = window.lastDashboardData || {};
         var n = new Date();
         var sqp = String(d.intradaySquareoff || '15:20').split(':');
@@ -279,6 +284,55 @@
     window.simExecute = execute;
 
     // ── metrics ───────────────────────────────────────────────────────────────
+    // ── Shared payoff tile formatters (also used by the overview tiles on the positions page) ──
+    // A book whose expiry P&L never goes negative (e.g. a spread hedged after the credit was banked)
+    // has no loss side: say so instead of showing a profit figure under "Max Loss" and a dash for
+    // breakeven / risk : reward.
+    function rs(v) { return '₹' + Math.round(Math.abs(Number(v) || 0)).toLocaleString('en-IN'); }
+    window.payoffMaxProfit = function (po) {
+        if (!po || po.maxProfit == null) return { text: '—', cls: '', title: '' };
+        if (po.maxProfitUnlimited) return { text: 'Unlimited', cls: 'pnl-positive', title: po.profit2Sigma != null ? 'Within ±2σ: +' + rs(po.profit2Sigma) : '' };
+        if (!(po.maxProfit > 0)) return { text: 'None', cls: 'pnl-negative', title: 'Expiry P&L never positive — best case ' + (po.maxProfit < 0 ? '-' : '') + rs(po.maxProfit) };
+        return { text: '+' + rs(po.maxProfit), cls: 'pnl-positive', title: '' };
+    };
+    window.payoffMaxLoss = function (po) {
+        if (!po || po.maxLoss == null) return { text: '—', cls: '', title: '' };
+        if (po.maxLossUnlimited) return { text: 'Unlimited', cls: 'pnl-negative', title: po.loss2Sigma != null ? 'Within ±2σ: ' + (po.loss2Sigma < 0 ? '-' : '+') + rs(po.loss2Sigma) : '' };
+        if (!(po.maxLoss < 0)) return { text: 'None', cls: 'pnl-positive', title: 'Expiry P&L never negative — worst case +' + rs(po.maxLoss) + ' (locked in)' };
+        return { text: '-' + rs(po.maxLoss), cls: 'pnl-negative', title: '' };
+    };
+    window.payoffBreakeven = function (po) {
+        if (!po || po.maxProfit == null) return { text: '—', title: '' };
+        var be = (po.breakevens || []).map(function (b) { return Math.round(b).toLocaleString('en-IN'); });
+        if (be.length) return { text: be.join(' / '), title: 'Expiry breakeven price(s)' };
+        if (!po.maxLossUnlimited && !(po.maxLoss < 0)) return { text: 'None', title: 'Profitable at every expiry price (worst case +' + rs(po.maxLoss) + ')' };
+        if (!po.maxProfitUnlimited && !(po.maxProfit > 0)) return { text: 'None', title: 'Losing at every expiry price (best case ' + (po.maxProfit < 0 ? '-' : '+') + rs(po.maxProfit) + ')' };
+        return { text: '—', title: 'No breakeven inside the price grid' };
+    };
+    // Risk : reward with risk first ("1 : N"). An unlimited side is replaced by the worst / best
+    // expiry P&L inside the ±2σ band and tagged (2σ). A book with no loss side reads "No risk".
+    window.riskReward = function (po) {
+        if (!po || po.maxProfit == null) return { text: '—', title: '' };
+        var risk = po.maxLossUnlimited ? po.loss2Sigma : po.maxLoss;
+        var reward = po.maxProfitUnlimited ? po.profit2Sigma : po.maxProfit;
+        var approx = po.maxLossUnlimited || po.maxProfitUnlimited;
+        if (!(risk < 0)) return { text: 'No risk', title: 'Expiry P&L never negative' + (risk != null ? ' — worst case +' + rs(risk) : '') };
+        if (!(reward > 0)) return { text: 'No reward', title: 'Expiry P&L never positive' };
+        var n = (reward / Math.abs(risk)).toFixed(2);
+        return { text: '1 : ' + n + (approx ? ' (2σ)' : ''),
+                 title: 'Risk : reward — risk 1 to make ' + n + (approx ? ' — the unlimited side is taken as the worst / best expiry P&L within ±2σ' : ' (max loss vs max profit)') };
+    };
+    // Tooltip for a margin figure: SPAN + exposure = total (hedge benefit netted), plus the premium
+    // debited on BUY legs, which the broker's "margin used" usually adds on top.
+    window.marginTooltip = function (m, lead) {
+        if (!m) return lead || '';
+        var parts = [];
+        if (m.margin != null) parts.push('margin ' + rs(m.margin) + (m.span != null && m.expo != null ? ' (SPAN ' + rs(m.span) + ' + exposure ' + rs(m.expo) + ')' : ''));
+        if (m.benefit != null && m.benefit > 0) parts.push('hedge benefit ' + rs(m.benefit) + ' already netted');
+        if (m.premiumPaid > 0) parts.push('premium paid on BUY legs ' + rs(m.premiumPaid));
+        if (m.available > 0) parts.push('available ' + rs(m.available));
+        return [lead].concat(parts).filter(Boolean).join(' · ');
+    };
     function tile(id, text, cls, title) {
         var el = document.getElementById(id); if (!el) return;
         el.textContent = text; el.className = 'stat-value ' + (cls || ''); el.style.fontSize = '0.98rem';
@@ -292,13 +346,13 @@
         }
         tile('simPop', res.pop == null ? '—' : Number(res.pop).toFixed(0) + '%', res.pop >= 50 ? 'pnl-positive' : (res.pop == null ? '' : 'pnl-negative'),
              'Probability the expiry P&L is above zero (lognormal, σ ' + (res.sigmaEval ? (res.sigmaEval * 100).toFixed(1) + '%' : '—') + ')');
-        tile('simMaxProfit', res.maxProfitUnlimited ? 'Unlimited' : fmtRs(res.maxProfit), 'pnl-positive', '');
-        tile('simMaxLoss', res.maxLossUnlimited ? 'Unlimited' : fmtRs(res.maxLoss), 'pnl-negative', '');
-        var be = (res.breakevens || []).map(function (b) { return fmtN(b, 0); });
-        tile('simBreakeven', be.length ? be.join(' / ') : '—', '', 'Expiry breakeven price(s)');
+        var mp = window.payoffMaxProfit(res), ml = window.payoffMaxLoss(res), be = window.payoffBreakeven(res);
+        tile('simMaxProfit', mp.text, mp.cls, mp.title);
+        tile('simMaxLoss', ml.text, ml.cls, ml.title);
+        tile('simBreakeven', be.text, '', be.title);
         tile('simNetCredit', fmtRs(res.netCredit), res.netCredit >= 0 ? 'pnl-positive' : 'pnl-negative', res.netCredit >= 0 ? 'Net credit received' : 'Net debit paid');
-        var rr = (!res.maxProfitUnlimited && !res.maxLossUnlimited && res.maxLoss < 0 && res.maxProfit > 0) ? '1 : ' + (res.maxProfit / Math.abs(res.maxLoss)).toFixed(2) : '—';
-        tile('simRr', rr, '', 'Risk : reward — risk 1 to make ' + (rr === '—' ? '?' : rr.slice(4)) + ' (max loss vs max profit)');
+        var rr = window.riskReward(res);
+        tile('simRr', rr.text, '', rr.title);
         tile('simExpected', res.expectedPnl == null ? '—' : fmtRs(res.expectedPnl), res.expectedPnl > 0 ? 'pnl-positive' : (res.expectedPnl < 0 ? 'pnl-negative' : ''), 'Probability-weighted expiry P&L');
         var g = res.greeks || {};
         tile('simDelta', fmtN(g.delta, 1), '', 'Net delta (units) · gamma ' + (g.gamma == null ? '—' : g.gamma));
